@@ -402,6 +402,7 @@ export interface WorkspaceDeletePreview extends WorkspaceArchivePreview {
   preserves_sources: boolean;
   preserves_runtime_sessions: boolean;
   preserves_remote_refs: boolean;
+  preserves_local_branches: boolean;
 }
 
 export type ProjectSourceKind = "git" | "folder";

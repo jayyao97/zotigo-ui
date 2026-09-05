@@ -228,7 +228,8 @@ export function previewCatalogWorkspaceDelete(id: string): Promise<WorkspaceDele
     .then((value) => parseWorkspaceDeletePreview(value, "workspace delete preview response"));
 }
 
-export function deleteCatalogWorkspace(id: string, confirmation: string): Promise<void> {
+export async function deleteCatalogWorkspace(id: string, confirmation: string): Promise<void> {
+  await previewCatalogWorkspaceDelete(id);
   return requestJSON(`/workspaces/${encodeURIComponent(id)}/delete`, jsonRequest("POST", { confirmation })).then(() => undefined);
 }
 
@@ -747,6 +748,9 @@ function parseWorkspaceArchivePreview(value: unknown, context: string): Workspac
 
 function parseWorkspaceDeletePreview(value: unknown, context: string): WorkspaceDeletePreview {
   const record = expectRecord(value, context);
+  if (record.preserves_local_branches !== true) {
+    throw new Error("Update zotigod before deleting a Workspace: this daemon does not guarantee preservation of local Git branches.");
+  }
   const archive = parseWorkspaceArchivePreview(value, context);
   return {
     ...archive,
@@ -756,6 +760,7 @@ function parseWorkspaceDeletePreview(value: unknown, context: string): Workspace
     preserves_sources: expectBoolean(record.preserves_sources, `${context} preserves_sources`),
     preserves_runtime_sessions: expectBoolean(record.preserves_runtime_sessions, `${context} preserves_runtime_sessions`),
     preserves_remote_refs: expectBoolean(record.preserves_remote_refs, `${context} preserves_remote_refs`),
+    preserves_local_branches: true,
   };
 }
 

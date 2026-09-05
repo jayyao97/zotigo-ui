@@ -256,6 +256,7 @@ export default function App() {
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectSources, setNewProjectSources] = useState<ProjectSourceDraft[]>([]);
   const [addSourcesProjectId, setAddSourcesProjectId] = useState<string | null>(null);
+  const [removeSourceTarget, setRemoveSourceTarget] = useState<{ kind: "git" | "folder"; id: string; name: string } | null>(null);
   const [createWorkspaceProjectId, setCreateWorkspaceProjectId] = useState<string | null>(null);
   const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
   const [newWorkspaceBranchName, setNewWorkspaceBranchName] = useState("");
@@ -1551,9 +1552,16 @@ export default function App() {
     finally { setIsBusy(false); }
   }
 
-  async function removeSource(kind: "git" | "folder", sourceId: string) {
-    try { applyDesktopState(await client.removeProjectSource(kind, sourceId)); }
+  async function confirmRemoveSource() {
+    if (!removeSourceTarget) return;
+    setIsBusy(true);
+    setMessage(null);
+    try {
+      applyDesktopState(await client.removeProjectSource(removeSourceTarget.kind, removeSourceTarget.id));
+      setRemoveSourceTarget(null);
+    }
     catch (error) { setMessage(errorMessage(error)); }
+    finally { setIsBusy(false); }
   }
 
   function updateDraftPrompt(value: string) {
@@ -2956,7 +2964,7 @@ export default function App() {
                 message={message}
                 onAddSources={() => void addSourcesToProject(selectedProject.id)}
                 onRename={() => openRenameProjectDialog(selectedProject)}
-                onRemoveSource={(kind, sourceId) => void removeSource(kind, sourceId)}
+                onRemoveSource={(kind, id, name) => { setMessage(null); setRemoveSourceTarget({ kind, id, name }); }}
                 onCreateWorkspace={() => openCreateWorkspaceDialog(selectedProject)}
                 onManageWorkspaceSources={(workspace) => void openWorkspaceSources(workspace)}
                 onOpenPath={kind === "desktop" ? (targetPath) => void client.revealPath(targetPath).catch((error) => setMessage(errorMessage(error))) : undefined}
@@ -3472,6 +3480,17 @@ export default function App() {
         </div>
       )}
 
+      {removeSourceTarget && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setRemoveSourceTarget(null); }} onKeyDown={(event) => { if (event.key === "Escape" && !isBusy) setRemoveSourceTarget(null); }}>
+          <div className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="remove-source-title">
+            <header><div><h2 id="remove-source-title">Remove Source from Project?</h2><p>{removeSourceTarget.name}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={() => setRemoveSourceTarget(null)} aria-label="Close"><X size={15} /></button></header>
+            <p className="archive-workspace-copy">This only removes the Source from this Project’s list and from the choices for new Workspaces. Existing Workspaces, their Source bindings, files, worktrees, and all Git branches are kept. The original Source folder is not deleted.</p>
+            {message && <p className="dialog-error">{message}</p>}
+            <footer><button autoFocus type="button" className="dialog-cancel" disabled={isBusy} onClick={() => setRemoveSourceTarget(null)}>Cancel</button><button type="button" className="dialog-submit" disabled={isBusy} onClick={() => void confirmRemoveSource()}>{isBusy ? "Removing…" : "Remove from Project"}</button></footer>
+          </div>
+        </div>
+      )}
+
       {addSourcesProjectId && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setAddSourcesProjectId(null); }}>
           <div className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="add-sources-title">
@@ -3702,7 +3721,7 @@ export default function App() {
               </div>
               <button type="button" className="dialog-close" onClick={closeDeleteWorkspaceDialog} disabled={isBusy} aria-label="Close"><X size={15} /></button>
             </header>
-            <p className="archive-workspace-copy">Workspace files, copied folders, linked worktrees, and local Workspace branches will be permanently deleted by zotigod. Original Sources, runtime session history, and remote branches are kept.</p>
+            <p className="archive-workspace-copy">Workspace files, copied folders, and linked worktrees will be permanently deleted by zotigod. Original Sources, runtime session history, and all local and remote Git branches are kept.</p>
             <div className="archive-workspace-path-row">
               <code className="archive-workspace-path">{workspaceDeletePreview.root_path}</code>
               <button type="button" className="copy-path-button" title="Copy path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(workspaceDeletePreview.root_path)}>
@@ -4008,7 +4027,7 @@ function ProjectOverview({
   message: string | null;
   onAddSources: () => void;
   onRename: () => void;
-  onRemoveSource: (kind: "git" | "folder", sourceId: string) => void;
+  onRemoveSource: (kind: "git" | "folder", sourceId: string, name: string) => void;
   onCreateWorkspace: () => void;
   onManageWorkspaceSources: (workspace: DesktopWorkspace) => void;
   onOpenPath?: (path: string) => void;
@@ -4026,11 +4045,11 @@ function ProjectOverview({
       <div className="project-overview-heading"><h3>Sources</h3><button type="button" onClick={onAddSources}><Plus size={13} /> Add source</button></div>
       {repositories.map((source) => <div className="project-source-row" key={source.id}>
         <GitBranch size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title={onOpenPath ? "Open in Finder" : "Server folder"} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
-        <button type="button" onClick={() => onRemoveSource("git", source.id)} aria-label={`Remove ${source.name}`}><X size={13} /></button>
+        <button type="button" onClick={() => onRemoveSource("git", source.id, source.name)} aria-label={`Remove ${source.name} from Project`}><X size={13} /></button>
       </div>)}
       {folders.map((source) => <div className="project-source-row" key={source.id}>
           <Folder size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title={onOpenPath ? "Open in Finder" : "Server folder"} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
-          <div className="source-row-actions"><em>{folderModeLabel(source.default_mode)}</em></div><button type="button" onClick={() => onRemoveSource("folder", source.id)} aria-label={`Remove ${source.name}`}><X size={13} /></button>
+          <div className="source-row-actions"><em>{folderModeLabel(source.default_mode)}</em></div><button type="button" onClick={() => onRemoveSource("folder", source.id, source.name)} aria-label={`Remove ${source.name} from Project`}><X size={13} /></button>
         </div>)}
       {repositories.length === 0 && folders.length === 0 && <p className="project-overview-empty">No Sources. Empty Workspaces are supported.</p>}
     </section>
