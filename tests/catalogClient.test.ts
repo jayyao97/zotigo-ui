@@ -5,6 +5,7 @@ import { after, before, test } from "node:test";
 import {
   addCatalogWorkspaceSource,
   createCatalogWorkspace,
+  deleteCatalogWorkspace,
   createSession,
   changeSessionCodexSettings,
   getAgents,
@@ -30,7 +31,7 @@ let server: http.Server;
 const requests: Array<{ method?: string; url?: string; body?: unknown }> = [];
 const timestamp = new Date(0).toISOString();
 const semanticWorkspaceRoot = "/tmp/projects/zotigo-11111111/workspaces/protocol-move-22222222";
-const semanticWorkspaceBranch = "zotigo/protocol-move-22222222";
+let preservesLocalBranches: boolean | undefined = true;
 
 before(async () => {
   server = http.createServer(async (request, response) => {
@@ -153,11 +154,15 @@ before(async () => {
         workspace_root: semanticWorkspaceRoot,
         worktree_paths: [`${semanticWorkspaceRoot}/code/repo`],
         dirty_worktree_paths: [],
-        local_branches: [semanticWorkspaceBranch],
+        local_branches: [],
         preserves_sources: true,
         preserves_runtime_sessions: true,
         preserves_remote_refs: true,
+        preserves_local_branches: preservesLocalBranches,
       });
+    }
+    if (request.method === "POST" && request.url === "/workspaces/workspace-1/delete") {
+      return writeOK(response, {});
     }
     writeOK(response, { message: "not found" }, 404);
   });
@@ -280,8 +285,29 @@ test("parses daemon-owned session organization and destructive previews", async 
   assert.equal(projections[0]?.organization?.pinned_position, 1000);
   const impact = await previewCatalogWorkspaceDelete("workspace-1");
   assert.equal(impact.root_path, semanticWorkspaceRoot);
-  assert.deepEqual(impact.local_branches, [semanticWorkspaceBranch]);
+  assert.deepEqual(impact.local_branches, []);
+  assert.equal(impact.preserves_local_branches, true);
   assert.equal(impact.preserves_runtime_sessions, true);
+});
+
+test("workspace deletion checks branch preservation before sending a destructive request", async () => {
+  await deleteCatalogWorkspace("workspace-1", "Workspace");
+  assert.deepEqual(requests.slice(-2).map(({ method, url }) => ({ method, url })), [
+    { method: "GET", url: "/workspaces/workspace-1/delete-preview" },
+    { method: "POST", url: "/workspaces/workspace-1/delete" },
+  ]);
+  assert.deepEqual(requests.at(-1)?.body, { confirmation: "Workspace" });
+  try {
+    for (const unsupported of [undefined, false]) {
+      preservesLocalBranches = unsupported;
+      const start = requests.length;
+      await assert.rejects(previewCatalogWorkspaceDelete("workspace-1"), /Update zotigod/);
+      await assert.rejects(deleteCatalogWorkspace("workspace-1", "Workspace"), /Update zotigod/);
+      assert.equal(requests.slice(start).some(({ method }) => method === "POST"), false);
+    }
+  } finally {
+    preservesLocalBranches = true;
+  }
 });
 
 test("Codex catalog synchronization is explicit", async () => {
