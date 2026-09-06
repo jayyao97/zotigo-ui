@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   closeSidePanelTab,
   emptySidePanelTabs,
+  retainFileTabs,
   fileSidePanelTab,
   openSidePanelTab,
   subagentSidePanelTab,
@@ -37,4 +38,15 @@ test("closing an active side panel tab selects its neighbor", () => {
 
   const closed = closeSidePanelTab(state, "subagent:run-1");
   assert.equal(closed.activeTabId, "file:/workspace/main.go");
+});
+
+test("navigating sessions retains open files and discards session-bound transcripts", () => {
+  let state = openSidePanelTab(emptySidePanelTabs, { id: "files", kind: "files" });
+  state = openSidePanelTab(state, subagentSidePanelTab("session-a-run"));
+  state = openSidePanelTab(state, fileSidePanelTab("/session-a/README.md", 5));
+  const retained = retainFileTabs(state);
+  assert.deepEqual(retained.tabs.map((tab) => tab.id), ["files", "file:/session-a/README.md"]);
+  assert.equal(retained.activeTabId, "file:/session-a/README.md");
+  assert.equal(retainFileTabs({ ...state, activeTabId: "subagent:session-a-run" }).activeTabId, null);
+  assert.equal(retainFileTabs(emptySidePanelTabs).activeTabId, null);
 });
