@@ -3369,7 +3369,7 @@ export default function App() {
         </section>
       </aside>}
 
-      {selectedConversation && activeSidePanelTab && (
+      {activeSidePanelTab && (
         <aside ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
           <div
             className="side-panel-resize-handle"
