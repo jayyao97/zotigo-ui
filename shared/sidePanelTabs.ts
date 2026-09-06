@@ -1,4 +1,5 @@
 export type SidePanelTab =
+  | { id: "files"; kind: "files" }
   | { id: "subagents"; kind: "subagents" }
   | { id: `subagent:${string}`; kind: "subagent"; runId: string }
   | { id: `file:${string}`; kind: "file"; path: string; line?: number; column?: number };
@@ -32,4 +33,10 @@ export function subagentSidePanelTab(runId: string): SidePanelTab {
 
 export function fileSidePanelTab(path: string, line?: number, column?: number): SidePanelTab {
   return { id: `file:${path}`, kind: "file", path, line, column };
+}
+
+/** Session-bound transcripts expire on navigation; file drafts remain open. */
+export function retainFileTabs(state: SidePanelTabsState): SidePanelTabsState {
+  const tabs = state.tabs.filter((tab) => tab.kind === "file" || tab.kind === "files");
+  return { tabs, activeTabId: tabs.some((tab) => tab.id === state.activeTabId) ? state.activeTabId : null };
 }
