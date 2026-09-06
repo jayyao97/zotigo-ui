@@ -12,7 +12,7 @@ const port = Number(process.env.ZOTIGO_WEB_PORT ?? "8080");
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid ZOTIGO_WEB_PORT.");
 const origin = process.env.ZOTIGO_WEB_ORIGIN ?? `http://127.0.0.1:${port}`;
 if (host !== "127.0.0.1" && !process.env.ZOTIGO_WEB_ORIGIN) throw new Error("Set ZOTIGO_WEB_ORIGIN before enabling remote access.");
-if (host !== "127.0.0.1" && !origin.startsWith("https://")) throw new Error("Remote Web access requires an HTTPS reverse proxy and origin.");
+if (host !== "127.0.0.1" && !origin.startsWith("https://") && process.env.ZOTIGO_WEB_ALLOW_HTTP !== "1") throw new Error("Remote Web access requires HTTPS, or ZOTIGO_WEB_ALLOW_HTTP=1 on a trusted network.");
 const daemon = new URL(getDaemonConfig().baseUrl);
 if (!["127.0.0.1", "localhost", "[::1]"].includes(daemon.hostname)) {
   throw new Error("Run the Web server on the same host as a loopback zotigod; file operations use that host's filesystem.");

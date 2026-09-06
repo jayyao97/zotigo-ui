@@ -101,7 +101,7 @@ Keep tokens out of source files, shell history, screenshots and shared logs. A t
 
 Use an HTTPS reverse proxy with authentication at the Web application and a network boundary appropriate to your environment. Set `ZOTIGO_WEB_ORIGIN` to the browser's HTTPS origin. Forward the matching `Host` header, disable response buffering for `/api/events`, allow long-lived event connections, and configure request limits to accommodate image uploads (up to 30 MiB JSON). Keep the Web backend port and zotigod inaccessible to untrusted networks; TLS must terminate before credentials cross the network.
 
-Setting a non-loopback Web bind address requires an explicit HTTPS origin. This guard does not configure TLS or a firewall for you. Never expose zotigod itself as the browser endpoint. All file paths refer to the Web server machine, not the browser device.
+Setting a non-loopback Web bind address requires an explicit origin. HTTPS is the default requirement; trusted LAN deployments can explicitly set `ZOTIGO_WEB_ALLOW_HTTP=1` with an HTTP origin. This sends login credentials and cookies without encryption; see [LAN configuration](docs/installation.md#lan-access). This guard does not configure TLS or a firewall for you. Never expose zotigod itself as the browser endpoint. All file paths refer to the Web server machine, not the browser device.
 
 ## Checks
 

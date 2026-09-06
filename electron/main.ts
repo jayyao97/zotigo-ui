@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, screen, shell, type Rectangle } from "electron";
+import { configureDaemonImageAuth } from "./daemonImageAuth";
+import { app, session, BrowserWindow, dialog, ipcMain, screen, shell, type Rectangle } from "electron";
 import path from "node:path";
 import { createApplicationService } from "../backend/applicationService";
 import { inspectCatalogSource } from "../backend/zotigod";
@@ -116,6 +117,7 @@ function clamp(value: number, minimum: number, maximum: number): number {
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  configureDaemonImageAuth(session.defaultSession);
   const userDataPath = app.getPath("userData");
   initializePreferencesStore(userDataPath);
   registerIpcHandlers();
