@@ -12,7 +12,7 @@ Both clients provide a UI for zotigod:
 - Open and safely edit text files rooted in registered Sources and Workspaces.
 - Desktop development can build and launch a local `zotigod` when one is not already available. Web requires a separately running daemon on the same machine as the Web server.
 
-The renderer never calls zotigod directly and does not use internal worker endpoints. Desktop uses a narrow preload API; Web uses authenticated, same-origin HTTP and event streams. Packaging, auto-update, and code signing are not configured here. Critical Desktop and Web flows have been exercised locally end to end; this is not a production security certification or a guarantee for every deployment.
+The renderer never calls zotigod directly and does not use internal worker endpoints. Desktop uses a narrow preload API; Web uses authenticated, same-origin HTTP and event streams. Source installation and Desktop packaging are described in [installation](docs/installation.md). Auto-update, Developer ID signing and notarization are not configured. Critical Desktop and Web flows have been exercised locally end to end; this is not a production security certification or a guarantee for every deployment.
 
 ### Daemon recovery dependency
 
@@ -32,7 +32,7 @@ Desktop and Web share catalog data through zotigod. Browser selection is scoped 
 
 ## Development
 
-Use Node.js 22 and pnpm 10.30.3 (the version declared in `package.json`). Install dependencies:
+Use Node.js 22.12 or newer and pnpm 10.30.3 (the version declared in `package.json`). Install dependencies:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -84,7 +84,7 @@ pnpm build
 pnpm start:web
 ```
 
-Open the URL printed by the server (default `http://127.0.0.1:8080`) and enter its generated access token. The generated token changes on restart. A successful login creates an HttpOnly, SameSite=Strict cookie that expires after 12 hours. Logout revokes that browser session; server restart invalidates all browser sessions.
+Open the URL printed by the server (default `http://127.0.0.1:8080`) and enter the generated access token from `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). The token is stored in an owner-only file, not printed to logs, and changes on restart. A successful login creates an HttpOnly, SameSite=Strict cookie that expires after 12 hours. Logout revokes that browser session; server restart invalidates all browser sessions.
 
 | Environment variable | Default / purpose |
 | --- | --- |

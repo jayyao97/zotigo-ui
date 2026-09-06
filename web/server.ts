@@ -29,6 +29,7 @@ export function createWebServer(options: { origin: string; token: string; assets
 
   const server = createServer((request, response) => {
     void handle(request, response).catch((error: unknown) => {
+      console.warn("web_request_failed method=%s error_type=%s", request.method, error instanceof Error ? error.name : typeof error);
       if (response.headersSent) { response.destroy(); return; }
       const status = error instanceof RequestError ? error.status : 500;
       json(response, status, { error: status === 500 ? "Web request failed." : (error as Error).message });

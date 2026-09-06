@@ -546,7 +546,14 @@ async function requestJSON(path: string, init: RequestInit = {}): Promise<unknow
       Accept: "application/json",
       ...init.headers,
     },
+  }).catch((error: unknown) => {
+    if (!(error instanceof Error && error.name === "AbortError")) {
+      console.warn("daemon_request_failed method=%s path=%s error_type=%s", init.method ?? "GET", path.split("?")[0], error instanceof Error ? error.name : typeof error);
+    }
+    throw error;
   });
+
+  if (!response.ok) console.warn("daemon_http_error method=%s path=%s status=%d", init.method ?? "GET", path.split("?")[0], response.status);
 
   const body = await response.text();
   const trimmedBody = body.trim();

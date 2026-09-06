@@ -418,6 +418,7 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
       try {
         return { ok: true, value: await listener(...args) };
       } catch (error) {
+        console.warn("operation_failed operation=%s error_type=%s", channel, error instanceof Error ? error.name : typeof error);
         return { ok: false, error: errorMessage(error) };
       }
     },
