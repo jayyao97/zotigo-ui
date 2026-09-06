@@ -37,3 +37,10 @@ pnpm test
 pnpm typecheck
 pnpm build
 ```
+
+## Source distribution
+
+- `install.sh` installs Desktop/Web plus the `daemon-version` pinned daemon using that revision's installer helpers. Keep the pin aligned with the daemon PR/release; local testing may use `--daemon-source`.
+- `pnpm build:web` skips the preload build; `pnpm package:desktop` stages only runtime outputs and notices. Node.js 22.12+ is required; the source installer reuses a suitable local runtime or provisions the pinned private runtime.
+- Default installation selects the highest stable `vX.Y.Z` tag. The paired daemon owns `scripts/toolchains.sh` and the pinned official download manifest; do not introduce a second toolchain manager.
+- Installer smoke tests must use an isolated prefix and HOME, and must not replace a developer's running services.

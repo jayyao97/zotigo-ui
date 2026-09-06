@@ -30,6 +30,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: node scripts/third-party-notices.mjs --check
+      - run: python3 scripts/install_test.py
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build
+      - run: pnpm build:web
+      - run: pnpm package:desktop

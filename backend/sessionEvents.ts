@@ -44,6 +44,7 @@ export function createSessionEvents(send: (event: SessionEventEnvelope) => void 
             await send({ session_id: sessionId, status: "unsupported" });
             return;
           }
+          console.warn("session_stream_reconnect session=%s error_type=%s", sessionId, error instanceof Error ? error.name : typeof error);
           reconnecting = true;
         }
         const reconnectPlan = sessionEventReconnectPlan(reconnectDelayMs, {

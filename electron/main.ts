@@ -5,7 +5,9 @@ import { inspectCatalogSource } from "../backend/zotigod";
 import { closePreferencesStore, getWindowBoundsPreference, initializePreferencesStore, setWindowBoundsPreference } from "../backend/preferencesStore";
 import { startManagedZotigodIfNeeded, stopManagedZotigod } from "./daemonManager";
 import { resolveDevServerUrl } from "./devServerUrl";
+import { startLogging } from "../backend/logging";
 
+startLogging("desktop");
 const devServerUrl = resolveDevServerUrl();
 const appName = "Zotigo";
 const defaultWindowWidth = 1280;
@@ -57,6 +59,12 @@ async function createMainWindow(): Promise<void> {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("renderer_gone reason=%s exit_code=%d", details.reason, details.exitCode);
+  });
+  mainWindow.webContents.on("did-fail-load", (_event, code, description) => {
+    console.error("renderer_load_failed code=%d description=%s", code, description);
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (url === mainWindow?.webContents.getURL()) return;

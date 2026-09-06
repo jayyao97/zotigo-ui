@@ -127,7 +127,8 @@ function sleep(ms: number): Promise<void> {
 
 function writeDaemonOutput(fd: number, message: string): void {
   try {
-    fs.writeSync(fd, message);
+    if (fd === 2) console.error(message.trimEnd());
+    else console.log(message.trimEnd());
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "EPIPE" && code !== "EBADF") {
