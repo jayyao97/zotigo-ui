@@ -1,5 +1,5 @@
 import { HostMenu } from "./HostShell";
-import { DirectoryBrowser } from "./DirectoryBrowser";
+import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
 import {
@@ -45,6 +45,10 @@ import {
   LoaderCircle,
   MoreHorizontal,
   PanelLeft,
+  PanelRight,
+  ListFilter,
+  Maximize2,
+  Minimize2,
   Paperclip,
   Pin,
   Plus,
@@ -87,10 +91,12 @@ import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering"
 import {
   closeSidePanelTab,
   emptySidePanelTabs,
+  retainFileTabs,
   fileSidePanelTab,
   openSidePanelTab,
   subagentSidePanelTab,
   type SidePanelTabsState,
+  type SidePanelTab,
 } from "../shared/sidePanelTabs";
 import {
   clampSidePanelWidth,
@@ -155,6 +161,8 @@ type SidebarSortProps = {
 };
 type OpenFileState = {
   file: TextFileSnapshot;
+  sessionId?: string;
+  workspaceRoot?: string;
   draft: string;
   mode: FileEditorMode;
   saveStatus: FileSaveStatus;
@@ -236,7 +244,7 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export default function App() {
-  const { api: client, kind, signOut } = useClient();
+  const { api: client, kind, remote, signOut } = useClient();
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
     const openSearch = (event: globalThis.KeyboardEvent) => {
@@ -341,7 +349,14 @@ export default function App() {
   const [sidePanelTabs, setSidePanelTabs] = useState<SidePanelTabsState>(emptySidePanelTabs);
   const [sidePanelWidth, setSidePanelWidth] = useState(defaultSidePanelWidth);
   const [isSidePanelResizing, setIsSidePanelResizing] = useState(false);
-  const [directoryPath, setDirectoryPath] = useState<string | null>(null);
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [sidePanelExpanded, setSidePanelExpanded] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [treeVisible, setTreeVisible] = useState(true);
+  const fileOpenRequest = useRef(0);
+  const [fileOpenError, setFileOpenError] = useState("");
+  const [fileOpening, setFileOpening] = useState(false);
+  const [directoryLocation, setDirectoryLocation] = useState<{ path: string; sessionId?: string } | null>(null);
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>({});
   const openFilesRef = useRef(openFiles);
   useEffect(() => {
@@ -672,11 +687,7 @@ export default function App() {
     setIsEditingConversationTitle(false);
     setConversationTitleDraft(selectedConversation?.title ?? "");
     setPauseRequestedTurnId(null);
-    for (const timer of fileSaveTimersRef.current.values()) window.clearTimeout(timer);
-    fileSaveTimersRef.current.clear();
-    setOpenFiles({});
-    openFilesRef.current = {};
-    setSidePanelTabs(emptySidePanelTabs);
+    setSidePanelTabs(retainFileTabs);
     setSelectedSkillNames([]);
     setAvailableSkills([]);
     setSkillsError(null);
@@ -2389,7 +2400,7 @@ export default function App() {
         path: filePath,
         content,
         expectedMtimeMs: current.file.mtimeMs,
-        sessionId: selectedSession?.id,
+        sessionId: current.sessionId,
       });
       const existing = openFilesRef.current[filePath];
       if (!existing) return true;
@@ -2440,12 +2451,15 @@ export default function App() {
     setSidePanelTabs((state) => closeSidePanelTab(state, tabId));
   }
 
-  function showTextFile(file: TextFileSnapshot, line?: number, column?: number) {
+  function showTextFile(file: TextFileSnapshot, line?: number, column?: number, context = { sessionId: selectedSession?.id, workspaceRoot: selectedWorkspace?.root_path || selectedSession?.working_directory }) {
+      setSidePanelOpen(true); setDetailsOpen(false);
       if (!openFilesRef.current[file.path]) {
         const next = {
           ...openFilesRef.current,
           [file.path]: {
             file: file,
+            sessionId: context.sessionId,
+            workspaceRoot: context.workspaceRoot,
             draft: file.content,
             mode: isMarkdownFile(file.path) ? "preview" as const : "source" as const,
             saveStatus: "clean" as const,
@@ -2467,6 +2481,8 @@ export default function App() {
     if (!anchor || !href) return;
     event.preventDefault();
     const fileContainer = anchor.closest<HTMLElement>("[data-markdown-file]");
+    const originFile = fileContainer?.dataset.markdownFile ? openFilesRef.current[fileContainer.dataset.markdownFile] : undefined;
+    const context = originFile ? { sessionId: originFile.sessionId, workspaceRoot: originFile.workspaceRoot } : { sessionId: selectedSession?.id, workspaceRoot: selectedWorkspace?.root_path || selectedSession?.working_directory };
     const expectedSessionId = selectedSession?.id ?? null;
     try {
       const result = await client.openMarkdownLink({
@@ -2476,16 +2492,16 @@ export default function App() {
           ?? selectedWorkspace?.root_path
           ?? null,
         baseKind: fileContainer ? "file" : "directory",
-        sessionId: selectedSession?.id,
+        sessionId: context.sessionId,
       });
       if (result.kind === "anchor") {
         document.getElementById(result.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
       if (selectedSessionIdRef.current !== expectedSessionId) return;
-      if (result.kind === "directory") { setDirectoryPath(result.path); return; }
+      if (result.kind === "directory") { browseFiles(result.path, context); return; }
       if (result.kind !== "text") return;
-      showTextFile(result.file, result.line, result.column);
+      showTextFile(result.file, result.line, result.column, context);
     } catch (error) {
       setMessage(errorMessage(error));
     }
@@ -2534,25 +2550,66 @@ export default function App() {
     updateSidePanelWidth(renderedWidth + (event.key === "ArrowLeft" ? 24 : -24));
   }
 
+  const workspaceFileRoot = selectedWorkspace?.root_path || selectedSession?.working_directory || "";
+  const treeLocation = directoryLocation ?? { path: workspaceFileRoot, sessionId: selectedSession?.id };
+  useEffect(() => {
+    setDirectoryLocation(null);
+    fileOpenRequest.current++;
+    setFileOpenError(""); setFileOpening(false);
+  }, [workspaceFileRoot, selectedSession?.id]);
+
+  function showPanelTab(tab: SidePanelTab) {
+    setSidePanelOpen(true); setDetailsOpen(false);
+    setSidePanelTabs((state) => openSidePanelTab(state, tab));
+  }
+
+  function browseFiles(path = workspaceFileRoot, context = { sessionId: selectedSession?.id }) {
+    fileOpenRequest.current++; setFileOpening(false); setFileOpenError("");
+    setDirectoryLocation({ path, sessionId: context.sessionId }); setTreeVisible(true); setWebNavigationOpen(false);
+    showPanelTab({ id: "files", kind: "files" });
+    window.requestAnimationFrame(() => appFrameRef.current?.querySelector<HTMLInputElement>('[aria-label="Filter filenames"]')?.focus());
+  }
+
+  async function openTreeFile(path: string) {
+    const request = ++fileOpenRequest.current;
+    setFileOpenError(""); setFileOpening(true);
+    try {
+      const sessionId = treeLocation.sessionId;
+      const file = await client.openTextFile(path, sessionId);
+      if (request === fileOpenRequest.current) showTextFile(file, undefined, undefined, { sessionId, workspaceRoot: treeLocation.path });
+    } catch (error) {
+      if (request === fileOpenRequest.current) setFileOpenError(errorMessage(error));
+    } finally { if (request === fileOpenRequest.current) setFileOpening(false); }
+  }
+
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.isComposing || document.querySelector("dialog[open], [aria-modal=true]")) return;
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "p") {
+        event.preventDefault(); browseFiles();
+      } else if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === "KeyB") {
+        event.preventDefault(); setSidePanelOpen((open) => !open); setDetailsOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [workspaceFileRoot, selectedSession?.id]);
+
   const activeSidePanelTab = sidePanelTabs.tabs.find((tab) => tab.id === sidePanelTabs.activeTabId) ?? null;
 
   return (
     <main
       ref={appFrameRef}
-      className={`app-frame ${webNavigationOpen ? "web-navigation-open" : ""} ${sidePanelTabs.activeTabId ? "has-subagent-panel" : ""} ${isSidePanelResizing ? "resizing-side-panel" : ""}`}
+      className={`app-frame ${webNavigationOpen ? "web-navigation-open" : ""} ${sidePanelOpen ? "has-subagent-panel" : ""} ${sidePanelOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${isSidePanelResizing ? "resizing-side-panel" : ""}`}
       style={{ "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
       onClickCapture={(event) => void handleMarkdownLinkClick(event)}
       onKeyDown={(event) => {
+        if (event.key === "Escape" && detailsOpen) setDetailsOpen(false);
         if (event.key === "Escape" && webNavigationOpen && !(event.target as Element).closest("dialog")) {
           event.preventDefault(); setWebNavigationOpen(false);
         }
       }}
     >
-      {directoryPath !== null && <DirectoryBrowser api={client} purpose="files" title="Workspace files" initialPath={directoryPath} sessionId={selectedSession?.id} onClose={() => setDirectoryPath(null)} onSelect={async ([path]) => {
-        const file = await client.openTextFile(path, selectedSession?.id);
-        showTextFile(file);
-        setWebNavigationOpen(false);
-      }} />}
       {searchOpen && <SearchPalette state={desktopState} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
         {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(false)} aria-label="Close navigation"><X size={18} />Close navigation</button>}
@@ -2575,7 +2632,6 @@ export default function App() {
             <SquarePen size={15} strokeWidth={1.8} />
             New session
           </button>
-          <button type="button" onClick={() => setDirectoryPath(selectedWorkspace?.root_path || selectedSession?.working_directory || "")} disabled={isBusy}><FolderOpen size={15} />Files</button>
           <button type="button" onClick={() => void refreshSessions({ syncCodex: true })} disabled={isBusy}>
             <RefreshCw size={15} strokeWidth={1.8} />
             Sync
@@ -2778,7 +2834,7 @@ export default function App() {
                                           role="menuitem"
                                           onClick={() => {
                                             setWorkspaceMenuId(null);
-                                            setDirectoryPath(workspace.root_path);
+                                            browseFiles(workspace.root_path);
                                           }}
                                         >
                                           <FolderOpen size={13} strokeWidth={1.8} />
@@ -2911,7 +2967,7 @@ export default function App() {
         </div>
       </aside>
 
-      <section className={`conversation ${selectedConversation ? "has-composer has-inspector" : ""}`}>
+      <section className={`conversation ${selectedConversation ? "has-composer" : ""}`}>
         <header className="conversation-titlebar">
           {kind === "web" && <button ref={webNavigationButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(true)} aria-label="Open navigation" aria-expanded={webNavigationOpen}><PanelLeft size={18} /></button>}
           {selectedConversation ? (
@@ -2956,6 +3012,10 @@ export default function App() {
               </button>
             </>
           ) : null}
+          <div className="workspace-panel-actions">
+            <button type="button" className="icon-button" aria-label="Session details" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((open) => !open)}><ListFilter size={17} /></button>
+            <button type="button" className="icon-button" aria-label="Toggle side panel" title="Toggle side panel (⌘⌥B / Ctrl+Alt+B)" aria-expanded={sidePanelOpen} onClick={() => { setSidePanelOpen((open) => !open); setDetailsOpen(false); }}><PanelRight size={17} /></button>
+          </div>
         </header>
 
         <div
@@ -2987,7 +3047,7 @@ export default function App() {
                 onRemoveSource={(kind, id, name) => { setMessage(null); setRemoveSourceTarget({ kind, id, name }); }}
                 onCreateWorkspace={() => openCreateWorkspaceDialog(selectedProject)}
                 onManageWorkspaceSources={(workspace) => void openWorkspaceSources(workspace)}
-                onOpenPath={setDirectoryPath}
+                onOpenPath={browseFiles}
               />
             ) : (
               <NewSessionPrompt
@@ -3226,10 +3286,11 @@ export default function App() {
         )}
       </section>
 
-      {selectedConversation && <aside className="inspector">
+      {detailsOpen && <aside className="inspector" aria-label="Session details">
         <section className="inspector-card">
           <div className="inspector-heading">
             <h2>Environment</h2>
+            <button type="button" className="icon-button" aria-label="Close session details" onClick={() => setDetailsOpen(false)}><X size={14} /></button>
             <button type="button" className="icon-button" aria-label="Refresh environment" onClick={() => void refreshSessions({ syncCodex: true })} disabled={isBusy}>
               <RefreshCw size={14} strokeWidth={1.8} />
             </button>
@@ -3243,7 +3304,7 @@ export default function App() {
             </div>
             <div className="env-row">
               <Laptop className="env-icon" size={15} strokeWidth={1.8} />
-              <span>Local</span>
+              <span>{remote ? "Remote host" : "Local host"}</span>
               <ChevronDown className="env-chevron" size={14} strokeWidth={1.8} />
             </div>
             <div className="env-row">
@@ -3254,7 +3315,7 @@ export default function App() {
                   <button type="button" className="icon-button" title="Copy Workspace path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(selectedWorkspace.root_path)}>
                     {copiedWorkspacePath === selectedWorkspace.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
                   </button>
-                  <button type="button" className="icon-button" title="Browse workspace files" aria-label="Browse workspace files" onClick={() => setDirectoryPath(selectedWorkspace.root_path)}>
+                  <button type="button" className="icon-button" title="Browse workspace files" aria-label="Browse workspace files" onClick={() => browseFiles(selectedWorkspace.root_path)}>
                     <FolderOpen size={14} />
                   </button>
                 </span>
@@ -3269,7 +3330,7 @@ export default function App() {
           {subagentRuns.length > 0 && (
             <>
               <div className="inspector-divider" />
-              <button type="button" className="subagent-summary-button" onClick={() => setSidePanelTabs((state) => openSidePanelTab(state, { id: "subagents", kind: "subagents" }))}>
+              <button type="button" className="subagent-summary-button" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}>
                 <span>
                   <strong>Subagents</strong>
                   <small>{subagentRuns.filter((run) => run.status === "running").length} active · {subagentRuns.filter((run) => run.status !== "running").length} done</small>
@@ -3369,8 +3430,8 @@ export default function App() {
         </section>
       </aside>}
 
-      {activeSidePanelTab && (
-        <aside ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
+      {(
+        <aside hidden={!sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
           <div
             className="side-panel-resize-handle"
             role="separator"
@@ -3385,13 +3446,14 @@ export default function App() {
             onKeyDown={handleSidePanelResizeKeyDown}
           />
           <div className="subagent-panel-tabbar">
+            <div className="workspace-panel-tabs">
             {sidePanelTabs.tabs.map((tab) => {
               const run = tab.kind === "subagent" ? subagentRuns.find((candidate) => candidate.id === tab.runId) : undefined;
-              const label = tab.kind === "subagents" ? "Subagents" : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? "Subagent";
+              const label = tab.kind === "subagents" ? "Subagents" : tab.kind === "files" ? "Files" : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? "Subagent";
               return (
                 <div key={tab.id} className={`subagent-panel-tab ${sidePanelTabs.activeTabId === tab.id ? "active" : ""}`}>
                   <button type="button" className="subagent-panel-tab-select" onClick={() => setSidePanelTabs((state) => openSidePanelTab(state, tab))}>
-                    {tab.kind === "file" ? <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
+                    {tab.kind === "files" ? <FolderOpen size={14} /> : tab.kind === "file" ? <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
                     <span>{label}</span>
                   </button>
                   <button type="button" className="subagent-panel-tab-close" aria-label={`Close ${label}`} onClick={() => void closePanelTab(tab.id)}>
@@ -3400,14 +3462,29 @@ export default function App() {
                 </div>
               );
             })}
+            </div>
+            <button type="button" className="icon-button" aria-label="New panel tab" onClick={() => setSidePanelTabs((state) => ({ ...state, activeTabId: null }))}><Plus size={16} /></button>
+            <div className="workspace-panel-actions">
+              {(activeSidePanelTab?.kind === "file" || activeSidePanelTab?.kind === "files") && <button type="button" className="icon-button" aria-label="Toggle file tree" aria-expanded={treeVisible} onClick={() => setTreeVisible((visible) => !visible)}><FolderOpen size={16} /></button>}
+              <button type="button" className="icon-button panel-expand-button" aria-label={sidePanelExpanded ? "Restore split view" : "Expand side panel"} onClick={() => setSidePanelExpanded((expanded) => !expanded)}>{sidePanelExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
+              <button type="button" className="icon-button" aria-label="Hide side panel" onClick={() => setSidePanelOpen(false)}><PanelRight size={16} /></button>
+            </div>
           </div>
-          {activeSidePanelTab.kind === "subagents" ? (
-            <SubagentOverview runs={subagentRuns} onSelect={(id) => setSidePanelTabs((state) => openSidePanelTab(state, subagentSidePanelTab(id)))} />
+          <div className="workspace-panel-body">
+          <div className="workspace-panel-content">
+          {fileOpening && <div className="workspace-file-notice" role="status">Opening file…</div>}
+          {fileOpenError && <div className="workspace-file-notice" role="alert">{fileOpenError}<button type="button" className="icon-button" aria-label="Dismiss file error" onClick={() => setFileOpenError("")}><X size={14} /></button></div>}
+          {!activeSidePanelTab ? <div className="workspace-panel-launcher">
+            <button type="button" onClick={() => browseFiles()}><FolderOpen size={18} /><span>Files</span><kbd>⌘P / Ctrl+P</kbd></button>
+            {subagentRuns.length > 0 && <button type="button" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}><Circle size={18} /><span>Subagents</span><small>{subagentRuns.length}</small></button>}
+            <button type="button" onClick={() => setDetailsOpen(true)}><ListFilter size={18} /><span>Session details</span></button>
+          </div> : activeSidePanelTab.kind === "files" ? <div className="workspace-file-empty"><FolderOpen size={32} /><h2>Open a file</h2><p>Select a file from the workspace tree.</p>{!treeVisible && <button type="button" onClick={() => setTreeVisible(true)}>Show files</button>}</div> : activeSidePanelTab.kind === "subagents" ? (
+            <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
             <SubagentTranscript
               run={subagentRuns.find((candidate) => candidate.id === activeSidePanelTab.runId)}
               workspaceRoot={selectedSession?.working_directory}
-              onBack={() => setSidePanelTabs((state) => openSidePanelTab(state, { id: "subagents", kind: "subagents" }))}
+              onBack={() => showPanelTab({ id: "subagents", kind: "subagents" })}
             />
           ) : openFiles[activeSidePanelTab.path] ? (
             <Suspense fallback={<div className="subagent-panel-empty">Loading editor…</div>}>
@@ -3417,7 +3494,7 @@ export default function App() {
                 mode={openFiles[activeSidePanelTab.path].mode}
                 saveStatus={openFiles[activeSidePanelTab.path].saveStatus}
                 saveError={openFiles[activeSidePanelTab.path].saveError}
-                workspaceRoot={selectedSession?.working_directory}
+                workspaceRoot={openFiles[activeSidePanelTab.path].workspaceRoot}
                 line={activeSidePanelTab.line}
                 column={activeSidePanelTab.column}
                 onDraftChange={(draft) => updateFileDraft(activeSidePanelTab.path, draft)}
@@ -3428,6 +3505,9 @@ export default function App() {
           ) : (
             <div className="subagent-panel-empty">File is unavailable.</div>
           )}
+          </div>
+          {treeVisible && (activeSidePanelTab?.kind === "files" || activeSidePanelTab?.kind === "file") && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setFileOpenError(""); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
+          </div>
         </aside>
       )}
 
@@ -3711,7 +3791,7 @@ export default function App() {
               <button type="button" className="copy-path-button" title="Copy path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(workspaceArchivePreview.root_path)}>
                 {copiedWorkspacePath === workspaceArchivePreview.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
               </button>
-              {<button type="button" onClick={() => setDirectoryPath(workspaceArchivePreview.root_path)}><FolderOpen size={14} strokeWidth={1.8} /><span>Browse files</span></button>}
+              {<button type="button" onClick={() => { browseFiles(workspaceArchivePreview.root_path); setWorkspaceArchivePreview(null); }}><FolderOpen size={14} strokeWidth={1.8} /><span>Browse files</span></button>}
             </div>
             {workspaceArchivePreview.worktree_paths.length > 0 && (
               <section className="archive-workspace-summary">
@@ -3747,7 +3827,7 @@ export default function App() {
               <button type="button" className="copy-path-button" title="Copy path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(workspaceDeletePreview.root_path)}>
                 {copiedWorkspacePath === workspaceDeletePreview.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
               </button>
-              {<button type="button" onClick={() => setDirectoryPath(workspaceDeletePreview.root_path)}><FolderOpen size={14} strokeWidth={1.8} /><span>Browse files</span></button>}
+              {<button type="button" onClick={() => { browseFiles(workspaceDeletePreview.root_path); setWorkspaceDeletePreview(null); }}><FolderOpen size={14} strokeWidth={1.8} /><span>Browse files</span></button>}
             </div>
             <section className="archive-workspace-warning delete-workspace-warning">
               <ShieldAlert size={16} />
