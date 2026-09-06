@@ -1,6 +1,6 @@
 # Source installation
 
-The UI installer builds Desktop (default) or Web plus a paired local `zotigod`. It uses the daemon repository's installer; there is no extra repository or management CLI. Desktop currently uses `ZOTIGOD_URL` for a daemon endpoint override; there is no connection-settings page yet.
+The UI installer builds Desktop (default) or Web plus a paired local `zotigod`. It uses the daemon repository's installer; there is no extra repository or management CLI. Both clients also support saved remote daemons through the top-left host menu and Host settings; see [remote hosts](../README.md#search-and-remote-hosts).
 
 Prerequisites: Git, curl, tar and a SHA-256 utility (`sha256sum` or `shasum`). On macOS, install Command Line Tools if Git is unavailable. The installer reuses sufficient local Go/Node and the exact required pnpm, or downloads verified private toolchains. Desktop builds download Electron; Web builds skip that download. Linux Desktop also needs a graphical session and Electron's system libraries. Services require systemd user services (Linux) or a macOS GUI login session. Use `--no-service` for hosts managed by another supervisor.
 
@@ -43,7 +43,7 @@ The installer registers/starts the local daemon and, for Web, the Web service. D
 - `PREFIX/config/web.env`: Web environment variables, including daemon URL and Web host/port/origin/token.
 - These are trusted shell assignment files owned by the installing user and preserved on upgrade.
 
-Web generates a login token on startup if none is configured; read `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). This owner-only file is replaced after a successful startup, and the token changes on restart. The token itself is not printed or logged. See [README remote access](../README.md#remote-access) for HTTPS, authentication and network requirements. Web runs on the same host as the daemon. Desktop can connect remotely, but local file operations are not a remote filesystem implementation.
+Web generates a login token on startup if none is configured; read `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). This owner-only file is replaced after a successful startup, and the token changes on restart. The token itself is not printed or logged. See [README remote access](../README.md#remote-access) for HTTPS, authentication and network requirements. The default Local connection uses the colocated daemon. Saved remote hosts run workspace and text-file operations on their own daemon; the Web backend must be able to reach those addresses.
 
 Linux uses `zotigo-daemon.service` and `zotigo-web.service`:
 

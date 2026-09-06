@@ -1,3 +1,4 @@
+import { initializeHosts } from "../backend/hosts";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -125,8 +126,18 @@ test("real Web HTTP boundary enforces authentication, origin, method and operati
     assert.match(cookie, /HttpOnly/);
     const headers = { Cookie: cookie };
     assert.equal((await get("/api/session", headers)).status, 200);
+    initializeHosts(directory);
     const selection = { projectId: null, workspaceId: null, sessionId: null };
-    assert.deepEqual(await (await post("/api/rpc", { channel: "daemon:get-config", args: [] }, headers)).json(), { ok: true, value: { baseUrl: origin }, selection });
+    assert.deepEqual(await (await post("/api/rpc", { channel: "daemon:get-config", args: [] }, headers)).json(), { ok: true, value: { baseUrl: `${origin}/?zotigoHost=local` }, selection });
+    const saved = await (await post("/api/rpc", { channel: "hosts:save", args: [{ name: "Remote", baseUrl: "http://127.0.0.1:1234", token: "private-token" }] }, headers)).json();
+    const hostId = saved.value.id;
+    const otherTab = { ...headers, "X-Zotigo-Host": hostId };
+    await post("/api/rpc", { channel: "hosts:delete", args: [hostId] }, headers);
+    const hosts = await (await post("/api/rpc", { channel: "hosts:list", args: [] }, otherTab)).json();
+    assert.equal(hosts.ok, true, "removed-host tab can still manage connections");
+    assert.ok(!JSON.stringify(hosts).includes("private-token"));
+    const activated = await (await post("/api/rpc", { channel: "hosts:activate", args: ["local"] }, otherTab)).json();
+    assert.equal(activated.ok, true, "removed-host tab can switch back to local");
     assert.deepEqual(await (await post("/api/rpc", { channel: "__proto__", args: [] }, headers)).json(), { ok: false, error: "Unknown application operation", selection });
     assert.equal((await post("/api/rpc", { channel: "desktop:reveal-path", args: ["/"] }, headers)).status, 400);
     assert.equal((await get("/api/events?session=test&after=-1", headers)).status, 400);

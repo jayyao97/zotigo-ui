@@ -1,6 +1,6 @@
 import { createClientApi } from "../../shared/clientApi";
 import { parseMarkdownLink } from "../../shared/markdownLinks";
-import type { SessionEventEnvelope, SourceCandidate } from "../../shared/clientTypes";
+import type { SessionEventEnvelope } from "../../shared/clientTypes";
 import type { CatalogSelection } from "../../shared/catalogSelection";
 import { createBrowserSelection } from "./selection";
 
@@ -8,9 +8,9 @@ export class WebRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
-export async function webRequest<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, body === undefined ? {} : {
-    method: "POST", headers: { "Content-Type": "application/json", "X-Zotigo-Request": "1" },
+export async function webRequest<T>(path: string, body?: unknown, hostId?: string): Promise<T> {
+  const response = await fetch(path, body === undefined ? { headers: hostId ? { "X-Zotigo-Host": hostId } : {} } : {
+    method: "POST", headers: { ...(hostId ? { "X-Zotigo-Host": hostId } : {}), "Content-Type": "application/json", "X-Zotigo-Request": "1" },
     body: JSON.stringify(body),
   });
   const result = await response.json();
@@ -21,11 +21,13 @@ export async function webRequest<T>(path: string, body?: unknown): Promise<T> {
   return result as T;
 }
 
-export function createWebClient(chooseSources: () => Promise<SourceCandidate[]>) {
-  const selection = createBrowserSelection({
-    getItem: (key) => sessionStorage.getItem(key),
-    setItem: (key, value) => sessionStorage.setItem(key, value),
+export function createWebClient() {
+  let activeHost = "local";
+  const makeSelection = (host: string) => createBrowserSelection({
+    getItem: (key) => sessionStorage.getItem(host === "local" ? key : `${host}:${key}`),
+    setItem: (key, value) => sessionStorage.setItem(host === "local" ? key : `${host}:${key}`, value),
   });
+  let selection = makeSelection(activeHost);
   let source: EventSource | null = null;
   const listeners = new Set<(event: SessionEventEnvelope) => void>();
   const close = () => { source?.close(); source = null; };
@@ -33,7 +35,7 @@ export function createWebClient(chooseSources: () => Promise<SourceCandidate[]>)
     invoke: async <T>(channel: string, ...args: unknown[]): Promise<T> => {
       const request = selection.begin(channel);
       try {
-        const result = await webRequest<({ ok: true; value: T } | { ok: false; error: string }) & { selection: CatalogSelection }>("/api/rpc", { channel, args, selection: request.selection });
+        const result = await webRequest<({ ok: true; value: T } | { ok: false; error: string }) & { selection: CatalogSelection }>("/api/rpc", { channel, args, selection: request.selection }, activeHost);
         if (!result.ok) throw new Error(result.error);
         request.accept(result.selection);
         return request.project(result.value);
@@ -44,9 +46,11 @@ export function createWebClient(chooseSources: () => Promise<SourceCandidate[]>)
     },
     onSessionEvent: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
   });
+  const activate = api.setActiveHost;
+  api.setActiveHost = async (id) => { await activate(id); close(); activeHost = id; selection = makeSelection(id); };
   api.subscribeSessionEvents = async (id, after) => {
     close();
-    const query = new URLSearchParams({ session: id });
+    const query = new URLSearchParams({ session: id, zotigoHost: activeHost });
     if (after !== undefined) query.set("after", String(after));
     source = new EventSource(`/api/events?${query}`);
     source.onmessage = (message) => {
@@ -61,7 +65,6 @@ export function createWebClient(chooseSources: () => Promise<SourceCandidate[]>)
     };
   };
   api.unsubscribeSessionEvents = async () => { close(); };
-  api.chooseSourceFolders = chooseSources;
   api.revealPath = async () => { throw new Error("Opening a server folder in Finder requires Desktop."); };
   const openLink = api.openMarkdownLink;
   api.openMarkdownLink = async (input) => {

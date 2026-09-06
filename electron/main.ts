@@ -1,8 +1,8 @@
+import { withHost } from "../backend/hosts";
 import { configureDaemonImageAuth } from "./daemonImageAuth";
-import { app, session, BrowserWindow, dialog, ipcMain, screen, shell, type Rectangle } from "electron";
+import { app, session, BrowserWindow, ipcMain, screen, shell, type Rectangle } from "electron";
 import path from "node:path";
 import { createApplicationService } from "../backend/applicationService";
-import { inspectCatalogSource } from "../backend/zotigod";
 import { closePreferencesStore, getWindowBoundsPreference, initializePreferencesStore, setWindowBoundsPreference } from "../backend/preferencesStore";
 import { startManagedZotigodIfNeeded, stopManagedZotigod } from "./daemonManager";
 import { resolveDevServerUrl } from "./devServerUrl";
@@ -18,6 +18,7 @@ const minimumWindowHeight = 680;
 
 let mainWindow: BrowserWindow | null = null;
 let applicationService: ReturnType<typeof createApplicationService>;
+const hostApplications = new Map<string, ReturnType<typeof createApplicationService>>();
 
 app.setName(appName);
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -52,6 +53,7 @@ async function createMainWindow(): Promise<void> {
 
   mainWindow.on("close", () => {
     applicationService?.dispose();
+  for (const application of hostApplications.values()) application.dispose();
     if (mainWindow && !mainWindow.isDestroyed()) {
       setWindowBoundsPreference(mainWindow.getNormalBounds());
     }
@@ -141,6 +143,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   applicationService?.dispose();
+  for (const application of hostApplications.values()) application.dispose();
   stopManagedZotigod();
 });
 
@@ -149,8 +152,7 @@ app.on("will-quit", () => {
 });
 
 function registerIpcHandlers(): void {
-  applicationService = createApplicationService({
-    chooseSourceFolders,
+  const createForHost = (hostId: string) => createApplicationService({
     openExternal: (url) => shell.openExternal(url),
     openPath: async (path) => {
       const error = await shell.openPath(path);
@@ -158,31 +160,28 @@ function registerIpcHandlers(): void {
     },
     downloadImage: (url) => { mainWindow?.webContents.downloadURL(url); },
   }, (envelope) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sessions:event", envelope);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sessions:event", { ...envelope, hostId });
   });
+  applicationService = createForHost("local");
+  hostApplications.set("local", applicationService);
   for (const channel of applicationService.channels) {
     ipcMain.handle(channel, (event, ...args: unknown[]) => {
       if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
         return { ok: false, error: "Untrusted application caller" };
       }
-      return applicationService.invoke(channel, args);
+      const request = args[0] as { hostId?: unknown; args?: unknown };
+      if (!request || typeof request.hostId !== "string" || !Array.isArray(request.args)) return { ok: false, error: "Invalid host request" };
+      const hostId = request.hostId; const values = request.args;
+      try {
+        if (channel.startsWith("hosts:") && channel !== "hosts:inspect") return applicationService.invoke(channel, values);
+        return withHost(hostId, () => {
+          let application = hostApplications.get(hostId);
+          if (!application) { application = createForHost(hostId); hostApplications.set(hostId, application); }
+          return application.invoke(channel, values);
+        });
+      } catch { return { ok: false, error: "Host is no longer available." }; }
     });
   }
-}
-
-async function chooseSourceFolders() {
-  const options: Electron.OpenDialogOptions = { properties: ["openDirectory", "multiSelections"] };
-  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
-  if (result.canceled) return [];
-  return Promise.all(result.filePaths.map(async (selectedPath) => {
-    const inspection = await inspectCatalogSource(selectedPath);
-    return {
-      selectedPath,
-      canonicalPath: inspection.canonical_path,
-      name: path.basename(inspection.canonical_path) || inspection.canonical_path,
-      kind: inspection.kind,
-    };
-  }));
 }
 
 function isSafeExternalUrl(url: string): boolean {

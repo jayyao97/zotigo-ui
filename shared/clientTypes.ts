@@ -207,6 +207,7 @@ export type OpenMarkdownLinkResult =
   | { kind: "anchor"; anchor: string }
   | { kind: "external" }
   | { kind: "system" }
+  | { kind: "directory"; path: string }
   | { kind: "text"; file: TextFileSnapshot; line?: number; column?: number };
 
 export interface SaveTextFileInput {
@@ -216,7 +217,22 @@ export interface SaveTextFileInput {
   sessionId?: string;
 }
 
+export interface DirectoryListing {
+  path: string;
+  parentPath: string | null;
+  entries: Array<{ name: string; path: string; kind: "directory" | "file" | "unavailable" }>;
+  truncated: boolean;
+}
+
 export interface ClientApi {
+  listDirectory(input: { path: string; purpose: "files" | "sources"; sessionId?: string }): Promise<DirectoryListing>;
+  openTextFile(path: string, sessionId?: string): Promise<TextFileSnapshot>;
+  listHosts(): Promise<import("./hosts").HostProfile[]>;
+  saveHost(input: import("./hosts").HostInput): Promise<import("./hosts").HostProfile>;
+  deleteHost(id: string): Promise<void>;
+  testHost(id: string): Promise<void>;
+  setActiveHost(id: string): Promise<void>;
+  inspectHostSources(paths: string[]): Promise<SourceCandidate[]>;
   getDaemonConfig(): Promise<DaemonConfig>;
   getProfiles(workingDirectory?: string): Promise<ProfilesResponse>;
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;

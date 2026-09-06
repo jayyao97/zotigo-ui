@@ -1,3 +1,4 @@
+import { initializeHosts, currentHost } from "./hosts";
 import fs from "node:fs";
 import path from "node:path";
 import type { CatalogSelection } from "../shared/catalogSelection";
@@ -12,6 +13,7 @@ export interface WindowBoundsPreference {
 interface Preferences {
   windowBounds?: WindowBoundsPreference;
   selection: CatalogSelection;
+  hostSelections?: Record<string, CatalogSelection>;
   orders: Record<string, string[]>;
 }
 
@@ -21,6 +23,7 @@ let preferences: Preferences = emptyPreferences();
 
 export function initializePreferencesStore(userDataPath: string): void {
   fs.mkdirSync(userDataPath, { recursive: true });
+  initializeHosts(userDataPath);
   preferencesPath = path.join(userDataPath, "desktop-preferences.json");
   preferences = loadPreferences(preferencesPath);
 }
@@ -40,10 +43,12 @@ export function setWindowBoundsPreference(bounds: WindowBoundsPreference): void 
 }
 
 export function getCatalogSelection(): CatalogSelection {
-  return { ...preferences.selection };
+  return { ...(currentHost()?.id && currentHost()?.id !== "local" ? preferences.hostSelections?.[currentHost()!.id] ?? emptySelection : preferences.selection) };
 }
 
 export function setCatalogSelection(selection: CatalogSelection): void {
+  const hostId = currentHost()?.id;
+  if (hostId && hostId !== "local") { preferences.hostSelections ??= {}; preferences.hostSelections[hostId] = { ...selection }; savePreferences(); return; }
   if (
     preferences.selection.projectId === selection.projectId
     && preferences.selection.workspaceId === selection.workspaceId
@@ -54,10 +59,11 @@ export function setCatalogSelection(selection: CatalogSelection): void {
 }
 
 export function getCatalogOrder(scope: string): string[] {
-  return [...(preferences.orders[scope] ?? [])];
+  return [...(preferences.orders[currentHost()?.id && currentHost()?.id !== "local" ? `${currentHost()!.id}:${scope}` : scope] ?? [])];
 }
 
 export function setCatalogOrder(scope: string, ids: string[]): void {
+  scope = currentHost()?.id && currentHost()?.id !== "local" ? `${currentHost()!.id}:${scope}` : scope;
   if (new Set(ids).size !== ids.length) throw new Error("ordered ids must be unique");
   const current = preferences.orders[scope] ?? [];
   if (current.length === ids.length && current.every((id, index) => id === ids[index])) return;
@@ -77,6 +83,7 @@ function loadPreferences(filePath: string): Preferences {
     return {
       windowBounds: parseWindowBounds(value.windowBounds),
       selection: parseSelection(value.selection),
+      hostSelections: isRecord(value.hostSelections) ? Object.fromEntries(Object.entries(value.hostSelections).map(([id, selection]) => [id, parseSelection(selection)])) : {},
       orders: parseOrders(value.orders),
     };
   } catch (error) {

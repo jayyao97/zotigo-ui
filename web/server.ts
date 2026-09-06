@@ -1,3 +1,4 @@
+import { withHost, currentHost } from "../backend/hosts";
 import { fetchDaemon } from "../backend/daemonHttp";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -21,7 +22,7 @@ export function createWebServer(options: { origin: string; token: string; assets
   const security = createWebSecurity(options.token, options.origin);
   const unavailable = async () => { throw new Error("This operation requires the Desktop application."); };
   const platform = {
-    chooseSourceFolders: unavailable, openPath: unavailable,
+    openPath: unavailable,
     openExternal: unavailable, downloadImage: unavailable,
   };
   const streams = new Map<() => void, IncomingMessage>();
@@ -29,7 +30,12 @@ export function createWebServer(options: { origin: string; token: string; assets
   let loginWindowStart = Date.now();
 
   const server = createServer((request, response) => {
-    void handle(request, response).catch((error: unknown) => {
+    void Promise.resolve().then(() => {
+      const host = request.headers["x-zotigo-host"] ?? new URL(request.url ?? "/", options.origin).searchParams.get("zotigoHost") ?? "local";
+      if (typeof host !== "string") throw new Error("Invalid host.");
+      if (new URL(request.url ?? "/", options.origin).pathname === "/api/rpc") return handle(request, response);
+      return withHost(host, () => handle(request, response));
+    }).catch((error: unknown) => {
       console.warn("web_request_failed method=%s error_type=%s", request.method, error instanceof Error ? error.name : typeof error);
       if (response.headersSent) { response.destroy(); return; }
       const status = error instanceof RequestError ? error.status : 500;
@@ -87,9 +93,13 @@ export function createWebServer(options: { origin: string; token: string; assets
       if (nativeOnly.has(body.channel)) throw new RequestError(400, "Use the Web platform operation.");
       const selection = createSelectionStore(body.selection);
       const application = createApplicationService(platform, () => {}, selection);
-      const result = body.channel === "daemon:get-config"
-        ? { ok: true, value: { baseUrl: options.origin } }
-        : await application.invoke(body.channel, body.args);
+      const channel = body.channel; const args = body.args;
+      const host = request.headers["x-zotigo-host"] ?? "local";
+      if (typeof host !== "string") throw new RequestError(400, "Invalid host.");
+      const invoke = () => channel === "daemon:get-config"
+        ? { ok: true, value: { baseUrl: `${options.origin}/?zotigoHost=${encodeURIComponent(currentHost()?.id ?? "local")}` } }
+        : application.invoke(channel, args);
+      const result = await (channel.startsWith("hosts:") && channel !== "hosts:inspect" ? invoke() : withHost(host, invoke));
       application.dispose();
       json(response, 200, { ...result, selection: selection.getCatalogSelection() });
       return;

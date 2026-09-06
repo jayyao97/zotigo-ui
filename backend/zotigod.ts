@@ -1,3 +1,4 @@
+import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
 import type { DaemonConfig } from "../shared/clientTypes";
@@ -55,11 +56,12 @@ export class UnsupportedSessionEventsError extends Error {
 }
 
 export function getDaemonConfig(): DaemonConfig {
-  return { baseUrl: daemonBaseUrl };
+  return { baseUrl: currentHost()?.baseUrl ?? daemonBaseUrl };
 }
 
 export function setDaemonBaseUrl(baseUrl: string): DaemonConfig {
   daemonBaseUrl = normalizeDaemonBaseUrl(baseUrl);
+  configureLocalHostUrl(daemonBaseUrl);
   return getDaemonConfig();
 }
 
@@ -151,7 +153,7 @@ export function getCatalogProject(id: string): Promise<CatalogProjectDetail> {
 }
 
 export function inspectCatalogSource(sourcePath: string): Promise<CatalogSourceInspection> {
-  return requestJSON("/sources/inspect", jsonRequest("POST", { path: sourcePath }))
+  return requestJSON("/sources/inspect", { ...jsonRequest("POST", { path: sourcePath }), signal: AbortSignal.timeout(10000) })
     .then((value) => parseCatalogSourceInspection(value, "source inspection response"));
 }
 
@@ -382,7 +384,7 @@ export async function streamSessionEvents(
   }
   const search = params.toString();
   const path = `/sessions/${encodeURIComponent(id)}/events${search ? `?${search}` : ""}`;
-  const response = await fetchDaemon(`${daemonBaseUrl}${path}`, {
+  const response = await fetchDaemon(`${getDaemonConfig().baseUrl}${path}`, {
     headers: { Accept: "text/event-stream" },
     signal,
   });
@@ -541,7 +543,7 @@ function normalizeDaemonBaseUrl(value: string): string {
 }
 
 async function requestJSON(path: string, init: RequestInit = {}): Promise<unknown> {
-  const response = await fetchDaemon(`${daemonBaseUrl}${path}`, {
+  const response = await fetchDaemon(`${getDaemonConfig().baseUrl}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
@@ -1331,4 +1333,20 @@ function parseOptionalApprovalPolicy(value: unknown, context: string): ApprovalP
 
 function isDisplayItemType(value: string): value is DisplayItemType {
   return displayItemTypes.has(value as DisplayItemType);
+}
+
+export function openDaemonFile(input: unknown): Promise<import("./localFileService").LocalPathOpenResult> {
+  return requestJSON("/files/open", { signal: AbortSignal.timeout(10000), method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }) as Promise<import("./localFileService").LocalPathOpenResult>;
+}
+export function saveDaemonFile(input: unknown): Promise<import("../shared/clientTypes").TextFileSnapshot> {
+  return requestJSON("/files/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }) as Promise<import("../shared/clientTypes").TextFileSnapshot>;
+}
+
+export async function listDaemonDirectory(input: { path: string; purpose: "files" | "sources"; sessionId?: string }): Promise<import("../shared/clientTypes").DirectoryListing> {
+  try {
+    return await requestJSON(input.purpose === "sources" ? "/sources/directories" : "/files/list", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(10000), body: JSON.stringify({ path: input.path, sessionId: input.sessionId }) }) as import("../shared/clientTypes").DirectoryListing;
+  } catch (error) {
+    if (error instanceof ZotigodRequestError && error.status === 404) throw new Error("Update this daemon to support directory browsing.");
+    throw error;
+  }
 }

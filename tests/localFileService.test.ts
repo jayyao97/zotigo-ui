@@ -19,6 +19,7 @@ test("resolves relative file links against directories and files", () => {
 test("reads and saves authorized text without overwriting external changes", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-local-file-"));
   try {
+    assert.deepEqual(await openAuthorizedLocalPath(root, [root]), { kind: "directory", path: fs.realpathSync(root) });
     const filePath = path.join(root, "plan.md");
     fs.writeFileSync(filePath, "first\n");
     const opened = await openAuthorizedLocalPath(filePath, [root]);

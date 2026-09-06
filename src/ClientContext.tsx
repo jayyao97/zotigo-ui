@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type { ClientApi } from "../shared/clientTypes";
 
-export const ClientContext = createContext<{ api: ClientApi; kind: "desktop" | "web"; signOut?: () => Promise<void> } | null>(null);
+export const ClientContext = createContext<{ api: ClientApi; kind: "desktop" | "web"; remote?: boolean; signOut?: () => Promise<void> } | null>(null);
 
 export function useClient() {
   const client = useContext(ClientContext);

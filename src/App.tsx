@@ -1,3 +1,6 @@
+import { HostMenu } from "./HostShell";
+import { DirectoryBrowser } from "./DirectoryBrowser";
+import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
 import {
   type ClipboardEvent,
@@ -234,6 +237,15 @@ function readFileAsBase64(file: File): Promise<string> {
 
 export default function App() {
   const { api: client, kind, signOut } = useClient();
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const openSearch = (event: globalThis.KeyboardEvent) => {
+      if (document.querySelector("dialog[open]:not(.search-palette)")) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !event.altKey && !event.isComposing) { event.preventDefault(); setSearchOpen((open) => !open); }
+    };
+    window.addEventListener("keydown", openSearch);
+    return () => window.removeEventListener("keydown", openSearch);
+  }, []);
   const [webNavigationOpen, setWebNavigationOpen] = useState(false);
   const webNavigationButton = useRef<HTMLButtonElement>(null);
   const webNavigationCloseButton = useRef<HTMLButtonElement>(null);
@@ -243,7 +255,6 @@ export default function App() {
     else if (previousWebNavigationOpen.current) webNavigationButton.current?.focus();
     previousWebNavigationOpen.current = webNavigationOpen;
   }, [webNavigationOpen]);
-  const pathActionLabel = kind === "web" ? "Copy server path" : "Open in Finder";
   const [daemonUrl, setDaemonUrl] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [sessions, setSessions] = useState<ZotigoSession[]>([]);
@@ -330,8 +341,17 @@ export default function App() {
   const [sidePanelTabs, setSidePanelTabs] = useState<SidePanelTabsState>(emptySidePanelTabs);
   const [sidePanelWidth, setSidePanelWidth] = useState(defaultSidePanelWidth);
   const [isSidePanelResizing, setIsSidePanelResizing] = useState(false);
+  const [directoryPath, setDirectoryPath] = useState<string | null>(null);
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>({});
   const openFilesRef = useRef(openFiles);
+  useEffect(() => {
+    const beforeSwitch = (event: Event) => {
+      if (Object.values(openFiles).some((file) => file.saveStatus === "saving")) { window.alert("Wait for the current file save before switching hosts."); event.preventDefault(); return; }
+      if ((draftPrompt.trim() || conversationPrompt.trim() || composerAttachments.length || Object.values(openFiles).some((file) => file.saveStatus !== "clean")) && !window.confirm("Switch hosts and discard unsent messages and unsaved file changes?")) event.preventDefault();
+    };
+    window.addEventListener("zotigo:before-host-switch", beforeSwitch);
+    return () => window.removeEventListener("zotigo:before-host-switch", beforeSwitch);
+  }, [openFiles, draftPrompt, conversationPrompt, composerAttachments]);
   const fileSaveTimersRef = useRef<Map<string, number>>(new Map());
   const filesSavingRef = useRef<Set<string>>(new Set());
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1522,15 +1542,6 @@ export default function App() {
     }
   }
 
-  async function revealOrCopyPath(pathValue: string) {
-    if (kind === "web") {
-      await navigator.clipboard.writeText(pathValue);
-      setMessage("Server path copied.");
-    } else {
-      await client.revealPath(pathValue);
-    }
-  }
-
   async function addSourcesToProject(projectId: string) {
     try {
       const candidates = await client.chooseSourceFolders();
@@ -2429,6 +2440,26 @@ export default function App() {
     setSidePanelTabs((state) => closeSidePanelTab(state, tabId));
   }
 
+  function showTextFile(file: TextFileSnapshot, line?: number, column?: number) {
+      if (!openFilesRef.current[file.path]) {
+        const next = {
+          ...openFilesRef.current,
+          [file.path]: {
+            file: file,
+            draft: file.content,
+            mode: isMarkdownFile(file.path) ? "preview" as const : "source" as const,
+            saveStatus: "clean" as const,
+          },
+        };
+        openFilesRef.current = next;
+        setOpenFiles(next);
+      }
+      setSidePanelTabs((state) => openSidePanelTab(
+        state,
+        fileSidePanelTab(file.path, line, column),
+      ));
+  }
+
   async function handleMarkdownLinkClick(event: ReactMouseEvent<HTMLElement>) {
     if (!(event.target instanceof Element)) return;
     const anchor = event.target.closest<HTMLAnchorElement>(".markdown-copy a");
@@ -2451,25 +2482,10 @@ export default function App() {
         document.getElementById(result.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
-      if (result.kind !== "text") return;
       if (selectedSessionIdRef.current !== expectedSessionId) return;
-      if (!openFilesRef.current[result.file.path]) {
-        const next = {
-          ...openFilesRef.current,
-          [result.file.path]: {
-            file: result.file,
-            draft: result.file.content,
-            mode: isMarkdownFile(result.file.path) ? "preview" as const : "source" as const,
-            saveStatus: "clean" as const,
-          },
-        };
-        openFilesRef.current = next;
-        setOpenFiles(next);
-      }
-      setSidePanelTabs((state) => openSidePanelTab(
-        state,
-        fileSidePanelTab(result.file.path, result.line, result.column),
-      ));
+      if (result.kind === "directory") { setDirectoryPath(result.path); return; }
+      if (result.kind !== "text") return;
+      showTextFile(result.file, result.line, result.column);
     } catch (error) {
       setMessage(errorMessage(error));
     }
@@ -2532,6 +2548,12 @@ export default function App() {
         }
       }}
     >
+      {directoryPath !== null && <DirectoryBrowser api={client} purpose="files" title="Workspace files" initialPath={directoryPath} sessionId={selectedSession?.id} onClose={() => setDirectoryPath(null)} onSelect={async ([path]) => {
+        const file = await client.openTextFile(path, selectedSession?.id);
+        showTextFile(file);
+        setWebNavigationOpen(false);
+      }} />}
+      {searchOpen && <SearchPalette state={desktopState} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
         {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(false)} aria-label="Close navigation"><X size={18} />Close navigation</button>}
         <div className="sidebar-chrome" aria-hidden="true">
@@ -2541,12 +2563,9 @@ export default function App() {
         </div>
 
         <div className="sidebar-brand">
-          <button type="button" className="brand-button" disabled title="Workspace switcher is not available yet">
-            Zotigo
-            <ChevronDown size={13} strokeWidth={1.8} />
-          </button>
+          <HostMenu />
           <div className="brand-actions">
-            <button type="button" aria-label="Search" disabled title="Search is not available yet"><Search size={15} strokeWidth={1.8} /></button>
+            <button type="button" aria-label="Search" onClick={() => setSearchOpen(true)} title="Search (⌘K / Ctrl+K)"><Search size={15} strokeWidth={1.8} /></button>
             <button type="button" aria-label="Notifications" disabled title="Notifications are not available yet"><Bell size={15} strokeWidth={1.8} /></button>
           </div>
         </div>
@@ -2556,6 +2575,7 @@ export default function App() {
             <SquarePen size={15} strokeWidth={1.8} />
             New session
           </button>
+          <button type="button" onClick={() => setDirectoryPath(selectedWorkspace?.root_path || selectedSession?.working_directory || "")} disabled={isBusy}><FolderOpen size={15} />Files</button>
           <button type="button" onClick={() => void refreshSessions({ syncCodex: true })} disabled={isBusy}>
             <RefreshCw size={15} strokeWidth={1.8} />
             Sync
@@ -2753,16 +2773,16 @@ export default function App() {
                                         className={`workspace-action-menu ${sidebarActionMenuOpensUp ? "opens-up" : ""}`}
                                         role="menu"
                                       >
-                                        {kind === "desktop" && <button
+                                        {<button
                                           type="button"
                                           role="menuitem"
                                           onClick={() => {
                                             setWorkspaceMenuId(null);
-                                            void client.revealPath(workspace.root_path).catch((error) => setMessage(errorMessage(error)));
+                                            setDirectoryPath(workspace.root_path);
                                           }}
                                         >
                                           <FolderOpen size={13} strokeWidth={1.8} />
-                                          <span>Open in Finder</span>
+                                          <span>Browse files</span>
                                         </button>}
                                         <button
                                           type="button"
@@ -2967,7 +2987,7 @@ export default function App() {
                 onRemoveSource={(kind, id, name) => { setMessage(null); setRemoveSourceTarget({ kind, id, name }); }}
                 onCreateWorkspace={() => openCreateWorkspaceDialog(selectedProject)}
                 onManageWorkspaceSources={(workspace) => void openWorkspaceSources(workspace)}
-                onOpenPath={kind === "desktop" ? (targetPath) => void client.revealPath(targetPath).catch((error) => setMessage(errorMessage(error))) : undefined}
+                onOpenPath={setDirectoryPath}
               />
             ) : (
               <NewSessionPrompt
@@ -3234,7 +3254,7 @@ export default function App() {
                   <button type="button" className="icon-button" title="Copy Workspace path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(selectedWorkspace.root_path)}>
                     {copiedWorkspacePath === selectedWorkspace.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
                   </button>
-                  <button type="button" className="icon-button" title={pathActionLabel} aria-label={kind === "web" ? "Copy working directory path" : "Open working directory"} onClick={() => void revealOrCopyPath(selectedWorkspace.root_path).catch((error) => setMessage(errorMessage(error)))}>
+                  <button type="button" className="icon-button" title="Browse workspace files" aria-label="Browse workspace files" onClick={() => setDirectoryPath(selectedWorkspace.root_path)}>
                     <FolderOpen size={14} />
                   </button>
                 </span>
@@ -3349,7 +3369,7 @@ export default function App() {
         </section>
       </aside>}
 
-      {selectedConversation && activeSidePanelTab && (
+      {activeSidePanelTab && (
         <aside ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
           <div
             className="side-panel-resize-handle"
@@ -3691,7 +3711,7 @@ export default function App() {
               <button type="button" className="copy-path-button" title="Copy path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(workspaceArchivePreview.root_path)}>
                 {copiedWorkspacePath === workspaceArchivePreview.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
               </button>
-              {kind === "desktop" && <button type="button" onClick={() => void client.revealPath(workspaceArchivePreview.root_path).catch((error) => setWorkspaceLifecycleError(errorMessage(error)))}><FolderOpen size={14} strokeWidth={1.8} /><span>Open in Finder</span></button>}
+              {<button type="button" onClick={() => setDirectoryPath(workspaceArchivePreview.root_path)}><FolderOpen size={14} strokeWidth={1.8} /><span>Browse files</span></button>}
             </div>
             {workspaceArchivePreview.worktree_paths.length > 0 && (
               <section className="archive-workspace-summary">
@@ -3727,7 +3747,7 @@ export default function App() {
               <button type="button" className="copy-path-button" title="Copy path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(workspaceDeletePreview.root_path)}>
                 {copiedWorkspacePath === workspaceDeletePreview.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
               </button>
-              {kind === "desktop" && <button type="button" onClick={() => void client.revealPath(workspaceDeletePreview.root_path).catch((error) => setWorkspaceLifecycleError(errorMessage(error)))}><FolderOpen size={14} strokeWidth={1.8} /><span>Open in Finder</span></button>}
+              {<button type="button" onClick={() => setDirectoryPath(workspaceDeletePreview.root_path)}><FolderOpen size={14} strokeWidth={1.8} /><span>Browse files</span></button>}
             </div>
             <section className="archive-workspace-warning delete-workspace-warning">
               <ShieldAlert size={16} />
@@ -4044,11 +4064,11 @@ function ProjectOverview({
     <section className="project-overview-card">
       <div className="project-overview-heading"><h3>Sources</h3><button type="button" onClick={onAddSources}><Plus size={13} /> Add source</button></div>
       {repositories.map((source) => <div className="project-source-row" key={source.id}>
-        <GitBranch size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title={onOpenPath ? "Open in Finder" : "Server folder"} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
+        <GitBranch size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title="Browse files" onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
         <button type="button" onClick={() => onRemoveSource("git", source.id, source.name)} aria-label={`Remove ${source.name} from Project`}><X size={13} /></button>
       </div>)}
       {folders.map((source) => <div className="project-source-row" key={source.id}>
-          <Folder size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title={onOpenPath ? "Open in Finder" : "Server folder"} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
+          <Folder size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title="Browse files" onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
           <div className="source-row-actions"><em>{folderModeLabel(source.default_mode)}</em></div><button type="button" onClick={() => onRemoveSource("folder", source.id, source.name)} aria-label={`Remove ${source.name} from Project`}><X size={13} /></button>
         </div>)}
       {repositories.length === 0 && folders.length === 0 && <p className="project-overview-empty">No Sources. Empty Workspaces are supported.</p>}
