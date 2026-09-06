@@ -133,3 +133,5 @@ See [contributing](CONTRIBUTING.md) for change boundaries.
 ## License
 
 Zotigo Desktop and Web are licensed under [Apache-2.0](LICENSE). Third-party dependencies retain their own licenses; see [production dependency notices](THIRD_PARTY_NOTICES.md). The maintainer confirms the UI styles were independently authored with other applications used only as visual references; no proprietary font assets are distributed here. Packaged Desktop distributions must additionally retain the license files shipped with their exact Electron/Chromium runtime.
+
+Imported Codex screenshot messages display image thumbnails above the original request. The generated attachment envelope is hidden only when its file paths match the recorded images. Local attachments are fetched through the selected daemon's authenticated image API; they are not read from the browser or Desktop machine. The paired daemon revision supports existing imports. If the original temporary file has been deleted, the thumbnail shows an unavailable/retry state.

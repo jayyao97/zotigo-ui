@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Minus, Plus, X } from "lucide-react";
 import { clampImageOffset, fitImageScale, type ImageSize } from "./imageViewport";
@@ -114,10 +114,12 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
 
 export function PreviewImage({ src, alt, width, height }: { src: string; alt: string; width?: number; height?: number }) {
   const [open, setOpen] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
   return (
     <>
-      <button type="button" className="image-preview-trigger" aria-label={`Preview ${alt}`} onClick={() => setOpen(true)}>
-        <img src={src} alt={alt} width={width} height={height} loading="lazy" decoding="async" />
+      <button type="button" className="image-preview-trigger" aria-label={failed ? `Retry ${alt}` : `Preview ${alt}`} onClick={() => failed ? setFailed(false) : setOpen(true)}>
+        {failed ? <span className="image-preview-unavailable">Image unavailable<br />Retry</span> : <img src={src} alt={alt} width={width} height={height} loading="lazy" decoding="async" onError={() => setFailed(true)} />}
       </button>
       {open && <ImagePreview key={src} src={src} alt={alt} onClose={() => setOpen(false)} />}
     </>
