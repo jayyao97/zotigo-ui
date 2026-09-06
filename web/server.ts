@@ -1,3 +1,4 @@
+import { fetchDaemon } from "../backend/daemonHttp";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
@@ -124,7 +125,7 @@ export function createWebServer(options: { origin: string; token: string; assets
         const source = imageDownloadUrl(`${getDaemonConfig().baseUrl}${url.pathname}`, getDaemonConfig().baseUrl);
         const controller = new AbortController();
         response.on("close", () => controller.abort());
-        const upstream = await fetch(source, { redirect: "error", signal: controller.signal });
+        const upstream = await fetchDaemon(source, { redirect: "error", signal: controller.signal });
         if (!upstream.ok) throw new RequestError(upstream.status, "Image unavailable.");
         const mediaType = upstream.headers.get("content-type")?.split(";")[0];
         if (!mediaType || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(mediaType)) throw new RequestError(415, "Unsupported image type.");

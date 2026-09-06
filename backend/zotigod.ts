@@ -1,3 +1,4 @@
+import { fetchDaemon } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
 import type { DaemonConfig } from "../shared/clientTypes";
 
@@ -381,7 +382,7 @@ export async function streamSessionEvents(
   }
   const search = params.toString();
   const path = `/sessions/${encodeURIComponent(id)}/events${search ? `?${search}` : ""}`;
-  const response = await fetch(`${daemonBaseUrl}${path}`, {
+  const response = await fetchDaemon(`${daemonBaseUrl}${path}`, {
     headers: { Accept: "text/event-stream" },
     signal,
   });
@@ -540,7 +541,7 @@ function normalizeDaemonBaseUrl(value: string): string {
 }
 
 async function requestJSON(path: string, init: RequestInit = {}): Promise<unknown> {
-  const response = await fetch(`${daemonBaseUrl}${path}`, {
+  const response = await fetchDaemon(`${daemonBaseUrl}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",

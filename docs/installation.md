@@ -77,3 +77,34 @@ Configuration and projects/sessions remain outside program version directories. 
 `pnpm package:desktop` builds a native-architecture application in `build/desktop/` using Electron Packager. Only build outputs, a minimal package manifest and license notices are staged. Electron's own license files remain in its runtime distribution. `pnpm build:web` compiles the Node server and browser assets without the Electron preload build.
 
 These are source-built developer installations, not Developer ID-signed or notarized distributions. Local building is not a guarantee that every macOS security policy permits execution. No installer disables Gatekeeper, removes quarantine or disables Electron's sandbox. Published binaries should have a separate signing/notarization workflow.
+
+## LAN access
+
+Daemon and Web bind addresses are independent. To expose the daemon, set
+`ZOTIGOD_ADDR=0.0.0.0:8766` and `ZOTIGOD_AUTH_TOKEN_FILE=/absolute/path/to/daemon.token`
+in `PREFIX/config/daemon.env`. Generate a private random token file before restarting.
+In `PREFIX/config/web.env`, set:
+
+```sh
+ZOTIGOD_URL=http://127.0.0.1:8766
+ZOTIGOD_AUTH_TOKEN_FILE=/absolute/path/to/daemon.token
+ZOTIGO_WEB_HOST=0.0.0.0
+ZOTIGO_WEB_PORT=8080
+ZOTIGO_WEB_ORIGIN=http://SERVER_IP:8080
+ZOTIGO_WEB_ALLOW_HTTP=1
+```
+
+Use the exact configured origin in the browser. `ZOTIGO_WEB_ALLOW_HTTP=1` explicitly
+allows plaintext HTTP on a trusted LAN; credentials and session cookies are not
+encrypted. For HTTPS, omit it and configure the reverse proxy as described in README.
+Web login remains required, using its separate token in `~/.zotigo/web/access-token`.
+Restart both user services after changing configuration.
+
+Desktop uses the same `ZOTIGOD_URL` and `ZOTIGOD_AUTH_TOKEN_FILE` environment variables;
+the token file must exist on the Desktop host. The token is read by the backend,
+never returned through UI configuration APIs. API calls, event streams, image previews
+and downloads carry the daemon credential. Requests do not follow API redirects;
+Desktop image redirects are restricted to configured daemon image paths.
+
+For user services to survive the last SSH logout, run `loginctl enable-linger "$USER"`
+(on hosts where permission is granted), then verify `loginctl show-user "$USER" -p Linger`.
