@@ -4678,3 +4678,7 @@ p {
 .directory-browser footer span { flex: 1; }
 
 .directory-entry input[type="checkbox"] { width: 16px; height: 16px; min-height: 16px; flex: 0 0 16px; padding: 0; margin: 0 4px; color-scheme: dark; accent-color: var(--text-muted); }
+
+.user-message-stack > .message-image-grid { justify-content: flex-end; margin: 0 0 12px; }
+.user-message-stack > .message-image-grid img { width: 104px; height: 104px; object-fit: contain; }
+.image-preview-unavailable { display: flex; flex-direction: column; justify-content: center; width: 104px; height: 104px; border: 1px solid var(--border-heavy); border-radius: var(--radius-xl); color: var(--text-muted); background: var(--surface); font-size: 12px; line-height: 1.6; }

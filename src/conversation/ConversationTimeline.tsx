@@ -1,4 +1,5 @@
 import {
+  Children,
   type ReactNode,
   memo,
   useEffect,
@@ -35,6 +36,7 @@ import {
   visibleDisplayItems,
   type ToolRenderProjection,
 } from "../../shared/sessionDisplay";
+import { codexUserText, userImageUrl } from "../../shared/codexUserMessage";
 import { approvalPolicyLabel } from "../../shared/approvalPolicy";
 import type { ApprovalDecisionInput, CommandImageMetadata, DisplayContentPart, DisplayItem, DisplayToolCall, DisplayToolResult, ZotigoSession } from "../../shared/zotigod";
 import type { DaemonSessionBinding } from "../../shared/clientTypes";
@@ -118,6 +120,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                     turnStopped={item.id === recordedActiveTurn?.id && !activeTurn}
                     turnPaused={item.id === recordedActiveTurn?.id && session?.state === "paused"}
                     daemonUrl={daemonUrl}
+                    sessionId={binding.daemon_session_id}
                     toolProjection={toolProjection}
                     approvalPending={item.approval?.id === pendingApprovalId}
                     approvalSubmitting={item.approval?.id === submittingApprovalId}
@@ -283,6 +286,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   turnStopped,
   turnPaused,
   daemonUrl,
+  sessionId,
   toolProjection,
   approvalPending,
   approvalSubmitting,
@@ -294,6 +298,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   turnStopped: boolean;
   turnPaused: boolean;
   daemonUrl: string;
+  sessionId?: string;
   toolProjection: ToolRenderProjection;
   approvalPending: boolean;
   approvalSubmitting: boolean;
@@ -353,24 +358,21 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   }
 
   if (item.type === "user_message" || item.type === "steering_message") {
-    const text = displayContentText(item.content);
-    const images = displayItemImages(item, daemonUrl);
+    const text = codexUserText(displayContentText(item.content), item);
+    const images = displayItemImages(item, daemonUrl, sessionId);
     const skills = item.command?.skills ?? [];
     const hiddenImageCount = Math.max(0, (item.command?.images?.length ?? 0) - images.length);
     const imageSummary = formatImageAttachmentSummary(hiddenImageCount);
     return (
-      <UserMessage text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : undefined}>
+      <UserMessage text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : undefined} attachments={images.length > 0 ? (
+        <div className="message-image-grid" aria-label="Attached images">
+          {images.map((image) => <PreviewImage key={image.id} src={image.url} alt={image.name} />)}
+        </div>
+      ) : undefined}>
         {skills.length > 0 && (
           <div className="message-skills" aria-label="Selected skills">
             {skills.map((skill) => (
               <span key={skill}><Sparkles size={11} strokeWidth={1.8} />{skill}</span>
-            ))}
-          </div>
-        )}
-        {images.length > 0 && (
-          <div className="message-image-grid" aria-label="Attached images">
-            {images.map((image) => (
-              <PreviewImage key={image.id} src={image.url} alt={image.name} />
             ))}
           </div>
         )}
@@ -527,26 +529,25 @@ function formatImageAttachmentSummary(count: number): string | null {
 function displayItemImages(
   item: DisplayItem,
   daemonUrl: string,
+  sessionId?: string,
 ): Array<{ id: string; name: string; url: string }> {
-  const candidates: CommandImageMetadata[] = [];
-  for (const part of item.content ?? []) {
-    if (part.image) {
-      candidates.push(part.image);
-    }
-  }
-  candidates.push(...(item.command?.images ?? []));
+  const candidates: Array<{ image: CommandImageMetadata; contentIndex: number }> = [];
+  (item.content ?? []).forEach((part, contentIndex) => {
+    if (part.image) candidates.push({ image: part.image, contentIndex });
+  });
+  candidates.push(...(item.command?.images ?? []).map((image) => ({ image, contentIndex: -1 })));
 
   const seen = new Set<string>();
   const images: Array<{ id: string; name: string; url: string }> = [];
-  candidates.forEach((image, index) => {
-    const url = resolveDaemonImageUrl(daemonUrl, image.url);
+  candidates.forEach(({ image, contentIndex }, index) => {
+    const url = userImageUrl(image.url, daemonUrl, sessionId, item.sequence, contentIndex);
     if (!url || seen.has(url)) {
       return;
     }
     seen.add(url);
     images.push({
       id: `${item.id}-${index}-${url}`,
-      name: image.mime_type ?? image.media_type ?? "Attached image",
+      name: `Attached image ${index + 1}`,
       url,
     });
   });
@@ -876,11 +877,12 @@ function MarkdownContent({ text }: { text: string }) {
 
 const userMessageCollapsedLines = 20;
 
-export function UserMessage({ text, kicker, children }: { text: string; kicker?: string; children?: ReactNode }) {
+export function UserMessage({ text, kicker, children, attachments }: { text: string; kicker?: string; children?: ReactNode; attachments?: ReactNode }) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [collapsible, setCollapsible] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const collapsed = collapsible && !expanded;
+  const hasBubble = Boolean(text || kicker || Children.toArray(children).length);
 
   useLayoutEffect(() => {
     const element = contentRef.current;
@@ -899,7 +901,8 @@ export function UserMessage({ text, kicker, children }: { text: string; kicker?:
   return (
     <div className="message-row user">
       <div className="user-message-stack">
-        <div className="message-bubble user">
+        {attachments}
+        {hasBubble && <div className="message-bubble user">
           {kicker && <span className="message-kicker">{kicker}</span>}
           {text && (
             <div
@@ -911,7 +914,7 @@ export function UserMessage({ text, kicker, children }: { text: string; kicker?:
           )}
           {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}
           {children}
-        </div>
+        </div>}
         {collapsible && (
           <button
             type="button"
