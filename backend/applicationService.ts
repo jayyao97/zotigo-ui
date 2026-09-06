@@ -1,3 +1,5 @@
+import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost } from "./hosts";
+import { openDaemonFile, saveDaemonFile, inspectCatalogSource } from "./zotigod";
 import fs from "node:fs";
 import path from "node:path";
 import { parseMarkdownLink } from "../shared/markdownLinks";
@@ -88,6 +90,15 @@ addWorkspaceSourceToCatalog,
   function handle(channel: string, listener: (...args: unknown[]) => unknown): void {
     handlers.set(channel, listener);
   }
+  handle("hosts:list", () => listHosts());
+  handle("hosts:save", (input) => saveHost(input as import("../shared/hosts").HostInput));
+  handle("hosts:delete", (id) => deleteHost(assertString(id, "id")));
+  handle("hosts:test", (id) => testHost(assertString(id, "id")));
+  handle("hosts:activate", (id) => { resolveHost(assertString(id, "id")); });
+  handle("hosts:inspect", async (paths) => {
+    const values = assertStringArray(paths, "paths"); if (values.length > 20) throw new Error("Choose at most 20 folders.");
+    return Promise.all(values.map(async (selectedPath) => { const result = await inspectCatalogSource(selectedPath); return { selectedPath, canonicalPath: result.canonical_path, name: result.canonical_path.split(/[\\/]/).pop() || result.canonical_path, kind: result.kind }; }));
+  });
   handle("desktop:download-image", (url) => {
     return platform.downloadImage(imageDownloadUrl(assertString(url, "url"), getDaemonConfig().baseUrl));
   });
@@ -199,6 +210,11 @@ addWorkspaceSourceToCatalog,
       return { kind: "external" } as const;
     }
 
+    if (currentHost()?.id && currentHost()?.id !== "local") {
+      const opened = await openDaemonFile({ path: link.path, basePath: value.basePath, baseKind: value.baseKind, sessionId: value.sessionId });
+      if (opened.kind !== "text") throw new Error("This remote path is a directory or cannot be previewed as text.");
+      return { kind: "text", file: opened.file, line: link.line, column: link.column } as const;
+    }
     const requestedPath = resolveLocalPathReference(link.path, value.basePath, value.baseKind);
     const opened = await openAuthorizedLocalPath(requestedPath, await authorizedFileRoots(requestedPath, value.sessionId));
     if (opened.kind === "system") {
@@ -209,6 +225,7 @@ addWorkspaceSourceToCatalog,
   });
   handle("desktop:save-text-file", async (input) => {
     const value = assertSaveTextFileInput(input);
+    if (currentHost()?.id && currentHost()?.id !== "local") return saveDaemonFile(value);
     return saveAuthorizedTextFile(value, await authorizedFileRoots(value.path, value.sessionId));
   });
   handle("desktop:create-conversation-with-session", async (input) => {
@@ -287,6 +304,7 @@ addWorkspaceSourceToCatalog,
   );
 
 async function revealRegisteredPath(requestedPath: string): Promise<void> {
+  if (currentHost()?.id && currentHost()?.id !== "local") throw new Error("Remote paths cannot be opened in the local file manager.");
   const resolved = path.resolve(requestedPath);
   if (!fs.existsSync(resolved)) throw new Error("Path does not exist.");
   const state = await getCatalogDesktopState();

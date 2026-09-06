@@ -14,6 +14,12 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     return transport.invoke(channel, ...args);
   };
   return {
+    listHosts: () => invoke("hosts:list"),
+    saveHost: (input) => invoke("hosts:save", input),
+    deleteHost: (id) => invoke("hosts:delete", id),
+    testHost: (id) => invoke("hosts:test", id),
+    setActiveHost: (id) => invoke("hosts:activate", id),
+    inspectHostSources: (paths) => invoke("hosts:inspect", paths),
     getDaemonConfig: () => invoke("daemon:get-config"),
     getProfiles: (workingDirectory) => invoke("daemon:get-profiles", workingDirectory),
     listSkills: (sessionId, forceReload) => invoke("daemon:list-skills", sessionId, forceReload),

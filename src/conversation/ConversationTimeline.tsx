@@ -558,10 +558,13 @@ function resolveDaemonImageUrl(daemonUrl: string, imageUrl: string | undefined):
     return null;
   }
   if (/^https?:\/\//i.test(imageUrl)) {
-    return imageUrl;
+    if (!daemonUrl) return imageUrl;
   }
   try {
-    return new URL(imageUrl, daemonUrl).toString();
+    const url = new URL(imageUrl, daemonUrl);
+    const host = new URL(daemonUrl).searchParams.get("zotigoHost");
+    if (host && url.origin === new URL(daemonUrl).origin) url.searchParams.set("zotigoHost", host);
+    return url.toString();
   } catch {
     return null;
   }

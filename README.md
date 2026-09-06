@@ -10,7 +10,7 @@ Both clients provide a UI for zotigod:
 - Create and organize Zotigo or Codex sessions.
 - Stream session events with polling fallback and render tools, approvals, Markdown, and images.
 - Open and safely edit text files rooted in registered Sources and Workspaces.
-- Desktop development can build and launch a local `zotigod` when one is not already available. Web requires a separately running daemon on the same machine as the Web server.
+- Desktop development can build and launch a local `zotigod` when one is not already available. Web requires a separately running daemon. Saved remote hosts are supported by both clients.
 
 The renderer never calls zotigod directly and does not use internal worker endpoints. Desktop uses a narrow preload API; Web uses authenticated, same-origin HTTP and event streams. Source installation and Desktop packaging are described in [installation](docs/installation.md). Auto-update, Developer ID signing and notarization are not configured. Critical Desktop and Web flows have been exercised locally end to end; this is not a production security certification or a guarantee for every deployment.
 
@@ -28,7 +28,21 @@ Client validation exposed a daemon recovery bug that can replay an already execu
 | `electron/` | Native window, preload/IPC, native dialogs and OS integration |
 | `web/`, `src/web/` | Web server authentication, HTTP/SSE transport, login and server-path selection |
 
-Desktop and Web share catalog data through zotigod. Browser selection is scoped to a tab and survives reload when session storage is available. It does not change Desktop's selected conversation. Native folder selection and opening Finder remain Desktop-specific; Web accepts absolute paths on the server and offers path copying. Browser image downloads use the authenticated image endpoint.
+Desktop and Web share catalog data through zotigod. Browser selection is scoped to a tab and survives reload when session storage is available. It does not change Desktop's selected conversation. Native folder selection and opening Finder remain Desktop-specific for the default host; remote hosts accept absolute paths on the selected daemon and offer path copying. Browser image downloads use the authenticated image endpoint.
+
+## Search and remote hosts
+
+Click the sidebar search icon or press **Cmd+K** (macOS) / **Ctrl+K** to search recent sessions by title, project or workspace. Use the arrow keys and Enter to open a result, or Escape to close. The palette searches the currently selected host and includes shortcuts for creating sessions and projects.
+
+Open the host menu at the top left, then **Host settings**. Add a name, daemon origin (for example `http://dev:8766`) and its daemon token, then **Test**. Select the saved host from the same menu. The address is the daemon's reachable address, not `0.0.0.0` or the Web UI URL. Remote daemons must include the `/files/capabilities` API from the paired daemon revision; an older daemon produces an upgrade message.
+
+Projects, source inspection, workspace creation, sessions, events, images and text-file editing use the selected daemon. When adding remote folders, enter absolute paths on that machine. Remote files have the same text-editor limits: preview up to 5 MiB, edit up to 1 MiB, and reject saves after an external modification. Directories and binary files cannot be opened in a remote operating-system application. Switching checks the connection, asks before discarding drafts/unsaved edits, and clears the previous host's view. It does not stop work already running on either daemon.
+
+Desktop remembers its host on that device; Web remembers it per browser tab. Conversation selection and ordering are separated by host. Saved profiles are shared by authenticated users of the same Web backend, but switching one tab does not switch another. Profiles and daemon tokens live in an owner-only `hosts.json` beside backend preferences (Web: `ZOTIGO_WEB_DATA_DIR`, default `~/.zotigo/web`; Desktop: Electron's user-data directory). Profile-list responses never return the token. To change an endpoint or credential, add a replacement profile, switch to it, and remove the old one. The built-in Local profile continues to use the startup environment.
+
+The browser connects to its Web backend; that backend connects to the selected daemon. Desktop connects through its main process. Both use HTTP(S) with Bearer authentication; no SSH credentials or tunnel manager are involved. Use HTTPS for connections outside a trusted network. Plain HTTP does not encrypt the daemon token. Web login and daemon authentication remain separate.
+
+Existing preferences need no migration. A rollback ignores the additional host-selection fields and leaves `hosts.json` in place; older clients cannot use saved remote profiles. Upgrade the daemon before selecting it in the new UI. Separately managed daemons are not upgraded by saving or testing a host.
 
 ## Development
 
@@ -88,7 +102,7 @@ Open the URL printed by the server (default `http://127.0.0.1:8080`) and enter t
 
 | Environment variable | Default / purpose |
 | --- | --- |
-| `ZOTIGOD_URL` | `http://127.0.0.1:8766`; Web requires a loopback daemon |
+| `ZOTIGOD_URL` | `http://127.0.0.1:8766`; initial Local host (Web requires this initial endpoint to be loopback) |
 | `ZOTIGO_WEB_HOST` | `127.0.0.1` |
 | `ZOTIGO_WEB_PORT` | `8080` |
 | `ZOTIGO_WEB_ORIGIN` | `http://127.0.0.1:<port>`; exact browser origin, without a path |
@@ -101,7 +115,7 @@ Keep tokens out of source files, shell history, screenshots and shared logs. A t
 
 Use an HTTPS reverse proxy with authentication at the Web application and a network boundary appropriate to your environment. Set `ZOTIGO_WEB_ORIGIN` to the browser's HTTPS origin. Forward the matching `Host` header, disable response buffering for `/api/events`, allow long-lived event connections, and configure request limits to accommodate image uploads (up to 30 MiB JSON). Keep the Web backend port and zotigod inaccessible to untrusted networks; TLS must terminate before credentials cross the network.
 
-Setting a non-loopback Web bind address requires an explicit origin. HTTPS is the default requirement; trusted LAN deployments can explicitly set `ZOTIGO_WEB_ALLOW_HTTP=1` with an HTTP origin. This sends login credentials and cookies without encryption; see [LAN configuration](docs/installation.md#lan-access). This guard does not configure TLS or a firewall for you. Never expose zotigod itself as the browser endpoint. All file paths refer to the Web server machine, not the browser device.
+Setting a non-loopback Web bind address requires an explicit origin. HTTPS is the default requirement; trusted LAN deployments can explicitly set `ZOTIGO_WEB_ALLOW_HTTP=1` with an HTTP origin. This sends login credentials and cookies without encryption; see [LAN configuration](docs/installation.md#lan-access). This guard does not configure TLS or a firewall for you. Never expose zotigod itself as the browser endpoint. File paths refer to the selected daemon machine; the default Local host uses the Web server machine.
 
 ## Checks
 

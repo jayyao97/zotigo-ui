@@ -1,3 +1,5 @@
+import { HostMenu } from "./HostShell";
+import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
 import {
   type ClipboardEvent,
@@ -233,7 +235,16 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export default function App() {
-  const { api: client, kind, signOut } = useClient();
+  const { api: client, kind, signOut, remote } = useClient();
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const openSearch = (event: globalThis.KeyboardEvent) => {
+      if (document.querySelector("dialog[open]:not(.search-palette)")) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !event.altKey && !event.isComposing) { event.preventDefault(); setSearchOpen((open) => !open); }
+    };
+    window.addEventListener("keydown", openSearch);
+    return () => window.removeEventListener("keydown", openSearch);
+  }, []);
   const [webNavigationOpen, setWebNavigationOpen] = useState(false);
   const webNavigationButton = useRef<HTMLButtonElement>(null);
   const webNavigationCloseButton = useRef<HTMLButtonElement>(null);
@@ -243,7 +254,7 @@ export default function App() {
     else if (previousWebNavigationOpen.current) webNavigationButton.current?.focus();
     previousWebNavigationOpen.current = webNavigationOpen;
   }, [webNavigationOpen]);
-  const pathActionLabel = kind === "web" ? "Copy server path" : "Open in Finder";
+  const pathActionLabel = kind === "web" || remote ? "Copy server path" : "Open in Finder";
   const [daemonUrl, setDaemonUrl] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [sessions, setSessions] = useState<ZotigoSession[]>([]);
@@ -332,6 +343,14 @@ export default function App() {
   const [isSidePanelResizing, setIsSidePanelResizing] = useState(false);
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>({});
   const openFilesRef = useRef(openFiles);
+  useEffect(() => {
+    const beforeSwitch = (event: Event) => {
+      if (Object.values(openFiles).some((file) => file.saveStatus === "saving")) { window.alert("Wait for the current file save before switching hosts."); event.preventDefault(); return; }
+      if ((draftPrompt.trim() || conversationPrompt.trim() || composerAttachments.length || Object.values(openFiles).some((file) => file.saveStatus !== "clean")) && !window.confirm("Switch hosts and discard unsent messages and unsaved file changes?")) event.preventDefault();
+    };
+    window.addEventListener("zotigo:before-host-switch", beforeSwitch);
+    return () => window.removeEventListener("zotigo:before-host-switch", beforeSwitch);
+  }, [openFiles, draftPrompt, conversationPrompt, composerAttachments]);
   const fileSaveTimersRef = useRef<Map<string, number>>(new Map());
   const filesSavingRef = useRef<Set<string>>(new Set());
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
@@ -2532,6 +2551,7 @@ export default function App() {
         }
       }}
     >
+      {searchOpen && <SearchPalette state={desktopState} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
         {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(false)} aria-label="Close navigation"><X size={18} />Close navigation</button>}
         <div className="sidebar-chrome" aria-hidden="true">
@@ -2541,12 +2561,9 @@ export default function App() {
         </div>
 
         <div className="sidebar-brand">
-          <button type="button" className="brand-button" disabled title="Workspace switcher is not available yet">
-            Zotigo
-            <ChevronDown size={13} strokeWidth={1.8} />
-          </button>
+          <HostMenu />
           <div className="brand-actions">
-            <button type="button" aria-label="Search" disabled title="Search is not available yet"><Search size={15} strokeWidth={1.8} /></button>
+            <button type="button" aria-label="Search" onClick={() => setSearchOpen(true)} title="Search (⌘K / Ctrl+K)"><Search size={15} strokeWidth={1.8} /></button>
             <button type="button" aria-label="Notifications" disabled title="Notifications are not available yet"><Bell size={15} strokeWidth={1.8} /></button>
           </div>
         </div>

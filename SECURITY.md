@@ -5,7 +5,8 @@ Zotigo can run agents and modify files using the operating-system account that r
 ## Deployment
 
 - Default Web binding is loopback. For remote use, put HTTPS in front of the service, configure the exact public origin, preserve its Host header, and restrict backend ports with network controls. An HTTPS origin setting does not encrypt the backend listener.
-- Do not expose zotigod directly to the public internet. The Web backend expects it on the same host because file operations use local authorized roots.
+- Do not expose zotigod directly to the public internet. Saved remote connections use HTTP(S) and daemon Bearer tokens; file roots are validated by the selected daemon. The default Local profile retains colocated file handling.
+- Saved hosts are shared by all authenticated clients of a Web server. These clients can add destinations reachable from that server and use the saved daemon credentials; this is an owner-level capability, not a tenant boundary. Tokens are stored in a mode-0600 backend file and omitted from profile responses. Use HTTPS when daemon credentials cross an untrusted network.
 - The Web access token is independent of agent-provider credentials. Do not put either into this repository or embed them in frontend bundles.
 - Anyone with the token can initiate agent actions and destructive catalog operations offered by the UI. Project selection and per-tab preferences are not authorization boundaries.
 - Browser login cookies last 12 hours, are revoked on logout, and become invalid on server restart. Restarting with a new token also prevents the previous token from creating new sessions. Revoking UI access does not cancel an agent task already accepted by the daemon.

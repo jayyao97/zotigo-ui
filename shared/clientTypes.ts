@@ -217,6 +217,12 @@ export interface SaveTextFileInput {
 }
 
 export interface ClientApi {
+  listHosts(): Promise<import("./hosts").HostProfile[]>;
+  saveHost(input: import("./hosts").HostInput): Promise<import("./hosts").HostProfile>;
+  deleteHost(id: string): Promise<void>;
+  testHost(id: string): Promise<void>;
+  setActiveHost(id: string): Promise<void>;
+  inspectHostSources(paths: string[]): Promise<SourceCandidate[]>;
   getDaemonConfig(): Promise<DaemonConfig>;
   getProfiles(workingDirectory?: string): Promise<ProfilesResponse>;
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;

@@ -12,6 +12,7 @@ Both clients manage a running `zotigod` daemon through public HTTP APIs only. Th
 - `/agents` and `/agents/codex/prepare`
 - `/config/profiles` and `/skills`
 - `/projects`, `/sources/inspect`, and `/workspaces`
+- `/files/capabilities`, `/files/open`, and `/files/save` for remote workspace text files
 - `/catalog/sessions`
 - `/sessions` and public session actions, items, events, approvals, images, and organization endpoints
 
@@ -23,6 +24,7 @@ Keep the exact contract aligned with `zotigo/docs/zotigod-api.md`. Do not call i
 - Work on feature branches. Do not commit directly to `master`.
 - For UI changes, first read `.codex/skills/zotigo-codex-design-system/SKILL.md` and follow it unless the user explicitly asks for a different direction.
 - Keep renderer Node access disabled. Use preload to expose narrow, typed APIs.
+- Bind daemon requests and long-lived subscriptions to an immutable host context; never use a process-global selected host. Keep credentials in the backend and scope preferences by host.
 - Keep zotigod HTTP calls in `backend/`, not scattered through React components. Desktop IPC and Web HTTP adapters call the same application service.
 - Share React components across platforms. Native dialogs and OS integration belong in Electron; Web authentication and browser transport belong in the Web adapter.
 - Prefer React local state until there is a concrete need for more state management.

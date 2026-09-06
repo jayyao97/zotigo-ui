@@ -4613,3 +4613,46 @@ p {
   html[data-platform="web"] .conversation-body { width: calc(100% - 24px); max-width: calc(100% - 24px); padding-top: 24px; }
   html[data-platform="web"] .composer-shell { padding: 0 12px 12px; }
 }
+
+.search-palette {
+  position: fixed; inset: 16vh 0 auto; margin: 0 auto; padding: 0;
+  width: min(680px, calc(100vw - 32px)); max-height: 70vh;
+  border: 1px solid var(--border-heavy); border-radius: 24px;
+  background: var(--surface-elevated); color: var(--text);
+  box-shadow: 0 16px 64px rgb(0 0 0 / .25); overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+.search-palette::backdrop { background: rgb(0 0 0 / .3); }
+.search-palette-input { display: flex; gap: 12px; align-items: center; padding: 20px; color: var(--text-muted); }
+.search-palette-input input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 17px; }
+.search-palette-input kbd { font: inherit; font-size: 11px; color: var(--text-dim); }
+.search-palette-results { padding: 0 8px 12px; max-height: calc(70vh - 68px); overflow-y: auto; }
+.search-palette-heading { padding: 14px 12px 8px; font-size: 13px; color: var(--text-dim); }
+.search-palette-row { display: flex; align-items: center; gap: 12px; padding: 12px; min-height: 44px; border-radius: 12px; cursor: pointer; }
+.search-palette-row[aria-selected="true"] { background: rgb(255 255 255 / .09); }
+.search-palette-row > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-palette-row > small { max-width: 35%; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-palette-empty { padding: 24px 12px; color: var(--text-muted); }
+
+.host-menu { position: relative; min-width: 0; }
+.host-menu-popover { position: absolute; top: 32px; left: 0; z-index: 30; width: 240px; max-height: 60vh; overflow: auto; padding: 6px; border: 1px solid var(--border-heavy); border-radius: 12px; background: var(--gray-800); box-shadow: var(--shadow-xl); }
+.host-menu-popover button { display: flex; align-items: center; gap: 10px; padding: 10px; width: 100%; border: 0; background: transparent; color: var(--text); border-radius: 8px; text-align: left; }
+.host-menu-popover button:hover { background: var(--surface-row); }
+.host-menu-popover button span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.host-settings { width: min(640px, calc(100vw - 32px)); max-height: 85vh; padding: 24px; overflow: auto; border: 1px solid var(--border-heavy); border-radius: 20px; background: var(--surface-elevated); color: var(--text); }
+.host-settings::backdrop { background: rgb(0 0 0 / .4); }
+.host-settings header, .host-settings-row, .host-settings footer { display: flex; align-items: center; gap: 12px; }
+.host-settings header > div, .host-settings-row > div { flex: 1; min-width: 0; }
+.host-settings h2 { font-size: 18px; margin: 0; }.host-settings h3 { font-size: 15px; }
+.host-settings p, .host-settings small { color: var(--text-muted); font-size: 13px; }
+.host-settings-row { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.host-settings-row strong, .host-settings-row small { display: block; overflow-wrap: anywhere; }
+.host-settings label { display: grid; gap: 6px; margin: 14px 0; font-size: 13px; }
+.host-settings input, .host-settings textarea { padding: 10px; border: 1px solid var(--border-heavy); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; width: 100%; }
+.host-settings button { display: inline-flex; gap: 6px; align-items: center; padding: 8px 12px; border: 1px solid var(--border-heavy); border-radius: 8px; color: var(--text); background: var(--surface-row); cursor: pointer; }
+.host-settings button:disabled { opacity: .4; cursor: default; }
+.host-settings form > button { margin-top: 16px; }.host-settings footer { justify-content: flex-end; }
+.host-error { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; background: var(--surface-row); padding: 12px 16px; border: 1px solid var(--border-heavy); border-radius: 10px; display: flex; gap: 16px; }
+
+.host-menu .brand-button { max-width: 190px; }
+.host-menu .brand-button span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

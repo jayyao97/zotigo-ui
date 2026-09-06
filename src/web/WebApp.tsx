@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SourceCandidate } from "../../shared/clientTypes";
-import App from "../App";
+import { HostShell } from "../HostShell";
 import { ClientContext } from "../ClientContext";
 import { createWebClient, webRequest, WebRequestError } from "./api";
 
@@ -64,7 +64,7 @@ export function WebApp() {
     client.dispose(); setAuthenticated(false);
     resolvePicker.current?.([]); resolvePicker.current = null; setPicker(false);
   } }}>
-    <App />
+    <HostShell />
     {picker && <dialog ref={dialog} className="web-source-picker" onCancel={(event) => { event.preventDefault(); closePicker([]); }}>
       <form onSubmit={(event) => {
         event.preventDefault(); setPickerBusy(true); setPickerError("");
