@@ -8,11 +8,13 @@ const maximumEditableBytes = 1024 * 1024;
 
 export type LocalPathOpenResult =
   | { kind: "system"; path: string }
+  | { kind: "directory"; path: string }
   | { kind: "text"; file: TextFileSnapshot };
 
 export async function openAuthorizedLocalPath(requestedPath: string, roots: string[]): Promise<LocalPathOpenResult> {
   const resolved = authorizedExistingPath(requestedPath, roots);
   const stat = await fs.promises.stat(resolved);
+  if (stat.isDirectory()) return { kind: "directory", path: resolved };
   if (!stat.isFile() || stat.size > maximumPreviewBytes) return { kind: "system", path: resolved };
 
   const buffer = await fs.promises.readFile(resolved);

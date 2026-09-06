@@ -1,5 +1,5 @@
 import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost } from "./hosts";
-import { openDaemonFile, saveDaemonFile, inspectCatalogSource } from "./zotigod";
+import { openDaemonFile, saveDaemonFile, inspectCatalogSource, listDaemonDirectory } from "./zotigod";
 import fs from "node:fs";
 import path from "node:path";
 import { parseMarkdownLink } from "../shared/markdownLinks";
@@ -46,10 +46,9 @@ import {
 import { createCatalogService, type CatalogSelectionStore } from "./catalogService";
 
 import { createSessionEvents } from "./sessionEvents";
-import type { SessionEventEnvelope, SourceCandidate } from "../shared/clientTypes";
+import type { SessionEventEnvelope } from "../shared/clientTypes";
 
 export interface NativeServices {
-  chooseSourceFolders(): Promise<SourceCandidate[]>;
   openPath(path: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   downloadImage(url: string): void | Promise<void>;
@@ -155,7 +154,6 @@ addWorkspaceSourceToCatalog,
   handle("desktop:get-state", () => getCatalogDesktopState());
   handle("desktop:sync-state", () => getCatalogDesktopState({ syncCodex: true }));
   handle("desktop:create-project", async (input) => createProjectInCatalog(parseCreateProjectInput(input)));
-  handle("desktop:choose-source-folders", () => platform.chooseSourceFolders());
   handle("desktop:add-project-sources", (projectId, sources) =>
     addSourcesToCatalog(assertNonEmptyString(projectId, "projectId"), parseProjectSources(sources)),
   );
@@ -201,6 +199,20 @@ addWorkspaceSourceToCatalog,
   handle("desktop:select-workspace", (id) => selectCatalogWorkspace(assertNullableString(id, "id")));
   handle("desktop:select-conversation", (id) => selectCatalogSession(assertNullableString(id, "id")));
   handle("desktop:reveal-path", async (pathValue) => revealRegisteredPath(assertNonEmptyString(pathValue, "path")));
+  handle("desktop:list-directory", (input) => {
+    const value = assertRecord(input, "directory input");
+    if (value.purpose !== "files" && value.purpose !== "sources") throw new Error("Invalid directory purpose.");
+    return listDaemonDirectory({ path: assertString(value.path, "path"), purpose: value.purpose, sessionId: value.sessionId === undefined ? undefined : assertString(value.sessionId, "sessionId") });
+  });
+  handle("desktop:open-text-file", async (pathValue, sessionId) => {
+    const requestedPath = assertNonEmptyString(pathValue, "path");
+    const id = sessionId === undefined ? undefined : assertString(sessionId, "sessionId");
+    const opened = currentHost()?.id && currentHost()?.id !== "local"
+      ? await openDaemonFile({ path: requestedPath, sessionId: id })
+      : await openAuthorizedLocalPath(requestedPath, await authorizedFileRoots(requestedPath, id));
+    if (opened.kind !== "text") throw new Error("This file cannot be previewed as text.");
+    return opened.file;
+  });
   handle("desktop:open-markdown-link", async (input) => {
     const value = assertOpenMarkdownLinkInput(input);
     const link = parseMarkdownLink(value.href);
@@ -212,11 +224,13 @@ addWorkspaceSourceToCatalog,
 
     if (currentHost()?.id && currentHost()?.id !== "local") {
       const opened = await openDaemonFile({ path: link.path, basePath: value.basePath, baseKind: value.baseKind, sessionId: value.sessionId });
-      if (opened.kind !== "text") throw new Error("This remote path is a directory or cannot be previewed as text.");
+      if (opened.kind === "directory") return opened;
+      if (opened.kind !== "text") throw new Error("This remote file cannot be previewed as text.");
       return { kind: "text", file: opened.file, line: link.line, column: link.column } as const;
     }
     const requestedPath = resolveLocalPathReference(link.path, value.basePath, value.baseKind);
     const opened = await openAuthorizedLocalPath(requestedPath, await authorizedFileRoots(requestedPath, value.sessionId));
+    if (opened.kind === "directory") return opened;
     if (opened.kind === "system") {
       await platform.openPath(opened.path);
       return { kind: "system" } as const;

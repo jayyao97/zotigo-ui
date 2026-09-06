@@ -1,6 +1,6 @@
 import { createClientApi } from "../../shared/clientApi";
 import { parseMarkdownLink } from "../../shared/markdownLinks";
-import type { SessionEventEnvelope, SourceCandidate } from "../../shared/clientTypes";
+import type { SessionEventEnvelope } from "../../shared/clientTypes";
 import type { CatalogSelection } from "../../shared/catalogSelection";
 import { createBrowserSelection } from "./selection";
 
@@ -21,7 +21,7 @@ export async function webRequest<T>(path: string, body?: unknown, hostId?: strin
   return result as T;
 }
 
-export function createWebClient(chooseSources: () => Promise<SourceCandidate[]>) {
+export function createWebClient() {
   let activeHost = "local";
   const makeSelection = (host: string) => createBrowserSelection({
     getItem: (key) => sessionStorage.getItem(host === "local" ? key : `${host}:${key}`),
@@ -65,7 +65,6 @@ export function createWebClient(chooseSources: () => Promise<SourceCandidate[]>)
     };
   };
   api.unsubscribeSessionEvents = async () => { close(); };
-  api.chooseSourceFolders = chooseSources;
   api.revealPath = async () => { throw new Error("Opening a server folder in Finder requires Desktop."); };
   const openLink = api.openMarkdownLink;
   api.openMarkdownLink = async (input) => {

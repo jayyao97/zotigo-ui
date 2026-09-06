@@ -153,7 +153,7 @@ export function getCatalogProject(id: string): Promise<CatalogProjectDetail> {
 }
 
 export function inspectCatalogSource(sourcePath: string): Promise<CatalogSourceInspection> {
-  return requestJSON("/sources/inspect", jsonRequest("POST", { path: sourcePath }))
+  return requestJSON("/sources/inspect", { ...jsonRequest("POST", { path: sourcePath }), signal: AbortSignal.timeout(10000) })
     .then((value) => parseCatalogSourceInspection(value, "source inspection response"));
 }
 
@@ -1336,8 +1336,17 @@ function isDisplayItemType(value: string): value is DisplayItemType {
 }
 
 export function openDaemonFile(input: unknown): Promise<import("./localFileService").LocalPathOpenResult> {
-  return requestJSON("/files/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }) as Promise<import("./localFileService").LocalPathOpenResult>;
+  return requestJSON("/files/open", { signal: AbortSignal.timeout(10000), method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }) as Promise<import("./localFileService").LocalPathOpenResult>;
 }
 export function saveDaemonFile(input: unknown): Promise<import("../shared/clientTypes").TextFileSnapshot> {
   return requestJSON("/files/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }) as Promise<import("../shared/clientTypes").TextFileSnapshot>;
+}
+
+export async function listDaemonDirectory(input: { path: string; purpose: "files" | "sources"; sessionId?: string }): Promise<import("../shared/clientTypes").DirectoryListing> {
+  try {
+    return await requestJSON(input.purpose === "sources" ? "/sources/directories" : "/files/list", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(10000), body: JSON.stringify({ path: input.path, sessionId: input.sessionId }) }) as import("../shared/clientTypes").DirectoryListing;
+  } catch (error) {
+    if (error instanceof ZotigodRequestError && error.status === 404) throw new Error("Update this daemon to support directory browsing.");
+    throw error;
+  }
 }

@@ -2,6 +2,7 @@ import { bindClientGeneration } from "../shared/bindClientGeneration";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Plus, Server, Settings, Trash2, X } from "lucide-react";
 import App from "./App";
+import { DirectoryBrowser } from "./DirectoryBrowser";
 import { ClientContext, useClient } from "./ClientContext";
 import type { HostProfile } from "../shared/hosts";
 import type { SourceCandidate } from "../shared/clientTypes";
@@ -42,9 +43,9 @@ export function HostShell() {
   const [settings, setSettings] = useState(false);
   const [name, setName] = useState(""); const [address, setAddress] = useState(""); const [token, setToken] = useState("");
   const [status, setStatus] = useState("");
-  const [picker, setPicker] = useState(false); const [paths, setPaths] = useState("");
+  const [picker, setPicker] = useState(false);
   const pickerResult = useRef<((value: SourceCandidate[]) => void) | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null); const sourceDialog = useRef<HTMLDialogElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const storage = parent.kind === "web" ? sessionStorage : localStorage;
   useEffect(() => {
     let active = true;
@@ -57,9 +58,8 @@ export function HostShell() {
     return () => { active = false; pickerResult.current?.([]); };
   }, [api, storage]);
   useEffect(() => { if (settings) dialog.current?.showModal(); }, [settings]);
-  useEffect(() => { if (picker) sourceDialog.current?.showModal(); }, [picker]);
   const client = useMemo(() => bindClientGeneration({ ...api,
-    chooseSourceFolders: selected === "local" ? api.chooseSourceFolders : () => new Promise<SourceCandidate[]>((resolve) => { pickerResult.current?.([]); pickerResult.current = resolve; setPaths(""); setStatus(""); setPicker(true); }),
+    chooseSourceFolders: () => new Promise<SourceCandidate[]>((resolve) => { pickerResult.current?.([]); pickerResult.current = resolve; setPicker(true); }),
     revealPath: selected === "local" ? api.revealPath : async (value: string) => { await navigator.clipboard.writeText(value); },
     getDaemonConfig: async () => { const config = await api.getDaemonConfig(); const url = new URL(config.baseUrl); url.searchParams.set("zotigoHost", selected); return { ...config, baseUrl: url.toString() }; },
   }, () => generationRef.current === generation), [api, selected, generation]);
@@ -94,6 +94,10 @@ export function HostShell() {
         <button disabled={busy} type="submit"><Plus size={15} />Save host</button>
       </form>{status && <p role="status">{status}</p>}
     </dialog>}
-    {picker && <dialog ref={sourceDialog} className="host-settings" onCancel={() => closePicker([])}><form onSubmit={(event) => { event.preventDefault(); setBusy(true); const owner = pickerResult.current; void api.inspectHostSources(paths.split("\n").map((value) => value.trim()).filter(Boolean)).then((sources) => { if (owner === pickerResult.current) closePicker(sources); }).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}><h2>Add folders on {profiles.find((host) => host.id === selected)?.name}</h2><label>Absolute paths, one per line<textarea autoFocus value={paths} onChange={(event) => setPaths(event.target.value)} rows={5} required /></label>{status && <p role="alert">{status}</p>}<footer><button type="button" onClick={() => closePicker([])}>Cancel</button><button disabled={busy}>Add folders</button></footer></form></dialog>}
+    {picker && <DirectoryBrowser api={client} purpose="sources" title={`Choose folders on ${profiles.find((host) => host.id === selected)?.name}`} onClose={() => closePicker([])} onSelect={async (paths) => {
+      const sources = await client.inspectHostSources(paths);
+      closePicker(sources);
+    }} />}
+
   </HostContext.Provider>;
 }

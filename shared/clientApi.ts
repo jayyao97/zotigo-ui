@@ -14,6 +14,8 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     return transport.invoke(channel, ...args);
   };
   return {
+    listDirectory: (input) => invoke("desktop:list-directory", input),
+    openTextFile: (path, sessionId) => invoke("desktop:open-text-file", path, sessionId),
     listHosts: () => invoke("hosts:list"),
     saveHost: (input) => invoke("hosts:save", input),
     deleteHost: (id) => invoke("hosts:delete", id),
@@ -41,7 +43,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     getDesktopState: () => invoke("desktop:get-state"),
     syncDesktopState: () => invoke("desktop:sync-state"),
     createProject: (input) => invoke("desktop:create-project", input),
-    chooseSourceFolders: () => invoke("desktop:choose-source-folders"),
+    chooseSourceFolders: async () => { throw new Error("Folder selection requires the directory browser UI."); },
     addProjectSources: (projectId, sources) => invoke("desktop:add-project-sources", projectId, sources),
     removeProjectSource: (kind, sourceId) => invoke("desktop:remove-project-source", kind, sourceId),
     reorderProjects: (projectIds) => invoke("desktop:reorder-projects", projectIds),

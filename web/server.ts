@@ -22,7 +22,7 @@ export function createWebServer(options: { origin: string; token: string; assets
   const security = createWebSecurity(options.token, options.origin);
   const unavailable = async () => { throw new Error("This operation requires the Desktop application."); };
   const platform = {
-    chooseSourceFolders: unavailable, openPath: unavailable,
+    openPath: unavailable,
     openExternal: unavailable, downloadImage: unavailable,
   };
   const streams = new Map<() => void, IncomingMessage>();
