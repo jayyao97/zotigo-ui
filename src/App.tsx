@@ -71,6 +71,7 @@ import {
 import { approvalPolicyLabel } from "../shared/approvalPolicy";
 import {
   appendDisplayDeltas,
+  createOptimisticPromptId,
   acknowledgeOptimisticPrompt,
   ephemeralDisplayItems,
   hasUnresolvedTurnItems,
@@ -1835,7 +1836,7 @@ export default function App() {
     const conversationId = selectedConversation.id;
     const submittedAttachments = composerAttachments;
     const submittedSkills = selectedSkillNames;
-    const optimisticId = `optimistic-prompt-${crypto.randomUUID()}`;
+    const optimisticId = createOptimisticPromptId();
     const isSteering = Boolean(selectedSession?.working && sessionAllowsActiveTurn(selectedSession.state));
     const optimisticItem = optimisticPromptDisplayItem({
       id: optimisticId,
