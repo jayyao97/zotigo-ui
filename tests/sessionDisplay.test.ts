@@ -6,6 +6,7 @@ import {
   appendDisplayDeltas,
   buildToolRenderProjection,
   contentLocation,
+  createOptimisticPromptId,
   ephemeralDisplayItems,
   groupReasoningItems,
   hasVisibleAssistantContent,
@@ -25,6 +26,22 @@ import {
   workingConversationIds,
 } from "../shared/sessionDisplay";
 import type { DisplayItem } from "../shared/zotigod";
+
+test("optimistic prompt IDs work without secure-context randomUUID", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;
+  const browserCrypto = { getRandomValues: crypto.getRandomValues.bind(crypto) };
+  Object.defineProperty(globalThis, "crypto", { configurable: true, value: browserCrypto });
+  try {
+    const ids = Array.from({ length: 100 }, () => createOptimisticPromptId());
+    assert.equal(new Set(ids).size, ids.length);
+    for (const id of ids) assert.match(id, /^optimistic-prompt-[0-9a-f]{32}$/);
+    const item = optimisticPromptDisplayItem({ id: ids[0], text: "hello", steering: false, createdAt: "2026-09-07T00:00:00Z" });
+    assert.equal(item.id, ids[0]);
+    assert.deepEqual(item.content, [{ type: "text", text: "hello" }]);
+  } finally {
+    Object.defineProperty(globalThis, "crypto", descriptor);
+  }
+});
 
 test("durable items reconcile temporary blocks by id and polling cannot duplicate them", () => {
   const durable = assistant("assistant-1", 3, [{ type: "text", text: "Hello" }]);

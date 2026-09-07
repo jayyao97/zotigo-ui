@@ -257,6 +257,12 @@ export function optimisticSteeringDisplayItem(
   return reconcileOptimisticSteering([item], durableItems)[0] ?? null;
 }
 
+export function createOptimisticPromptId(): string {
+  // Unlike randomUUID, getRandomValues is available on remote HTTP pages.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return `optimistic-prompt-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export function optimisticPromptDisplayItem(input: OptimisticPromptInput): DisplayItem {
   const content: NonNullable<DisplayItem["content"]> = [];
   if (input.text) content.push({ type: "text", text: input.text });
