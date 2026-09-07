@@ -105,6 +105,7 @@ import {
   sidePanelWidthForRatio,
 } from "../shared/sidePanelSizing";
 import type { FileEditorMode, FileSaveStatus } from "./FileEditorTab";
+import type { ProjectDeletePreview } from "../shared/zotigod";
 import { ImagePreview } from "./ImagePreview";
 import { clipboardImageFiles } from "./clipboardImages";
 import { matchingSkills, removeSkillCommand, skillCommandQuery } from "../shared/skillCommands";
@@ -295,6 +296,9 @@ export default function App() {
   const [sidebarActionMenuOpensUp, setSidebarActionMenuOpensUp] = useState(false);
   const [archiveWorkspaceTarget, setArchiveWorkspaceTarget] = useState<DesktopWorkspace | null>(null);
   const [workspaceArchivePreview, setWorkspaceArchivePreview] = useState<WorkspaceArchivePreview | null>(null);
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState<DesktopProject | null>(null);
+  const [projectDeletePreview, setProjectDeletePreview] = useState<ProjectDeletePreview | null>(null);
+  const [deleteProjectConfirmation, setDeleteProjectConfirmation] = useState("");
   const [deleteWorkspaceTarget, setDeleteWorkspaceTarget] = useState<DesktopWorkspace | null>(null);
   const [workspaceDeletePreview, setWorkspaceDeletePreview] = useState<WorkspaceArchivePreview | null>(null);
   const [workspaceLifecycleError, setWorkspaceLifecycleError] = useState<string | null>(null);
@@ -1488,6 +1492,49 @@ export default function App() {
       setArchiveWorkspaceTarget(null);
       setWorkspaceArchivePreview(null);
       setCopiedWorkspacePath(null);
+    } catch (error) {
+      setWorkspaceLifecycleError(errorMessage(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function openDeleteProjectDialog(project: DesktopProject) {
+    setProjectMenuId(null);
+    setSidebarActionError(null);
+    setWorkspaceLifecycleError(null);
+    setIsBusy(true);
+    try {
+      const preview = await client.previewProjectDelete(project.id);
+      setProjectDeletePreview(preview);
+      setDeleteProjectTarget(project);
+      setDeleteProjectConfirmation("");
+    } catch (error) {
+      setSidebarActionError(`Could not inspect “${project.name}”: ${errorMessage(error)}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function closeDeleteProjectDialog() {
+    if (isBusy) return;
+    setDeleteProjectTarget(null);
+    setProjectDeletePreview(null);
+    setDeleteProjectConfirmation("");
+    setWorkspaceLifecycleError(null);
+  }
+
+  async function confirmDeleteProject() {
+    if (isBusy || !deleteProjectTarget || !projectDeletePreview || deleteProjectConfirmation !== deleteProjectTarget.name) return;
+    setWorkspaceLifecycleError(null);
+    setIsBusy(true);
+    try {
+      const state = await client.deleteProject({ id: deleteProjectTarget.id, confirmation: deleteProjectConfirmation });
+      applyDesktopState(state);
+      if (projectOverviewId === deleteProjectTarget.id) setProjectOverviewId(null);
+      setDeleteProjectTarget(null);
+      setProjectDeletePreview(null);
+      setDeleteProjectConfirmation("");
     } catch (error) {
       setWorkspaceLifecycleError(errorMessage(error));
     } finally {
@@ -2756,6 +2803,10 @@ export default function App() {
                               <SquarePen size={13} strokeWidth={1.8} />
                               <span>Rename</span>
                             </button>
+                            <button type="button" role="menuitem" className="destructive" disabled={isBusy} onClick={() => void openDeleteProjectDialog(project)}>
+                              <Trash2 size={13} strokeWidth={1.8} />
+                              <span>Delete project</span>
+                            </button>
                           </div>
                         )}
                         <button
@@ -3806,6 +3857,36 @@ export default function App() {
             <footer>
               <button type="button" className="dialog-cancel" onClick={closeArchiveWorkspaceDialog} disabled={isBusy}>Cancel</button>
               <button type="button" className="dialog-submit destructive" onClick={() => void confirmArchiveWorkspace()} disabled={isBusy || workspaceArchivePreview.dirty_worktree_paths.length > 0}>{isBusy ? "Archiving…" : "Archive workspace"}</button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {deleteProjectTarget && projectDeletePreview && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteProjectDialog(); }} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDeleteProjectDialog(); } }}>
+          <div className="create-project-dialog archive-workspace-dialog delete-workspace-dialog delete-project-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-title">
+            <header>
+              <div><h2 id="delete-project-title">Delete project?</h2><p>{deleteProjectTarget.name}</p></div>
+              <button type="button" className="dialog-close" disabled={isBusy} onClick={closeDeleteProjectDialog} aria-label="Close"><X size={15} /></button>
+            </header>
+            <p className="archive-workspace-copy">The Project and its Source registrations will be removed. Original Source directories, session history, and all local and remote Git branches are kept.</p>
+            <section className="archive-workspace-warning delete-workspace-warning">
+              <ShieldAlert size={17} />
+              <span>
+                <strong>This cannot be undone</strong>
+                <small>{projectDeletePreview.workspace_ids.length === 0 ? "This Project has no Workspaces. No Workspace files will be deleted." : `${projectDeletePreview.workspace_ids.length} Workspaces, including archived ones, and their managed files will be permanently deleted.`}</small>
+                {projectDeletePreview.dirty_worktree_paths.length > 0 && <small>Uncommitted changes in {projectDeletePreview.dirty_worktree_paths.length} linked worktrees will also be discarded.</small>}
+              </span>
+            </section>
+            {projectDeletePreview.workspace_roots.length > 0 && <details><summary>Workspace directories to delete</summary><ul>{projectDeletePreview.workspace_roots.map((path) => <li key={path} style={{ overflowWrap: "anywhere" }}>{path}</li>)}</ul></details>}
+            <label className="delete-workspace-confirmation">
+              <span>Type <strong>{deleteProjectTarget.name}</strong> to confirm</span>
+              <input value={deleteProjectConfirmation} onChange={(event) => setDeleteProjectConfirmation(event.target.value)} disabled={isBusy} />
+            </label>
+            {workspaceLifecycleError && <p className="dialog-error" role="alert">{workspaceLifecycleError}</p>}
+            <footer>
+              <button autoFocus type="button" className="dialog-cancel" disabled={isBusy} onClick={closeDeleteProjectDialog}>Cancel</button>
+              <button type="button" className="dialog-submit destructive" disabled={isBusy || deleteProjectConfirmation !== deleteProjectTarget.name} onClick={() => void confirmDeleteProject()}>{isBusy ? "Deleting…" : "Delete project"}</button>
             </footer>
           </div>
         </div>

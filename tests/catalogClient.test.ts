@@ -6,6 +6,8 @@ import {
   addCatalogWorkspaceSource,
   createCatalogWorkspace,
   deleteCatalogWorkspace,
+  deleteCatalogProject,
+  previewCatalogProjectDelete,
   createSession,
   changeSessionCodexSettings,
   getAgents,
@@ -32,11 +34,26 @@ const requests: Array<{ method?: string; url?: string; body?: unknown }> = [];
 const timestamp = new Date(0).toISOString();
 const semanticWorkspaceRoot = "/tmp/projects/zotigo-11111111/workspaces/protocol-move-22222222";
 let preservesLocalBranches: boolean | undefined = true;
+let projectImpact: Record<string, unknown> = {};
+
+function safeProjectImpact() {
+  return {
+    project_id: "project-1", workspace_ids: [], workspace_roots: [], dirty_worktree_paths: [],
+    preserves_local_branches: true, preserves_remote_refs: true,
+    preserves_source_directories: true, preserves_runtime_sessions: true,
+  };
+}
 
 before(async () => {
   server = http.createServer(async (request, response) => {
     const body = await readJSONBody(request);
     requests.push({ method: request.method, url: request.url, body });
+    if (request.method === "GET" && request.url === "/projects/project-1/delete-preview") {
+      return writeOK(response, projectImpact);
+    }
+    if (request.method === "POST" && request.url === "/projects/project-1/delete") {
+      return writeOK(response, {});
+    }
     if (request.method === "GET" && request.url === "/projects") {
       return writeOK(response, { projects: [{ id: "project-1", name: "Zotigo", created_at: timestamp, updated_at: timestamp }] });
     }
@@ -308,6 +325,36 @@ test("workspace deletion checks branch preservation before sending a destructive
   } finally {
     preservesLocalBranches = true;
   }
+});
+
+test("project deletion previews empty and populated projects and sends the name confirmation", async () => {
+  projectImpact = safeProjectImpact();
+  assert.deepEqual((await previewCatalogProjectDelete("project-1")).workspace_ids, []);
+  projectImpact = { ...safeProjectImpact(), workspace_ids: ["workspace-1"], workspace_roots: [semanticWorkspaceRoot], dirty_worktree_paths: [`${semanticWorkspaceRoot}/code/repo`] };
+  const preview = await previewCatalogProjectDelete("project-1");
+  assert.deepEqual(preview.workspace_roots, [semanticWorkspaceRoot]);
+  assert.equal(preview.dirty_worktree_paths.length, 1);
+  await deleteCatalogProject("project-1", "Zotigo");
+  assert.deepEqual(requests.slice(-2).map(({ method, url }) => ({ method, url })), [
+    { method: "GET", url: "/projects/project-1/delete-preview" },
+    { method: "POST", url: "/projects/project-1/delete" },
+  ]);
+  assert.deepEqual(requests.at(-1)?.body, { confirmation: "Zotigo" });
+});
+
+test("project deletion fails closed on unsafe or malformed previews", async () => {
+  for (const field of ["preserves_local_branches", "preserves_remote_refs", "preserves_source_directories", "preserves_runtime_sessions"]) {
+    for (const value of [false, undefined]) {
+      projectImpact = { ...safeProjectImpact(), [field]: value };
+      const start = requests.length;
+      await assert.rejects(deleteCatalogProject("project-1", "Zotigo"), /Update zotigod/);
+      assert.equal(requests.slice(start).some(({ method }) => method === "POST"), false);
+    }
+  }
+  projectImpact = { ...safeProjectImpact(), workspace_roots: "invalid" };
+  const start = requests.length;
+  await assert.rejects(deleteCatalogProject("project-1", "Zotigo"), /workspace_roots/);
+  assert.equal(requests.slice(start).some(({ method }) => method === "POST"), false);
 });
 
 test("Codex catalog synchronization is explicit", async () => {

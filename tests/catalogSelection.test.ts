@@ -37,6 +37,17 @@ test("catalog clients share daemon data but never overwrite each other's selecti
   }
 });
 
+test("project deletion clears the browser selection and ignores older refresh results", () => {
+  const client = createBrowserSelection({ getItem: () => null, setItem: () => {} });
+  const selected = { projectId: "p", workspaceId: "w", sessionId: "s" };
+  const empty = { projectId: null, workspaceId: null, sessionId: null };
+  client.begin("desktop:select-conversation").accept(selected);
+  const refresh = client.begin("desktop:get-state");
+  client.begin("desktop:delete-project").accept(empty);
+  refresh.accept(selected);
+  assert.deepEqual(client.begin("desktop:get-state").selection, empty);
+});
+
 test("browser selection survives reload and ignores late earlier choices and background snapshots", () => {
   let saved: string | null = null;
   const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };

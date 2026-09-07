@@ -66,6 +66,8 @@ addWorkspaceSourceToCatalog,
   createProjectInCatalog,
   createWorkspaceInCatalog,
   deleteWorkspaceInCatalog,
+  deleteProjectInCatalog,
+  previewProjectDeleteInCatalog,
   getCatalogDesktopState,
   getWorkspaceSourcesFromCatalog,
   pinCatalogConversation,
@@ -186,6 +188,13 @@ addWorkspaceSourceToCatalog,
   handle("desktop:preview-workspace-delete", (id) =>
     previewWorkspaceDeleteInCatalog(assertNonEmptyString(id, "workspaceId")),
   );
+  handle("desktop:preview-project-delete", (id) =>
+    previewProjectDeleteInCatalog(assertNonEmptyString(id, "projectId")),
+  );
+  handle("desktop:delete-project", (input) => {
+    const value = assertRecord(input, "delete project input");
+    return deleteProjectInCatalog(assertNonEmptyString(value.id, "projectId"), assertString(value.confirmation, "confirmation"));
+  });
   handle("desktop:archive-workspace", (id) =>
     archiveWorkspaceInCatalog(assertNonEmptyString(id, "workspaceId")),
   );

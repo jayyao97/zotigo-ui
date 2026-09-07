@@ -20,6 +20,7 @@ import type {
   WorkspaceArchivePreview,
   CatalogWorkspaceSource,
   WorkspaceDeletePreview,
+  ProjectDeletePreview,
   ProjectSourceKind,
   MessageImageInput,
   SessionCommandResponse,
@@ -268,6 +269,8 @@ export interface ClientApi {
   previewWorkspaceDelete(id: string): Promise<WorkspaceDeletePreview>;
   archiveWorkspace(id: string): Promise<DesktopState>;
   deleteWorkspace(input: DeleteWorkspaceInput): Promise<DesktopState>;
+  previewProjectDelete(id: string): Promise<ProjectDeletePreview>;
+  deleteProject(input: { id: string; confirmation: string }): Promise<DesktopState>;
   selectWorkspace(id: string | null): Promise<DesktopState>;
   selectConversation(id: string | null): Promise<DesktopState>;
   revealPath(path: string): Promise<void>;
