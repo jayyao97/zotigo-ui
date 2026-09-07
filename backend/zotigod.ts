@@ -2,6 +2,7 @@ import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
 import type { DaemonConfig } from "../shared/clientTypes";
+import type { ProjectDeletePreview } from "../shared/zotigod";
 
 const defaultBaseUrl = "http://127.0.0.1:8766";
 const sessionStates = new Set<SessionState>(["created", "starting", "running", "paused", "offline", "ended", "failed"]);
@@ -229,6 +230,26 @@ export function archiveCatalogWorkspace(id: string): Promise<CatalogWorkspace> {
 export function previewCatalogWorkspaceDelete(id: string): Promise<WorkspaceDeletePreview> {
   return requestJSON(`/workspaces/${encodeURIComponent(id)}/delete-preview`)
     .then((value) => parseWorkspaceDeletePreview(value, "workspace delete preview response"));
+}
+
+export async function previewCatalogProjectDelete(id: string): Promise<ProjectDeletePreview> {
+  const context = "project delete preview response";
+  const record = expectRecord(await requestJSON(`/projects/${encodeURIComponent(id)}/delete-preview`), context);
+  if (record.preserves_local_branches !== true || record.preserves_remote_refs !== true
+    || record.preserves_source_directories !== true || record.preserves_runtime_sessions !== true) {
+    throw new Error("Update zotigod before deleting a Project: this daemon does not guarantee preservation of Sources, session history, and Git branches.");
+  }
+  return {
+    project_id: expectString(record.project_id, `${context} project_id`),
+    workspace_ids: expectStringList(record.workspace_ids, `${context} workspace_ids`),
+    workspace_roots: expectStringList(record.workspace_roots, `${context} workspace_roots`),
+    dirty_worktree_paths: expectStringList(record.dirty_worktree_paths, `${context} dirty_worktree_paths`),
+  };
+}
+
+export async function deleteCatalogProject(id: string, confirmation: string): Promise<void> {
+  await previewCatalogProjectDelete(id);
+  await requestJSON(`/projects/${encodeURIComponent(id)}/delete`, jsonRequest("POST", { confirmation }));
 }
 
 export async function deleteCatalogWorkspace(id: string, confirmation: string): Promise<void> {

@@ -405,6 +405,13 @@ export interface WorkspaceDeletePreview extends WorkspaceArchivePreview {
   preserves_local_branches: boolean;
 }
 
+export interface ProjectDeletePreview {
+  project_id: string;
+  workspace_ids: string[];
+  workspace_roots: string[];
+  dirty_worktree_paths: string[];
+}
+
 export type ProjectSourceKind = "git" | "folder";
 
 export interface CreateSessionInput {

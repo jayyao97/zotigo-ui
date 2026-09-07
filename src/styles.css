@@ -3962,6 +3962,16 @@ p {
   color: var(--red);
 }
 
+.delete-project-dialog {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
+
+.delete-project-dialog details ul {
+  max-height: 160px;
+  overflow-y: auto;
+}
+
 .delete-workspace-confirmation {
   display: grid;
   gap: 7px;

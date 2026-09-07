@@ -1,6 +1,7 @@
 import { parseCatalogSelection, type CatalogSelection } from "../../shared/catalogSelection";
 
 const selectionMutations = new Set([
+  "desktop:delete-project",
   "desktop:select-project", "desktop:select-workspace", "desktop:select-conversation",
   "desktop:create-project", "desktop:create-workspace", "desktop:create-conversation-with-session",
   "desktop:archive-workspace", "desktop:delete-workspace", "desktop:archive-conversation",

@@ -59,6 +59,8 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     previewWorkspaceDelete: (id) => invoke("desktop:preview-workspace-delete", id),
     archiveWorkspace: (id) => invoke("desktop:archive-workspace", id),
     deleteWorkspace: (input) => invoke("desktop:delete-workspace", input),
+    previewProjectDelete: (id) => invoke("desktop:preview-project-delete", id),
+    deleteProject: (input) => invoke("desktop:delete-project", input),
     selectWorkspace: (id) => invoke("desktop:select-workspace", id),
     selectConversation: (id) => invoke("desktop:select-conversation", id),
     revealPath: (path) => invoke("desktop:reveal-path", path),

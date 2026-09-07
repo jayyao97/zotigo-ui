@@ -12,6 +12,8 @@ import {
   createCatalogProject,
   createCatalogWorkspace,
   deleteCatalogSource,
+  deleteCatalogProject,
+  previewCatalogProjectDelete,
   deleteCatalogWorkspace,
   getCatalogProject,
   getCatalogWorkspace,
@@ -204,6 +206,14 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     return getCatalogDesktopState();
   }
 
+  async function deleteProjectInCatalog(id: string, confirmation: string): Promise<DesktopState> {
+    await deleteCatalogProject(id, confirmation);
+    if (getCatalogSelection().projectId === id) {
+      setCatalogSelection({ projectId: null, workspaceId: null, sessionId: null });
+    }
+    return getCatalogDesktopState();
+  }
+
   async function selectCatalogProject(id: string | null): Promise<DesktopState> {
     setCatalogSelection({ projectId: id, workspaceId: null, sessionId: null });
     return getCatalogDesktopState();
@@ -360,6 +370,8 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     previewWorkspaceDeleteInCatalog,
     archiveWorkspaceInCatalog,
     deleteWorkspaceInCatalog,
+    deleteProjectInCatalog,
+    previewProjectDeleteInCatalog: previewCatalogProjectDelete,
     selectCatalogProject,
     selectCatalogWorkspace,
     selectCatalogSession,
