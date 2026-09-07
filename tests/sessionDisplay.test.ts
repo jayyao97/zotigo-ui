@@ -18,6 +18,7 @@ import {
   optimisticPromptDisplayItem,
   acknowledgeOptimisticPrompt,
   orderLateTurnItems,
+  pendingHumanRequestIDs,
   reconcileDisplayPreviews,
   reconcileOptimisticSteering,
   sessionAllowsActiveTurn,
@@ -374,6 +375,18 @@ test("denied approvals keep only a compact decision marker", () => {
   assert.deepEqual(visibleDisplayItems([request, denied]).map((item) => item.id), ["approval-decision"]);
 });
 
+test("resolved questions replace their pending form with a compact marker", () => {
+  const request: DisplayItem = {
+    id: "question-request", sequence: 1, type: "interaction_request", created_at: "now",
+    interaction: { id: "interaction-1", kind: "user_input", status: "pending", turn_id: "turn-1", questions: [{ id: "mode", question: "Choose" }] },
+  };
+  const response: DisplayItem = {
+    id: "question-response", sequence: 2, type: "interaction_response", created_at: "now",
+    interaction: { id: "interaction-1", kind: "user_input", status: "resolved", turn_id: "turn-1", answers: { mode: ["Safe"] } },
+  };
+  assert.deepEqual(visibleDisplayItems([request, response]).map((item) => item.id), ["question-response"]);
+});
+
 test("tool results pair across assistant items, across pause, but not across turns", () => {
   const call = assistant("call-item", 2, [
     { type: "tool_call", tool_call: { id: "call-1", name: "shell", arguments: "{}" } },
@@ -527,6 +540,37 @@ test("a pending approval keeps the preceding active tool group open", () => {
   assert.equal(groups[2]?.kind, "item");
 });
 
+test("only unresolved human requests from the current open turn era are actionable", () => {
+  const items: DisplayItem[] = [
+    { ...turn("turn_started", 1), turn: { id: "old-turn" } },
+    {
+      id: "stale-approval", sequence: 2, type: "approval_request", created_at: "now",
+      approval: { id: "approval-old", turn_id: "old-turn", pending: [{ tool_call_id: "old-call" }] },
+    },
+    { ...turn("turn_interrupted", 3), turn: { id: "old-turn" } },
+    { ...turn("turn_started", 4), turn: { id: "root-turn" } },
+    {
+      id: "current-approval", sequence: 5, type: "approval_request", created_at: "now",
+      approval: { id: "approval-current", turn_id: "child-turn", pending: [{ tool_call_id: "child-call" }] },
+    },
+    {
+      id: "current-interaction", sequence: 6, type: "interaction_request", created_at: "now",
+      interaction: { id: "interaction-current", kind: "user_input", status: "pending", turn_id: "other-child-turn", questions: [] },
+    },
+  ];
+
+  const pending = pendingHumanRequestIDs(items);
+  assert.deepEqual([...pending.approvals], ["approval-current"]);
+  assert.deepEqual([...pending.interactions], ["interaction-current"]);
+
+  const resolved = pendingHumanRequestIDs([...items, {
+    id: "current-decision", sequence: 7, type: "approval_decision", created_at: "now",
+    approval: { id: "approval-current", turn_id: "child-turn", decisions: [{ tool_call_id: "child-call", approved: false }] },
+  }]);
+  assert.deepEqual([...resolved.approvals], []);
+  assert.deepEqual([...resolved.interactions], ["interaction-current"]);
+});
+
 test("consecutive reasoning items become one collapsed timeline group", () => {
   const groups = groupTimelineItems([
     assistant("reasoning-1", 1, [{ type: "reasoning", text: "first" }]),
@@ -557,6 +601,6 @@ function assistant(id: string, sequence: number, content: NonNullable<DisplayIte
   return { id, sequence, type: "assistant_message", role: "assistant", content, created_at: new Date(0).toISOString() };
 }
 
-function turn(type: "turn_started" | "turn_paused" | "turn_completed", sequence: number): DisplayItem {
+function turn(type: "turn_started" | "turn_paused" | "turn_completed" | "turn_interrupted", sequence: number): DisplayItem {
   return { id: `${type}-${sequence}`, sequence, type, created_at: new Date(0).toISOString() };
 }

@@ -35,6 +35,8 @@ export function createClientApi(transport: ClientTransport): ClientApi {
       invoke("sessions:change-approval-policy", id, approvalPolicy),
     submitSessionApproval: (id, approvalId, decisions) =>
       invoke("sessions:submit-approval", id, approvalId, decisions),
+    submitSessionInteraction: (id, interactionId, answers) =>
+      invoke("sessions:submit-interaction", id, interactionId, answers),
     changeSessionCodexSettings: (id, input) => invoke("sessions:change-codex-settings", id, input),
     listSessionItems: (id, query) => invoke("sessions:list-items", id, query),
     subscribeSessionEvents: (id, after) => invoke("sessions:subscribe-events", id, after),

@@ -32,12 +32,15 @@ import {
   hasVisibleAssistantContent,
   latestPendingToolCall,
   orderLateTurnItems,
+  pendingHumanRequestIDs,
   sessionAllowsActiveTurn,
   visibleDisplayItems,
   type ToolRenderProjection,
 } from "../../shared/sessionDisplay";
 import { codexUserText, userImageUrl } from "../../shared/codexUserMessage";
 import { approvalPolicyLabel } from "../../shared/approvalPolicy";
+import { formatApprovalArguments } from "../../shared/approvalDisplay";
+import { buildInteractionAnswers, interactionAnswersComplete, type InteractionDrafts } from "../../shared/interactionAnswers";
 import type { ApprovalDecisionInput, CommandImageMetadata, DisplayContentPart, DisplayItem, DisplayToolCall, DisplayToolResult, ZotigoSession } from "../../shared/zotigod";
 import type { DaemonSessionBinding } from "../../shared/clientTypes";
 import { MarkdownCodeBlock } from "../MarkdownCodeBlock";
@@ -58,8 +61,10 @@ export const SessionTimeline = memo(function SessionTimeline({
   itemsError,
   message,
   daemonUrl,
-  submittingApprovalId,
+  submittingApprovalIds,
   onSubmitApproval,
+  submittingInteractionIds,
+  onSubmitInteraction,
 }: {
   binding: DaemonSessionBinding | null;
   session: ZotigoSession | null;
@@ -68,8 +73,10 @@ export const SessionTimeline = memo(function SessionTimeline({
   itemsError: string | null;
   message: string | null;
   daemonUrl: string;
-  submittingApprovalId: string | null;
+  submittingApprovalIds: ReadonlySet<string>;
   onSubmitApproval: (approvalId: string, decisions: ApprovalDecisionInput[]) => Promise<void>;
+  submittingInteractionIds: ReadonlySet<string>;
+  onSubmitInteraction: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
 }) {
   const compactedItemCacheRef = useRef(new WeakMap<DisplayItem, { workspaceRoot: string; item: DisplayItem }>());
   const displayItems = useMemo(
@@ -81,7 +88,9 @@ export const SessionTimeline = memo(function SessionTimeline({
   const recordedActiveTurn = latestActiveTurn(items);
   const activeTurn = session?.state === "starting" || session?.state === "running" ? recordedActiveTurn : null;
   const openTurn = session && sessionAllowsActiveTurn(session.state) ? recordedActiveTurn : null;
-  const pendingApprovalId = session?.state === "paused" ? latestPendingApprovalId(items) : null;
+  const pendingRequests = useMemo(() => pendingHumanRequestIDs(items), [items]);
+  const pendingApprovalIds = session?.state === "paused" ? pendingRequests.approvals : new Set<string>();
+  const pendingInteractionIds = pendingRequests.interactions;
   const activeToolCall = activeTurn
     ? latestPendingToolCall(items, session?.active_tool) ?? latestPendingToolCall(items)
     : null;
@@ -122,9 +131,12 @@ export const SessionTimeline = memo(function SessionTimeline({
                     daemonUrl={daemonUrl}
                     sessionId={binding.daemon_session_id}
                     toolProjection={toolProjection}
-                    approvalPending={item.approval?.id === pendingApprovalId}
-                    approvalSubmitting={item.approval?.id === submittingApprovalId}
+                    approvalPending={Boolean(item.approval?.id && pendingApprovalIds.has(item.approval.id))}
+                    approvalSubmitting={item.approval?.id ? submittingApprovalIds.has(item.approval.id) : false}
                     onSubmitApproval={onSubmitApproval}
+                    interactionPending={Boolean(item.interaction?.id && pendingInteractionIds.has(item.interaction.id))}
+                    interactionSubmitting={item.interaction?.id ? submittingInteractionIds.has(item.interaction.id) : false}
+                    onSubmitInteraction={onSubmitInteraction}
                   />
                 );
                 if (group.kind === "tools") {
@@ -234,22 +246,6 @@ export function latestActiveTurn(items: DisplayItem[]): DisplayItem | null {
   return activeTurn;
 }
 
-function latestPendingApprovalId(items: DisplayItem[]): string | null {
-  const resolved = new Set(
-    items
-      .filter((item) => item.type === "approval_decision")
-      .map((item) => item.approval?.id)
-      .filter((id): id is string => Boolean(id)),
-  );
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item.type === "approval_request" && item.approval?.id && !resolved.has(item.approval.id)) {
-      return item.approval.id;
-    }
-  }
-  return null;
-}
-
 export function latestProfileResult(items: DisplayItem[]): DisplayItem | null {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
@@ -291,6 +287,9 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   approvalPending,
   approvalSubmitting,
   onSubmitApproval,
+  interactionPending,
+  interactionSubmitting,
+  onSubmitInteraction,
 }: {
   item: DisplayItem;
   turnEnd: DisplayItem | null;
@@ -303,6 +302,9 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   approvalPending: boolean;
   approvalSubmitting: boolean;
   onSubmitApproval: (approvalId: string, decisions: ApprovalDecisionInput[]) => Promise<void>;
+  interactionPending: boolean;
+  interactionSubmitting: boolean;
+  onSubmitInteraction: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
 }) {
   if (item.type === "profile_changed" || item.type === "profile_change_failed") {
     const target = item.profile?.to ?? "profile";
@@ -347,6 +349,10 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
         onSubmit={onSubmitApproval}
       />
     );
+  }
+
+  if (item.type === "interaction_request" || item.type === "interaction_response") {
+    return <UserInputItem item={item} pending={interactionPending} submitting={interactionSubmitting} onSubmit={onSubmitInteraction} />;
   }
 
   if (item.type === "session_command") {
@@ -415,6 +421,9 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     previous.approvalPending !== next.approvalPending ||
     previous.approvalSubmitting !== next.approvalSubmitting ||
     previous.onSubmitApproval !== next.onSubmitApproval
+    || previous.interactionPending !== next.interactionPending
+    || previous.interactionSubmitting !== next.interactionSubmitting
+    || previous.onSubmitInteraction !== next.onSubmitInteraction
   ) {
     return false;
   }
@@ -445,6 +454,9 @@ function ApprovalItem({
   submitting: boolean;
   onSubmit: (approvalId: string, decisions: ApprovalDecisionInput[]) => Promise<void>;
 }) {
+  const [denyReason, setDenyReason] = useState("");
+  const [denying, setDenying] = useState(false);
+  const [submittingDecision, setSubmittingDecision] = useState<"approve" | "deny" | null>(null);
   const approval = item.approval;
   const pendingItems = approval?.pending ?? [];
   const decisions = approval?.decisions ?? [];
@@ -453,17 +465,24 @@ function ApprovalItem({
     return deniedCount > 0 ? (
       <div className="tool-process-line approval-denied-line">
         <X size={12} strokeWidth={1.8} />
-        <span>{deniedCount === 1 ? "Tool call denied" : `${deniedCount} tool calls denied`}</span>
+        <span>{deniedCount === 1 ? "Tool call denied" : `${deniedCount} tool calls denied`}{decisions.find((decision) => !decision.approved)?.reason ? ` · ${decisions.find((decision) => !decision.approved)?.reason}` : ""}</span>
       </div>
     ) : null;
   }
   const heading = pending
     ? "Approval required"
     : "Approval request";
-  const decide = (approved: boolean) => {
-    if (!approval?.id || submitting) return;
-    const next = pendingItems.map((entry) => ({ tool_call_id: entry.tool_call_id, approved }));
-    if (next.length > 0) void onSubmit(approval.id, next);
+  const decide = async (approved: boolean) => {
+    if (!approval?.id || submitting || submittingDecision) return;
+    const reason = denyReason.trim();
+    const next = pendingItems.map((entry) => ({ tool_call_id: entry.tool_call_id, approved, ...(!approved && reason ? { reason } : {}) }));
+    if (next.length === 0) return;
+    setSubmittingDecision(approved ? "approve" : "deny");
+    try {
+      await onSubmit(approval.id, next);
+    } finally {
+      setSubmittingDecision(null);
+    }
   };
 
   return (
@@ -477,32 +496,94 @@ function ApprovalItem({
           <span>{formatApprovalTool(entry.tool_name, entry.arguments)}</span>
           {entry.description && <p>{entry.description}</p>}
           {entry.reason && <p>{entry.reason}</p>}
+          {entry.source && <p className="approval-source">{formatApprovalSource(entry.source)}</p>}
           {entry.arguments && <pre>{formatApprovalArguments(entry.arguments)}</pre>}
         </div>
       ))}
       {pending && pendingItems.length > 0 && (
-        <div className="approval-card-actions">
-          <button type="button" className="secondary" disabled={submitting} onClick={() => decide(false)}>Deny</button>
-          <button type="button" className="primary" disabled={submitting} onClick={() => decide(true)}>
-            {submitting ? <LoaderCircle className="spin" size={14} strokeWidth={2} /> : <Check size={14} strokeWidth={2} />}
-            Approve
-          </button>
+        <div className="approval-card-actions-wrap">
+          {denying && <textarea value={denyReason} onChange={(event) => setDenyReason(event.target.value)} placeholder="Reason for denying (optional)" aria-label="Reason for denying" autoFocus />}
+          <div className="approval-card-actions">
+            <button type="button" className="secondary" disabled={submitting || submittingDecision !== null} onClick={() => denying ? void decide(false) : setDenying(true)}>
+              {submittingDecision === "deny" && <LoaderCircle className="spin" size={14} strokeWidth={2} />}
+              {denying ? "Confirm deny" : "Deny"}
+            </button>
+            <button type="button" className="primary" disabled={submitting || submittingDecision !== null} onClick={() => void decide(true)}>
+              {submittingDecision === "approve" ? <LoaderCircle className="spin" size={14} strokeWidth={2} /> : <Check size={14} strokeWidth={2} />}
+              Approve
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
+function formatApprovalSource(source: string): string {
+  if (source.startsWith("subagent:")) return `Requested by subagent ${source.slice("subagent:".length)}`;
+  if (source.startsWith("codex_subagent:")) return "Requested by a Codex subagent";
+  return source === "codex" ? "Requested by Codex" : `Requested by ${source}`;
+}
+
+function UserInputItem({ item, pending, submitting, onSubmit }: {
+  item: DisplayItem;
+  pending: boolean;
+  submitting: boolean;
+  onSubmit: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
+}) {
+  const interaction = item.interaction;
+  const questions = interaction?.questions ?? [];
+  const [answers, setAnswers] = useState<InteractionDrafts>({});
+  const [confirmUnanswered, setConfirmUnanswered] = useState(false);
+  if (!interaction) return null;
+  if (item.type === "interaction_response") {
+    return <div className="tool-process-line"><Check size={12} strokeWidth={1.8} /><span>{interaction.status === "expired" ? "Question expired" : "Answered question"}</span></div>;
+  }
+  const requester = interaction.requester?.name ? `${interaction.requester.name} asks` : "Input required";
+  const complete = interactionAnswersComplete(questions, answers);
+  return (
+    <form className={`tool-card interaction-card ${pending ? "pending" : "resolved"}`} onSubmit={(event) => {
+      event.preventDefault();
+      if (!pending || submitting) return;
+      if (!complete && !confirmUnanswered) {
+        setConfirmUnanswered(true);
+        return;
+      }
+      void onSubmit(interaction.id, buildInteractionAnswers(questions, answers));
+    }}>
+      <div className="approval-card-heading"><strong>{requester}</strong></div>
+      {questions.map((question) => (
+        <fieldset key={question.id}>
+          <legend>{question.header && <span>{question.header}</span>}{question.question}</legend>
+          {(question.options ?? []).map((option) => (
+            <label className="interaction-option" key={option.label}>
+              <input type="radio" name={question.id} checked={!answers[question.id]?.otherSelected && answers[question.id]?.selected === option.label} onChange={() => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], selected: option.label, otherSelected: false } })); }} />
+              <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
+            </label>
+          ))}
+          {question.is_other && (question.options?.length ?? 0) > 0 && (
+            <label className="interaction-option">
+              <input type="radio" name={question.id} checked={answers[question.id]?.otherSelected === true} onChange={() => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], otherSelected: true } })); }} />
+              <span><strong>None of the above</strong></span>
+            </label>
+          )}
+          {((question.options?.length ?? 0) === 0 || answers[question.id]?.selected || answers[question.id]?.otherSelected) && (
+            <input type={question.is_secret ? "password" : "text"} value={answers[question.id]?.value ?? ""} onChange={(event) => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], value: event.target.value } })); }} placeholder={(question.options?.length ?? 0) > 0 ? "Add an optional note" : "Type your answer"} aria-label={question.question} autoComplete={question.is_secret ? "new-password" : "off"} data-1p-ignore={question.is_secret ? "true" : undefined} data-lpignore={question.is_secret ? "true" : undefined} />
+          )}
+        </fieldset>
+      ))}
+      {pending && confirmUnanswered && <p className="interaction-unanswered-warning">Some questions are unanswered. Submit anyway?</p>}
+      {pending && <div className="approval-card-actions">
+        {confirmUnanswered && <button type="button" className="secondary" disabled={submitting} onClick={() => setConfirmUnanswered(false)}>Cancel</button>}
+        <button type="submit" className="primary" disabled={submitting}>{submitting && <LoaderCircle className="spin" size={14} />}{confirmUnanswered ? "Submit anyway" : "Submit answer"}</button>
+      </div>}
+    </form>
+  );
+}
+
 function formatApprovalTool(name?: string, argumentsValue?: string): string {
   const call = { name, arguments: argumentsValue };
   return formatToolCallProcess(call);
-}
-
-function formatApprovalArguments(raw: string): string {
-  const parsed = parseToolArguments(raw);
-  if (!parsed) return raw;
-  const command = stringValue(parsed.command) || stringValue(parsed.cmd) || stringValue(parsed.script);
-  return command || JSON.stringify(parsed, null, 2);
 }
 
 function formatSessionCommand(item: DisplayItem): string {

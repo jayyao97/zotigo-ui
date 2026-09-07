@@ -25,6 +25,11 @@ export interface OptimisticPromptInput {
   createdAt: string;
 }
 
+export interface PendingHumanRequestIDs {
+  approvals: Set<string>;
+  interactions: Set<string>;
+}
+
 export type TimelineDisplayGroup =
   | { kind: "item"; item: DisplayItem }
   | { kind: "tools"; items: DisplayItem[]; active: boolean }
@@ -38,6 +43,48 @@ const toolProgressPreviewLimit = 16 * 1024;
 
 export function sessionAllowsActiveTurn(state: SessionState | undefined): boolean {
   return state === undefined || state === "starting" || state === "running" || state === "paused";
+}
+
+export function pendingHumanRequestIDs(items: DisplayItem[]): PendingHumanRequestIDs {
+  let openTurnID = "";
+  let start = 0;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const turnID = item.turn?.id;
+    if ((item.type === "turn_started" || item.type === "turn_paused") && turnID) {
+      openTurnID = turnID;
+    } else if (isTerminalDisplayItem(item)) {
+      start = index + 1;
+      if (turnID === openTurnID) openTurnID = "";
+    }
+  }
+  if (!openTurnID) return { approvals: new Set(), interactions: new Set() };
+  for (let index = items.length - 1; index >= start; index -= 1) {
+    if (items[index].type === "turn_started" && items[index].turn?.id === openTurnID) {
+      start = index;
+      break;
+    }
+  }
+
+  const approvals = new Set<string>();
+  const interactions = new Set<string>();
+  for (const item of items.slice(start)) {
+    const approvalID = item.approval?.id;
+    if (approvalID) {
+      if (item.type === "approval_request") approvals.add(approvalID);
+      if (item.type === "approval_decision") approvals.delete(approvalID);
+    }
+    const interactionID = item.interaction?.id;
+    if (interactionID) {
+      if (item.type === "interaction_request") interactions.add(interactionID);
+      if (item.type === "interaction_response") interactions.delete(interactionID);
+    }
+  }
+  return { approvals, interactions };
+}
+
+function isTerminalDisplayItem(item: DisplayItem): boolean {
+  return item.type === "turn_completed" || item.type === "turn_failed" || item.type === "turn_interrupted";
 }
 
 export function selectedTimelineActivity({
@@ -107,6 +154,12 @@ export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
       .map((item) => item.approval?.id)
       .filter((id): id is string => Boolean(id)),
   );
+  const resolvedInteractionIds = new Set(
+    items
+      .filter((item) => item.type === "interaction_response")
+      .map((item) => item.interaction?.id)
+      .filter((id): id is string => Boolean(id)),
+  );
   const duplicateSyncedUserIDs = duplicateSyncedUserItemIDs(items);
 
   return items.filter((item) => {
@@ -117,6 +170,9 @@ export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
     }
     if (item.type === "approval_decision") {
       return Boolean(item.approval?.decisions?.some((decision) => !decision.approved));
+    }
+    if (item.type === "interaction_request" && item.interaction?.id && resolvedInteractionIds.has(item.interaction.id)) {
+      return false;
     }
     return true;
   });
