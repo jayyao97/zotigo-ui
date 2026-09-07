@@ -1,6 +1,6 @@
 import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";
-import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
+import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
 import type { DaemonConfig } from "../shared/clientTypes";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 
@@ -23,6 +23,8 @@ const displayItemTypes = new Set<DisplayItemType>([
   "turn_interrupted",
   "approval_request",
   "approval_decision",
+  "interaction_request",
+  "interaction_response",
   "context_compacted",
   "profile_changed",
   "profile_change_failed",
@@ -329,6 +331,21 @@ export function submitSessionApproval(
       headers: { "Content-Type": "application/json" },
     },
   ).then(parseApprovalDecisionResponse);
+}
+
+export function submitSessionInteraction(
+  id: string,
+  interactionId: string,
+  answers: Record<string, string[]>,
+): Promise<InteractionResponse> {
+  return requestJSON(
+    `/sessions/${encodeURIComponent(id)}/interactions/${encodeURIComponent(interactionId)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+      headers: { "Content-Type": "application/json" },
+    },
+  ).then((value) => parseInteractionResponse(value, "interaction response"));
 }
 
 export function changeSessionCodexSettings(id: string, input: CodexSettingsInput): Promise<ZotigoSession> {
@@ -871,6 +888,10 @@ function parseDisplayItem(value: unknown, context: string): DisplayItem {
       record.approval === undefined || record.approval === null
         ? undefined
         : parseDisplayApproval(record.approval, `${context} approval`),
+    interaction:
+      record.interaction === undefined || record.interaction === null
+        ? undefined
+        : parseDisplayInteraction(record.interaction, `${context} interaction`),
     command:
       record.command === undefined || record.command === null
         ? undefined
@@ -1197,6 +1218,63 @@ function parseApprovalDecisionResponse(value: unknown): ApprovalDecisionResponse
     created_at: expectString(record.created_at, "approval decision response created_at"),
     resolved_at: expectOptionalString(record.resolved_at, "approval decision response resolved_at"),
   };
+}
+
+function parseDisplayInteraction(value: unknown, context: string): DisplayInteraction {
+  const record = expectRecord(value, context);
+  const kind = expectString(record.kind, `${context} kind`);
+  const status = expectString(record.status, `${context} status`);
+  if (kind !== "user_input") throw new Error(`${context} kind is not supported: ${kind}`);
+  if (status !== "pending" && status !== "resolved" && status !== "expired") {
+    throw new Error(`${context} status is not supported: ${status}`);
+  }
+  const answersRecord = record.answers === undefined || record.answers === null
+    ? undefined
+    : expectRecord(record.answers, `${context} answers`);
+  const answers = answersRecord === undefined
+    ? undefined
+    : Object.fromEntries(Object.entries(answersRecord).map(([id, answer]) => [id, expectArray(answer, `${context} answers.${id}`).map((entry, index) => expectString(entry, `${context} answers.${id}[${index}]`))]));
+  return {
+    id: expectString(record.id, `${context} id`),
+    kind,
+    status,
+    turn_id: expectString(record.turn_id, `${context} turn_id`),
+    item_id: expectOptionalString(record.item_id, `${context} item_id`),
+    requester: record.requester === undefined || record.requester === null ? undefined : parseInteractionRequester(record.requester, `${context} requester`),
+    questions: parseOptionalArray(record.questions, `${context} questions`, parseInteractionQuestion),
+    answers,
+    is_blocking: expectOptionalBoolean(record.is_blocking, `${context} is_blocking`),
+    auto_resolve_ms: record.auto_resolve_ms === undefined ? undefined : expectNumber(record.auto_resolve_ms, `${context} auto_resolve_ms`),
+  };
+}
+
+function parseInteractionRequester(value: unknown, context: string) {
+  const record = expectRecord(value, context);
+  return {
+    agent: expectOptionalString(record.agent, `${context} agent`),
+    thread_id: expectOptionalString(record.thread_id, `${context} thread_id`),
+    name: expectOptionalString(record.name, `${context} name`),
+  };
+}
+
+function parseInteractionQuestion(value: unknown, context: string): DisplayInteractionQuestion {
+  const record = expectRecord(value, context);
+  return {
+    id: expectString(record.id, `${context} id`),
+    header: expectOptionalString(record.header, `${context} header`),
+    question: expectString(record.question, `${context} question`),
+    is_other: expectOptionalBoolean(record.is_other, `${context} is_other`),
+    is_secret: expectOptionalBoolean(record.is_secret, `${context} is_secret`),
+    options: parseOptionalArray(record.options, `${context} options`, (value, optionContext) => {
+      const option = expectRecord(value, optionContext);
+      return { label: expectString(option.label, `${optionContext} label`), description: expectOptionalString(option.description, `${optionContext} description`) };
+    }),
+  };
+}
+
+function parseInteractionResponse(value: unknown, context: string): InteractionResponse {
+  const record = expectRecord(value, context);
+  return { ...parseDisplayInteraction(record, context), session_id: expectString(record.session_id, `${context} session_id`) };
 }
 
 function parseDisplayCommand(value: unknown, context: string): DisplayCommand {

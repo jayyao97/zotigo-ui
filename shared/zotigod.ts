@@ -50,6 +50,8 @@ export type DisplayItemType =
   | "turn_interrupted"
   | "approval_request"
   | "approval_decision"
+  | "interaction_request"
+  | "interaction_response"
   | "context_compacted"
   | "profile_changed"
   | "profile_change_failed"
@@ -142,6 +144,37 @@ export interface DisplayApprovalDecision {
   modified_args?: string;
 }
 
+export interface DisplayInteractionOption {
+  label: string;
+  description?: string;
+}
+
+export interface DisplayInteractionQuestion {
+  id: string;
+  header?: string;
+  question: string;
+  is_other?: boolean;
+  is_secret?: boolean;
+  options?: DisplayInteractionOption[];
+}
+
+export interface DisplayInteraction {
+  id: string;
+  kind: "user_input";
+  status: "pending" | "resolved" | "expired";
+  turn_id: string;
+  item_id?: string;
+  requester?: { agent?: string; thread_id?: string; name?: string };
+  questions?: DisplayInteractionQuestion[];
+  answers?: Record<string, string[]>;
+  is_blocking?: boolean;
+  auto_resolve_ms?: number;
+}
+
+export interface InteractionResponse extends DisplayInteraction {
+  session_id: string;
+}
+
 export interface ApprovalDecisionInput {
   tool_call_id: string;
   approved: boolean;
@@ -183,6 +216,7 @@ export interface DisplayItem {
   content?: DisplayContentPart[];
   turn?: DisplayTurn;
   approval?: DisplayApproval;
+  interaction?: DisplayInteraction;
   command?: DisplayCommand;
   profile?: DisplayProfileChange;
   approval_policy?: DisplayApprovalPolicyChange;

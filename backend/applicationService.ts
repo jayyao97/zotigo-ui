@@ -22,6 +22,7 @@ import {
   startSession,
   changeSessionApprovalPolicy,
   submitSessionApproval,
+  submitSessionInteraction,
   changeSessionCodexSettings,
   changeSessionProfile,
   ZotigodRequestError,
@@ -135,6 +136,13 @@ addWorkspaceSourceToCatalog,
       assertString(id, "id"),
       assertNonEmptyString(approvalId, "approvalId"),
       assertApprovalDecisions(decisions),
+    ),
+  );
+  handle("sessions:submit-interaction", (id, interactionId, answers) =>
+    submitSessionInteraction(
+      assertString(id, "id"),
+      assertNonEmptyString(interactionId, "interactionId"),
+      assertInteractionAnswers(answers),
     ),
   );
   handle("sessions:change-codex-settings", (id, input) => {
@@ -386,9 +394,10 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     const created = await createSession({
       workspaceId: workspaceId ?? undefined,
       agent,
+      approvalPolicy,
       ...(agent === "codex"
         ? { model, reasoningEffort }
-        : { profile, approvalPolicy }),
+        : { profile }),
     });
     await setCatalogSessionTitle(created.id, title?.trim() || "New session");
     if (workspaceId) {
@@ -722,6 +731,21 @@ function assertApprovalDecisions(value: unknown): ApprovalDecisionInput[] {
       reason: optionalTrimmedString(record.reason, `decisions[${index}].reason`),
     };
   });
+}
+
+function assertInteractionAnswers(value: unknown): Record<string, string[]> {
+  const record = assertRecord(value, "answers");
+  const answers: Record<string, string[]> = Object.create(null) as Record<string, string[]>;
+  for (const [questionId, answer] of Object.entries(record)) {
+    if (!questionId.trim()) throw new Error("answer question id must not be empty");
+    answers[questionId] = assertArray(answer, `answers.${questionId}`).map((value, index) => {
+      const item = assertString(value, `answers.${questionId}[${index}]`);
+      if (!item.trim()) throw new Error(`answers.${questionId}[${index}] must not be empty`);
+      return item;
+    });
+  }
+  if (Object.keys(answers).length === 0) throw new Error("answers must not be empty");
+  return answers;
 }
 
 function assertSessionItemsQuery(value: unknown): { limit?: number; after?: number; before?: number } {

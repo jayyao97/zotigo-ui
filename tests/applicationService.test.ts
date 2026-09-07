@@ -78,6 +78,97 @@ test("Project deletion crosses the shared client boundary and clears only its ow
   }
 });
 
+test("interaction answers preserve exact values across the application boundary", async () => {
+  const original = getDaemonConfig().baseUrl;
+  let received: unknown;
+  const daemon = createServer(async (request, response) => {
+    const chunks = []; for await (const chunk of request) chunks.push(chunk);
+    received = JSON.parse(Buffer.concat(chunks).toString());
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ code: "ok", data: {
+      id: "interaction", session_id: "session", turn_id: "turn", kind: "user_input", status: "resolved",
+      questions: [{ id: "secret", question: "Token" }], answers: { secret: ["[redacted]"] }, is_blocking: true,
+    } }));
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  try {
+    const result = await service.invoke("sessions:submit-interaction", ["session", "interaction", { " secret ": ["user_note:   keep whitespace  "] }]);
+    assert.equal(result.ok, true);
+    assert.deepEqual(received, { answers: { " secret ": ["user_note:   keep whitespace  "] } });
+    const unanswered = await service.invoke("sessions:submit-interaction", ["session", "interaction", { optional: [] }]);
+    assert.equal(unanswered.ok, true);
+    assert.deepEqual(received, { answers: { optional: [] } });
+  } finally {
+    service.dispose(); setDaemonBaseUrl(original);
+    const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed;
+  }
+});
+
+test("interaction answers preserve an opaque __proto__ question id", async () => {
+  const original = getDaemonConfig().baseUrl;
+  let received: unknown;
+  const daemon = createServer(async (request, response) => {
+    const chunks = []; for await (const chunk of request) chunks.push(chunk);
+    received = JSON.parse(Buffer.concat(chunks).toString());
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ code: "ok", data: {
+      id: "interaction", session_id: "session", turn_id: "turn", kind: "user_input", status: "resolved",
+      questions: [{ id: "__proto__", question: "Value" }], answers: { redacted: ["[redacted]"] }, is_blocking: true,
+    } }));
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  try {
+    const answers = Object.fromEntries([["__proto__", ["opaque value"]]]);
+    const result = await service.invoke("sessions:submit-interaction", ["session", "interaction", answers]);
+    assert.equal(result.ok, true);
+    assert.equal(Object.hasOwn((received as { answers: object }).answers, "__proto__"), true);
+    assert.deepEqual((received as { answers: Record<string, string[]> }).answers["__proto__"], ["opaque value"]);
+  } finally {
+    service.dispose(); setDaemonBaseUrl(original);
+    const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed;
+  }
+});
+
+test("Codex conversation creation forwards the selected approval policy", async () => {
+  const original = getDaemonConfig().baseUrl;
+  let createBody: unknown;
+  const daemon = createServer(async (request, response) => {
+    if (request.method === "POST" && request.url === "/sessions") {
+      const chunks = []; for await (const chunk of request) chunks.push(chunk);
+      createBody = JSON.parse(Buffer.concat(chunks).toString());
+      response.writeHead(400, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ code: "invalid_request", message: "captured" }));
+      return;
+    }
+    const data = request.url === "/projects" ? { projects: [] } : { sessions: [] };
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ code: "ok", data }));
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  try {
+    const result = await service.invoke("desktop:create-conversation-with-session", [{
+      projectId: null, prompt: "hello", images: [], skills: [], agent: "codex",
+      model: "gpt-5.6-luna", reasoningEffort: "max", approvalPolicy: "bypass_permissions",
+    }]);
+    assert.equal(result.ok, true);
+    assert.deepEqual(createBody, {
+      agent: "codex", model: "gpt-5.6-luna", reasoning_effort: "max", approval_policy: "bypass_permissions",
+    });
+  } finally {
+    service.dispose(); setDaemonBaseUrl(original);
+    const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed;
+  }
+});
+
 test("optional client arguments survive JSON transport without becoming explicit null", async () => {
   const calls: unknown[] = [];
   const api = createClientApi({

@@ -333,7 +333,10 @@ export default function App() {
   const [profileOverrides, setProfileOverrides] = useState<Record<string, string>>({});
   const [draftApprovalPolicy, setDraftApprovalPolicy] = useState<ApprovalPolicy>("auto");
   const [approvalPolicyOverrides, setApprovalPolicyOverrides] = useState<Record<string, ApprovalPolicy>>({});
-  const [submittingApprovalId, setSubmittingApprovalId] = useState<string | null>(null);
+  const submittingApprovalIdsRef = useRef(new Set<string>());
+  const submittingInteractionIdsRef = useRef(new Set<string>());
+  const [submittingApprovalIds, setSubmittingApprovalIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [submittingInteractionIds, setSubmittingInteractionIds] = useState<ReadonlySet<string>>(() => new Set());
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [runtimeAgents, setRuntimeAgents] = useState<AgentCatalogEntry[]>([]);
   const [runtimeAgentsLoading, setRuntimeAgentsLoading] = useState(false);
@@ -1708,6 +1711,7 @@ export default function App() {
           ? {
               model: selectedCodexModel,
               reasoningEffort: selectedCodexReasoningEffort,
+              approvalPolicy: selectedApprovalPolicy ?? "auto",
             }
           : {
               profile: selectedProfile || undefined,
@@ -1946,8 +1950,9 @@ export default function App() {
     approvalId: string,
     decisions: ApprovalDecisionInput[],
   ) => {
-    if (!selectedBinding || submittingApprovalId) return;
-    setSubmittingApprovalId(approvalId);
+    if (!selectedBinding || submittingApprovalIdsRef.current.has(approvalId)) return;
+    submittingApprovalIdsRef.current.add(approvalId);
+    setSubmittingApprovalIds(new Set(submittingApprovalIdsRef.current));
     setMessage(null);
     try {
       await client.submitSessionApproval(
@@ -1962,9 +1967,32 @@ export default function App() {
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {
-      setSubmittingApprovalId(null);
+      submittingApprovalIdsRef.current.delete(approvalId);
+      setSubmittingApprovalIds(new Set(submittingApprovalIdsRef.current));
     }
-  }, [selectedBinding, submittingApprovalId]);
+  }, [selectedBinding]);
+
+  const submitInteraction = useCallback(async (
+    interactionId: string,
+    answers: Record<string, string[]>,
+  ) => {
+    if (!selectedBinding || submittingInteractionIdsRef.current.has(interactionId)) return;
+    submittingInteractionIdsRef.current.add(interactionId);
+    setSubmittingInteractionIds(new Set(submittingInteractionIdsRef.current));
+    setMessage(null);
+    try {
+      await client.submitSessionInteraction(selectedBinding.daemon_session_id, interactionId, answers);
+      await Promise.all([
+        refreshSessionItems(selectedBinding, { quiet: true }),
+        refreshSessions({ quiet: true }),
+      ]);
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      submittingInteractionIdsRef.current.delete(interactionId);
+      setSubmittingInteractionIds(new Set(submittingInteractionIdsRef.current));
+    }
+  }, [selectedBinding]);
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.nativeEvent.isComposing) {
@@ -3086,8 +3114,10 @@ export default function App() {
                 itemsError={sessionItemsError}
                 message={message}
                 daemonUrl={daemonUrl}
-                submittingApprovalId={submittingApprovalId}
+                submittingApprovalIds={submittingApprovalIds}
                 onSubmitApproval={submitApproval}
+                submittingInteractionIds={submittingInteractionIds}
+                onSubmitInteraction={submitInteraction}
               />
             ) : projectOverviewId && selectedProject ? (
               <ProjectOverview
@@ -3253,13 +3283,11 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                  {selectedAgent === "zotigo" && (
-                    <ApprovalPolicyPicker
-                      value={selectedApprovalPolicy}
-                      onChange={(approvalPolicy) => void selectApprovalPolicy(approvalPolicy)}
-                      disabled={isBusy || hasActiveTurn || selectedApprovalPolicy === null}
-                    />
-                  )}
+                  <ApprovalPolicyPicker
+                    value={selectedApprovalPolicy}
+                    onChange={(approvalPolicy) => void selectApprovalPolicy(approvalPolicy)}
+                    disabled={isBusy || hasActiveTurn || selectedApprovalPolicy === null}
+                  />
                 </div>
                 <div className="composer-actions-right">
                   {selectedAgent === "codex" ? (

@@ -9,6 +9,7 @@ import {
   listSessionItems,
   setDaemonBaseUrl,
   submitSessionApproval,
+  submitSessionInteraction,
 } from "../backend/zotigod";
 
 let server: http.Server;
@@ -94,9 +95,27 @@ before(async () => {
           turn_id: "turn-1",
           status: "resolved",
           pending: [{ tool_call_id: "call-1", tool_name: "shell", arguments: '{"command":"rm file"}' }],
-          decisions: [{ tool_call_id: "call-1", approved: true }],
+          decisions: [{ tool_call_id: "call-1", approved: false, reason: "Not needed" }],
           created_at: new Date(0).toISOString(),
           resolved_at: new Date(1).toISOString(),
+        },
+      });
+      return;
+    }
+    if (request.method === "POST" && request.url === "/sessions/session-1/interactions/interaction-1") {
+      writeJSON(response, 200, {
+        code: "ok",
+        message: "",
+        data: {
+          id: "interaction-1",
+          session_id: "session-1",
+          turn_id: "turn-1",
+          kind: "user_input",
+          status: "resolved",
+          requester: { agent: "codex", name: "Subagent" },
+          questions: [{ id: "mode", question: "Choose", options: [{ label: "Safe" }] }],
+          answers: { mode: ["Safe"] },
+          is_blocking: true,
         },
       });
       return;
@@ -165,21 +184,29 @@ test("parses approval policy completion items", async () => {
   });
 });
 
-test("submits and parses approval decisions", async () => {
+test("submits and parses approval denials with a user reason", async () => {
   const result = await submitSessionApproval("session-1", "approval-1", [
-    { tool_call_id: "call-1", approved: true },
+    { tool_call_id: "call-1", approved: false, reason: "Not needed" },
   ]);
 
   assert.equal(result.status, "resolved");
   assert.deepEqual(result.decisions, [{
     tool_call_id: "call-1",
-    approved: true,
-    reason: undefined,
+    approved: false,
+    reason: "Not needed",
     modified_args: undefined,
   }]);
   assert.deepEqual(requestBodies.shift(), {
-    decisions: [{ tool_call_id: "call-1", approved: true }],
+    decisions: [{ tool_call_id: "call-1", approved: false, reason: "Not needed" }],
   });
+});
+
+test("submits and parses user input interactions", async () => {
+  const result = await submitSessionInteraction("session-1", "interaction-1", { mode: ["Safe"] });
+  assert.equal(result.status, "resolved");
+  assert.equal(result.requester?.name, "Subagent");
+  assert.equal(result.questions?.[0]?.options?.[0]?.label, "Safe");
+  assert.deepEqual(requestBodies.shift(), { answers: { mode: ["Safe"] } });
 });
 
 test("does not expose an HTML error page when the configured port belongs to another service", async () => {

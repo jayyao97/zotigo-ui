@@ -461,13 +461,11 @@ export function NewSessionPrompt({
           </button>
         </div>
         <div className="new-chat-meta">
-          {selectedAgent === "zotigo" && (
-            <ApprovalPolicyPicker
-              value={selectedApprovalPolicy}
-              onChange={onSelectApprovalPolicy}
-              disabled={isBusy}
-            />
-          )}
+          <ApprovalPolicyPicker
+            value={selectedApprovalPolicy}
+            onChange={onSelectApprovalPolicy}
+            disabled={isBusy}
+          />
           <RuntimeSettingsPicker
             agents={agents}
             selectedAgent={selectedAgent}

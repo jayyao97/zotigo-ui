@@ -5,6 +5,7 @@ import type {
   ZotigoSession,
   ApprovalDecisionInput,
   ApprovalDecisionResponse,
+  InteractionResponse,
   SessionItemsQuery,
   SessionItemsResponse,
   SessionDisplayEvent,
@@ -245,6 +246,7 @@ export interface ClientApi {
   changeSessionProfile(id: string, profile: string): Promise<ChangeProfileResponse>;
   changeSessionApprovalPolicy(id: string, approvalPolicy: ApprovalPolicy): Promise<ChangeApprovalPolicyResponse>;
   submitSessionApproval(id: string, approvalId: string, decisions: ApprovalDecisionInput[]): Promise<ApprovalDecisionResponse>;
+  submitSessionInteraction(id: string, interactionId: string, answers: Record<string, string[]>): Promise<InteractionResponse>;
   changeSessionCodexSettings(id: string, input: CodexSettingsInput): Promise<ZotigoSession>;
   listSessionItems(id: string, query?: SessionItemsQuery): Promise<SessionItemsResponse>;
   subscribeSessionEvents(id: string, after?: number): Promise<void>;
