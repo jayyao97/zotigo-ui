@@ -3,7 +3,12 @@ import { initialSessionEventReconnectDelayMs, sessionEventReconnectPlan } from "
 import type { SessionEventEnvelope } from "../shared/clientTypes";
 import { streamSessionEvents, UnsupportedSessionEventsError } from "./zotigod";
 
-export function createSessionEvents(send: (event: SessionEventEnvelope) => void | Promise<void>) {
+type SessionEventStream = typeof streamSessionEvents;
+
+export function createSessionEvents(
+  send: (event: SessionEventEnvelope) => void | Promise<void>,
+  stream: SessionEventStream = streamSessionEvents,
+) {
   let sessionEventsController: AbortController | null = null;
   function startSessionEvents(sessionId: string, after?: number): void {
     stopSessionEvents();
@@ -19,10 +24,11 @@ export function createSessionEvents(send: (event: SessionEventEnvelope) => void 
         let receivedEvent = false;
         try {
           if (reconnecting) await send({ session_id: sessionId, status: "reconnecting" });
-          await streamSessionEvents(
+          await stream(
             sessionId,
             cursor,
             async (sessionEvent) => {
+              if (sessionEventsController !== controller || controller.signal.aborted) return;
               receivedEvent = true;
               await send({ session_id: sessionId, event: sessionEvent });
               if (sessionEvent.type === "item") {
@@ -30,6 +36,7 @@ export function createSessionEvents(send: (event: SessionEventEnvelope) => void 
               }
             },
             () => {
+              if (sessionEventsController !== controller || controller.signal.aborted) return;
               connectedAtMs = Date.now();
               return send({ session_id: sessionId, status: "connected" });
             },

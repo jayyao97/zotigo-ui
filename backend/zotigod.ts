@@ -437,6 +437,8 @@ export async function streamSessionEvents(
   }
 
   const reader = response.body.getReader();
+  const cancelReader = () => { void reader.cancel().catch(() => undefined); };
+  signal.addEventListener("abort", cancelReader, { once: true });
   try {
     await onConnected();
     const decoder = new TextDecoder();
@@ -445,6 +447,7 @@ export async function streamSessionEvents(
 
     while (true) {
       const { done, value } = await reader.read();
+      if (signal.aborted) throw signal.reason;
       buffer += decoder.decode(value, { stream: !done });
       const lines = buffer.split(/\r?\n/);
       buffer = done ? "" : (lines.pop() ?? "");
@@ -476,6 +479,7 @@ export async function streamSessionEvents(
       }
     }
   } finally {
+    signal.removeEventListener("abort", cancelReader);
     try { await reader.cancel(); } catch { /* The aborted transport may already be closed. */ }
     reader.releaseLock();
   }
