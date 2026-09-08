@@ -46,6 +46,7 @@ import type { DaemonSessionBinding } from "../../shared/clientTypes";
 import { MarkdownCodeBlock } from "../MarkdownCodeBlock";
 import { PreviewImage } from "../ImagePreview";
 import { markdownUrlTransform } from "../markdownUrlTransform";
+import { defaultActivityDisclosureOpen, defaultThinkingDisclosureOpen, type ThinkingDisplayMode } from "../thinkingDisplay";
 
 export function formatCompactTokenCount(tokens: number): string {
   if (tokens < 1_000) return tokens.toLocaleString();
@@ -61,6 +62,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   itemsError,
   message,
   daemonUrl,
+  thinkingDisplay,
   submittingApprovalIds,
   onSubmitApproval,
   submittingInteractionIds,
@@ -73,6 +75,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   itemsError: string | null;
   message: string | null;
   daemonUrl: string;
+  thinkingDisplay?: ThinkingDisplayMode;
   submittingApprovalIds: ReadonlySet<string>;
   onSubmitApproval: (approvalId: string, decisions: ApprovalDecisionInput[]) => Promise<void>;
   submittingInteractionIds: ReadonlySet<string>;
@@ -119,7 +122,7 @@ export const SessionTimeline = memo(function SessionTimeline({
             </div>
           ) : (
             <>
-              {timelineGroups.map((group) => {
+              {timelineGroups.map((group, groupIndex) => {
                 const renderItem = (item: DisplayItem) => (
                   <DisplayTimelineItem
                     key={item.id}
@@ -146,11 +149,20 @@ export const SessionTimeline = memo(function SessionTimeline({
                       items={group.items}
                       active={group.active}
                       activeToolCallId={group.active ? activeToolCall?.id : undefined}
+                      thinkingDisplay={thinkingDisplay}
                     />
                   );
                 }
                 if (group.kind === "reasoning") {
-                  return <ThinkingDisclosure key={`reasoning-${group.items[0]?.id}`}>{group.items.map(renderItem)}</ThinkingDisclosure>;
+                  return (
+                    <ThinkingDisclosure
+                      key={`reasoning-${group.items[0]?.id}`}
+                      mode={thinkingDisplay}
+                      active={Boolean(activeTurn) && groupIndex === timelineGroups.length - 1}
+                    >
+                      {group.items.map(renderItem)}
+                    </ThinkingDisclosure>
+                  );
                 }
                 return renderItem(group.item);
               })}
@@ -699,10 +711,12 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   items,
   active,
   activeToolCallId,
+  thinkingDisplay,
 }: {
   items: DisplayItem[];
   active: boolean;
   activeToolCallId?: string;
+  thinkingDisplay?: ThinkingDisplayMode;
 }) {
   const toolProjection = useMemo(() => buildToolRenderProjection(items), [items]);
   const renderActivityItem = (item: DisplayItem) => (
@@ -715,38 +729,57 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
     />
   );
 
+  const activityGroups = groupReasoningItems(items);
+  const disclosureOpen = defaultActivityDisclosureOpen(
+    active,
+    activityGroups.some((group) => group.kind === "reasoning"),
+    thinkingDisplay,
+  );
   return (
-    <TimelineDisclosure className="historical-tool-group" label={historicalToolSummary(items)} active={active}>
-      {groupReasoningItems(items).map((group) => group.kind === "reasoning"
-        ? <ThinkingDisclosure key={`reasoning-${group.items[0]?.id}`}>{group.items.map(renderActivityItem)}</ThinkingDisclosure>
+    <TimelineDisclosure className="historical-tool-group" label={historicalToolSummary(items)} active={disclosureOpen}>
+      {activityGroups.map((group, index) => group.kind === "reasoning"
+        ? <ThinkingDisclosure
+            key={`reasoning-${group.items[0]?.id}`}
+            mode={thinkingDisplay}
+            active={active && index === activityGroups.length - 1}
+          >{group.items.map(renderActivityItem)}</ThinkingDisclosure>
         : renderActivityItem(group.item))}
     </TimelineDisclosure>
   );
 }, (previous, next) => (
   previous.active === next.active &&
   previous.activeToolCallId === next.activeToolCallId &&
+  previous.thinkingDisplay === next.thinkingDisplay &&
   previous.items.length === next.items.length &&
   previous.items.every((item, index) => item === next.items[index])
 ));
 
-function ThinkingDisclosure({ children }: { children: ReactNode }) {
+function ThinkingDisclosure({ children, mode, active = false }: { children: ReactNode; mode?: ThinkingDisplayMode; active?: boolean }) {
+  const automaticKey = mode === "auto" ? `${mode}:${active}` : mode;
+  const automaticOpen = mode === undefined ? false : defaultThinkingDisclosureOpen(mode, active);
+  const [manualOpen, setManualOpen] = useState<{ key: string | undefined; open: boolean } | null>(null);
+  const open = manualOpen !== null && manualOpen.key === automaticKey ? manualOpen.open : automaticOpen;
+
   return (
     <TimelineDisclosure
       className="reasoning-group"
       label="Thinking"
       icon={<Sparkles size={12} strokeWidth={1.8} />}
+      open={open}
+      onOpenChange={(nextOpen) => setManualOpen({ key: automaticKey, open: nextOpen })}
     >
       {children}
     </TimelineDisclosure>
   );
 }
 
-function TimelineDisclosure({ className, label, icon, children, active = false }: { className: string; label: string; icon?: ReactNode; children: ReactNode; active?: boolean }) {
-  const [open, setOpen] = useState(active);
+function TimelineDisclosure({ className, label, icon, children, active = false, open: controlledOpen, onOpenChange }: { className: string; label: string; icon?: ReactNode; children: ReactNode; active?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void }) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(active);
+  const open = controlledOpen ?? uncontrolledOpen;
 
   useEffect(() => {
-    setOpen(active);
-  }, [active]);
+    if (controlledOpen === undefined) setUncontrolledOpen(active);
+  }, [active, controlledOpen]);
 
   return (
     <div className={`timeline-disclosure ${className} ${open ? "is-open" : ""}`}>
@@ -754,7 +787,11 @@ function TimelineDisclosure({ className, label, icon, children, active = false }
         type="button"
         className="disclosure-trigger"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          const nextOpen = !open;
+          if (controlledOpen === undefined) setUncontrolledOpen(nextOpen);
+          onOpenChange?.(nextOpen);
+        }}
       >
         {icon
           ? <span className="reasoning-icon" aria-hidden="true">{icon}</span>

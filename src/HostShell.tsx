@@ -4,6 +4,8 @@ import { Check, ChevronDown, Plus, Server, Settings, Trash2, X } from "lucide-re
 import App from "./App";
 import { DirectoryBrowser } from "./DirectoryBrowser";
 import { ClientContext, useClient } from "./ClientContext";
+import { SettingsPage } from "./SettingsPage";
+import { parseThinkingDisplayMode, thinkingDisplayStorageKey, type ThinkingDisplayMode } from "./thinkingDisplay";
 import type { HostProfile } from "../shared/hosts";
 import type { SourceCandidate } from "../shared/clientTypes";
 
@@ -26,7 +28,7 @@ export function HostMenu() {
     {open && <div className="host-menu-popover">
       <div className="search-palette-heading">Hosts</div>
       {hosts.profiles.map((host) => <button key={host.id} onClick={() => { setOpen(false); hosts.switchHost(host.id); }}><Server size={15} /><span>{host.name}</span>{host.id === hosts.selected && <Check size={14} />}</button>)}
-      <button onClick={() => { setOpen(false); hosts.settings(); }}><Settings size={15} /><span>Host settings</span></button>
+      <button onClick={() => { setOpen(false); hosts.settings(); }}><Settings size={15} /><span>Settings</span></button>
     </div>}
   </div>;
 }
@@ -40,7 +42,12 @@ export function HostShell() {
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [settings, setSettings] = useState(false);
+  const [settingsPageOpen, setSettingsPageOpen] = useState(false);
+  const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
+  const [thinkingDisplay, setThinkingDisplay] = useState<ThinkingDisplayMode>(() => {
+    try { return parseThinkingDisplayMode(localStorage.getItem(thinkingDisplayStorageKey)); }
+    catch { return "auto"; }
+  });
   const [name, setName] = useState(""); const [address, setAddress] = useState(""); const [token, setToken] = useState("");
   const [status, setStatus] = useState("");
   const [picker, setPicker] = useState(false);
@@ -57,7 +64,17 @@ export function HostShell() {
     }).catch((cause: Error) => { if (active) setError(cause.message); });
     return () => { active = false; pickerResult.current?.([]); };
   }, [api, storage]);
-  useEffect(() => { if (settings) dialog.current?.showModal(); }, [settings]);
+  useEffect(() => { if (hostSettingsOpen) dialog.current?.showModal(); }, [hostSettingsOpen]);
+  useEffect(() => {
+    const openSettings = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "," && !event.shiftKey && !event.altKey && !event.isComposing) {
+        event.preventDefault();
+        setSettingsPageOpen(true);
+      }
+    };
+    window.addEventListener("keydown", openSettings);
+    return () => window.removeEventListener("keydown", openSettings);
+  }, []);
   const client = useMemo(() => bindClientGeneration({ ...api,
     chooseSourceFolders: () => new Promise<SourceCandidate[]>((resolve) => { pickerResult.current?.([]); pickerResult.current = resolve; setPicker(true); }),
     revealPath: selected === "local" ? api.revealPath : async (value: string) => { await navigator.clipboard.writeText(value); },
@@ -77,14 +94,33 @@ export function HostShell() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not connect to host."); }
     finally { setGeneration(generationRef.current); setBusy(false); }
   }
+  function openHostSettings() {
+    setStatus("");
+    setHostSettingsOpen(true);
+    void api.listHosts().then(setProfiles).catch((cause: Error) => setStatus(cause.message));
+  }
+  function updateThinkingDisplay(mode: ThinkingDisplayMode) {
+    setThinkingDisplay(mode);
+    try { localStorage.setItem(thinkingDisplayStorageKey, mode); } catch { /* In-memory preference still works. */ }
+  }
   function closePicker(values: SourceCandidate[]) { setPicker(false); pickerResult.current?.(values); pickerResult.current = null; }
-  return <HostContext.Provider value={{ profiles, selected, busy, switchHost: (id) => void switchHost(id), settings: () => { setStatus(""); setSettings(true); void api.listHosts().then(setProfiles).catch((cause: Error) => setStatus(cause.message)); } }}>
+  return <HostContext.Provider value={{ profiles, selected, busy, switchHost: (id) => void switchHost(id), settings: () => setSettingsPageOpen(true) }}>
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
-      {ready ? <div style={{ display: "contents" }} inert={busy}><App key={`${selected}:${generation}`} /></div> : <main className="web-login"><p>{error || "Loading hosts…"}</p></main>}
+      {ready ? <>
+        <div style={{ display: settingsPageOpen ? "none" : "contents" }} inert={busy || settingsPageOpen}>
+          <App key={`${selected}:${generation}`} thinkingDisplay={thinkingDisplay} />
+        </div>
+        {settingsPageOpen && <SettingsPage
+          thinkingDisplay={thinkingDisplay}
+          onThinkingDisplayChange={updateThinkingDisplay}
+          onManageHosts={openHostSettings}
+          onBack={() => setSettingsPageOpen(false)}
+        />}
+      </> : <main className="web-login"><p>{error || "Loading hosts…"}</p></main>}
     </ClientContext.Provider>
     {error && ready && <div className="host-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss error"><X size={14} /></button></div>}
-    {settings && <dialog ref={dialog} className="host-settings" onCancel={() => setSettings(false)}>
-      <header><div><h2>Hosts</h2><p>{parent.kind === "web" ? "Saved on this Web server and shared with its signed-in clients." : "Saved on this device."}</p></div><button aria-label="Close settings" onClick={() => setSettings(false)}><X size={18} /></button></header>
+    {hostSettingsOpen && <dialog ref={dialog} className="host-settings" onCancel={() => setHostSettingsOpen(false)}>
+      <header><div><h2>Hosts</h2><p>{parent.kind === "web" ? "Saved on this Web server and shared with its signed-in clients." : "Saved on this device."}</p></div><button aria-label="Close settings" onClick={() => setHostSettingsOpen(false)}><X size={18} /></button></header>
       <div className="host-settings-list">{profiles.map((host) => <div key={host.id} className="host-settings-row"><Server size={18} /><div><strong>{host.name}</strong><small>{host.baseUrl}</small></div><button disabled={busy} onClick={() => { setBusy(true); setStatus(""); void api.testHost(host.id).then(() => setStatus(`${host.name}: connected`)).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}>Test</button><button aria-label={`Remove ${host.name}`} disabled={busy || host.id === "local" || host.id === selected} onClick={() => { setBusy(true); void api.deleteHost(host.id).then(() => api.listHosts()).then(setProfiles).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}><Trash2 size={15} /></button></div>)}</div>
       <form onSubmit={(event) => { event.preventDefault(); setBusy(true); setStatus(""); void api.saveHost({ name, baseUrl: address, token }).then(() => api.listHosts()).then((list) => { setProfiles(list); setName(""); setAddress(""); setToken(""); setStatus("Host saved. Test the connection or select it from the host menu."); }).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}>
         <h3>Add host</h3><label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="dev" required maxLength={100} /></label>

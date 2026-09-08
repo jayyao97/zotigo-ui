@@ -133,6 +133,7 @@ import {
   type ComposerAttachment,
 } from "./conversation/ConversationComposer";
 import { resizeTextareaToContent } from "./textareaSizing";
+import type { ThinkingDisplayMode } from "./thinkingDisplay";
 
 const FileEditorTab = lazy(() => import("./FileEditorTab").then((module) => ({ default: module.FileEditorTab })));
 
@@ -245,7 +246,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App() {
+export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisplayMode }) {
   const { api: client, kind, remote, signOut } = useClient();
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
@@ -3114,6 +3115,7 @@ export default function App() {
                 itemsError={sessionItemsError}
                 message={message}
                 daemonUrl={daemonUrl}
+                thinkingDisplay={selectedSession?.agent === "codex" ? undefined : thinkingDisplay}
                 submittingApprovalIds={submittingApprovalIds}
                 onSubmitApproval={submitApproval}
                 submittingInteractionIds={submittingInteractionIds}
