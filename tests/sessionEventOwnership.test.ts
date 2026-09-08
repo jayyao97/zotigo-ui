@@ -4,6 +4,7 @@ import { once } from "node:events";
 import test from "node:test";
 import { createSessionEvents } from "../backend/sessionEvents";
 import { getDaemonConfig, setDaemonBaseUrl } from "../backend/zotigod";
+import type { SessionDisplayEvent } from "../shared/zotigod";
 
 test("stopping one subscription aborts only its daemon reader and leaves another client live", { timeout: 5000 }, async () => {
   const original = getDaemonConfig().baseUrl;
@@ -37,4 +38,45 @@ test("stopping one subscription aborts only its daemon reader and leaves another
     server.closeAllConnections(); server.close(); await once(server, "close");
     setDaemonBaseUrl(original);
   }
+});
+
+test("a replaced subscription cannot deliver stale events when its transport ignores abort", async () => {
+  const subscriptions: Array<{
+    onEvent: (event: SessionDisplayEvent) => void | Promise<void>;
+    onConnected: () => void | Promise<void>;
+    signal: AbortSignal;
+  }> = [];
+  const never = new Promise<void>(() => undefined);
+  const stream = async (
+    _id: string,
+    _after: number | undefined,
+    onEvent: (event: SessionDisplayEvent) => void | Promise<void>,
+    onConnected: () => void | Promise<void>,
+    signal: AbortSignal,
+  ) => {
+    subscriptions.push({ onEvent, onConnected, signal });
+    await never;
+  };
+  const delivered: string[] = [];
+  const events = createSessionEvents((envelope) => {
+    if (envelope.event?.type === "delta") delivered.push(envelope.event.delta.delta);
+  }, stream);
+
+  events.start("session");
+  await Promise.resolve();
+  events.start("session");
+  await Promise.resolve();
+  assert.equal(subscriptions.length, 2);
+  assert.equal(subscriptions[0]?.signal.aborted, true);
+
+  const delta = (text: string): SessionDisplayEvent => ({
+    type: "delta",
+    delta: { item_id: "message", role: "assistant", part_type: "text", delta: text },
+  });
+  await subscriptions[0]?.onConnected();
+  await subscriptions[0]?.onEvent(delta("stale"));
+  await subscriptions[1]?.onConnected();
+  await subscriptions[1]?.onEvent(delta("current"));
+  assert.deepEqual(delivered, ["current"]);
+  events.stop();
 });
