@@ -1,6 +1,25 @@
 import { useEffect, useRef } from "react";
 import { EditorView, basicSetup } from "codemirror";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { StateEffect, EditorState } from "@codemirror/state";
+import { tags } from "@lezer/highlight";
+
+const syntaxTheme = HighlightStyle.define([
+  { tag: tags.comment, color: "var(--color-syntax-comment)", fontStyle: "italic" },
+  { tag: tags.keyword, color: "var(--color-syntax-keyword)" },
+  { tag: [tags.bool, tags.number, tags.null, tags.atom], color: "var(--color-syntax-literal)" },
+  {
+    tag: [tags.string, tags.docString, tags.character, tags.attributeValue, tags.regexp, tags.escape, tags.color, tags.url],
+    color: "var(--color-syntax-string)",
+  },
+  {
+    tag: [tags.typeName, tags.className, tags.namespace, tags.tagName, tags.function(tags.variableName)],
+    color: "var(--color-syntax-variable)",
+  },
+  { tag: [tags.propertyName, tags.attributeName], color: "var(--color-syntax-attribute)" },
+  { tag: [tags.variableName, tags.labelName, tags.macroName], color: "var(--color-syntax-name)" },
+  { tag: tags.invalid, color: "var(--color-syntax-error)", textDecoration: "underline" },
+]);
 
 const editorTheme = EditorView.theme({
   "&": {
@@ -61,6 +80,7 @@ export function CodeEditor({
       extensions: [
         basicSetup,
         editorTheme,
+        syntaxHighlighting(syntaxTheme),
         EditorState.readOnly.of(readOnly),
         EditorView.editable.of(!readOnly),
         EditorView.updateListener.of((update) => {
