@@ -47,6 +47,7 @@ import { MarkdownCodeBlock } from "../MarkdownCodeBlock";
 import { PreviewImage } from "../ImagePreview";
 import { markdownUrlTransform } from "../markdownUrlTransform";
 import { defaultThinkingDisclosureOpen, latestReasoningItemId, type ThinkingDisplayMode } from "../thinkingDisplay";
+import { initialStreamingTextState, planStreamingTextUpdate } from "../streamingText";
 
 export function formatCompactTokenCount(tokens: number): string {
   if (tokens < 1_000) return tokens.toLocaleString();
@@ -63,6 +64,8 @@ export const SessionTimeline = memo(function SessionTimeline({
   message,
   daemonUrl,
   thinkingDisplay,
+  streamingItemIds,
+  smoothStreaming,
   submittingApprovalIds,
   onSubmitApproval,
   submittingInteractionIds,
@@ -76,6 +79,8 @@ export const SessionTimeline = memo(function SessionTimeline({
   message: string | null;
   daemonUrl: string;
   thinkingDisplay?: ThinkingDisplayMode;
+  streamingItemIds: ReadonlySet<string>;
+  smoothStreaming: boolean;
   submittingApprovalIds: ReadonlySet<string>;
   onSubmitApproval: (approvalId: string, decisions: ApprovalDecisionInput[]) => Promise<void>;
   submittingInteractionIds: ReadonlySet<string>;
@@ -141,6 +146,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                     interactionPending={Boolean(item.interaction?.id && pendingInteractionIds.has(item.interaction.id))}
                     interactionSubmitting={item.interaction?.id ? submittingInteractionIds.has(item.interaction.id) : false}
                     onSubmitInteraction={onSubmitInteraction}
+                    smoothStreaming={smoothStreaming && streamingItemIds.has(item.id)}
                   />
                 );
                 if (group.kind === "tools") {
@@ -152,6 +158,8 @@ export const SessionTimeline = memo(function SessionTimeline({
                       activeToolCallId={group.active ? activeToolCall?.id : undefined}
                       thinkingDisplay={thinkingDisplay}
                       latestThinkingItemId={latestThinkingItemId}
+                      streamingItemIds={streamingItemIds}
+                      smoothStreaming={smoothStreaming}
                     />
                   );
                 }
@@ -304,6 +312,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   interactionPending,
   interactionSubmitting,
   onSubmitInteraction,
+  smoothStreaming,
 }: {
   item: DisplayItem;
   turnEnd: DisplayItem | null;
@@ -319,6 +328,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   interactionPending: boolean;
   interactionSubmitting: boolean;
   onSubmitInteraction: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
+  smoothStreaming: boolean;
 }) {
   if (item.type === "profile_changed" || item.type === "profile_change_failed") {
     const target = item.profile?.to ?? "profile";
@@ -417,7 +427,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     return (
       <div className="message-row assistant">
         <div className="message-bubble assistant">
-          <AssistantContentView itemId={item.id} content={item.content ?? []} projection={toolProjection} daemonUrl={daemonUrl} />
+          <AssistantContentView itemId={item.id} content={item.content ?? []} projection={toolProjection} daemonUrl={daemonUrl} smoothStreaming={smoothStreaming} />
         </div>
       </div>
     );
@@ -438,6 +448,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     || previous.interactionPending !== next.interactionPending
     || previous.interactionSubmitting !== next.interactionSubmitting
     || previous.onSubmitInteraction !== next.onSubmitInteraction
+    || previous.smoothStreaming !== next.smoothStreaming
   ) {
     return false;
   }
@@ -715,12 +726,16 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   activeToolCallId,
   thinkingDisplay,
   latestThinkingItemId,
+  streamingItemIds,
+  smoothStreaming,
 }: {
   items: DisplayItem[];
   active: boolean;
   activeToolCallId?: string;
   thinkingDisplay?: ThinkingDisplayMode;
   latestThinkingItemId?: string;
+  streamingItemIds: ReadonlySet<string>;
+  smoothStreaming: boolean;
 }) {
   const toolProjection = useMemo(() => buildToolRenderProjection(items), [items]);
   const renderActivityItem = (item: DisplayItem) => (
@@ -730,6 +745,7 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
       content={item.content ?? []}
       projection={toolProjection}
       activeToolCallId={activeToolCallId}
+      smoothStreaming={smoothStreaming && streamingItemIds.has(item.id)}
     />
   );
 
@@ -756,8 +772,10 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   previous.activeToolCallId === next.activeToolCallId &&
   previous.thinkingDisplay === next.thinkingDisplay &&
   previous.latestThinkingItemId === next.latestThinkingItemId &&
+  previous.smoothStreaming === next.smoothStreaming &&
   previous.items.length === next.items.length &&
-  previous.items.every((item, index) => item === next.items[index])
+  previous.items.every((item, index) => item === next.items[index]) &&
+  previous.items.every((item) => previous.streamingItemIds.has(item.id) === next.streamingItemIds.has(item.id))
 ));
 
 function ThinkingDisclosure({ children, mode, latest = false }: { children: ReactNode; mode?: ThinkingDisplayMode; latest?: boolean }) {
@@ -866,12 +884,14 @@ export function AssistantContentView({
   projection,
   activeToolCallId,
   daemonUrl = "",
+  smoothStreaming = false,
 }: {
   itemId: string;
   content: DisplayContentPart[];
   projection: ToolRenderProjection;
   activeToolCallId?: string;
   daemonUrl?: string;
+  smoothStreaming?: boolean;
 }) {
   const consumed = new Set<number>();
 
@@ -904,21 +924,21 @@ export function AssistantContentView({
           );
         }
 
-        return <DisplayContentPartView key={`${itemId}-${index}`} part={part} daemonUrl={daemonUrl} />;
+        return <DisplayContentPartView key={`${itemId}-${index}`} part={part} daemonUrl={daemonUrl} smoothStreaming={smoothStreaming} />;
       })}
     </>
   );
 }
 
-function DisplayContentPartView({ part, daemonUrl }: { part: DisplayContentPart; daemonUrl: string }) {
+function DisplayContentPartView({ part, daemonUrl, smoothStreaming }: { part: DisplayContentPart; daemonUrl: string; smoothStreaming: boolean }) {
   if (part.type === "text") {
-    return part.text ? <MarkdownContent text={part.text} /> : null;
+    return part.text ? <MarkdownContent text={part.text} smoothStreaming={smoothStreaming} /> : null;
   }
 
   if (part.type === "reasoning") {
     return part.text ? (
       <div className="reasoning-block markdown-copy">
-        <MarkdownBody text={part.text} />
+        <SmoothStreamingMarkdownBody text={part.text} streaming={smoothStreaming} />
       </div>
     ) : <ThinkingStatus />;
   }
@@ -991,10 +1011,10 @@ function ToolProcessLine({ summary, isError = false, running = false }: { summar
   );
 }
 
-function MarkdownContent({ text }: { text: string }) {
+function MarkdownContent({ text, smoothStreaming = false }: { text: string; smoothStreaming?: boolean }) {
   return (
     <div className="assistant-copy markdown-copy">
-      <MarkdownBody text={text} />
+      <SmoothStreamingMarkdownBody text={text} streaming={smoothStreaming} />
     </div>
   );
 }
@@ -1066,6 +1086,24 @@ const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
     </ReactMarkdown>
   );
 });
+
+function SmoothStreamingMarkdownBody({ text, streaming }: { text: string; streaming: boolean }) {
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [state, setState] = useState(() => initialStreamingTextState(text, streaming, reduceMotion));
+
+  useLayoutEffect(() => {
+    const update = planStreamingTextUpdate(state, text, streaming, reduceMotion);
+    if (update.state === state) return;
+    if (!update.onAnimationFrame) {
+      setState(update.state);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setState(update.state));
+    return () => window.cancelAnimationFrame(frame);
+  }, [reduceMotion, state, streaming, text]);
+
+  return <MarkdownBody text={state.visibleText} />;
+}
 
 function ToolDisclosure({
   summary,

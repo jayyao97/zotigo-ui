@@ -134,6 +134,7 @@ import {
 } from "./conversation/ConversationComposer";
 import { resizeTextareaToContent } from "./textareaSizing";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
+import { shouldSmoothStreaming } from "./streamingText";
 
 const FileEditorTab = lazy(() => import("./FileEditorTab").then((module) => ({ default: module.FileEditorTab })));
 
@@ -660,6 +661,10 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
       ...reconcileOptimisticSteering(optimisticPromptItems, sessionItems),
     ],
     [ephemeralBlocks, optimisticPromptItems, sessionItems],
+  );
+  const streamingItemIds = useMemo(
+    () => new Set(ephemeralBlocks.map((block) => block.id)),
+    [ephemeralBlocks],
   );
   const subagentRuns = useMemo(() => buildSubagentRuns(sessionItems), [sessionItems]);
   const previewAttachment = useMemo(
@@ -3116,6 +3121,8 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
                 message={message}
                 daemonUrl={daemonUrl}
                 thinkingDisplay={selectedSession?.agent === "codex" ? undefined : thinkingDisplay}
+                streamingItemIds={streamingItemIds}
+                smoothStreaming={shouldSmoothStreaming(selectedSession?.agent, true)}
                 submittingApprovalIds={submittingApprovalIds}
                 onSubmitApproval={submitApproval}
                 submittingInteractionIds={submittingInteractionIds}
