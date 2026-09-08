@@ -108,7 +108,7 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <>
         <div style={{ display: settingsPageOpen ? "none" : "contents" }} inert={busy || settingsPageOpen}>
-          <App key={`${selected}:${generation}`} thinkingDisplay={thinkingDisplay} />
+          <App key={`${selected}:${generation}`} clientScope={selected} thinkingDisplay={thinkingDisplay} />
         </div>
         {settingsPageOpen && <SettingsPage
           thinkingDisplay={thinkingDisplay}

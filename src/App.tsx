@@ -135,6 +135,20 @@ import {
 import { resizeTextareaToContent } from "./textareaSizing";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 import { shouldSmoothStreaming } from "./streamingText";
+import {
+  composerDraftKey as draftKeyForSelection,
+  emptyComposerDraft,
+  restoreSubmittedDraft,
+  updateComposerDrafts,
+  type ComposerDraftState,
+} from "./composerDrafts";
+import {
+  completedUnreadSessionIds,
+  parseUnreadSessionIds,
+  selectedSessionToMarkRead,
+  unreadSessionsStorageKey,
+  workingSessionsStorageKey,
+} from "./unreadSessions";
 
 const FileEditorTab = lazy(() => import("./FileEditorTab").then((module) => ({ default: module.FileEditorTab })));
 
@@ -171,6 +185,12 @@ type OpenFileState = {
   mode: FileEditorMode;
   saveStatus: FileSaveStatus;
   saveError?: string;
+};
+type ComposerDraft = ComposerDraftState<ComposerAttachment>;
+type ConversationContextMenu = {
+  conversationId: string;
+  x: number;
+  y: number;
 };
 
 const pollIntervalMs = 5000;
@@ -247,7 +267,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisplayMode }) {
+export default function App({ clientScope, thinkingDisplay }: { clientScope: string; thinkingDisplay: ThinkingDisplayMode }) {
   const { api: client, kind, remote, signOut } = useClient();
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
@@ -270,6 +290,7 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
   const [daemonUrl, setDaemonUrl] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [sessions, setSessions] = useState<ZotigoSession[]>([]);
+  const [sessionsInitialized, setSessionsInitialized] = useState(false);
   const [desktopState, setDesktopState] = useState<DesktopState>(emptyDesktopState);
   const [message, setMessage] = useState<string | null>(null);
   const [sidebarActionError, setSidebarActionError] = useState<string | null>(null);
@@ -317,15 +338,29 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
   const [optimisticPromptItems, setOptimisticPromptItems] = useState<DisplayItem[]>([]);
   const [sessionItemsLoading, setSessionItemsLoading] = useState(false);
   const [sessionItemsError, setSessionItemsError] = useState<string | null>(null);
-  const [draftPrompt, setDraftPrompt] = useState("");
-  const [conversationPrompt, setConversationPrompt] = useState("");
+  const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({});
   const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([]);
-  const [selectedSkillNames, setSelectedSkillNames] = useState<string[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [skillMenuIndex, setSkillMenuIndex] = useState(0);
   const [skillMenuDismissed, setSkillMenuDismissed] = useState(false);
-  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
+  const composerDraftsRef = useRef(composerDrafts);
+  composerDraftsRef.current = composerDrafts;
+  const [unreadConversationIds, setUnreadConversationIds] = useState<Set<string>>(() => {
+    try { return parseUnreadSessionIds(localStorage.getItem(unreadSessionsStorageKey(clientScope))); }
+    catch { return new Set(); }
+  });
+  const previousWorkingConversationIdsRef = useRef<Set<string> | null>(null);
+  const previousWorkingConversationIdsLoadedRef = useRef(false);
+  if (!previousWorkingConversationIdsLoadedRef.current) {
+    previousWorkingConversationIdsLoadedRef.current = true;
+    try {
+      const persisted = localStorage.getItem(workingSessionsStorageKey(clientScope));
+      previousWorkingConversationIdsRef.current = persisted === null ? null : parseUnreadSessionIds(persisted);
+    } catch { /* Start without a prior working snapshot when storage is unavailable. */ }
+  }
+  const previousSelectedConversationIdRef = useRef<string | null>(null);
+  const [conversationContextMenu, setConversationContextMenu] = useState<ConversationContextMenu | null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [previewAttachmentId, setPreviewAttachmentId] = useState<string | null>(null);
   const [isConversationAtBottom, setIsConversationAtBottom] = useState(true);
@@ -372,11 +407,14 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
   useEffect(() => {
     const beforeSwitch = (event: Event) => {
       if (Object.values(openFiles).some((file) => file.saveStatus === "saving")) { window.alert("Wait for the current file save before switching hosts."); event.preventDefault(); return; }
-      if ((draftPrompt.trim() || conversationPrompt.trim() || composerAttachments.length || Object.values(openFiles).some((file) => file.saveStatus !== "clean")) && !window.confirm("Switch hosts and discard unsent messages and unsaved file changes?")) event.preventDefault();
+      const hasUnsentDraft = Object.values(composerDrafts).some(
+        (draft) => draft.prompt.trim() || draft.attachments.length > 0 || draft.selectedSkillNames.length > 0,
+      );
+      if ((hasUnsentDraft || Object.values(openFiles).some((file) => file.saveStatus !== "clean")) && !window.confirm("Switch hosts and discard unsent messages and unsaved file changes?")) event.preventDefault();
     };
     window.addEventListener("zotigo:before-host-switch", beforeSwitch);
     return () => window.removeEventListener("zotigo:before-host-switch", beforeSwitch);
-  }, [openFiles, draftPrompt, conversationPrompt, composerAttachments]);
+  }, [composerDrafts, openFiles]);
   const fileSaveTimersRef = useRef<Map<string, number>>(new Map());
   const filesSavingRef = useRef<Set<string>>(new Set());
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
@@ -394,7 +432,6 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
   const stickToBottomRef = useRef(true);
   const sessionItemsRef = useRef<DisplayItem[]>([]);
   const selectedSessionIdRef = useRef<string | null>(null);
-  const selectedConversationIdRef = useRef<string | null>(null);
   const titleSuggestionAttemptsRef = useRef<Set<string>>(new Set());
   const sessionEventsConnectedRef = useRef(false);
   const sidebarDragItemRef = useRef<SidebarDragItem | null>(null);
@@ -444,6 +481,25 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     document.addEventListener("pointerdown", closeSidebarMenus);
     return () => document.removeEventListener("pointerdown", closeSidebarMenus);
   }, [projectMenuId, workspaceMenuId]);
+
+  useEffect(() => {
+    if (!conversationContextMenu) return;
+    const closeContextMenu = () => setConversationContextMenu(null);
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".session-context-menu")) closeContextMenu();
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") closeContextMenu();
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    window.addEventListener("blur", closeContextMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      window.removeEventListener("blur", closeContextMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [conversationContextMenu]);
 
   useLayoutEffect(() => {
     const menu = sidebarActionMenuRef.current;
@@ -501,6 +557,14 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
       desktopState.conversations.find((conversation) => conversation.id === desktopState.selectedConversationId) ??
       null,
     [desktopState.conversations, desktopState.selectedConversationId],
+  );
+  const contextMenuConversation = useMemo(
+    () =>
+      conversationContextMenu
+        ? desktopState.conversations.find((conversation) => conversation.id === conversationContextMenu.conversationId) ??
+          null
+        : null,
+    [conversationContextMenu, desktopState.conversations],
   );
   const selectedWorkspace = useMemo(
     () => desktopState.workspaces.find((workspace) => workspace.id === desktopState.selectedWorkspaceId) ?? null,
@@ -583,6 +647,47 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     () => workingConversationIdsForSessions(desktopState.bindings, sessions, selectedActivity),
     [desktopState.bindings, selectedActivity, sessions],
   );
+  const composerDraftKey = draftKeyForSelection({
+    conversationId: selectedConversation?.id ?? null,
+    projectId: desktopState.selectedProjectId,
+    workspaceId: desktopState.selectedWorkspaceId,
+  });
+  const activeComposerDraft = composerDrafts[composerDraftKey] ?? emptyComposerDraft<ComposerAttachment>();
+  const activePrompt = activeComposerDraft.prompt;
+  const composerAttachments = activeComposerDraft.attachments;
+  const selectedSkillNames = activeComposerDraft.selectedSkillNames;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(unreadSessionsStorageKey(clientScope), JSON.stringify([...unreadConversationIds]));
+    } catch { /* In-memory unread state still works. */ }
+  }, [clientScope, unreadConversationIds]);
+
+  useEffect(() => {
+    if (!sessionsInitialized) return;
+    const previous = previousWorkingConversationIdsRef.current;
+    previousWorkingConversationIdsRef.current = new Set(workingConversationIds);
+    try {
+      localStorage.setItem(workingSessionsStorageKey(clientScope), JSON.stringify([...workingConversationIds]));
+    } catch { /* Current-process completion tracking still works. */ }
+    if (!previous) return;
+    const conversationIds = new Set(desktopState.conversations.map((conversation) => conversation.id));
+    const completed = completedUnreadSessionIds(
+      previous,
+      workingConversationIds,
+      selectedConversation?.id ?? null,
+      conversationIds,
+    );
+    if (completed.length === 0) return;
+    setUnreadConversationIds((current) => new Set([...current, ...completed]));
+  }, [clientScope, desktopState.conversations, selectedConversation?.id, sessionsInitialized, workingConversationIds]);
+
+  useEffect(() => {
+    const selectedId = selectedConversation?.id ?? null;
+    const conversationId = selectedSessionToMarkRead(previousSelectedConversationIdRef.current, selectedId);
+    previousSelectedConversationIdRef.current = selectedId;
+    if (conversationId) markConversationRead(conversationId);
+  }, [selectedConversation?.id]);
 
   function sidebarSortProps(item: SidebarDragItem, orderedIds: string[]): SidebarSortProps {
     const isCurrentTarget = sidebarDropTarget?.kind === item.kind
@@ -671,7 +776,6 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     () => composerAttachments.find((attachment) => attachment.id === previewAttachmentId) ?? null,
     [composerAttachments, previewAttachmentId],
   );
-  const activePrompt = selectedConversation ? conversationPrompt : draftPrompt;
   const activeSkillCommand = skillCommandQuery(activePrompt);
   const skillMatches = useMemo(
     () => matchingSkills(availableSkills, activeSkillCommand?.query ?? "")
@@ -679,7 +783,7 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     [activeSkillCommand?.query, availableSkills, selectedSkillNames],
   );
   const skillMenuOpen = activeSkillCommand !== null && !skillMenuDismissed;
-  const hasComposerDraft = conversationPrompt.trim() !== "" || composerAttachments.length > 0;
+  const hasComposerDraft = activePrompt.trim() !== "" || composerAttachments.length > 0;
   const runtimeOccupied = selectedSession?.error_code === "runtime_occupied";
   const canSubmitSelectedPrompt = Boolean(selectedConversation && !runtimeOccupied && !isBusy && hasComposerDraft);
   const showStopControl = Boolean(
@@ -687,7 +791,6 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
   );
   sessionItemsRef.current = sessionItems;
   selectedSessionIdRef.current = selectedBinding?.daemon_session_id ?? null;
-  selectedConversationIdRef.current = selectedConversation?.id ?? null;
 
   useLayoutEffect(() => {
     if (!isEditingConversationTitle) {
@@ -702,11 +805,10 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     setConversationTitleDraft(selectedConversation?.title ?? "");
     setPauseRequestedTurnId(null);
     setSidePanelTabs(retainFileTabs);
-    setSelectedSkillNames([]);
     setAvailableSkills([]);
     setSkillsError(null);
     setSkillMenuDismissed(false);
-  }, [selectedConversation?.id]);
+  }, [composerDraftKey]);
 
   useEffect(() => {
     setSkillMenuIndex(0);
@@ -851,16 +953,21 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
   }, [selectedBinding?.daemon_session_id]);
 
   useEffect(() => {
-    setConversationPrompt("");
-    clearComposerAttachments();
     setPreviewAttachmentId(null);
     setAttachmentMenuOpen(false);
     cancelScheduledConversationAutoScroll();
     setStickToBottom(true);
     scheduleConversationScrollToBottom();
-  }, [selectedConversation?.id]);
+  }, [composerDraftKey]);
 
   useEffect(() => () => cancelScheduledConversationAutoScroll(), []);
+  useEffect(() => () => {
+    for (const draft of Object.values(composerDraftsRef.current)) {
+      for (const attachment of draft.attachments) {
+        if (attachment.url) URL.revokeObjectURL(attachment.url);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -936,7 +1043,7 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     if (stickToBottomRef.current) {
       scheduleConversationScrollToBottom();
     }
-  }, [conversationPrompt, selectedConversation?.id]);
+  }, [activePrompt, selectedConversation?.id]);
 
   useEffect(() => {
     const updateAnimationState = () => {
@@ -1035,6 +1142,7 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
         setDesktopState((current) => sameJsonValue(current, nextDesktopState) ? current : nextDesktopState);
       }
       setSessions((current) => sameJsonValue(current, nextSessions) ? current : nextSessions);
+      setSessionsInitialized(true);
       setApprovalPolicyOverrides((current) => clearResolvedApprovalPolicyOverrides(current, nextSessions));
       if (catalogError && !options.quiet) setMessage(errorMessage(catalogError));
       if (selectedBinding && !sessionEventsConnectedRef.current) {
@@ -1281,7 +1389,6 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
       applyDesktopState(state);
       setProjectOpenIds((current) => new Set(current).add(projectId));
       setCreateWorkspaceProjectId(null);
-      setDraftPrompt("");
     } catch (error) {
       setMessage(errorMessage(error));
       applyDesktopState(await client.getDesktopState());
@@ -1400,8 +1507,36 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     applyDesktopState(await client.selectWorkspace(id));
   }
 
+  function markConversationRead(conversationId: string) {
+    setUnreadConversationIds((current) => {
+      if (!current.has(conversationId)) return current;
+      const next = new Set(current);
+      next.delete(conversationId);
+      return next;
+    });
+  }
+
+  function markConversationUnread(conversationId: string) {
+    setUnreadConversationIds((current) => current.has(conversationId)
+      ? current
+      : new Set(current).add(conversationId));
+  }
+
+  function openConversationContextMenu(event: ReactMouseEvent, conversationId: string) {
+    event.preventDefault();
+    const menuWidth = 184;
+    const menuHeight = 132;
+    setConversationContextMenu({
+      conversationId,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+    });
+  }
+
   function selectConversation(id: string) {
     setWebNavigationOpen(false);
+    setConversationContextMenu(null);
+    markConversationRead(id);
     const conversation = desktopState.conversations.find((candidate) => candidate.id === id);
     if (!conversation || desktopState.selectedConversationId === id) {
       return;
@@ -1434,7 +1569,6 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     setWebNavigationOpen(false);
     setProjectOverviewId(null);
     setMessage(null);
-    setDraftPrompt("");
     await client.selectProject(null);
     applyDesktopState(await client.selectConversation(null));
   }
@@ -1443,7 +1577,6 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     setWebNavigationOpen(false);
     setProjectOverviewId(null);
     setMessage(null);
-    setDraftPrompt("");
     await client.selectWorkspace(workspace.id);
     applyDesktopState(await client.selectConversation(null));
   }
@@ -1643,28 +1776,35 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     finally { setIsBusy(false); }
   }
 
-  function updateDraftPrompt(value: string) {
-    setDraftPrompt(value);
-    setSkillMenuDismissed(false);
+  function updateComposerDraft(key: string, update: (draft: ComposerDraft) => ComposerDraft) {
+    setComposerDrafts((current) => updateComposerDrafts(current, key, update));
   }
 
-  function updateConversationPrompt(value: string) {
-    setConversationPrompt(value);
+  function updateActivePrompt(value: string) {
+    updateComposerDraft(composerDraftKey, (draft) => ({ ...draft, prompt: value }));
     setSkillMenuDismissed(false);
   }
 
   function selectComposerSkill(skill: SkillSummary) {
     if (!activeSkillCommand || !skill.enabled) return;
-    setSelectedSkillNames((current) => current.includes(skill.name) ? current : [...current, skill.name]);
     const prompt = removeSkillCommand(activePrompt, activeSkillCommand);
-    if (selectedConversation) {
-      setConversationPrompt(prompt);
-      window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
-    } else {
-      setDraftPrompt(prompt);
-    }
+    updateComposerDraft(composerDraftKey, (draft) => ({
+      ...draft,
+      prompt,
+      selectedSkillNames: draft.selectedSkillNames.includes(skill.name)
+        ? draft.selectedSkillNames
+        : [...draft.selectedSkillNames, skill.name],
+    }));
+    if (selectedConversation) window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
     setSkillMenuDismissed(false);
     setSkillMenuIndex(0);
+  }
+
+  function removeComposerSkill(name: string) {
+    updateComposerDraft(composerDraftKey, (draft) => ({
+      ...draft,
+      selectedSkillNames: draft.selectedSkillNames.filter((item) => item !== name),
+    }));
   }
 
   function handleSkillMenuKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
@@ -1698,8 +1838,13 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
       return;
     }
 
-    const submittedAttachments = composerAttachments;
-    const submittedSkills = selectedSkillNames;
+    const submittedDraftKey = composerDraftKey;
+    const submittedDraft = activeComposerDraft;
+    const submittedAttachments = submittedDraft.attachments;
+    const submittedSkills = submittedDraft.selectedSkillNames;
+    updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
+    setPreviewAttachmentId(null);
+    setAttachmentMenuOpen(false);
     setIsBusy(true);
     setMessage(null);
     try {
@@ -1726,14 +1871,16 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
       });
       applyDesktopActionResult(result);
       if (result.error) {
+        updateComposerDraft(submittedDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
         setMessage(result.error);
       } else {
-        setDraftPrompt("");
-        setSelectedSkillNames([]);
-        clearComposerAttachments();
+        for (const attachment of submittedAttachments) {
+          if (attachment.url) URL.revokeObjectURL(attachment.url);
+        }
         void refreshSessions({ quiet: true });
       }
     } catch (error) {
+      updateComposerDraft(submittedDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
       setMessage(errorMessage(error));
     } finally {
       setIsBusy(false);
@@ -1838,14 +1985,16 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
 
   async function submitSelectedPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = conversationPrompt.trim();
+    const text = activePrompt.trim();
     if (!selectedConversation || runtimeOccupied || isBusy || (!text && composerAttachments.length === 0)) {
       return;
     }
 
     const conversationId = selectedConversation.id;
-    const submittedAttachments = composerAttachments;
-    const submittedSkills = selectedSkillNames;
+    const submittedDraftKey = composerDraftKey;
+    const submittedDraft = activeComposerDraft;
+    const submittedAttachments = submittedDraft.attachments;
+    const submittedSkills = submittedDraft.selectedSkillNames;
     const optimisticId = createOptimisticPromptId();
     const isSteering = Boolean(selectedSession?.working && sessionAllowsActiveTurn(selectedSession.state));
     const optimisticItem = optimisticPromptDisplayItem({
@@ -1869,11 +2018,9 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
     setIsBusy(true);
     setMessage(null);
     setOptimisticPromptItems((current) => [...current, optimisticItem]);
-    setConversationPrompt("");
-    setSelectedSkillNames([]);
+    updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
     setPreviewAttachmentId(null);
     setAttachmentMenuOpen(false);
-    setComposerAttachments([]);
     if (selectedSession) {
       setSessions((current) => upsertSession(current, {
         ...selectedSession,
@@ -1893,13 +2040,7 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
       applyDesktopActionResult(result);
       if (result.error) {
         setOptimisticPromptItems((current) => current.filter((item) => item.id !== optimisticId));
-        if (selectedConversationIdRef.current === conversationId) {
-          setConversationPrompt((current) => current || text);
-          setSelectedSkillNames((current) => current.length === 0 ? submittedSkills : current);
-          setComposerAttachments((current) => current.length === 0 ? submittedAttachments : current);
-        } else {
-          revokeSubmittedAttachments();
-        }
+        updateComposerDraft(submittedDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
         if (result.errorCode === "runtime_occupied") {
           await refreshSessions({ quiet: true });
         } else {
@@ -1920,13 +2061,7 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
       }
     } catch (error) {
       setOptimisticPromptItems((current) => current.filter((item) => item.id !== optimisticId));
-      if (selectedConversationIdRef.current === conversationId) {
-        setConversationPrompt((current) => current || text);
-        setSelectedSkillNames((current) => current.length === 0 ? submittedSkills : current);
-        setComposerAttachments((current) => current.length === 0 ? submittedAttachments : current);
-      } else {
-        revokeSubmittedAttachments();
-      }
+      updateComposerDraft(submittedDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
       setMessage(errorMessage(error));
       void refreshSessions({ quiet: true });
     } finally {
@@ -2072,33 +2207,21 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
       mimeType: file.type,
       url: URL.createObjectURL(file),
     }));
-    setComposerAttachments((current) => [
+    updateComposerDraft(composerDraftKey, (current) => ({
       ...current,
-      ...attachments,
-    ]);
+      attachments: [...current.attachments, ...attachments],
+    }));
   }
 
   function removeComposerAttachment(id: string) {
-    setComposerAttachments((current) => {
-      const attachment = current.find((item) => item.id === id);
+    updateComposerDraft(composerDraftKey, (current) => {
+      const attachment = current.attachments.find((item) => item.id === id);
       if (attachment?.url) {
         URL.revokeObjectURL(attachment.url);
       }
-      return current.filter((item) => item.id !== id);
+      return { ...current, attachments: current.attachments.filter((item) => item.id !== id) };
     });
     setPreviewAttachmentId((current) => (current === id ? null : current));
-  }
-
-  function clearComposerAttachments() {
-    setPreviewAttachmentId(null);
-    setComposerAttachments((current) => {
-      for (const attachment of current) {
-        if (attachment.url) {
-          URL.revokeObjectURL(attachment.url);
-        }
-      }
-      return [];
-    });
   }
 
   function handleAttachmentInputChange(event: SyntheticEvent<HTMLInputElement>) {
@@ -2740,7 +2863,9 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
                   conversation={conversation}
                   selected={conversation.id === selectedConversation?.id}
                   working={workingConversationIds.has(conversation.id)}
+                  unread={unreadConversationIds.has(conversation.id)}
                   onSelect={() => void selectConversation(conversation.id)}
+                  onContextMenu={(event) => openConversationContextMenu(event, conversation.id)}
                   onRename={() => openRenameConversationDialog(conversation)}
                   onPin={() => void toggleConversationPinned(conversation)}
                   onArchive={() => void archiveConversation(conversation)}
@@ -2979,7 +3104,9 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
                                       conversation={conversation}
                                       selected={conversation.id === selectedConversation?.id}
                                       working={workingConversationIds.has(conversation.id)}
+                                      unread={unreadConversationIds.has(conversation.id)}
                                       onSelect={() => void selectConversation(conversation.id)}
+                                      onContextMenu={(event) => openConversationContextMenu(event, conversation.id)}
                                       onRename={() => openRenameConversationDialog(conversation)}
                                       onPin={() => void toggleConversationPinned(conversation)}
                                       onArchive={() => void archiveConversation(conversation)}
@@ -3020,7 +3147,9 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
                       conversation={conversation}
                       selected={conversation.id === selectedConversation?.id}
                       working={workingConversationIds.has(conversation.id)}
+                      unread={unreadConversationIds.has(conversation.id)}
                       onSelect={() => void selectConversation(conversation.id)}
+                      onContextMenu={(event) => openConversationContextMenu(event, conversation.id)}
                       onRename={() => openRenameConversationDialog(conversation)}
                       onPin={() => void toggleConversationPinned(conversation)}
                       onArchive={() => void archiveConversation(conversation)}
@@ -3052,6 +3181,65 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
           {signOut && <button type="button" onClick={() => void signOut().catch((error) => setMessage(errorMessage(error)))}>Sign out</button>}
         </div>
       </aside>
+
+      {conversationContextMenu && contextMenuConversation && (
+        <div
+          className="workspace-action-menu session-context-menu"
+          role="menu"
+          style={{ left: conversationContextMenu.x, top: conversationContextMenu.y }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const conversationId = contextMenuConversation.id;
+              if (unreadConversationIds.has(conversationId)) markConversationRead(conversationId);
+              else markConversationUnread(conversationId);
+              setConversationContextMenu(null);
+            }}
+          >
+            {unreadConversationIds.has(contextMenuConversation.id) ? (
+              <><Check size={14} strokeWidth={1.8} /><span>Mark as read</span></>
+            ) : (
+              <><Circle size={14} strokeWidth={1.8} /><span>Mark as unread</span></>
+            )}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setConversationContextMenu(null);
+              void toggleConversationPinned(contextMenuConversation);
+            }}
+          >
+            <Pin size={14} strokeWidth={1.8} />
+            <span>{contextMenuConversation.pinned_at ? "Unpin" : "Pin"}</span>
+          </button>
+          <div className="workspace-action-menu-separator" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setConversationContextMenu(null);
+              openRenameConversationDialog(contextMenuConversation);
+            }}
+          >
+            <SquarePen size={14} strokeWidth={1.8} />
+            <span>Rename</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setConversationContextMenu(null);
+              void archiveConversation(contextMenuConversation);
+            }}
+          >
+            <Archive size={14} strokeWidth={1.8} />
+            <span>Archive</span>
+          </button>
+        </div>
+      )}
 
       <section className={`conversation ${selectedConversation ? "has-composer" : ""}`}>
         <header className="conversation-titlebar">
@@ -3149,7 +3337,7 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
                   : Boolean(selectedProject && selectedWorkspace?.status !== "ready")}
                 message={message}
                 isBusy={isBusy}
-                prompt={draftPrompt}
+                prompt={activePrompt}
                 skills={skillMatches}
                 selectedSkillNames={selectedSkillNames}
                 skillsLoading={skillsLoading}
@@ -3157,10 +3345,10 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
                 skillMenuOpen={skillMenuOpen}
                 skillMenuIndex={skillMenuIndex}
                 attachments={composerAttachments}
-                onPromptChange={updateDraftPrompt}
+                onPromptChange={updateActivePrompt}
                 onPromptKeyDown={handleNewPromptKeyDown}
                 onSelectSkill={selectComposerSkill}
-                onRemoveSkill={(name) => setSelectedSkillNames((current) => current.filter((item) => item !== name))}
+                onRemoveSkill={removeComposerSkill}
                 onHighlightSkill={setSkillMenuIndex}
                 onPromptPaste={handleComposerPaste}
                 onPreviewAttachment={setPreviewAttachmentId}
@@ -3227,7 +3415,7 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
                 open={skillMenuOpen}
                 activeIndex={skillMenuIndex}
                 onSelect={selectComposerSkill}
-                onRemove={(name) => setSelectedSkillNames((current) => current.filter((item) => item !== name))}
+                onRemove={removeComposerSkill}
                 onHighlight={setSkillMenuIndex}
               />
               <ComposerAttachmentStrip
@@ -3237,8 +3425,8 @@ export default function App({ thinkingDisplay }: { thinkingDisplay: ThinkingDisp
               />
               <textarea
                 ref={composerTextareaRef}
-                value={conversationPrompt}
-                onChange={(event) => updateConversationPrompt(event.target.value)}
+                value={activePrompt}
+                onChange={(event) => updateActivePrompt(event.target.value)}
                 onKeyDown={handleComposerKeyDown}
                 onPaste={handleComposerPaste}
                 placeholder="Ask follow-up changes"
@@ -4168,7 +4356,9 @@ function ConversationNavItem({
   conversation,
   selected,
   working,
+  unread,
   onSelect,
+  onContextMenu,
   onRename,
   onPin,
   onArchive,
@@ -4177,7 +4367,9 @@ function ConversationNavItem({
   conversation: DesktopConversation;
   selected: boolean;
   working: boolean;
+  unread: boolean;
   onSelect: () => void;
+  onContextMenu: (event: ReactMouseEvent) => void;
   onRename: () => void;
   onPin: () => void;
   onArchive: () => void;
@@ -4208,6 +4400,7 @@ function ConversationNavItem({
       className={`sidebar-session ${selected ? "selected" : ""} ${sort?.dragging ? "dragging" : ""} ${sort?.dropPosition ? `drop-${sort.dropPosition}` : ""}`}
       onMouseEnter={startTitleScroll}
       onMouseLeave={stopTitleScroll}
+      onContextMenu={onContextMenu}
       draggable={sort?.draggable}
       onDragStart={sort?.onDragStart}
       onDragOver={sort?.onDragOver}
@@ -4225,6 +4418,7 @@ function ConversationNavItem({
         </span>
       </button>
       {working && <LoaderCircle className="sidebar-session-spinner" size={13} strokeWidth={1.9} aria-label="Running" />}
+      {!working && unread && <span className="sidebar-session-unread" aria-label="Unread" />}
       <div className="sidebar-session-actions">
         <button type="button" onClick={onPin} title={conversation.pinned_at ? "Unpin" : "Pin"} aria-label={`${conversation.pinned_at ? "Unpin" : "Pin"} ${conversation.title}`}>
           <Pin size={12} strokeWidth={1.8} fill={conversation.pinned_at ? "currentColor" : "none"} />
