@@ -68,6 +68,15 @@ test("batched display deltas preserve their arrival order", () => {
   assert.equal(blocks[0].text, "one two three");
 });
 
+test("reasoning deltas remain a live reasoning preview while they stream", () => {
+  const blocks = appendDisplayDeltas([], [
+    { item_id: "thinking-1", role: "assistant", part_type: "reasoning", delta: "step" },
+    { item_id: "thinking-1", role: "assistant", part_type: "reasoning", delta: " one" },
+  ], []);
+
+  assert.deepEqual(ephemeralDisplayItems(blocks)[0]?.content, [{ type: "reasoning", text: "step one" }]);
+});
+
 test("poll and stream items merge by durable sequence despite public sequence gaps", () => {
   const first = assistant("assistant-1", 1, [{ type: "text", text: "one" }]);
   const later = assistant("assistant-2", 4, [{ type: "text", text: "four" }]);
