@@ -46,7 +46,7 @@ export function HostShell() {
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const [thinkingDisplay, setThinkingDisplay] = useState<ThinkingDisplayMode>(() => {
     try { return parseThinkingDisplayMode(localStorage.getItem(thinkingDisplayStorageKey)); }
-    catch { return "auto"; }
+    catch { return "expanded"; }
   });
   const [name, setName] = useState(""); const [address, setAddress] = useState(""); const [token, setToken] = useState("");
   const [status, setStatus] = useState("");

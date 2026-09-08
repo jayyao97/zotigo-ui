@@ -44,9 +44,9 @@ export function SettingsPage({
                   value={thinkingDisplay}
                   onChange={(event) => onThinkingDisplayChange(event.target.value as ThinkingDisplayMode)}
                 >
-                  <option value="auto">Auto</option>
                   <option value="expanded">Always expanded</option>
                   <option value="collapsed">Always collapsed</option>
+                  <option value="latest">Collapse on next Thinking</option>
                 </select>
               </label>
             </div>

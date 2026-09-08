@@ -46,7 +46,7 @@ import type { DaemonSessionBinding } from "../../shared/clientTypes";
 import { MarkdownCodeBlock } from "../MarkdownCodeBlock";
 import { PreviewImage } from "../ImagePreview";
 import { markdownUrlTransform } from "../markdownUrlTransform";
-import { defaultActivityDisclosureOpen, defaultThinkingDisclosureOpen, type ThinkingDisplayMode } from "../thinkingDisplay";
+import { defaultThinkingDisclosureOpen, latestReasoningItemId, type ThinkingDisplayMode } from "../thinkingDisplay";
 
 export function formatCompactTokenCount(tokens: number): string {
   if (tokens < 1_000) return tokens.toLocaleString();
@@ -103,6 +103,7 @@ export const SessionTimeline = memo(function SessionTimeline({
     () => groupTimelineItems(visibleItems, openTurn?.sequence),
     [visibleItems, openTurn?.sequence],
   );
+  const latestThinkingItemId = useMemo(() => latestReasoningItemId(visibleItems), [visibleItems]);
 
   return (
     <>
@@ -122,7 +123,7 @@ export const SessionTimeline = memo(function SessionTimeline({
             </div>
           ) : (
             <>
-              {timelineGroups.map((group, groupIndex) => {
+              {timelineGroups.map((group) => {
                 const renderItem = (item: DisplayItem) => (
                   <DisplayTimelineItem
                     key={item.id}
@@ -150,6 +151,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                       active={group.active}
                       activeToolCallId={group.active ? activeToolCall?.id : undefined}
                       thinkingDisplay={thinkingDisplay}
+                      latestThinkingItemId={latestThinkingItemId}
                     />
                   );
                 }
@@ -158,7 +160,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                     <ThinkingDisclosure
                       key={`reasoning-${group.items[0]?.id}`}
                       mode={thinkingDisplay}
-                      active={Boolean(activeTurn) && groupIndex === timelineGroups.length - 1}
+                      latest={group.items.some((item) => item.id === latestThinkingItemId)}
                     >
                       {group.items.map(renderItem)}
                     </ThinkingDisclosure>
@@ -712,11 +714,13 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   active,
   activeToolCallId,
   thinkingDisplay,
+  latestThinkingItemId,
 }: {
   items: DisplayItem[];
   active: boolean;
   activeToolCallId?: string;
   thinkingDisplay?: ThinkingDisplayMode;
+  latestThinkingItemId?: string;
 }) {
   const toolProjection = useMemo(() => buildToolRenderProjection(items), [items]);
   const renderActivityItem = (item: DisplayItem) => (
@@ -730,18 +734,19 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   );
 
   const activityGroups = groupReasoningItems(items);
-  const disclosureOpen = defaultActivityDisclosureOpen(
-    active,
-    activityGroups.some((group) => group.kind === "reasoning"),
-    thinkingDisplay,
-  );
+  const reasoningGroups = activityGroups.filter((group) => group.kind === "reasoning");
+  const revealReasoning = thinkingDisplay !== undefined && reasoningGroups.some((group) =>
+    defaultThinkingDisclosureOpen(
+      thinkingDisplay,
+      group.items.some((item) => item.id === latestThinkingItemId),
+    ));
   return (
-    <TimelineDisclosure className="historical-tool-group" label={historicalToolSummary(items)} active={disclosureOpen}>
-      {activityGroups.map((group, index) => group.kind === "reasoning"
+    <TimelineDisclosure className="historical-tool-group" label={historicalToolSummary(items)} active={active || revealReasoning}>
+      {activityGroups.map((group) => group.kind === "reasoning"
         ? <ThinkingDisclosure
             key={`reasoning-${group.items[0]?.id}`}
             mode={thinkingDisplay}
-            active={active && index === activityGroups.length - 1}
+            latest={group.items.some((item) => item.id === latestThinkingItemId)}
           >{group.items.map(renderActivityItem)}</ThinkingDisclosure>
         : renderActivityItem(group.item))}
     </TimelineDisclosure>
@@ -750,13 +755,14 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   previous.active === next.active &&
   previous.activeToolCallId === next.activeToolCallId &&
   previous.thinkingDisplay === next.thinkingDisplay &&
+  previous.latestThinkingItemId === next.latestThinkingItemId &&
   previous.items.length === next.items.length &&
   previous.items.every((item, index) => item === next.items[index])
 ));
 
-function ThinkingDisclosure({ children, mode, active = false }: { children: ReactNode; mode?: ThinkingDisplayMode; active?: boolean }) {
-  const automaticKey = mode === "auto" ? `${mode}:${active}` : mode;
-  const automaticOpen = mode === undefined ? false : defaultThinkingDisclosureOpen(mode, active);
+function ThinkingDisclosure({ children, mode, latest = false }: { children: ReactNode; mode?: ThinkingDisplayMode; latest?: boolean }) {
+  const automaticKey = mode === "latest" ? `${mode}:${latest}` : mode;
+  const automaticOpen = mode === undefined ? false : defaultThinkingDisclosureOpen(mode, latest);
   const [manualOpen, setManualOpen] = useState<{ key: string | undefined; open: boolean } | null>(null);
   const open = manualOpen !== null && manualOpen.key === automaticKey ? manualOpen.open : automaticOpen;
 
