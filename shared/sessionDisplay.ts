@@ -45,6 +45,26 @@ export function sessionAllowsActiveTurn(state: SessionState | undefined): boolea
   return state === undefined || state === "starting" || state === "running" || state === "paused";
 }
 
+export function authoritativeSessionItems(
+  items: DisplayItem[],
+  selectedSessionId: string | undefined,
+  loadedSessionId: string | null,
+): DisplayItem[] {
+  return selectedSessionId && selectedSessionId === loadedSessionId ? items : [];
+}
+
+export function selectedSessionItemsNeedRefresh(
+  selectedSessionId: string | undefined,
+  loadedSessionId: string | null,
+  eventsConnected: boolean,
+  historyBackfillNeeded: boolean,
+): boolean {
+  return Boolean(
+    selectedSessionId
+    && (!eventsConnected || selectedSessionId !== loadedSessionId || historyBackfillNeeded),
+  );
+}
+
 export function pendingHumanRequestIDs(items: DisplayItem[]): PendingHumanRequestIDs {
   let openTurnID = "";
   let start = 0;
@@ -272,6 +292,24 @@ export function hasUnresolvedTurnItems(items: DisplayItem[]): boolean {
       .filter((turnID): turnID is string => Boolean(turnID)),
   );
   return items.some((item) => Boolean(item.turn?.id) && !startedTurns.has(item.turn?.id ?? ""));
+}
+
+export function historyBackfillCursor(
+  cachedItems: DisplayItem[],
+  cachedPrevCursor: string | null,
+  latestItems: DisplayItem[],
+  latestPrevCursor: string | null,
+): string | null {
+  if (cachedItems.length === 0) return latestPrevCursor;
+  const cachedLastSequence = cachedItems.reduce((maximum, item) => Math.max(maximum, item.sequence), 0);
+  const latestFirstSequence = latestItems.reduce(
+    (minimum, item) => Math.min(minimum, item.sequence),
+    Number.POSITIVE_INFINITY,
+  );
+  if (cachedLastSequence + 1 < latestFirstSequence) return latestPrevCursor;
+  return hasUnresolvedTurnItems(mergeDisplayItems(cachedItems, latestItems))
+    ? latestPrevCursor
+    : cachedPrevCursor;
 }
 
 export function optimisticSteeringDisplayItem(
