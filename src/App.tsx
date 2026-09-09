@@ -73,13 +73,16 @@ import {
   appendDisplayDeltas,
   createOptimisticPromptId,
   acknowledgeOptimisticPrompt,
+  authoritativeSessionItems,
   ephemeralDisplayItems,
+  historyBackfillCursor,
   hasUnresolvedTurnItems,
   mergeDisplayItems,
   optimisticPromptDisplayItem,
   reconcileOptimisticSteering,
   reconcileDisplayPreviews,
   sessionAllowsActiveTurn,
+  selectedSessionItemsNeedRefresh,
   selectedTimelineActivity,
   workingConversationIds as workingConversationIdsForSessions,
   type EphemeralDisplayBlock,
@@ -192,12 +195,18 @@ type ConversationContextMenu = {
   x: number;
   y: number;
 };
+type SessionHistoryCacheEntry = {
+  items: DisplayItem[];
+  prevCursor: string | null;
+};
 
 const pollIntervalMs = 5000;
 const catalogReconciliationIntervalMs = 30_000;
 const codexCatalogSyncIntervalMs = 5 * 60_000;
 const initialCodexCatalogSyncDelayMs = 15_000;
 const sessionDeltaFlushIntervalMs = 50;
+const maxSessionHistoryCacheEntries = 3;
+const inactiveSessionHistoryItemLimit = 200;
 const supportedImageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 function ProjectDisclosureIcon({ open }: { open: boolean }) {
@@ -423,8 +432,11 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   const sidePanelRatioRef = useRef(defaultSidePanelRatio);
   const conversationAutoScrollFrameRef = useRef<number | null>(null);
   const sessionItemsPrevCursorRef = useRef<string | null>(null);
-  const sessionItemsPagingInitializedRef = useRef(false);
-  const sessionItemsLoadedForSessionIdRef = useRef<string | null>(null);
+  const [sessionItemsLoadedForSessionId, setSessionItemsLoadedForSessionId] = useState<string | null>(null);
+  const sessionHistoryCacheRef = useRef(new Map<string, SessionHistoryCacheEntry>());
+  const sessionHistoryLoadRequestRef = useRef(0);
+  const sessionHistoryBackfillRef = useRef<{ sessionId: string; historyRequestId: number } | null>(null);
+  const sessionHistoryBackfillNeededRef = useRef<string | null>(null);
   const olderSessionItemsLoadingRef = useRef(false);
   const conversationTitleInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -625,12 +637,20 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
         .sort((left, right) => (left.pinned_order ?? 0) - (right.pinned_order ?? 0)),
     [desktopState.conversations],
   );
-  const selectedActiveTurn = useMemo(() => latestActiveTurn(sessionItems), [sessionItems]);
+  const actionableSessionItems = useMemo(
+    () => authoritativeSessionItems(
+      sessionItems,
+      selectedBinding?.daemon_session_id,
+      sessionItemsLoadedForSessionId,
+    ),
+    [selectedBinding?.daemon_session_id, sessionItems, sessionItemsLoadedForSessionId],
+  );
+  const selectedActiveTurn = useMemo(() => latestActiveTurn(actionableSessionItems), [actionableSessionItems]);
   const selectedActivity = useMemo(
     () => selectedTimelineActivity({
       conversationId: selectedConversation?.id,
       sessionId: selectedBinding?.daemon_session_id,
-      loadedSessionId: sessionItemsLoadedForSessionIdRef.current,
+      loadedSessionId: sessionItemsLoadedForSessionId,
       sessionState: selectedSession?.state,
       loading: sessionItemsLoading,
       hasActiveTurn: selectedActiveTurn !== null,
@@ -641,6 +661,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
       selectedConversation?.id,
       selectedSession?.state,
       sessionItemsLoading,
+      sessionItemsLoadedForSessionId,
     ],
   );
   const workingConversationIds = useMemo(
@@ -885,27 +906,35 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     }, pollIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [selectedBinding?.daemon_session_id]);
+  }, [selectedBinding?.daemon_session_id, sessionItemsLoadedForSessionId]);
 
   useEffect(() => {
+    const historyRequestId = ++sessionHistoryLoadRequestRef.current;
     clearPendingSessionDeltas();
     sessionEventsConnectedRef.current = false;
-    sessionItemsPrevCursorRef.current = null;
-    sessionItemsPagingInitializedRef.current = false;
-    sessionItemsLoadedForSessionIdRef.current = null;
+    sessionHistoryBackfillNeededRef.current = null;
+    setSessionItemsLoadedForSessionId(null);
     olderSessionItemsLoadingRef.current = false;
-    setSessionItems([]);
     setEphemeralBlocks([]);
     setOptimisticPromptItems([]);
     setSessionItemsError(null);
-    setSessionItemsLoading(Boolean(selectedBinding));
     if (!selectedBinding) {
+      sessionItemsPrevCursorRef.current = null;
+      sessionItemsRef.current = [];
+      setSessionItems([]);
+      setSessionItemsLoading(false);
       void client.unsubscribeSessionEvents();
       return;
     }
 
     let active = true;
     const sessionId = selectedBinding.daemon_session_id;
+    trimInactiveSessionHistories(sessionId);
+    const cachedHistory = cachedSessionHistory(sessionId);
+    sessionItemsPrevCursorRef.current = cachedHistory?.prevCursor ?? null;
+    sessionItemsRef.current = cachedHistory?.items ?? [];
+    setSessionItems(cachedHistory?.items ?? []);
+    setSessionItemsLoading(!cachedHistory);
     const removeListener = client.onSessionEvent((envelope) => {
       if (!active || envelope.session_id !== sessionId) {
         return;
@@ -928,24 +957,32 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
       if (sessionEvent?.type === "item") {
         flushPendingSessionDeltas();
         const item = sessionEvent.item;
-        setSessionItems((current) => mergeDisplayItems(current, [item]));
+        mergeCachedSessionHistory(sessionId, [item]);
         setEphemeralBlocks((current) => reconcileDisplayPreviews(current, item));
         setOptimisticPromptItems((current) => reconcileOptimisticSteering(current, [item]));
         applyDurableItemEffects(selectedBinding, [item]);
       }
     });
 
-    void refreshSessionItems(selectedBinding).then((items) => {
-      if (!active) return;
+    let subscribed = false;
+    const subscribe = (items: DisplayItem[]) => {
+      if (!active || subscribed) return;
+      subscribed = true;
       const lastSequence = items.reduce<number | undefined>(
         (maximum, item) => Math.max(maximum ?? 0, item.sequence),
         undefined,
       );
       void client.subscribeSessionEvents(sessionId, lastSequence);
+    };
+    void refreshSessionItems(selectedBinding, { historyRequestId }).then((items) => {
+      subscribe(items);
     });
 
     return () => {
       active = false;
+      if (sessionHistoryLoadRequestRef.current === historyRequestId) {
+        sessionHistoryLoadRequestRef.current += 1;
+      }
       clearPendingSessionDeltas();
       removeListener();
       void client.unsubscribeSessionEvents();
@@ -1085,6 +1122,50 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     setDesktopState(update);
   }
 
+  function cachedSessionHistory(sessionId: string): SessionHistoryCacheEntry | null {
+    const cached = sessionHistoryCacheRef.current.get(sessionId) ?? null;
+    if (!cached) return null;
+    sessionHistoryCacheRef.current.delete(sessionId);
+    sessionHistoryCacheRef.current.set(sessionId, cached);
+    return cached;
+  }
+
+  function mergeCachedSessionHistory(
+    sessionId: string,
+    items: DisplayItem[],
+    prevCursor?: string | null,
+  ): DisplayItem[] {
+    const cached = sessionHistoryCacheRef.current.get(sessionId);
+    const merged = mergeDisplayItems(cached?.items ?? [], items);
+    const entry = {
+      items: merged,
+      prevCursor: prevCursor === undefined ? cached?.prevCursor ?? null : prevCursor,
+    };
+    sessionHistoryCacheRef.current.delete(sessionId);
+    sessionHistoryCacheRef.current.set(sessionId, entry);
+    while (sessionHistoryCacheRef.current.size > maxSessionHistoryCacheEntries) {
+      const oldestSessionId = sessionHistoryCacheRef.current.keys().next().value;
+      if (!oldestSessionId) break;
+      sessionHistoryCacheRef.current.delete(oldestSessionId);
+    }
+    if (selectedSessionIdRef.current === sessionId) {
+      sessionItemsRef.current = merged;
+      setSessionItems(merged);
+    }
+    return merged;
+  }
+
+  function trimInactiveSessionHistories(activeSessionId: string): void {
+    for (const [sessionId, entry] of sessionHistoryCacheRef.current) {
+      if (sessionId === activeSessionId || entry.items.length <= inactiveSessionHistoryItemLimit) continue;
+      const items = entry.items.slice(-inactiveSessionHistoryItemLimit);
+      sessionHistoryCacheRef.current.set(sessionId, {
+        items,
+        prevCursor: String(items[0].sequence),
+      });
+    }
+  }
+
   async function refreshSessions(options: { quiet?: boolean; syncCodex?: boolean } = {}): Promise<void> {
     const requestId = ++sessionRefreshRequestIdRef.current;
     const desktopStateGeneration = desktopStateGenerationRef.current;
@@ -1145,7 +1226,12 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
       setSessionsInitialized(true);
       setApprovalPolicyOverrides((current) => clearResolvedApprovalPolicyOverrides(current, nextSessions));
       if (catalogError && !options.quiet) setMessage(errorMessage(catalogError));
-      if (selectedBinding && !sessionEventsConnectedRef.current) {
+      if (selectedBinding && selectedSessionItemsNeedRefresh(
+        selectedBinding.daemon_session_id,
+        sessionItemsLoadedForSessionId,
+        sessionEventsConnectedRef.current,
+        sessionHistoryBackfillNeededRef.current === selectedBinding.daemon_session_id,
+      )) {
         await refreshSessionItems(selectedBinding, { quiet: true });
       }
     } catch (error) {
@@ -1195,8 +1281,13 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
 
   async function refreshSessionItems(
     binding: DaemonSessionBinding,
-    options: { quiet?: boolean } = {},
+    options: { quiet?: boolean; historyRequestId?: number } = {},
   ): Promise<DisplayItem[]> {
+    const historyRequestId = options.historyRequestId ?? sessionHistoryLoadRequestRef.current;
+    const isCurrentRequest = () => (
+      selectedSessionIdRef.current === binding.daemon_session_id
+      && sessionHistoryLoadRequestRef.current === historyRequestId
+    );
     if (!options.quiet) {
       setSessionItemsLoading(true);
       setSessionItemsError(null);
@@ -1204,46 +1295,104 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
 
     try {
       const response = await client.listSessionItems(binding.daemon_session_id, { limit: 200 });
-      if (selectedSessionIdRef.current !== binding.daemon_session_id) {
+      if (!isCurrentRequest()) {
         return [];
       }
 
-      let fetchedItems = response.items;
-      let prevCursor = response.prev_cursor || null;
-      let mergedItems = mergeDisplayItems(sessionItemsRef.current, fetchedItems);
+      const cached = sessionHistoryCacheRef.current.get(binding.daemon_session_id);
+      const prevCursor = historyBackfillCursor(
+        cached?.items ?? [],
+        cached?.prevCursor ?? null,
+        response.items,
+        response.prev_cursor || null,
+      );
+      const mergedItems = mergeCachedSessionHistory(binding.daemon_session_id, response.items, prevCursor);
+      sessionHistoryBackfillNeededRef.current = prevCursor && hasUnresolvedTurnItems(mergedItems)
+        ? binding.daemon_session_id
+        : null;
+      sessionItemsPrevCursorRef.current = prevCursor;
+      setSessionItemsLoadedForSessionId(binding.daemon_session_id);
+      setEphemeralBlocks((current) =>
+        current.filter((block) => !response.items.some((item) => item.id === block.id)),
+      );
+      setOptimisticPromptItems((current) => reconcileOptimisticSteering(current, response.items));
+      applyDurableItemEffects(binding, response.items);
+      if (!sessionHistoryBackfillNeededRef.current) setSessionItemsError(null);
+      scheduleCurrentTurnHistoryBackfill(binding, historyRequestId, mergedItems, prevCursor);
+      return mergedItems;
+    } catch (error) {
+      if (isCurrentRequest()) {
+        setSessionItemsError(errorMessage(error));
+      }
+      return sessionHistoryCacheRef.current.get(binding.daemon_session_id)?.items ?? [];
+    } finally {
+      if (!options.quiet && isCurrentRequest()) {
+        setSessionItemsLoading(false);
+      }
+    }
+  }
+
+  function scheduleCurrentTurnHistoryBackfill(
+    binding: DaemonSessionBinding,
+    historyRequestId: number,
+    items: DisplayItem[],
+    prevCursor: string | null,
+  ): void {
+    if (!prevCursor || !hasUnresolvedTurnItems(items)) return;
+    const pending = sessionHistoryBackfillRef.current;
+    if (pending?.sessionId === binding.daemon_session_id && pending.historyRequestId === historyRequestId) return;
+    const request = { sessionId: binding.daemon_session_id, historyRequestId };
+    sessionHistoryBackfillRef.current = request;
+    void backfillCurrentTurnHistory(binding, historyRequestId, items, prevCursor).finally(() => {
+      if (sessionHistoryBackfillRef.current === request) {
+        sessionHistoryBackfillRef.current = null;
+      }
+    });
+  }
+
+  async function backfillCurrentTurnHistory(
+    binding: DaemonSessionBinding,
+    historyRequestId: number,
+    initialItems: DisplayItem[],
+    initialCursor: string | null,
+  ): Promise<void> {
+    let mergedItems = initialItems;
+    let prevCursor = initialCursor;
+    try {
       while (prevCursor && hasUnresolvedTurnItems(mergedItems)) {
         const older = await client.listSessionItems(binding.daemon_session_id, {
           limit: 200,
           before: Number(prevCursor),
         });
-        if (selectedSessionIdRef.current !== binding.daemon_session_id) {
-          return [];
+        if (
+          selectedSessionIdRef.current !== binding.daemon_session_id
+          || sessionHistoryLoadRequestRef.current !== historyRequestId
+        ) {
+          return;
         }
-        fetchedItems = mergeDisplayItems(fetchedItems, older.items);
-        mergedItems = mergeDisplayItems(mergedItems, older.items);
         prevCursor = older.prev_cursor || null;
-      }
-      if (!sessionItemsPagingInitializedRef.current) {
+        mergedItems = mergeCachedSessionHistory(binding.daemon_session_id, older.items, prevCursor);
         sessionItemsPrevCursorRef.current = prevCursor;
-        sessionItemsPagingInitializedRef.current = true;
       }
-      sessionItemsLoadedForSessionIdRef.current = binding.daemon_session_id;
-      setSessionItems((current) => mergeDisplayItems(current, fetchedItems));
-      setEphemeralBlocks((current) =>
-        current.filter((block) => !fetchedItems.some((item) => item.id === block.id)),
-      );
-      setOptimisticPromptItems((current) => reconcileOptimisticSteering(current, fetchedItems));
-      applyDurableItemEffects(binding, fetchedItems);
-      setSessionItemsError(null);
-      return fetchedItems;
+      if (
+        selectedSessionIdRef.current === binding.daemon_session_id
+        && sessionHistoryLoadRequestRef.current === historyRequestId
+      ) {
+        const cached = sessionHistoryCacheRef.current.get(binding.daemon_session_id);
+        const backfillStillNeeded = Boolean(
+          cached?.prevCursor && hasUnresolvedTurnItems(cached.items),
+        );
+        sessionHistoryBackfillNeededRef.current = backfillStillNeeded
+          ? binding.daemon_session_id
+          : null;
+        if (!backfillStillNeeded) setSessionItemsError(null);
+      }
     } catch (error) {
-      if (selectedSessionIdRef.current === binding.daemon_session_id) {
+      if (
+        selectedSessionIdRef.current === binding.daemon_session_id
+        && sessionHistoryLoadRequestRef.current === historyRequestId
+      ) {
         setSessionItemsError(errorMessage(error));
-      }
-      return [];
-    } finally {
-      if (!options.quiet && selectedSessionIdRef.current === binding.daemon_session_id) {
-        setSessionItemsLoading(false);
       }
     }
   }
@@ -1543,8 +1692,11 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     }
     setProjectOverviewId(null);
     setMessage(null);
-    sessionItemsRef.current = [];
-    setSessionItems([]);
+    const binding = desktopState.bindings.find((candidate) => candidate.conversation_id === id);
+    const cachedHistory = binding ? cachedSessionHistory(binding.daemon_session_id) : null;
+    sessionItemsRef.current = cachedHistory?.items ?? [];
+    setSessionItems(cachedHistory?.items ?? []);
+    setSessionItemsLoading(Boolean(binding) && !cachedHistory);
     setEphemeralBlocks([]);
     setOptimisticPromptItems([]);
     applyDesktopState((current) => ({
@@ -2303,7 +2455,11 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
         return;
       }
       sessionItemsPrevCursorRef.current = response.prev_cursor || null;
-      setSessionItems((current) => mergeDisplayItems(current, response.items));
+      mergeCachedSessionHistory(
+        binding.daemon_session_id,
+        response.items,
+        sessionItemsPrevCursorRef.current,
+      );
       requestAnimationFrame(() => {
         const currentElement = conversationScrollRef.current;
         if (currentElement && selectedSessionIdRef.current === binding.daemon_session_id) {
@@ -3304,6 +3460,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
                 binding={selectedBinding}
                 session={selectedSession}
                 items={timelineItems}
+                itemsAuthoritative={sessionItemsLoadedForSessionId === selectedBinding?.daemon_session_id}
                 itemsLoading={sessionItemsLoading}
                 itemsError={sessionItemsError}
                 message={message}

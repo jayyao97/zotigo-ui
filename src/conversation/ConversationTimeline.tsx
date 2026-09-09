@@ -59,6 +59,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   binding,
   session,
   items,
+  itemsAuthoritative,
   itemsLoading,
   itemsError,
   message,
@@ -74,6 +75,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   binding: DaemonSessionBinding | null;
   session: ZotigoSession | null;
   items: DisplayItem[];
+  itemsAuthoritative: boolean;
   itemsLoading: boolean;
   itemsError: string | null;
   message: string | null;
@@ -94,9 +96,14 @@ export const SessionTimeline = memo(function SessionTimeline({
   const orderedItems = useMemo(() => orderLateTurnItems(displayItems), [displayItems]);
   const visibleItems = useMemo(() => visibleDisplayItems(orderedItems), [orderedItems]);
   const recordedActiveTurn = latestActiveTurn(items);
-  const activeTurn = session?.state === "starting" || session?.state === "running" ? recordedActiveTurn : null;
-  const openTurn = session && sessionAllowsActiveTurn(session.state) ? recordedActiveTurn : null;
-  const pendingRequests = useMemo(() => pendingHumanRequestIDs(items), [items]);
+  const activeTurn = itemsAuthoritative && (session?.state === "starting" || session?.state === "running")
+    ? recordedActiveTurn
+    : null;
+  const openTurn = itemsAuthoritative && session && sessionAllowsActiveTurn(session.state) ? recordedActiveTurn : null;
+  const pendingRequests = useMemo(
+    () => pendingHumanRequestIDs(itemsAuthoritative ? items : []),
+    [items, itemsAuthoritative],
+  );
   const pendingApprovalIds = session?.state === "paused" ? pendingRequests.approvals : new Set<string>();
   const pendingInteractionIds = pendingRequests.interactions;
   const activeToolCall = activeTurn
@@ -114,11 +121,11 @@ export const SessionTimeline = memo(function SessionTimeline({
     <>
       {binding ? (
         <div className="display-log">
-          {itemsLoading ? (
+          {itemsLoading && visibleItems.length === 0 ? (
             <div className="assistant-note">
               <p>Loading display history...</p>
             </div>
-          ) : itemsError ? (
+          ) : itemsError && visibleItems.length === 0 ? (
             <div className="assistant-note warning">
               <p>{itemsError}</p>
             </div>
@@ -134,9 +141,9 @@ export const SessionTimeline = memo(function SessionTimeline({
                     key={item.id}
                     item={item}
                     turnEnd={item.type === "turn_started" ? nextTurnTerminal(orderedItems, item.sequence) : null}
-                    terminalAt={item.id === recordedActiveTurn?.id && !activeTurn ? session?.ended_at : undefined}
-                    turnStopped={item.id === recordedActiveTurn?.id && !activeTurn}
-                    turnPaused={item.id === recordedActiveTurn?.id && session?.state === "paused"}
+                    terminalAt={itemsAuthoritative && item.id === recordedActiveTurn?.id && !activeTurn ? session?.ended_at : undefined}
+                    turnStopped={itemsAuthoritative && item.id === recordedActiveTurn?.id && !activeTurn}
+                    turnPaused={itemsAuthoritative && item.id === recordedActiveTurn?.id && session?.state === "paused"}
                     daemonUrl={daemonUrl}
                     sessionId={binding.daemon_session_id}
                     toolProjection={toolProjection}
@@ -185,6 +192,12 @@ export const SessionTimeline = memo(function SessionTimeline({
       ) : (
         <div className="assistant-note">
           <p>This conversation is local until a zotigod session is created.</p>
+        </div>
+      )}
+
+      {itemsError && visibleItems.length > 0 && (
+        <div className="assistant-note warning">
+          <p>{itemsError}</p>
         </div>
       )}
 

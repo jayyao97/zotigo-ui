@@ -112,6 +112,8 @@ html[data-platform="web"] .sidebar-footer { grid-template-columns: 32px minmax(0
   --color-text-foreground: var(--gray-0);
   --color-text-foreground-secondary: #ffffffb3;
   --color-text-foreground-tertiary: #ffffff80;
+  --color-background-user-message: #173e76;
+  --color-text-user-message: #f6fafe;
   --color-token-editor-background: var(--color-background-editor-opaque);
   --color-border: #ffffff14;
   --color-border-heavy: #ffffff29;
@@ -1565,7 +1567,7 @@ p {
 .user-message-stack {
   display: flex;
   width: fit-content;
-  max-width: 80%;
+  max-width: 70%;
   min-width: 0;
   flex-direction: column;
   align-items: flex-end;
@@ -1595,7 +1597,29 @@ p {
 .message-bubble.user {
   width: 100%;
   max-width: none;
-  background: color-mix(in srgb, var(--text) 10%, transparent);
+  border: 0;
+  border-radius: 22px;
+  background: var(--color-background-user-message);
+  color: var(--color-text-user-message);
+  font-size: 16px;
+  line-height: 22px;
+  padding: 10px 16px;
+}
+
+.message-bubble.user .markdown-copy a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.message-bubble.user .message-kicker {
+  color: color-mix(in srgb, var(--color-text-user-message) 80%, transparent);
+}
+
+@supports (corner-shape: superellipse(1.5)) {
+  .message-bubble.user {
+    corner-shape: superellipse(1.5);
+  }
 }
 
 .user-message-content.collapsed {

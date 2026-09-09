@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   appendDisplayDelta,
   appendDisplayDeltas,
+  authoritativeSessionItems,
   buildToolRenderProjection,
   contentLocation,
   createOptimisticPromptId,
@@ -12,6 +13,7 @@ import {
   hasVisibleAssistantContent,
   groupTimelineItems,
   hasUnresolvedTurnItems,
+  historyBackfillCursor,
   latestPendingToolCall,
   mergeDisplayItems,
   optimisticSteeringDisplayItem,
@@ -22,6 +24,7 @@ import {
   reconcileDisplayPreviews,
   reconcileOptimisticSteering,
   sessionAllowsActiveTurn,
+  selectedSessionItemsNeedRefresh,
   selectedTimelineActivity,
   visibleDisplayItems,
   workingConversationIds,
@@ -185,6 +188,26 @@ test("turn-bound history requests older pages only when its start is missing", (
   }, answer]), false);
 });
 
+test("history backfill starts at the latest page only when cached history misses a turn start", () => {
+  const previousTurn: DisplayItem = {
+    id: "started-previous", sequence: 1, type: "turn_started", turn: { id: "turn-previous" }, created_at: new Date(0).toISOString(),
+  };
+  const currentAnswer = {
+    ...assistant("answer-current", 500, [{ type: "text", text: "answer" }]),
+    turn: { id: "turn-current" },
+  };
+  assert.equal(historyBackfillCursor([], null, [currentAnswer], "450"), "450");
+  assert.equal(historyBackfillCursor([previousTurn], "1", [currentAnswer], "450"), "450");
+
+  const currentStart: DisplayItem = {
+    id: "started-current", sequence: 450, type: "turn_started", turn: { id: "turn-current" }, created_at: new Date(0).toISOString(),
+  };
+  assert.equal(historyBackfillCursor([previousTurn], "1", [currentStart, currentAnswer], "450"), "450");
+  const adjacentPreviousTurn = { ...previousTurn, sequence: 449 };
+  assert.equal(historyBackfillCursor([adjacentPreviousTurn, currentStart], "1", [currentStart, currentAnswer], "450"), "1");
+  assert.equal(historyBackfillCursor([previousTurn, currentStart], "1", [currentStart, currentAnswer], "450"), "1");
+});
+
 test("steering command becomes an optimistic user item until the durable item arrives", () => {
   const command = {
     id: "steering-1",
@@ -330,6 +353,29 @@ test("selected timeline only overrides activity after that session's history loa
     loading: false,
     hasActiveTurn: false,
   }), { conversationId: "conversation-2", working: false });
+});
+
+test("cached history remains display-only until the selected session has a fresh snapshot", () => {
+  const staleRequest: DisplayItem = {
+    id: "stale-request",
+    sequence: 2,
+    type: "interaction_request",
+    created_at: "now",
+    turn: { id: "turn-1" },
+    interaction: { id: "interaction-1", kind: "user_input", status: "pending", turn_id: "turn-1", questions: [] },
+  };
+  assert.deepEqual(authoritativeSessionItems([staleRequest], "session-2", "session-1"), []);
+  assert.deepEqual(authoritativeSessionItems([staleRequest], "session-2", null), []);
+  assert.deepEqual(authoritativeSessionItems([staleRequest], "session-2", "session-2"), [staleRequest]);
+});
+
+test("a selected session keeps polling until its snapshot and required backfill are complete", () => {
+  assert.equal(selectedSessionItemsNeedRefresh("session-2", null, true, false), true);
+  assert.equal(selectedSessionItemsNeedRefresh("session-2", "session-1", true, false), true);
+  assert.equal(selectedSessionItemsNeedRefresh("session-2", "session-2", false, false), true);
+  assert.equal(selectedSessionItemsNeedRefresh("session-2", "session-2", true, true), true);
+  assert.equal(selectedSessionItemsNeedRefresh("session-2", "session-2", true, false), false);
+  assert.equal(selectedSessionItemsNeedRefresh(undefined, null, false, true), false);
 });
 
 test("terminal and offline sessions cannot keep a stale turn active", () => {
