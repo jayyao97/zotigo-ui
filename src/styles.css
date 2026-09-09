@@ -1571,7 +1571,7 @@ p {
   min-width: 0;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 8px;
 }
 
 .message-row.assistant {
@@ -1601,8 +1601,8 @@ p {
   border-radius: 22px;
   background: var(--color-background-user-message);
   color: var(--color-text-user-message);
-  font-size: 16px;
-  line-height: 22px;
+  font-size: 14px;
+  line-height: 1.625;
   padding: 10px 16px;
 }
 
@@ -4961,8 +4961,9 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 
 .directory-entry input[type="checkbox"] { width: 16px; height: 16px; min-height: 16px; flex: 0 0 16px; padding: 0; margin: 0 4px; color-scheme: dark; accent-color: var(--text-muted); }
 
-.user-message-stack > .message-image-grid { justify-content: flex-end; margin: 0 0 12px; }
-.user-message-stack > .message-image-grid img { width: 104px; height: 104px; object-fit: contain; }
+.user-message-stack > .message-image-grid { justify-content: flex-end; margin: 0; }
+.user-message-stack > .message-image-grid img { width: 80px; height: 80px; object-fit: contain; }
+.user-message-stack .image-preview-unavailable { width: 80px; height: 80px; }
 .image-preview-unavailable { display: flex; flex-direction: column; justify-content: center; width: 104px; height: 104px; border: 1px solid var(--border-heavy); border-radius: var(--radius-xl); color: var(--text-muted); background: var(--surface); font-size: 12px; line-height: 1.6; }
 
 /* Workspace tools stay beside the conversation; details are opened on demand. */
