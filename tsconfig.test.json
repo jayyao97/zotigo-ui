@@ -4,6 +4,7 @@
     "lib": ["ES2022", "DOM"],
     "module": "CommonJS",
     "moduleResolution": "Node",
+    "jsx": "react-jsx",
     "rootDir": ".",
     "outDir": "dist-tests",
     "strict": true,

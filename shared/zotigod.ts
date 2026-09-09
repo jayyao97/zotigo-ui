@@ -110,6 +110,15 @@ export interface DisplayContentPart {
   tool_result?: DisplayToolResult;
 }
 
+export interface DisplaySubagent {
+  tool_call_id: string;
+  name?: string;
+  agent_type?: string;
+  workdir?: string;
+  description?: string;
+  status?: "running" | "waiting_approval" | "completed" | "failed";
+}
+
 export interface DisplayTurn {
   id?: string;
   reason?: string;
@@ -214,6 +223,7 @@ export interface DisplayItem {
   type: DisplayItemType;
   role?: string;
   content?: DisplayContentPart[];
+  subagent?: DisplaySubagent;
   turn?: DisplayTurn;
   approval?: DisplayApproval;
   interaction?: DisplayInteraction;
@@ -245,6 +255,7 @@ export interface DisplayDelta {
   delta: string;
   tool_call_id?: string;
   tool_name?: string;
+  subagent?: DisplaySubagent;
 }
 
 export type SessionDisplayEvent =
