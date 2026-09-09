@@ -1002,12 +1002,24 @@ p {
   animation: sidebar-session-spin 0.9s linear infinite;
 }
 
-.sidebar-session:has(.sidebar-session-spinner) > button:first-child {
+.sidebar-session-unread {
+  position: absolute;
+  top: 13px;
+  right: 11px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3b82f6;
+}
+
+.sidebar-session:has(.sidebar-session-spinner, .sidebar-session-unread) > button:first-child {
   padding-right: 30px;
 }
 
 .sidebar-session:hover .sidebar-session-spinner,
-.sidebar-session:has(:focus-visible) .sidebar-session-spinner {
+.sidebar-session:has(:focus-visible) .sidebar-session-spinner,
+.sidebar-session:hover .sidebar-session-unread,
+.sidebar-session:has(:focus-visible) .sidebar-session-unread {
   opacity: 0;
 }
 
@@ -3889,6 +3901,13 @@ p {
 .sidebar-session-actions button:hover { background: rgb(255 255 255 / 0.07); color: var(--text); }
 .sidebar-session:hover .sidebar-session-actions,
 .sidebar-session:has(:focus-visible) .sidebar-session-actions { opacity: 1; pointer-events: auto; }
+
+.session-context-menu {
+  position: fixed;
+  top: auto;
+  right: auto;
+  z-index: 90;
+}
 
 .new-chat-project-group-label { display: flex; align-items: center; gap: 8px; min-height: 30px; color: var(--text-dim); padding: 0 10px; font-size: 11px; font-weight: 600; }
 
