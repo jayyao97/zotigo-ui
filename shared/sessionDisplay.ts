@@ -1,4 +1,4 @@
-import type { CommandImageMetadata, DisplayDelta, DisplayItem, DisplayToolCall, DisplayToolResult, SessionCommandResponse, SessionState, ZotigoSession } from "./zotigod";
+import type { CommandImageMetadata, DisplayDelta, DisplayItem, DisplaySubagent, DisplayToolCall, DisplayToolResult, SessionCommandResponse, SessionState, ZotigoSession } from "./zotigod";
 import type { DaemonSessionBinding } from "./clientTypes";
 
 export interface EphemeralDisplayBlock {
@@ -8,6 +8,7 @@ export interface EphemeralDisplayBlock {
   createdAt: string;
   toolCallID?: string;
   toolName?: string;
+  subagent?: DisplaySubagent;
 }
 
 export interface ToolRenderProjection {
@@ -183,6 +184,7 @@ export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
   const duplicateSyncedUserIDs = duplicateSyncedUserItemIDs(items);
 
   return items.filter((item) => {
+    if (item.subagent) return false;
     if (duplicateSyncedUserIDs.has(item.id)) return false;
     if (isTurnTerminalItem(item)) return false;
     if (item.type === "approval_request" && item.approval?.id && resolvedApprovalIds.has(item.approval.id)) {
@@ -426,6 +428,7 @@ export function appendDisplayDelta(
         createdAt: new Date().toISOString(),
         toolCallID: delta.tool_call_id,
         toolName: delta.tool_name,
+        subagent: delta.subagent,
       },
     ];
   }
@@ -433,6 +436,7 @@ export function appendDisplayDelta(
   const text = next[index].text + delta.delta;
   next[index] = {
     ...next[index],
+    subagent: delta.subagent ?? next[index].subagent,
     text: delta.part_type === "tool_progress" && text.length > toolProgressPreviewLimit
       ? text.slice(-toolProgressPreviewLimit)
       : text,
@@ -455,7 +459,11 @@ export function reconcileDisplayPreviews(blocks: EphemeralDisplayBlock[], item: 
   const completedToolCalls = new Set(
     (item.content ?? []).map((part) => part.tool_result?.tool_call_id).filter((id): id is string => Boolean(id)),
   );
-  return blocks.filter((block) => block.id !== item.id && !completedToolCalls.has(block.toolCallID ?? ""));
+  return blocks.filter((block) => (
+    block.id !== item.id
+    && !completedToolCalls.has(block.toolCallID ?? "")
+    && !completedToolCalls.has(block.subagent?.tool_call_id ?? "")
+  ));
 }
 
 export function ephemeralDisplayItems(blocks: EphemeralDisplayBlock[]): DisplayItem[] {
@@ -470,6 +478,7 @@ export function ephemeralDisplayItems(blocks: EphemeralDisplayBlock[]): DisplayI
           tool_result: { tool_call_id: block.toolCallID, tool_name: block.toolName, text: block.text },
         }]
       : [{ type: block.partType, text: block.text }],
+    subagent: block.subagent,
     created_at: block.createdAt,
   }));
 }

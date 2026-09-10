@@ -26,43 +26,86 @@ export type SubagentRun = {
   name: string;
   description?: string;
   workdir?: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "waiting_approval" | "completed" | "failed";
   history: SubagentHistoryEntry[];
 };
 
 export function buildSubagentRuns(items: DisplayItem[]): SubagentRun[] {
   const runs = new Map<string, SubagentRun>();
   for (const item of items) {
+    const subagent = item.subagent;
+    if (subagent?.tool_call_id) {
+      const run = runs.get(subagent.tool_call_id) ?? {
+        id: subagent.tool_call_id,
+        name: subagent.name || "subagent",
+        status: "running" as const,
+        history: [],
+      };
+      runs.set(subagent.tool_call_id, run);
+      if (run.status === "completed" || run.status === "failed") continue;
+      run.name = subagent.name || run.name;
+      run.description = subagent.description || run.description;
+      run.workdir = subagent.workdir || run.workdir;
+      run.status = subagent.status || run.status;
+      const content = item.content ?? [];
+      if (content.length > 0 || item.error) {
+        const displayContent = content.length > 0 ? content : [{ type: "text", text: item.error! }];
+        run.history.push({
+          role: item.role || "assistant",
+          text: subagentContentText(displayContent),
+          content: displayContent,
+        });
+      }
+      continue;
+    }
     for (const part of item.content ?? []) {
       const call = part.tool_call;
       if (call?.name === "spawn" && call.id) {
         const args = parseJSONObject(call.arguments);
-        runs.set(call.id, {
-          id: call.id,
-          name: stringValue(args?.name) || stringValue(args?.description) || "subagent",
-          description: stringValue(args?.description),
-          workdir: stringValue(args?.workdir),
-          status: "running",
-          history: [],
-        });
+        const run = runs.get(call.id);
+        if (run) {
+          run.name = stringValue(args?.name) || stringValue(args?.description) || run.name;
+          run.description = stringValue(args?.description) || run.description;
+          run.workdir = stringValue(args?.workdir) || run.workdir;
+        } else {
+          runs.set(call.id, {
+            id: call.id,
+            name: stringValue(args?.name) || stringValue(args?.description) || "subagent",
+            description: stringValue(args?.description),
+            workdir: stringValue(args?.workdir),
+            status: "running",
+            history: [],
+          });
+        }
       }
       const result = part.tool_result;
-      if (!result?.tool_call_id || !runs.has(result.tool_call_id)) continue;
-      const run = runs.get(result.tool_call_id)!;
+      if (!result?.tool_call_id || result.tool_name !== "spawn") continue;
       const metadata = recordValue(result.metadata?.subagent);
+      const run = runs.get(result.tool_call_id) ?? {
+        id: result.tool_call_id,
+        name: stringValue(metadata?.name) || "subagent",
+        status: "running" as const,
+        history: [],
+      };
+      runs.set(result.tool_call_id, run);
       run.status = result.is_error ? "failed" : "completed";
       run.name = stringValue(metadata?.name) || run.name;
       run.description = stringValue(metadata?.description) || run.description;
       run.workdir = stringValue(metadata?.workdir) || run.workdir;
-      run.history = subagentHistory(metadata?.history) || fallbackSubagentHistory(result.text);
+      const finalHistory = subagentHistory(metadata?.history);
+      if (finalHistory !== null) {
+        run.history = finalHistory;
+      } else if (run.history.length === 0) {
+        run.history = fallbackSubagentHistory(result.text);
+      }
     }
   }
   return [...runs.values()];
 }
 
 export function SubagentOverview({ runs, onSelect }: { runs: SubagentRun[]; onSelect: (id: string) => void }) {
-  const active = runs.filter((run) => run.status === "running");
-  const done = runs.filter((run) => run.status !== "running");
+  const active = runs.filter((run) => run.status === "running" || run.status === "waiting_approval");
+  const done = runs.filter((run) => run.status === "completed" || run.status === "failed");
   return (
     <div className="subagent-overview">
       <SubagentSection title="Active" runs={active} empty="No active subagents" onSelect={onSelect} />
@@ -97,8 +140,8 @@ function SubagentSection({
                 <small>{subagentPreview(run)}</small>
               </span>
               <span className={`subagent-list-status ${run.status}`}>
-                {run.status === "running" && <LoaderCircle size={12} strokeWidth={1.9} />}
-                {run.status === "completed" ? "Completed" : toTitleCase(run.status)}
+                {(run.status === "running" || run.status === "waiting_approval") && <LoaderCircle size={12} strokeWidth={1.9} />}
+                {subagentStatusLabel(run.status)}
               </span>
             </button>
           ))}
@@ -130,8 +173,8 @@ export function SubagentTranscript({
         <SubagentAvatar run={run} />
         <strong>{run.name}</strong>
         <span className={`subagent-list-status ${run.status}`}>
-          {run.status === "running" && <LoaderCircle size={12} strokeWidth={1.9} />}
-          {run.status === "completed" ? "Completed" : toTitleCase(run.status)}
+          {(run.status === "running" || run.status === "waiting_approval") && <LoaderCircle size={12} strokeWidth={1.9} />}
+          {subagentStatusLabel(run.status)}
         </span>
       </header>
       <div className="subagent-transcript-scroll">
@@ -139,7 +182,7 @@ export function SubagentTranscript({
           {run.description && <p className="subagent-transcript-objective">{run.description}</p>}
           {run.workdir && <code className="subagent-transcript-workdir">{compact(run.workdir)}</code>}
           {items.length === 0 ? (
-            <div className="subagent-panel-empty">{run.status === "running" ? "Working" : "No recorded history"}</div>
+            <div className="subagent-panel-empty">{run.status === "running" || run.status === "waiting_approval" ? subagentStatusLabel(run.status) : "No recorded history"}</div>
           ) : (
             <div className="display-log subagent-transcript-history">
               {items.map((item) => (
@@ -174,6 +217,20 @@ function subagentPreview(run: SubagentRun): string {
   if (run.description?.trim()) return run.description.trim();
   const latest = [...run.history].reverse().find((entry) => entry.role === "assistant" && entry.text.trim());
   return latest?.text.trim().replace(/\s+/g, " ") || (run.status === "running" ? "Working" : "No summary");
+}
+
+function subagentStatusLabel(status: SubagentRun["status"]): string {
+  if (status === "waiting_approval") return "Waiting for approval";
+  return status === "completed" ? "Completed" : toTitleCase(status);
+}
+
+function subagentContentText(content: DisplayContentPart[]): string {
+  return content.map((part) => {
+    if (part.text) return part.text;
+    if (part.tool_call) return formatDisplayToolCall(part.tool_call);
+    if (part.tool_result) return formatDisplayToolResult(part.tool_result);
+    return "";
+  }).filter(Boolean).join("\n");
 }
 
 function subagentHistory(value: unknown): SubagentHistoryEntry[] | null {

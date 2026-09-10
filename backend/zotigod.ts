@@ -1,6 +1,6 @@
 import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";
-import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
+import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplaySubagent, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
 import type { DaemonConfig } from "../shared/clientTypes";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 
@@ -537,6 +537,9 @@ function parseDisplayDelta(value: unknown): DisplayDelta {
   };
   if (toolCallID !== undefined) delta.tool_call_id = toolCallID;
   if (toolName !== undefined) delta.tool_name = toolName;
+  if (record.subagent !== undefined && record.subagent !== null) {
+    delta.subagent = parseDisplaySubagent(record.subagent, "session event delta subagent");
+  }
   return delta;
 }
 
@@ -887,6 +890,10 @@ function parseDisplayItem(value: unknown, context: string): DisplayItem {
     type,
     role: expectOptionalString(record.role, `${context} role`),
     content: parseOptionalArray(record.content, `${context} content`, parseDisplayContentPart),
+    subagent:
+      record.subagent === undefined || record.subagent === null
+        ? undefined
+        : parseDisplaySubagent(record.subagent, `${context} subagent`),
     turn: record.turn === undefined || record.turn === null ? undefined : parseDisplayTurn(record.turn, `${context} turn`),
     approval:
       record.approval === undefined || record.approval === null
@@ -914,6 +921,22 @@ function parseDisplayItem(value: unknown, context: string): DisplayItem {
         : parseDisplayContextCompaction(record.context_compaction, `${context} context_compaction`),
     error: expectOptionalString(record.error, `${context} error`),
     created_at: expectString(record.created_at, `${context} created_at`),
+  };
+}
+
+function parseDisplaySubagent(value: unknown, context: string): DisplaySubagent {
+  const record = expectRecord(value, context);
+  const status = expectOptionalString(record.status, `${context} status`);
+  if (status !== undefined && status !== "running" && status !== "waiting_approval" && status !== "completed" && status !== "failed") {
+    throw new Error(`${context} status is not supported: ${status}`);
+  }
+  return {
+    tool_call_id: expectString(record.tool_call_id, `${context} tool_call_id`),
+    name: expectOptionalString(record.name, `${context} name`),
+    agent_type: expectOptionalString(record.agent_type, `${context} agent_type`),
+    workdir: expectOptionalString(record.workdir, `${context} workdir`),
+    description: expectOptionalString(record.description, `${context} description`),
+    status,
   };
 }
 

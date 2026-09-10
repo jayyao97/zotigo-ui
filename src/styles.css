@@ -4361,7 +4361,8 @@ p {
 .subagent-list-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; color: var(--text-dim); font-size: 11px; line-height: 24px; white-space: nowrap; }
 .subagent-list-status.running { color: var(--text-muted); }
 .subagent-list-status.failed { color: var(--red); }
-.subagent-list-status.running svg { animation: sidebar-session-spin 0.9s linear infinite; }
+.subagent-list-status.running svg,
+.subagent-list-status.waiting_approval svg { animation: sidebar-session-spin 0.9s linear infinite; }
 
 .subagent-transcript { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
 .subagent-transcript > header {

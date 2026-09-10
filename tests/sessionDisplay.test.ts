@@ -80,6 +80,28 @@ test("reasoning deltas remain a live reasoning preview while they stream", () =>
   assert.deepEqual(ephemeralDisplayItems(blocks)[0]?.content, [{ type: "reasoning", text: "step one" }]);
 });
 
+test("subagent deltas remain off the main timeline and reconcile when spawn completes", () => {
+  const subagent = {
+    tool_call_id: "spawn-1",
+    name: "reviewer",
+    status: "running" as const,
+  };
+  const blocks = appendDisplayDeltas([], [
+    { item_id: "subagent-text-1", role: "assistant", part_type: "text", delta: "Reviewing", subagent },
+    { item_id: "subagent-text-1", role: "assistant", part_type: "text", delta: " tests", subagent },
+  ], []);
+  const preview = ephemeralDisplayItems(blocks)[0];
+  assert.equal(preview.type, "assistant_message");
+  assert.equal(preview.subagent?.tool_call_id, "spawn-1");
+  assert.equal(preview.content?.[0]?.text, "Reviewing tests");
+
+  const result = assistant("spawn-result", 4, [{
+    type: "tool_result",
+    tool_result: { tool_call_id: "spawn-1", tool_name: "spawn", text: "done" },
+  }]);
+  assert.deepEqual(reconcileDisplayPreviews(blocks, result), []);
+});
+
 test("poll and stream items merge by durable sequence despite public sequence gaps", () => {
   const first = assistant("assistant-1", 1, [{ type: "text", text: "one" }]);
   const later = assistant("assistant-2", 4, [{ type: "text", text: "four" }]);
@@ -635,6 +657,22 @@ test("consecutive reasoning items become one collapsed timeline group", () => {
   assert.equal(groups[0]?.kind, "reasoning");
   assert.deepEqual(groups[0]?.kind === "reasoning" ? groups[0].items.map((item) => item.id) : [], ["reasoning-1", "reasoning-2"]);
   assert.equal(groups[1]?.kind, "item");
+});
+
+test("subagent items stay out of the parent timeline without splitting activity groups", () => {
+  const child: DisplayItem = {
+    ...assistant("child-progress", 2, [{ type: "text", text: "reviewing" }]),
+    subagent: { tool_call_id: "spawn-1", name: "reviewer", status: "running" },
+  };
+  const visible = visibleDisplayItems([
+    assistant("reasoning-1", 1, [{ type: "reasoning", text: "first" }]),
+    child,
+    assistant("reasoning-2", 3, [{ type: "reasoning", text: "second" }]),
+  ]);
+  assert.deepEqual(visible.map((item) => item.id), ["reasoning-1", "reasoning-2"]);
+  const groups = groupTimelineItems(visible);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0]?.kind === "reasoning" ? groups[0].items.map((item) => item.id) : [], ["reasoning-1", "reasoning-2"]);
 });
 
 test("reasoning nested in a historical tool group remains independently collapsible", () => {

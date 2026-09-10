@@ -1,7 +1,7 @@
 import { bindClientGeneration } from "../shared/bindClientGeneration";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Plus, Server, Settings, Trash2, X } from "lucide-react";
-import App from "./App";
+import App, { discardHostVolatileState } from "./App";
 import { DirectoryBrowser } from "./DirectoryBrowser";
 import { ClientContext, useClient } from "./ClientContext";
 import { SettingsPage } from "./SettingsPage";
@@ -62,8 +62,12 @@ export function HostShell() {
       await api.setActiveHost(saved);
       if (active) { setProfiles(list); setSelected(saved); setReady(true); }
     }).catch((cause: Error) => { if (active) setError(cause.message); });
-    return () => { active = false; pickerResult.current?.([]); };
-  }, [api, storage]);
+    return () => {
+      active = false;
+      pickerResult.current?.([]);
+      if (parent.kind === "web") discardHostVolatileState();
+    };
+  }, [api, parent.kind, storage]);
   useEffect(() => { if (hostSettingsOpen) dialog.current?.showModal(); }, [hostSettingsOpen]);
   useEffect(() => {
     const openSettings = (event: globalThis.KeyboardEvent) => {
@@ -83,15 +87,20 @@ export function HostShell() {
   async function switchHost(id: string) {
     if (busy || id === selected) return;
     setBusy(true); setError("");
+    let prepared = false;
     try {
       await api.testHost(id);
       if (!window.dispatchEvent(new Event("zotigo:before-host-switch", { cancelable: true }))) return;
+      prepared = true;
       await api.unsubscribeSessionEvents();
       generationRef.current++;
       await api.setActiveHost(id);
       setSelected(id); setGeneration(generationRef.current);
       try { storage.setItem("zotigo.host", id); } catch { /* In-memory selection still works. */ }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not connect to host."); }
+    } catch (cause) {
+      if (prepared) window.dispatchEvent(new Event("zotigo:host-switch-cancelled"));
+      setError(cause instanceof Error ? cause.message : "Could not connect to host.");
+    }
     finally { setGeneration(generationRef.current); setBusy(false); }
   }
   function openHostSettings() {
@@ -121,7 +130,7 @@ export function HostShell() {
     {error && ready && <div className="host-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss error"><X size={14} /></button></div>}
     {hostSettingsOpen && <dialog ref={dialog} className="host-settings" onCancel={() => setHostSettingsOpen(false)}>
       <header><div><h2>Hosts</h2><p>{parent.kind === "web" ? "Saved on this Web server and shared with its signed-in clients." : "Saved on this device."}</p></div><button aria-label="Close settings" onClick={() => setHostSettingsOpen(false)}><X size={18} /></button></header>
-      <div className="host-settings-list">{profiles.map((host) => <div key={host.id} className="host-settings-row"><Server size={18} /><div><strong>{host.name}</strong><small>{host.baseUrl}</small></div><button disabled={busy} onClick={() => { setBusy(true); setStatus(""); void api.testHost(host.id).then(() => setStatus(`${host.name}: connected`)).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}>Test</button><button aria-label={`Remove ${host.name}`} disabled={busy || host.id === "local" || host.id === selected} onClick={() => { setBusy(true); void api.deleteHost(host.id).then(() => api.listHosts()).then(setProfiles).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}><Trash2 size={15} /></button></div>)}</div>
+      <div className="host-settings-list">{profiles.map((host) => <div key={host.id} className="host-settings-row"><Server size={18} /><div><strong>{host.name}</strong><small>{host.baseUrl}</small></div><button disabled={busy} onClick={() => { setBusy(true); setStatus(""); void api.testHost(host.id).then(() => setStatus(`${host.name}: connected`)).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}>Test</button><button aria-label={`Remove ${host.name}`} disabled={busy || host.id === "local" || host.id === selected} onClick={() => { setBusy(true); void api.deleteHost(host.id).then(() => { discardHostVolatileState(host.id); return api.listHosts(); }).then(setProfiles).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}><Trash2 size={15} /></button></div>)}</div>
       <form onSubmit={(event) => { event.preventDefault(); setBusy(true); setStatus(""); void api.saveHost({ name, baseUrl: address, token }).then(() => api.listHosts()).then((list) => { setProfiles(list); setName(""); setAddress(""); setToken(""); setStatus("Host saved. Test the connection or select it from the host menu."); }).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}>
         <h3>Add host</h3><label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="dev" required maxLength={100} /></label>
         <label>Daemon address<input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="http://10.36.6.135:8766" required /></label>

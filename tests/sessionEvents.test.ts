@@ -124,6 +124,30 @@ test("parses volatile shell progress with its tool call identity", () => {
   });
 });
 
+test("parses volatile subagent progress with its parent spawn identity", () => {
+  const event = parseSessionEventFrame({
+    event: "delta",
+    id: "",
+    data: [JSON.stringify({
+      item_id: "subagent-text-1",
+      role: "assistant",
+      part_type: "text",
+      delta: "Reviewing",
+      subagent: {
+        tool_call_id: "spawn-1",
+        name: "reviewer",
+        agent_type: "general-purpose",
+        status: "running",
+      },
+    })],
+  });
+  assert.equal(event?.type, "delta");
+  if (event?.type === "delta") {
+    assert.equal(event.delta.subagent?.tool_call_id, "spawn-1");
+    assert.equal(event.delta.subagent?.status, "running");
+  }
+});
+
 function displayItem(id: string, sequence: number, text: string) {
   return {
     id,

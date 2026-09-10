@@ -109,6 +109,7 @@ import {
   sidePanelWidthForRatio,
 } from "../shared/sidePanelSizing";
 import type { FileEditorMode, FileSaveStatus } from "./FileEditorTab";
+import { hostSwitchHasActiveSave, normalizeHostFilesForRestore } from "./hostVolatileState";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 import { ImagePreview } from "./ImagePreview";
 import { clipboardImageFiles } from "./clipboardImages";
@@ -190,6 +191,13 @@ type OpenFileState = {
   saveError?: string;
 };
 type ComposerDraft = ComposerDraftState<ComposerAttachment>;
+type HostVolatileState = {
+  composerDrafts: Record<string, ComposerDraft>;
+  openFiles: Record<string, OpenFileState>;
+  sidePanelTabs: SidePanelTabsState;
+  sidePanelOpen: boolean;
+  sidePanelExpanded: boolean;
+};
 type ConversationContextMenu = {
   conversationId: string;
   x: number;
@@ -208,6 +216,27 @@ const sessionDeltaFlushIntervalMs = 50;
 const maxSessionHistoryCacheEntries = 3;
 const inactiveSessionHistoryItemLimit = 200;
 const supportedImageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+const volatileStateByHost = new Map<string, HostVolatileState>();
+let volatileStateGeneration = 0;
+
+function revokeDraftAttachments(drafts: Record<string, ComposerDraft>): void {
+  for (const draft of Object.values(drafts)) {
+    for (const attachment of draft.attachments) {
+      if (attachment.url) URL.revokeObjectURL(attachment.url);
+    }
+  }
+}
+
+export function discardHostVolatileState(clientScope?: string): void {
+  if (clientScope === undefined) volatileStateGeneration++;
+  const states = clientScope === undefined
+    ? [...volatileStateByHost.entries()]
+    : [...volatileStateByHost.entries()].filter(([scope]) => scope === clientScope);
+  for (const [scope, state] of states) {
+    revokeDraftAttachments(state.composerDrafts);
+    volatileStateByHost.delete(scope);
+  }
+}
 
 function ProjectDisclosureIcon({ open }: { open: boolean }) {
   return open ? (
@@ -277,6 +306,8 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export default function App({ clientScope, thinkingDisplay }: { clientScope: string; thinkingDisplay: ThinkingDisplayMode }) {
+  const restoredHostState = volatileStateByHost.get(clientScope);
+  const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
@@ -347,7 +378,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   const [optimisticPromptItems, setOptimisticPromptItems] = useState<DisplayItem[]>([]);
   const [sessionItemsLoading, setSessionItemsLoading] = useState(false);
   const [sessionItemsError, setSessionItemsError] = useState<string | null>(null);
-  const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>({});
+  const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>(() => restoredHostState?.composerDrafts ?? {});
   const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
@@ -400,30 +431,50 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   const [renameDialogWorkspaceId, setRenameDialogWorkspaceId] = useState<string | null>(null);
   const [renameDialogWorkspaceTitleDraft, setRenameDialogWorkspaceTitleDraft] = useState("");
   const [isSavingWorkspaceTitle, setIsSavingWorkspaceTitle] = useState(false);
-  const [sidePanelTabs, setSidePanelTabs] = useState<SidePanelTabsState>(emptySidePanelTabs);
+  const [sidePanelTabs, setSidePanelTabs] = useState<SidePanelTabsState>(() => restoredHostState?.sidePanelTabs ?? emptySidePanelTabs);
   const [sidePanelWidth, setSidePanelWidth] = useState(defaultSidePanelWidth);
   const [isSidePanelResizing, setIsSidePanelResizing] = useState(false);
-  const [sidePanelOpen, setSidePanelOpen] = useState(false);
-  const [sidePanelExpanded, setSidePanelExpanded] = useState(false);
+  const [sidePanelOpen, setSidePanelOpen] = useState(restoredHostState?.sidePanelOpen ?? false);
+  const [sidePanelExpanded, setSidePanelExpanded] = useState(restoredHostState?.sidePanelExpanded ?? false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [treeVisible, setTreeVisible] = useState(true);
   const fileOpenRequest = useRef(0);
   const [fileOpenError, setFileOpenError] = useState("");
   const [fileOpening, setFileOpening] = useState(false);
   const [directoryLocation, setDirectoryLocation] = useState<{ path: string; sessionId?: string } | null>(null);
-  const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>({});
+  const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>(() => normalizeHostFilesForRestore(restoredHostState?.openFiles ?? {}));
   const openFilesRef = useRef(openFiles);
+  const hostSwitchingRef = useRef(false);
   useEffect(() => {
     const beforeSwitch = (event: Event) => {
-      if (Object.values(openFiles).some((file) => file.saveStatus === "saving")) { window.alert("Wait for the current file save before switching hosts."); event.preventDefault(); return; }
-      const hasUnsentDraft = Object.values(composerDrafts).some(
-        (draft) => draft.prompt.trim() || draft.attachments.length > 0 || draft.selectedSkillNames.length > 0,
-      );
-      if ((hasUnsentDraft || Object.values(openFiles).some((file) => file.saveStatus !== "clean")) && !window.confirm("Switch hosts and discard unsent messages and unsaved file changes?")) event.preventDefault();
+      if (hostSwitchHasActiveSave(openFilesRef.current, filesSavingRef.current.size)) {
+        window.alert("Wait for the current file save before switching hosts.");
+        event.preventDefault();
+        return;
+      }
+      hostSwitchingRef.current = true;
+      for (const timer of fileSaveTimersRef.current.values()) window.clearTimeout(timer);
+      fileSaveTimersRef.current.clear();
+      const normalizedFiles = normalizeHostFilesForRestore(openFilesRef.current);
+      openFilesRef.current = normalizedFiles;
+      volatileStateByHost.set(clientScope, {
+        ...volatileStateRef.current,
+        openFiles: normalizedFiles,
+      });
+    };
+    const switchCancelled = () => {
+      hostSwitchingRef.current = false;
+      for (const [filePath, file] of Object.entries(openFilesRef.current)) {
+        if (file.saveStatus === "dirty") scheduleFileSave(filePath);
+      }
     };
     window.addEventListener("zotigo:before-host-switch", beforeSwitch);
-    return () => window.removeEventListener("zotigo:before-host-switch", beforeSwitch);
-  }, [composerDrafts, openFiles]);
+    window.addEventListener("zotigo:host-switch-cancelled", switchCancelled);
+    return () => {
+      window.removeEventListener("zotigo:before-host-switch", beforeSwitch);
+      window.removeEventListener("zotigo:host-switch-cancelled", switchCancelled);
+    };
+  }, [clientScope]);
   const fileSaveTimersRef = useRef<Map<string, number>>(new Map());
   const filesSavingRef = useRef<Set<string>>(new Set());
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
@@ -461,10 +512,37 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   const sessionDeltaFlushTimerRef = useRef<number | null>(null);
   const skillsRequestRef = useRef(0);
   openFilesRef.current = openFiles;
+  const volatileStateRef = useRef<HostVolatileState>({
+    composerDrafts,
+    openFiles,
+    sidePanelTabs,
+    sidePanelOpen,
+    sidePanelExpanded,
+  });
+  volatileStateRef.current = {
+    composerDrafts,
+    openFiles,
+    sidePanelTabs: retainFileTabs(sidePanelTabs),
+    sidePanelOpen,
+    sidePanelExpanded,
+  };
 
   useEffect(() => () => {
-    for (const timer of fileSaveTimersRef.current.values()) window.clearTimeout(timer);
-    fileSaveTimersRef.current.clear();
+    if (volatileStateGenerationRef.current !== volatileStateGeneration) {
+      revokeDraftAttachments(volatileStateRef.current.composerDrafts);
+      return;
+    }
+    volatileStateByHost.set(clientScope, volatileStateRef.current);
+  }, [clientScope]);
+
+  useEffect(() => {
+    for (const [filePath, file] of Object.entries(openFilesRef.current)) {
+      if (file.saveStatus === "dirty") scheduleFileSave(filePath);
+    }
+    return () => {
+      for (const timer of fileSaveTimersRef.current.values()) window.clearTimeout(timer);
+      fileSaveTimersRef.current.clear();
+    };
   }, []);
 
   useLayoutEffect(() => {
@@ -792,7 +870,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     () => new Set(ephemeralBlocks.map((block) => block.id)),
     [ephemeralBlocks],
   );
-  const subagentRuns = useMemo(() => buildSubagentRuns(sessionItems), [sessionItems]);
+  const subagentRuns = useMemo(() => buildSubagentRuns(timelineItems), [timelineItems]);
   const previewAttachment = useMemo(
     () => composerAttachments.find((attachment) => attachment.id === previewAttachmentId) ?? null,
     [composerAttachments, previewAttachmentId],
@@ -998,14 +1076,6 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   }, [composerDraftKey]);
 
   useEffect(() => () => cancelScheduledConversationAutoScroll(), []);
-  useEffect(() => () => {
-    for (const draft of Object.values(composerDraftsRef.current)) {
-      for (const attachment of draft.attachments) {
-        if (attachment.url) URL.revokeObjectURL(attachment.url);
-      }
-    }
-  }, []);
-
   useEffect(() => {
     let active = true;
     setProfilesLoading(true);
@@ -2711,6 +2781,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   }
 
   function scheduleFileSave(filePath: string) {
+    if (hostSwitchingRef.current) return;
     const existing = fileSaveTimersRef.current.get(filePath);
     if (existing !== undefined) window.clearTimeout(existing);
     const timer = window.setTimeout(() => {
@@ -3767,7 +3838,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
               <button type="button" className="subagent-summary-button" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}>
                 <span>
                   <strong>Subagents</strong>
-                  <small>{subagentRuns.filter((run) => run.status === "running").length} active · {subagentRuns.filter((run) => run.status !== "running").length} done</small>
+                  <small>{subagentRuns.filter((run) => run.status === "running" || run.status === "waiting_approval").length} active · {subagentRuns.filter((run) => run.status === "completed" || run.status === "failed").length} done</small>
                 </span>
                 <span className="subagent-avatar-stack" aria-hidden="true">
                   {subagentRuns.slice(0, 4).map((run) => <SubagentAvatar key={run.id} run={run} compact />)}
