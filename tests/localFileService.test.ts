@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   authorizedExistingPath,
+  imageMediaType,
   openAuthorizedLocalPath,
   resolveLocalPathReference,
   saveAuthorizedTextFile,
@@ -41,6 +42,47 @@ test("reads and saves authorized text without overwriting external changes", asy
     }, [root]), /changed on disk/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("previews supported image files only when their signatures match", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-local-image-"));
+  try {
+    const imagePath = path.join(root, "preview.png");
+    const image = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("preview"),
+    ]);
+    fs.writeFileSync(imagePath, image);
+    const opened = await openAuthorizedLocalPath(imagePath, [root]);
+    assert.equal(opened.kind, "image");
+    if (opened.kind === "image") {
+      assert.equal(opened.file.mediaType, "image/png");
+      assert.equal(opened.file.dataBase64, image.toString("base64"));
+      assert.equal(opened.file.sizeBytes, image.length);
+    }
+
+    const spoofedPath = path.join(root, "notes.png");
+    fs.writeFileSync(spoofedPath, "plain text");
+    const spoofed = await openAuthorizedLocalPath(spoofedPath, [root]);
+    assert.equal(spoofed.kind, "text");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("recognizes the supported image signatures", () => {
+  for (const [extension, data, mediaType] of [
+    [".png", Buffer.from("89504e470d0a1a0a", "hex"), "image/png"],
+    [".jpg", Buffer.from("ffd8ff", "hex"), "image/jpeg"],
+    [".gif", Buffer.from("GIF89a"), "image/gif"],
+    [".webp", Buffer.from("RIFF0000WEBP"), "image/webp"],
+    [".avif", Buffer.from("0000ftypavif"), "image/avif"],
+    [".bmp", Buffer.from("BM"), "image/bmp"],
+    [".ico", Buffer.from([0, 0, 1, 0]), "image/x-icon"],
+    [".svg", Buffer.from("<?xml version=\"1.0\"?><!-- preview --><!DOCTYPE svg><svg></svg>"), "image/svg+xml"],
+  ] as const) {
+    assert.equal(imageMediaType(extension, data), mediaType, extension);
   }
 });
 

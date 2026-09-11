@@ -198,6 +198,19 @@ export interface TextFileSnapshot {
   readOnly: boolean;
 }
 
+export interface ImageFileSnapshot {
+  path: string;
+  name: string;
+  mediaType: string;
+  dataBase64: string;
+  sizeBytes: number;
+  mtimeMs: number;
+}
+
+export type WorkspaceFileOpenResult =
+  | { kind: "text"; file: TextFileSnapshot }
+  | { kind: "image"; file: ImageFileSnapshot };
+
 export interface OpenMarkdownLinkInput {
   href: string;
   basePath: string | null;
@@ -210,7 +223,8 @@ export type OpenMarkdownLinkResult =
   | { kind: "external" }
   | { kind: "system" }
   | { kind: "directory"; path: string }
-  | { kind: "text"; file: TextFileSnapshot; line?: number; column?: number };
+  | { kind: "text"; file: TextFileSnapshot; line?: number; column?: number }
+  | { kind: "image"; file: ImageFileSnapshot };
 
 export interface SaveTextFileInput {
   path: string;
@@ -228,7 +242,7 @@ export interface DirectoryListing {
 
 export interface ClientApi {
   listDirectory(input: { path: string; purpose: "files" | "sources"; sessionId?: string }): Promise<DirectoryListing>;
-  openTextFile(path: string, sessionId?: string): Promise<TextFileSnapshot>;
+  openFile(path: string, sessionId?: string): Promise<WorkspaceFileOpenResult>;
   listHosts(): Promise<import("./hosts").HostProfile[]>;
   saveHost(input: import("./hosts").HostInput): Promise<import("./hosts").HostProfile>;
   deleteHost(id: string): Promise<void>;

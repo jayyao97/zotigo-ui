@@ -1,4 +1,4 @@
-import type { SessionEventEnvelope, ClientApi } from "./clientTypes";
+import type { SessionEventEnvelope, ClientApi, TextFileSnapshot, WorkspaceFileOpenResult } from "./clientTypes";
 
 export interface ClientTransport {
   invoke<T>(channel: string, ...args: unknown[]): Promise<T>;
@@ -15,7 +15,15 @@ export function createClientApi(transport: ClientTransport): ClientApi {
   };
   return {
     listDirectory: (input) => invoke("desktop:list-directory", input),
-    openTextFile: (path, sessionId) => invoke("desktop:open-text-file", path, sessionId),
+    openFile: async (path, sessionId) => {
+      try {
+        return await invoke<WorkspaceFileOpenResult>("desktop:open-file", path, sessionId);
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== "Unknown application operation") throw error;
+        const file = await invoke<TextFileSnapshot>("desktop:open-text-file", path, sessionId);
+        return { kind: "text", file };
+      }
+    },
     listHosts: () => invoke("hosts:list"),
     saveHost: (input) => invoke("hosts:save", input),
     deleteHost: (id) => invoke("hosts:delete", id),

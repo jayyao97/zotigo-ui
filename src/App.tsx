@@ -95,7 +95,7 @@ import {
   type EphemeralDisplayBlock,
 } from "../shared/sessionDisplay";
 import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, MessageImageInput, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
-import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ProjectSourceInput, SourceCandidate, TextFileSnapshot } from "../shared/clientTypes";
+import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ImageFileSnapshot, ProjectSourceInput, SourceCandidate, TextFileSnapshot, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
 import { maxMessageImageCount, messageImageSizeError } from "../shared/messageImages";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
@@ -162,6 +162,7 @@ import {
 } from "./unreadSessions";
 
 const FileEditorTab = lazy(() => import("./FileEditorTab").then((module) => ({ default: module.FileEditorTab })));
+const FileImageTab = lazy(() => import("./FileImageTab").then((module) => ({ default: module.FileImageTab })));
 
 type ConnectionState = "checking" | "online" | "offline";
 type WorkspaceRepositoryDraft = {
@@ -188,7 +189,8 @@ type SidebarSortProps = {
   onDrop: (event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
 };
-type OpenFileState = {
+type OpenTextFileState = {
+  kind: "text";
   file: TextFileSnapshot;
   sessionId?: string;
   workspaceRoot?: string;
@@ -197,6 +199,38 @@ type OpenFileState = {
   saveStatus: FileSaveStatus;
   saveError?: string;
 };
+type OpenImageFileState = {
+  kind: "image";
+  file: ImageFileSnapshot;
+  sessionId?: string;
+  workspaceRoot?: string;
+  saveStatus: "clean";
+};
+type OpenFileState = OpenTextFileState | OpenImageFileState;
+
+function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange, onSave }: {
+  state: OpenFileState;
+  line?: number;
+  column?: number;
+  onDraftChange: (draft: string) => void;
+  onModeChange: (mode: FileEditorMode) => void;
+  onSave: () => void;
+}) {
+  if (state.kind === "image") return <FileImageTab file={state.file} workspaceRoot={state.workspaceRoot} />;
+  return <FileEditorTab
+    file={state.file}
+    draft={state.draft}
+    mode={state.mode}
+    saveStatus={state.saveStatus}
+    saveError={state.saveError}
+    workspaceRoot={state.workspaceRoot}
+    line={line}
+    column={column}
+    onDraftChange={onDraftChange}
+    onModeChange={onModeChange}
+    onSave={onSave}
+  />;
+}
 type ComposerDraft = ComposerDraftState<ComposerAttachment>;
 type HostVolatileState = {
   composerDrafts: Record<string, ComposerDraft>;
@@ -2856,7 +2890,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   function updateFileDraft(filePath: string, draft: string) {
     const current = openFilesRef.current;
     const existing = current[filePath];
-    if (!existing || existing.file.readOnly || existing.draft === draft) return;
+    if (!existing || existing.kind !== "text" || existing.file.readOnly || existing.draft === draft) return;
     const next = {
       ...current,
       [filePath]: { ...existing, draft, saveStatus: "dirty" as const, saveError: undefined },
@@ -2869,7 +2903,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   function updateFileMode(filePath: string, mode: FileEditorMode) {
     const current = openFilesRef.current;
     const existing = current[filePath];
-    if (!existing || existing.mode === mode) return;
+    if (!existing || existing.kind !== "text" || existing.mode === mode) return;
     const next = { ...current, [filePath]: { ...existing, mode } };
     openFilesRef.current = next;
     setOpenFiles(next);
@@ -2882,7 +2916,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
       fileSaveTimersRef.current.delete(filePath);
     }
     const current = openFilesRef.current[filePath];
-    if (!current || current.file.readOnly || current.saveStatus === "clean") return true;
+    if (!current || current.kind !== "text" || current.file.readOnly || current.saveStatus === "clean") return true;
     if (filesSavingRef.current.has(filePath)) return false;
     filesSavingRef.current.add(filePath);
     const content = current.draft;
@@ -2897,7 +2931,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
         sessionId: current.sessionId,
       });
       const existing = openFilesRef.current[filePath];
-      if (!existing) return true;
+      if (!existing || existing.kind !== "text") return true;
       const needsAnotherSave = existing.draft !== content;
       const next = {
         ...openFilesRef.current,
@@ -2915,7 +2949,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     } catch (error) {
       const detail = errorMessage(error);
       const existing = openFilesRef.current[filePath];
-      if (existing) {
+      if (existing?.kind === "text") {
         const next = {
           ...openFilesRef.current,
           [filePath]: { ...existing, saveStatus: "error" as const, saveError: detail },
@@ -2945,19 +2979,31 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     setSidePanelTabs((state) => closeSidePanelTab(state, tabId));
   }
 
-  function showTextFile(file: TextFileSnapshot, line?: number, column?: number, context = { sessionId: selectedSession?.id, workspaceRoot: selectedWorkspace?.root_path || selectedSession?.working_directory }) {
+  function showFile(opened: WorkspaceFileOpenResult, line?: number, column?: number, context = { sessionId: selectedSession?.id, workspaceRoot: selectedWorkspace?.root_path || selectedSession?.working_directory }) {
+      const file = opened.file;
       setSidePanelOpen(true); setDetailsOpen(false);
-      if (!openFilesRef.current[file.path]) {
+      const existing = openFilesRef.current[file.path];
+      if (!existing || existing.kind === "image") {
+        const state: OpenFileState = opened.kind === "image"
+          ? {
+              kind: "image",
+              file: opened.file,
+              sessionId: context.sessionId,
+              workspaceRoot: context.workspaceRoot,
+              saveStatus: "clean",
+            }
+          : {
+              kind: "text",
+              file: opened.file,
+              sessionId: context.sessionId,
+              workspaceRoot: context.workspaceRoot,
+              draft: opened.file.content,
+              mode: isMarkdownFile(opened.file.path) ? "preview" : "source",
+              saveStatus: "clean",
+            };
         const next = {
           ...openFilesRef.current,
-          [file.path]: {
-            file: file,
-            sessionId: context.sessionId,
-            workspaceRoot: context.workspaceRoot,
-            draft: file.content,
-            mode: isMarkdownFile(file.path) ? "preview" as const : "source" as const,
-            saveStatus: "clean" as const,
-          },
+          [file.path]: state,
         };
         openFilesRef.current = next;
         setOpenFiles(next);
@@ -2994,8 +3040,8 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
       }
       if (selectedSessionIdRef.current !== expectedSessionId) return;
       if (result.kind === "directory") { browseFiles(result.path, context); return; }
-      if (result.kind !== "text") return;
-      showTextFile(result.file, result.line, result.column, context);
+      if (result.kind !== "text" && result.kind !== "image") return;
+      showFile(result, result.kind === "text" ? result.line : undefined, result.kind === "text" ? result.column : undefined, context);
     } catch (error) {
       setMessage(errorMessage(error));
     }
@@ -3069,8 +3115,8 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     setFileOpenError(""); setFileOpening(true);
     try {
       const sessionId = treeLocation.sessionId;
-      const file = await client.openTextFile(path, sessionId);
-      if (request === fileOpenRequest.current) showTextFile(file, undefined, undefined, { sessionId, workspaceRoot: treeLocation.path });
+      const opened = await client.openFile(path, sessionId);
+      if (request === fileOpenRequest.current) showFile(opened, undefined, undefined, { sessionId, workspaceRoot: treeLocation.path });
     } catch (error) {
       if (request === fileOpenRequest.current) setFileOpenError(errorMessage(error));
     } finally { if (request === fileOpenRequest.current) setFileOpening(false); }
@@ -4023,11 +4069,12 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
             <div className="workspace-panel-tabs">
             {sidePanelTabs.tabs.map((tab) => {
               const run = tab.kind === "subagent" ? subagentRuns.find((candidate) => candidate.id === tab.runId) : undefined;
+              const fileState = tab.kind === "file" ? openFiles[tab.path] : undefined;
               const label = tab.kind === "subagents" ? "Subagents" : tab.kind === "files" ? "Files" : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? "Subagent";
               return (
                 <div key={tab.id} className={`subagent-panel-tab ${sidePanelTabs.activeTabId === tab.id ? "active" : ""}`}>
                   <button type="button" className="subagent-panel-tab-select" onClick={() => setSidePanelTabs((state) => openSidePanelTab(state, tab))}>
-                    {tab.kind === "files" ? <FolderOpen size={14} /> : tab.kind === "file" ? <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
+                    {tab.kind === "files" ? <FolderOpen size={14} /> : tab.kind === "file" ? fileState?.kind === "image" ? <Image size={14} strokeWidth={1.8} /> : <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
                     <span>{label}</span>
                   </button>
                   <button type="button" className="subagent-panel-tab-close" aria-label={`Close ${label}`} onClick={() => void closePanelTab(tab.id)}>
@@ -4062,13 +4109,8 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
             />
           ) : openFiles[activeSidePanelTab.path] ? (
             <Suspense fallback={<div className="subagent-panel-empty">Loading editor…</div>}>
-              <FileEditorTab
-                file={openFiles[activeSidePanelTab.path].file}
-                draft={openFiles[activeSidePanelTab.path].draft}
-                mode={openFiles[activeSidePanelTab.path].mode}
-                saveStatus={openFiles[activeSidePanelTab.path].saveStatus}
-                saveError={openFiles[activeSidePanelTab.path].saveError}
-                workspaceRoot={openFiles[activeSidePanelTab.path].workspaceRoot}
+              <OpenWorkspaceFileTab
+                state={openFiles[activeSidePanelTab.path]}
                 line={activeSidePanelTab.line}
                 column={activeSidePanelTab.column}
                 onDraftChange={(draft) => updateFileDraft(activeSidePanelTab.path, draft)}
