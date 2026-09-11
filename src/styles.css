@@ -3385,7 +3385,8 @@ p {
 }
 
 .runtime-settings-row:hover:not(:disabled),
-.runtime-settings-row:focus-visible {
+.runtime-settings-row:focus-visible,
+.runtime-settings-row[aria-expanded="true"] {
   background: rgb(255 255 255 / 0.09);
   outline: 0;
 }
@@ -3414,11 +3415,19 @@ p {
 }
 
 .runtime-settings-submenu {
+  position: absolute;
+  right: calc(100% + 8px);
+  bottom: 0;
+  z-index: 1;
   display: grid;
-  width: 100%;
+  width: 272px;
   max-height: min(360px, 50vh);
   overflow-y: auto;
-  padding: 0;
+  border: 1px solid var(--border-heavy);
+  border-radius: var(--radius-2xl);
+  background: color-mix(in srgb, var(--surface-elevated) 98%, transparent);
+  box-shadow: var(--elevation-prominent), 0 16px 40px rgb(0 0 0 / 0.28);
+  padding: 6px;
 }
 
 .runtime-settings-submenu button {
@@ -3443,6 +3452,24 @@ p {
 .runtime-settings-submenu button[aria-checked="true"] {
   background: rgb(255 255 255 / 0.09);
   outline: 0;
+}
+
+.runtime-settings-submenu button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.app-frame.has-subagent-panel .runtime-settings-submenu,
+.conversation.has-inspector .runtime-settings-submenu {
+  right: 0;
+  bottom: calc(100% + 8px);
+}
+
+@media (max-width: 900px) {
+  .runtime-settings-submenu {
+    right: 0;
+    bottom: calc(100% + 8px);
+  }
 }
 
 .runtime-settings-submenu button span {
@@ -3607,9 +3634,6 @@ p {
 .image-preview-error { position: absolute; bottom: 64px; width: 100%; text-align: center; color: var(--red); }
 .image-preview-zoom { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: var(--radius-full); background: var(--surface-elevated); }
 .image-preview-zoom .image-preview-scale { width: 58px; background: transparent; font-size: 12px; font-variant-numeric: tabular-nums; }
-
-.runtime-settings-submenu .runtime-settings-back { border-bottom: 1px solid var(--border); border-radius: 0; margin-bottom: 4px; }
-.runtime-settings-back span { display: flex; align-items: center; gap: 6px; }
 
 .modal-backdrop {
   position: fixed;
