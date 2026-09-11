@@ -556,6 +556,7 @@ p {
 }
 
 .project-group {
+  position: relative;
   min-height: 0;
 }
 
@@ -578,6 +579,8 @@ p {
   opacity: 0.46;
 }
 
+.project-group.drop-after::after,
+.workspace-group.drop-after::after,
 .project-row-shell.drop-before::before,
 .project-row-shell.drop-after::after,
 .workspace-row-shell.drop-before::before,
@@ -601,6 +604,8 @@ p {
   top: -2px;
 }
 
+.project-group.drop-after::after,
+.workspace-group.drop-after::after,
 .project-row-shell.drop-after::after,
 .workspace-row-shell.drop-after::after,
 .sidebar-session.drop-after::after {
@@ -757,6 +762,7 @@ p {
 }
 
 .workspace-group {
+  position: relative;
   min-width: 0;
 }
 

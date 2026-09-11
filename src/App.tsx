@@ -99,6 +99,7 @@ import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, De
 import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
 import { maxMessageImageCount, messageImageSizeError } from "../shared/messageImages";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
+import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "./sidebarDisclosure";
 import {
   closeSidePanelTab,
   emptySidePanelTabs,
@@ -409,7 +410,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   const [workspaceLifecycleError, setWorkspaceLifecycleError] = useState<string | null>(null);
   const [deleteWorkspaceConfirmation, setDeleteWorkspaceConfirmation] = useState("");
   const [copiedWorkspacePath, setCopiedWorkspacePath] = useState<string | null>(null);
-  const [projectOpenIds, setProjectOpenIds] = useState<Set<string>>(new Set());
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(new Set());
   const [collapsedWorkspaceIds, setCollapsedWorkspaceIds] = useState<Set<string>>(new Set());
   const [projectOverviewId, setProjectOverviewId] = useState<string | null>(null);
   const [sidebarDragItem, setSidebarDragItem] = useState<SidebarDragItem | null>(null);
@@ -541,6 +542,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   const titleSuggestionAttemptsRef = useRef<Set<string>>(new Set());
   const sessionEventsConnectedRef = useRef(false);
   const sidebarDragItemRef = useRef<SidebarDragItem | null>(null);
+  const sidebarDisclosureLoadedRef = useRef(false);
   const sidebarActionMenuRef = useRef<HTMLDivElement | null>(null);
   const projectsSectionRef = useRef<HTMLElement | null>(null);
   const lastCodexCatalogSyncAttemptAtRef = useRef(0);
@@ -806,6 +808,20 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   }, [clientScope, unreadConversationIds]);
 
   useEffect(() => {
+    if (!sidebarDisclosureLoadedRef.current) return;
+    try {
+      localStorage.setItem(
+        sidebarDisclosureStorageKey(clientScope),
+        serializeSidebarDisclosure(
+          { collapsedProjectIds, collapsedWorkspaceIds },
+          desktopState.projects.map((project) => project.id),
+          desktopState.workspaces.map((workspace) => workspace.id),
+        ),
+      );
+    } catch { /* In-memory disclosure state still works. */ }
+  }, [clientScope, collapsedProjectIds, collapsedWorkspaceIds, desktopState.projects, desktopState.workspaces]);
+
+  useEffect(() => {
     if (!sessionsInitialized) return;
     const previous = previousWorkingConversationIdsRef.current;
     previousWorkingConversationIdsRef.current = new Set(workingConversationIds);
@@ -831,7 +847,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     if (conversationId) markConversationRead(conversationId);
   }, [selectedConversation?.id]);
 
-  function sidebarSortProps(item: SidebarDragItem, orderedIds: string[]): SidebarSortProps {
+  function sidebarSortProps(item: SidebarDragItem, orderedIds: string[], fixedPosition?: DropPosition): SidebarSortProps {
     const isCurrentTarget = sidebarDropTarget?.kind === item.kind
       && sidebarDropTarget.scopeId === item.scopeId
       && sidebarDropTarget.id === item.id;
@@ -856,18 +872,19 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
         const bounds = event.currentTarget.getBoundingClientRect();
-        const position = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+        const position = fixedPosition ?? (event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
         setSidebarDropTarget({ ...item, position });
       },
       onDrop: (event) => {
-        event.preventDefault();
         const dragged = sidebarDragItemRef.current;
+        if (!dragged || dragged.kind !== item.kind || dragged.scopeId !== item.scopeId) return;
+        event.preventDefault();
+        event.stopPropagation();
         const bounds = event.currentTarget.getBoundingClientRect();
-        const position = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+        const position = fixedPosition ?? (event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
         sidebarDragItemRef.current = null;
         setSidebarDragItem(null);
         setSidebarDropTarget(null);
-        if (!dragged || dragged.kind !== item.kind || dragged.scopeId !== item.scopeId) return;
         const reorderedIds = reorderSidebarIds(orderedIds, dragged.id, item.id, position);
         if (reorderedIds === orderedIds || reorderedIds.every((id, index) => id === orderedIds[index])) return;
         void persistSidebarOrder(item.kind, item.scopeId, reorderedIds);
@@ -993,7 +1010,16 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
         setDaemonUrl(config.baseUrl);
         setDesktopState(state);
         lastCatalogRefreshAttemptAtRef.current = Date.now();
-        setProjectOpenIds(new Set(state.projects.map((project) => project.id)));
+        let savedDisclosure: string | null = null;
+        try { savedDisclosure = localStorage.getItem(sidebarDisclosureStorageKey(clientScope)); } catch { /* Use defaults. */ }
+        const disclosure = restoreSidebarDisclosure(
+          savedDisclosure,
+          state.projects.map((project) => project.id),
+          state.workspaces.map((workspace) => workspace.id),
+        );
+        setCollapsedProjectIds(disclosure.collapsedProjectIds);
+        setCollapsedWorkspaceIds(disclosure.collapsedWorkspaceIds);
+        sidebarDisclosureLoadedRef.current = true;
         desktopStateLoadedRef.current = true;
         codexCatalogSyncNotBeforeRef.current = Date.now() + initialCodexCatalogSyncDelayMs;
         void refreshSessions({ quiet: true });
@@ -1661,7 +1687,12 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
         folders,
       });
       applyDesktopState(state);
-      setProjectOpenIds((current) => new Set(current).add(projectId));
+      setCollapsedProjectIds((current) => {
+        if (!current.has(projectId)) return current;
+        const next = new Set(current);
+        next.delete(projectId);
+        return next;
+      });
       setCreateWorkspaceProjectId(null);
     } catch (error) {
       setMessage(errorMessage(error));
@@ -1766,7 +1797,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   }
 
   function toggleProjectOpen(projectId: string) {
-    setProjectOpenIds((current) => {
+    setCollapsedProjectIds((current) => {
       const next = new Set(current);
       if (next.has(projectId)) next.delete(projectId);
       else next.add(projectId);
@@ -3235,15 +3266,32 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
                 const projectWorkspaces = desktopState.workspaces.filter(
                   (workspace) => workspace.project_id === project.id,
                 );
-                const isOpen = projectOpenIds.has(project.id);
+                const isOpen = !collapsedProjectIds.has(project.id);
+                const orderedProjectIds = desktopState.projects.map((candidate) => candidate.id);
                 const projectSort = sidebarSortProps(
                   { kind: "project", id: project.id, scopeId: "projects" },
-                  desktopState.projects.map((candidate) => candidate.id),
+                  orderedProjectIds,
+                );
+                const projectTailSort = sidebarSortProps(
+                  { kind: "project", id: project.id, scopeId: "projects" },
+                  orderedProjectIds,
+                  "after",
                 );
                 return (
-                  <div className="project-group" key={project.id}>
+                  <div
+                    className={`project-group ${projectSort.dropPosition === "after" ? "drop-after" : ""}`}
+                    key={project.id}
+                    onDragOver={(event) => {
+                      if (event.target instanceof Element && event.target.closest(".project-row-shell")) return;
+                      projectTailSort.onDragOver(event);
+                    }}
+                    onDrop={(event) => {
+                      if (event.target instanceof Element && event.target.closest(".project-row-shell")) return;
+                      projectTailSort.onDrop(event);
+                    }}
+                  >
                     <div
-                      className={`project-row-shell ${projectSort.dragging ? "dragging" : ""} ${projectSort.dropPosition ? `drop-${projectSort.dropPosition}` : ""}`}
+                      className={`project-row-shell ${projectSort.dragging ? "dragging" : ""} ${projectSort.dropPosition === "before" ? "drop-before" : ""}`}
                       draggable={projectSort.draggable}
                       onDragStart={projectSort.onDragStart}
                       onDragOver={projectSort.onDragOver}
@@ -3322,15 +3370,32 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
                           const workspaceConversations = projectConversations.filter(
                             (conversation) => conversation.workspace_id === workspace.id,
                           );
+                          const orderedWorkspaceIds = projectWorkspaces.map((candidate) => candidate.id);
                           const workspaceSort = sidebarSortProps(
                             { kind: "workspace", id: workspace.id, scopeId: project.id },
-                            projectWorkspaces.map((candidate) => candidate.id),
+                            orderedWorkspaceIds,
+                          );
+                          const workspaceTailSort = sidebarSortProps(
+                            { kind: "workspace", id: workspace.id, scopeId: project.id },
+                            orderedWorkspaceIds,
+                            "after",
                           );
                           const workspaceOpen = !collapsedWorkspaceIds.has(workspace.id);
                           return (
-                            <div className="workspace-group" key={workspace.id}>
+                            <div
+                              className={`workspace-group ${workspaceSort.dropPosition === "after" ? "drop-after" : ""}`}
+                              key={workspace.id}
+                              onDragOver={(event) => {
+                                if (event.target instanceof Element && event.target.closest(".workspace-row-shell")) return;
+                                workspaceTailSort.onDragOver(event);
+                              }}
+                              onDrop={(event) => {
+                                if (event.target instanceof Element && event.target.closest(".workspace-row-shell")) return;
+                                workspaceTailSort.onDrop(event);
+                              }}
+                            >
                               <div
-                                className={`workspace-row-shell ${workspaceSort.dragging ? "dragging" : ""} ${workspaceSort.dropPosition ? `drop-${workspaceSort.dropPosition}` : ""}`}
+                                className={`workspace-row-shell ${workspaceSort.dragging ? "dragging" : ""} ${workspaceSort.dropPosition === "before" ? "drop-before" : ""}`}
                                 draggable={workspaceSort.draggable}
                                 onDragStart={workspaceSort.onDragStart}
                                 onDragOver={workspaceSort.onDragOver}

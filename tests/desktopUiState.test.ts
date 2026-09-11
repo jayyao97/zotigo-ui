@@ -5,6 +5,7 @@ import { parseCreateProjectInput } from "../backend/projectInputValidation";
 import { orderSidebarItems, reorderSidebarIds } from "../shared/sidebarOrdering";
 import type { DesktopProjectFolder, DesktopProjectRepository } from "../shared/clientTypes";
 import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
+import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "../src/sidebarDisclosure";
 
 test("create Project input accepts an empty Source list", () => {
   assert.deepEqual(parseCreateProjectInput({ name: "Empty Project" }), { name: "Empty Project", sources: [] });
@@ -48,4 +49,30 @@ test("new sidebar items precede a saved manual order", () => {
     orderSidebarItems(items, ["oldest", "newest", "saved"]).map((item) => item.id),
     ["oldest", "newest", "saved"],
   );
+});
+
+test("sidebar disclosure restores per host and keeps new catalog items expanded", () => {
+  const restored = restoreSidebarDisclosure(
+    JSON.stringify({
+      collapsedProjectIds: ["project-1", "removed-project", 42],
+      collapsedWorkspaceIds: ["workspace-1", "removed-workspace"],
+    }),
+    ["project-1", "project-2"],
+    ["workspace-1", "workspace-2"],
+  );
+
+  assert.deepEqual([...restored.collapsedProjectIds], ["project-1"]);
+  assert.deepEqual([...restored.collapsedWorkspaceIds], ["workspace-1"]);
+  assert.notEqual(sidebarDisclosureStorageKey("local"), sidebarDisclosureStorageKey("dev"));
+  assert.equal(
+    serializeSidebarDisclosure(restored, ["project-1", "project-2"], ["workspace-1", "workspace-2"]),
+    JSON.stringify({ collapsedProjectIds: ["project-1"], collapsedWorkspaceIds: ["workspace-1"] }),
+  );
+});
+
+test("malformed sidebar disclosure falls back to fully expanded", () => {
+  assert.deepEqual(restoreSidebarDisclosure("not-json", ["project"], ["workspace"]), {
+    collapsedProjectIds: new Set(),
+    collapsedWorkspaceIds: new Set(),
+  });
 });
