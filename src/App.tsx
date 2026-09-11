@@ -96,7 +96,6 @@ import {
 } from "../shared/sessionDisplay";
 import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, MessageImageInput, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ImageFileSnapshot, ProjectSourceInput, SourceCandidate, TextFileSnapshot, WorkspaceFileOpenResult } from "../shared/clientTypes";
-import { loadHostDesktopState } from "../shared/hostNavigation";
 import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
 import { maxMessageImageCount, messageImageSizeError } from "../shared/messageImages";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
@@ -1003,7 +1002,10 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([client.getDaemonConfig(), loadHostDesktopState(client, openNewSessionOnMount)])
+    Promise.all([
+      client.getDaemonConfig(),
+      openNewSessionOnMount ? client.selectProject(null) : client.getDesktopState(),
+    ])
       .then(([config, state]) => {
         if (!isMounted) {
           return;
