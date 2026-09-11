@@ -45,7 +45,7 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
   async function download() {
     setDownloadError("");
     try {
-      if (src.startsWith("blob:")) {
+      if (src.startsWith("blob:") || src.startsWith("data:")) {
         const link = document.createElement("a");
         link.href = src;
         link.download = alt;

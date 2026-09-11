@@ -221,12 +221,18 @@ addWorkspaceSourceToCatalog,
     if (value.purpose !== "files" && value.purpose !== "sources") throw new Error("Invalid directory purpose.");
     return listDaemonDirectory({ path: assertString(value.path, "path"), purpose: value.purpose, sessionId: value.sessionId === undefined ? undefined : assertString(value.sessionId, "sessionId") });
   });
-  handle("desktop:open-text-file", async (pathValue, sessionId) => {
+  const openFile = async (pathValue: unknown, sessionId: unknown) => {
     const requestedPath = assertNonEmptyString(pathValue, "path");
     const id = sessionId === undefined ? undefined : assertString(sessionId, "sessionId");
     const opened = currentHost()?.id && currentHost()?.id !== "local"
       ? await openDaemonFile({ path: requestedPath, sessionId: id })
       : await openAuthorizedLocalPath(requestedPath, await authorizedFileRoots(requestedPath, id));
+    if (opened.kind !== "text" && opened.kind !== "image") throw new Error("This file cannot be previewed.");
+    return opened;
+  };
+  handle("desktop:open-file", openFile);
+  handle("desktop:open-text-file", async (pathValue, sessionId) => {
+    const opened = await openFile(pathValue, sessionId);
     if (opened.kind !== "text") throw new Error("This file cannot be previewed as text.");
     return opened.file;
   });
@@ -242,7 +248,8 @@ addWorkspaceSourceToCatalog,
     if (currentHost()?.id && currentHost()?.id !== "local") {
       const opened = await openDaemonFile({ path: link.path, basePath: value.basePath, baseKind: value.baseKind, sessionId: value.sessionId });
       if (opened.kind === "directory") return opened;
-      if (opened.kind !== "text") throw new Error("This remote file cannot be previewed as text.");
+      if (opened.kind === "image") return opened;
+      if (opened.kind !== "text") throw new Error("This remote file cannot be previewed.");
       return { kind: "text", file: opened.file, line: link.line, column: link.column } as const;
     }
     const requestedPath = resolveLocalPathReference(link.path, value.basePath, value.baseKind);
@@ -252,6 +259,7 @@ addWorkspaceSourceToCatalog,
       await platform.openPath(opened.path);
       return { kind: "system" } as const;
     }
+    if (opened.kind === "image") return opened;
     return { kind: "text", file: opened.file, line: link.line, column: link.column } as const;
   });
   handle("desktop:save-text-file", async (input) => {

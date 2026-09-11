@@ -237,6 +237,32 @@ test("shared client mapping executes through the allowlisted application service
   service.dispose();
 });
 
+test("file opening falls back only when an older backend does not know the new operation", async () => {
+  const calls: string[] = [];
+  const snapshot = { path: "/workspace/notes.md", name: "notes.md", content: "legacy", sizeBytes: 6, mtimeMs: 1, readOnly: false };
+  const api = createClientApi({
+    invoke: async <T>(channel: string) => {
+      calls.push(channel);
+      if (channel === "desktop:open-file") throw new Error("Unknown application operation");
+      return snapshot as T;
+    },
+    onSessionEvent: () => () => {},
+  });
+  assert.deepEqual(await api.openFile(snapshot.path), { kind: "text", file: snapshot });
+  assert.deepEqual(calls, ["desktop:open-file", "desktop:open-text-file"]);
+
+  const failedCalls: string[] = [];
+  const failing = createClientApi({
+    invoke: async (channel) => {
+      failedCalls.push(channel);
+      throw new Error("Path does not exist.");
+    },
+    onSessionEvent: () => () => {},
+  });
+  await assert.rejects(failing.openFile(snapshot.path), /Path does not exist/);
+  assert.deepEqual(failedCalls, ["desktop:open-file"]);
+});
+
 test("shared boundary rejects invalid message and file inputs before reaching native or daemon services", async () => {
   const service = createApplicationService(platform(), () => {});
   for (const [channel, args] of [
@@ -257,7 +283,12 @@ test("directory browsing and literal file paths stay on the selected daemon", as
   const daemon = createServer(async (request, response) => {
     let body = ""; for await (const chunk of request) body += chunk;
     seen.push({ url: request.url!, token: request.headers.authorization, body: JSON.parse(body) });
-    const data = request.url === "/files/open" ? { kind: "text", file: { path: "/remote/report#L12", name: "report#L12", content: "remote", sizeBytes: 6, mtimeMs: 1, readOnly: false } } : { path: "/remote", parentPath: null, entries: [], truncated: false };
+    const requestedPath = (seen.at(-1)?.body as { path?: string }).path;
+    const data = request.url === "/files/open"
+      ? requestedPath === "/remote/pixel.png"
+        ? { kind: "image", file: { path: requestedPath, name: "pixel.png", mediaType: "image/png", dataBase64: "iVBORw0KGgo=", sizeBytes: 8, mtimeMs: 2 } }
+        : { kind: "text", file: { path: "/remote/report#L12", name: "report#L12", content: "remote", sizeBytes: 6, mtimeMs: 1, readOnly: false } }
+      : { path: "/remote", parentPath: null, entries: [], truncated: false };
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ code: "ok", data }));
   });
@@ -272,13 +303,26 @@ test("directory browsing and literal file paths stay on the selected daemon", as
   try {
     await api.listDirectory({ path: "/remote", purpose: "files", sessionId: "session" });
     await api.listDirectory({ path: "", purpose: "sources" });
-    assert.equal((await api.openTextFile("/remote/report#L12")).content, "remote");
+    const opened = await api.openFile("/remote/report#L12");
+    assert.equal(opened.kind, "text");
+    if (opened.kind === "text") assert.equal(opened.file.content, "remote");
+    const image = await api.openFile("/remote/pixel.png", "session");
+    assert.equal(image.kind, "image");
+    if (image.kind === "image") {
+      assert.equal(image.file.mediaType, "image/png");
+      assert.equal(image.file.dataBase64, "iVBORw0KGgo=");
+    }
+    const legacy = await withConnection(connection, () => service.invoke("desktop:open-text-file", ["/remote/report#L12"]));
+    assert.equal(legacy.ok, true);
+    if (legacy.ok) assert.equal((legacy.value as { content: string }).content, "remote");
     assert.deepEqual(seen, [
       { url: "/files/list", token: "Bearer directory-secret", body: { path: "/remote", sessionId: "session" } },
       { url: "/sources/directories", token: "Bearer directory-secret", body: { path: "" } },
       { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/report#L12" } },
+      { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/pixel.png", sessionId: "session" } },
+      { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/report#L12" } },
     ]);
     const rejected = await service.invoke("desktop:list-directory", [{ path: "/", purpose: "anything" }]);
-    assert.equal(rejected.ok, false); assert.equal(seen.length, 3);
+    assert.equal(rejected.ok, false); assert.equal(seen.length, 5);
   } finally { service.dispose(); const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed; }
 });
