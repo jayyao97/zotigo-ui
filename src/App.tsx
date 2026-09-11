@@ -96,6 +96,7 @@ import {
 } from "../shared/sessionDisplay";
 import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, MessageImageInput, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ImageFileSnapshot, ProjectSourceInput, SourceCandidate, TextFileSnapshot, WorkspaceFileOpenResult } from "../shared/clientTypes";
+import { loadHostDesktopState } from "../shared/hostNavigation";
 import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
 import { maxMessageImageCount, messageImageSizeError } from "../shared/messageImages";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
@@ -347,7 +348,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ clientScope, thinkingDisplay }: { clientScope: string; thinkingDisplay: ThinkingDisplayMode }) {
+export default function App({ clientScope, thinkingDisplay, openNewSessionOnMount = false }: { clientScope: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
@@ -1002,7 +1003,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([client.getDaemonConfig(), client.getDesktopState()])
+    Promise.all([client.getDaemonConfig(), loadHostDesktopState(client, openNewSessionOnMount)])
       .then(([config, state]) => {
         if (!isMounted) {
           return;
