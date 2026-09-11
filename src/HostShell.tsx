@@ -38,6 +38,7 @@ export function HostShell() {
   const [profiles, setProfiles] = useState<HostProfile[]>([]);
   const [selected, setSelected] = useState("local");
   const [generation, setGeneration] = useState(0);
+  const [newSessionGeneration, setNewSessionGeneration] = useState<number | null>(null);
   const generationRef = useRef(0);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -95,7 +96,7 @@ export function HostShell() {
       await api.unsubscribeSessionEvents();
       generationRef.current++;
       await api.setActiveHost(id);
-      setSelected(id); setGeneration(generationRef.current);
+      setSelected(id); setGeneration(generationRef.current); setNewSessionGeneration(generationRef.current);
       try { storage.setItem("zotigo.host", id); } catch { /* In-memory selection still works. */ }
     } catch (cause) {
       if (prepared) window.dispatchEvent(new Event("zotigo:host-switch-cancelled"));
@@ -117,7 +118,7 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <>
         <div style={{ display: settingsPageOpen ? "none" : "contents" }} inert={busy || settingsPageOpen}>
-          <App key={`${selected}:${generation}`} clientScope={selected} thinkingDisplay={thinkingDisplay} />
+          <App key={`${selected}:${generation}`} clientScope={selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
         {settingsPageOpen && <SettingsPage
           thinkingDisplay={thinkingDisplay}
