@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
   type SyntheticEvent,
+  type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
   Suspense,
   lazy,
@@ -62,7 +63,13 @@ import {
   X,
 } from "lucide-react";
 import { titleFromPrompt } from "../shared/conversationTitle";
-import { conversationAutoFollowAfterWheel } from "../shared/conversationScroll";
+import {
+  conversationAutoFollowAfterScroll,
+  conversationAutoFollowAfterWheel,
+  conversationScrollIntentForKey,
+  conversationShouldLoadOlder,
+  type ConversationScrollIntent,
+} from "../shared/conversationScroll";
 import {
   catalogRefreshDue,
   catalogSnapshotIsCurrent,
@@ -478,6 +485,8 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
   const fileSaveTimersRef = useRef<Map<string, number>>(new Map());
   const filesSavingRef = useRef<Set<string>>(new Set());
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const conversationScrollIntentRef = useRef<ConversationScrollIntent>(null);
+  const conversationTouchYRef = useRef<number | null>(null);
   const appFrameRef = useRef<HTMLElement | null>(null);
   const sidePanelRef = useRef<HTMLElement | null>(null);
   const sidePanelRatioRef = useRef(defaultSidePanelRatio);
@@ -1067,13 +1076,25 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     };
   }, [selectedBinding?.daemon_session_id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setPreviewAttachmentId(null);
     setAttachmentMenuOpen(false);
     cancelScheduledConversationAutoScroll();
+    conversationScrollIntentRef.current = null;
     setStickToBottom(true);
     scheduleConversationScrollToBottom();
   }, [composerDraftKey]);
+
+  useLayoutEffect(() => {
+    const scrollElement = conversationScrollRef.current;
+    const bodyElement = scrollElement?.querySelector<HTMLElement>(".conversation-body");
+    if (!bodyElement || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottomRef.current) scheduleConversationScrollToBottom();
+    });
+    observer.observe(bodyElement);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => () => cancelScheduledConversationAutoScroll(), []);
   useEffect(() => {
@@ -2490,19 +2511,59 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     if (!element) {
       return;
     }
-    setStickToBottom(isNearScrollBottom(element));
-    if (element.scrollTop <= 80) {
+    const nextStickToBottom = conversationAutoFollowAfterScroll(
+      stickToBottomRef.current,
+      isNearScrollBottom(element),
+      conversationScrollIntentRef.current,
+    );
+    setStickToBottom(nextStickToBottom);
+    if (conversationShouldLoadOlder(nextStickToBottom, element.scrollTop)) {
       void loadOlderSessionItems();
     }
   }
 
   function handleConversationWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (event.deltaY !== 0) {
+      conversationScrollIntentRef.current = event.deltaY < 0 ? "up" : "down";
+    }
     const nextValue = conversationAutoFollowAfterWheel(stickToBottomRef.current, event.deltaY);
     if (nextValue === stickToBottomRef.current) {
       return;
     }
     cancelScheduledConversationAutoScroll();
     setStickToBottom(nextValue);
+  }
+
+  function handleConversationKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget || event.metaKey || event.ctrlKey || event.altKey) return;
+    const intent = conversationScrollIntentForKey(event.key, event.shiftKey);
+    if (!intent) return;
+    conversationScrollIntentRef.current = intent;
+    if (intent === "up" && stickToBottomRef.current) {
+      cancelScheduledConversationAutoScroll();
+      setStickToBottom(false);
+    }
+  }
+
+  function handleConversationTouchStart(event: ReactTouchEvent<HTMLDivElement>) {
+    conversationTouchYRef.current = event.touches[0]?.clientY ?? null;
+  }
+
+  function handleConversationTouchMove(event: ReactTouchEvent<HTMLDivElement>) {
+    const previousY = conversationTouchYRef.current;
+    const currentY = event.touches[0]?.clientY;
+    if (previousY === null || currentY === undefined || currentY === previousY) return;
+    const intent: ConversationScrollIntent = currentY > previousY ? "up" : "down";
+    conversationScrollIntentRef.current = intent;
+    conversationTouchYRef.current = currentY;
+    if (intent === "up" && stickToBottomRef.current) {
+      cancelScheduledConversationAutoScroll();
+      setStickToBottom(false);
+    }
+  }
+
+  function handleConversationTouchEnd() {
+    conversationTouchYRef.current = null;
   }
 
   async function loadOlderSessionItems() {
@@ -2550,6 +2611,7 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
     if (!element) {
       return;
     }
+    conversationScrollIntentRef.current = null;
     element.scrollTo({
       top: element.scrollHeight,
       behavior: options.smooth ? "smooth" : "auto",
@@ -3522,8 +3584,15 @@ export default function App({ clientScope, thinkingDisplay }: { clientScope: str
         <div
           ref={conversationScrollRef}
           className={`conversation-scroll ${selectedConversation ? "" : "new-chat-scroll"}`}
+          tabIndex={selectedConversation ? 0 : undefined}
+          aria-label={selectedConversation ? "Conversation history" : undefined}
           onScroll={handleConversationScroll}
           onWheel={handleConversationWheel}
+          onKeyDown={handleConversationKeyDown}
+          onTouchStart={handleConversationTouchStart}
+          onTouchMove={handleConversationTouchMove}
+          onTouchEnd={handleConversationTouchEnd}
+          onTouchCancel={handleConversationTouchEnd}
         >
           <article className="conversation-body">
             {selectedConversation ? (
