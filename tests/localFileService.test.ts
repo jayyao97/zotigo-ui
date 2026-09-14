@@ -31,15 +31,43 @@ test("reads and saves authorized text without overwriting external changes", asy
       path: filePath,
       content: "second\n",
       expectedMtimeMs: opened.file.mtimeMs,
+      expectedContentRevision: opened.file.contentRevision,
     }, [root]);
     assert.equal(saved.content, "second\n");
 
-    fs.writeFileSync(filePath, "external\n");
+    fs.writeFileSync(filePath, "third!\n");
+    const collidingMtimeMs = fs.statSync(filePath).mtimeMs;
     await assert.rejects(() => saveAuthorizedTextFile({
       path: filePath,
-      content: "third\n",
-      expectedMtimeMs: saved.mtimeMs,
+      content: "fourth\n",
+      // A matching timestamp cannot make a stale content revision valid.
+      expectedMtimeMs: collidingMtimeMs,
+      expectedContentRevision: saved.contentRevision,
     }, [root]), /changed on disk/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("serializes competing saves from the same text snapshot", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-local-file-race-"));
+  try {
+    const filePath = path.join(root, "plan.md");
+    fs.writeFileSync(filePath, "original\n");
+    const opened = await openAuthorizedLocalPath(filePath, [root]);
+    assert.equal(opened.kind, "text");
+    if (opened.kind !== "text") return;
+
+    const results = await Promise.allSettled(["first writer\n", "second writer\n"].map((content) => saveAuthorizedTextFile({
+      path: filePath,
+      content,
+      expectedMtimeMs: opened.file.mtimeMs,
+      expectedContentRevision: opened.file.contentRevision,
+    }, [root])));
+
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+    assert.match(results.find((result) => result.status === "rejected")?.reason.message, /changed on disk/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

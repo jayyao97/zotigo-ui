@@ -40,6 +40,7 @@ import {
 import { codexUserText, userImageUrl } from "../../shared/codexUserMessage";
 import { approvalPolicyLabel } from "../../shared/approvalPolicy";
 import { formatApprovalArguments } from "../../shared/approvalDisplay";
+import { formatChannelOrigin } from "../../shared/channelOrigin";
 import { buildInteractionAnswers, interactionAnswersComplete, type InteractionDrafts } from "../../shared/interactionAnswers";
 import type { ApprovalDecisionInput, CommandImageMetadata, DisplayContentPart, DisplayItem, DisplayToolCall, DisplayToolResult, ZotigoSession } from "../../shared/zotigod";
 import type { DaemonSessionBinding } from "../../shared/clientTypes";
@@ -406,8 +407,9 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     const skills = item.command?.skills ?? [];
     const hiddenImageCount = Math.max(0, (item.command?.images?.length ?? 0) - images.length);
     const imageSummary = formatImageAttachmentSummary(hiddenImageCount);
+    const originKicker = formatChannelOrigin(item.command?.request_context);
     return (
-      <UserMessage text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : undefined} attachments={images.length > 0 ? (
+      <UserMessage text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
         <div className="message-image-grid" aria-label="Attached images">
           {images.map((image) => <PreviewImage key={image.id} src={image.url} alt={image.name} />)}
         </div>

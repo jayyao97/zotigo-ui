@@ -29,6 +29,14 @@ import {
   isMessageDuringActiveTurnError,
   setCatalogSessionPosition,
   setCatalogSessionTitle,
+	listChannelConnections,
+	createChannelConnection,
+	updateChannelConnection,
+	deleteChannelConnection,
+	listChannelGroups,
+	listChannelConversations,
+	updateChannelConversation,
+	listChannelMessages,
 } from "./zotigod";
 import type {
   AgentKind,
@@ -48,6 +56,7 @@ import { createCatalogService, type CatalogSelectionStore } from "./catalogServi
 
 import { createSessionEvents } from "./sessionEvents";
 import type { SessionEventEnvelope } from "../shared/clientTypes";
+import type { ChannelConnectionInput, ChannelConversationInput, ChannelOverrideMode, ChannelProgressMode } from "../shared/channels";
 
 export interface NativeServices {
   openPath(path: string): Promise<void>;
@@ -117,6 +126,14 @@ addWorkspaceSourceToCatalog,
   );
   handle("daemon:get-agents", () => getAgents());
   handle("daemon:prepare-codex", () => prepareCodex());
+	handle("channels:list-connections", () => listChannelConnections());
+	handle("channels:create-connection", (input) => createChannelConnection(assertChannelConnectionInput(input)));
+	handle("channels:update-connection", (id, input) => updateChannelConnection(assertNonEmptyString(id, "id"), assertChannelConnectionInput(input)));
+	handle("channels:delete-connection", (id) => deleteChannelConnection(assertNonEmptyString(id, "id")));
+	handle("channels:list-groups", (connectionId) => listChannelGroups(assertNonEmptyString(connectionId, "connectionId")));
+	handle("channels:list-conversations", (connectionId) => listChannelConversations(connectionId == null ? undefined : assertNonEmptyString(connectionId, "connectionId")));
+	handle("channels:update-conversation", (id, input) => updateChannelConversation(assertNonEmptyString(id, "id"), assertChannelConversationInput(input)));
+	handle("channels:list-messages", (id) => listChannelMessages(assertNonEmptyString(id, "id")));
   handle("sessions:list", () => listSessions());
   handle("sessions:get", (id) => getSession(assertString(id, "id")));
   handle("sessions:pause", (id, turnId) =>
@@ -543,6 +560,7 @@ function assertSaveTextFileInput(value: unknown): {
   path: string;
   content: string;
   expectedMtimeMs: number;
+  expectedContentRevision?: string;
   sessionId?: string;
 } {
   const input = assertRecord(value, "text file save");
@@ -550,6 +568,7 @@ function assertSaveTextFileInput(value: unknown): {
     path: assertNonEmptyString(input.path, "path"),
     content: assertString(input.content, "content"),
     expectedMtimeMs: assertNumber(input.expectedMtimeMs, "expectedMtimeMs"),
+    expectedContentRevision: input.expectedContentRevision === undefined ? undefined : assertNonEmptyString(input.expectedContentRevision, "expectedContentRevision"),
     sessionId: input.sessionId === undefined ? undefined : assertNonEmptyString(input.sessionId, "sessionId"),
   };
 }
@@ -754,6 +773,51 @@ function assertInteractionAnswers(value: unknown): Record<string, string[]> {
   }
   if (Object.keys(answers).length === 0) throw new Error("answers must not be empty");
   return answers;
+}
+
+function assertChannelConnectionInput(value: unknown): ChannelConnectionInput {
+	const input = assertRecord(value, "channel connection");
+	if (input.provider !== "feishu") throw new Error("provider must be feishu");
+	return {
+		provider: "feishu",
+		name: assertNonEmptyString(input.name, "name"),
+		app_id: assertNonEmptyString(input.app_id, "app_id"),
+		app_secret: input.app_secret === undefined ? undefined : assertString(input.app_secret, "app_secret"),
+		clear_secret: input.clear_secret === undefined ? undefined : assertBoolean(input.clear_secret, "clear_secret"),
+		enabled: assertBoolean(input.enabled, "enabled"),
+		allow_chat_ids: assertStringArray(input.allow_chat_ids, "allow_chat_ids"),
+		owner_sender_ids: assertStringArray(input.owner_sender_ids, "owner_sender_ids"),
+		agent_instructions: assertString(input.agent_instructions, "agent_instructions"),
+		approval_instructions: assertString(input.approval_instructions, "approval_instructions"),
+		review_all_tools: assertBoolean(input.review_all_tools, "review_all_tools"),
+		progress_mode: assertChannelProgressMode(input.progress_mode, "progress_mode"),
+	};
+}
+
+function assertChannelProgressMode(value: unknown, name: string): ChannelProgressMode {
+	if (value !== "auto" && value !== "cot" && value !== "interactive_card") throw new Error(`${name} must be auto, cot, or interactive_card`);
+	return value;
+}
+
+function assertChannelOverrideMode(value: unknown, name: string): ChannelOverrideMode {
+	if (value !== "inherit" && value !== "replace") throw new Error(`${name} must be inherit or replace`);
+	return value;
+}
+
+function assertChannelConversationInput(value: unknown): ChannelConversationInput {
+	const input = assertRecord(value, "channel conversation");
+	return {
+		display_name: assertString(input.display_name, "display_name"),
+		session_id: assertString(input.session_id, "session_id"),
+		workspace_id: assertString(input.workspace_id, "workspace_id"),
+		enabled: assertBoolean(input.enabled, "enabled"),
+		allowed_sender_ids: assertStringArray(input.allowed_sender_ids, "allowed_sender_ids"),
+		agent_instructions_mode: assertChannelOverrideMode(input.agent_instructions_mode, "agent_instructions_mode"),
+		agent_instructions: assertString(input.agent_instructions, "agent_instructions"),
+		approval_instructions_mode: assertChannelOverrideMode(input.approval_instructions_mode, "approval_instructions_mode"),
+		approval_instructions: assertString(input.approval_instructions, "approval_instructions"),
+		review_all_tools: input.review_all_tools === undefined ? undefined : assertBoolean(input.review_all_tools, "review_all_tools"),
+	};
 }
 
 function assertSessionItemsQuery(value: unknown): { limit?: number; after?: number; before?: number } {
