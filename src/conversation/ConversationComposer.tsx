@@ -507,6 +507,10 @@ export function RuntimeSettingsPicker({
   onSelectCodexModel,
   selectedCodexReasoningEffort,
   onSelectCodexReasoningEffort,
+  allowDefaultProfile = false,
+  defaultProfileLabel = "Workspace default",
+  profileDisabled = false,
+  codexSettingsDisabled = false,
   agentLocked = false,
   disabled,
 }: {
@@ -521,6 +525,10 @@ export function RuntimeSettingsPicker({
   onSelectCodexModel: (model: string) => void;
   selectedCodexReasoningEffort: string;
   onSelectCodexReasoningEffort: (effort: string) => void;
+  allowDefaultProfile?: boolean;
+  defaultProfileLabel?: string;
+  profileDisabled?: boolean;
+  codexSettingsDisabled?: boolean;
   agentLocked?: boolean;
   disabled: boolean;
 }) {
@@ -576,9 +584,10 @@ export function RuntimeSettingsPicker({
     };
   }, [open, section]);
 
+  const selectedProfileLabel = selectedProfile || (allowDefaultProfile ? defaultProfileLabel : "Zotigo");
   const label = selectedAgent === "codex"
     ? `${codexModelLabel(codexModels, selectedCodexModel)} · ${selectedCodexReasoningEffort || "Thinking"}`
-    : selectedProfile || "Zotigo";
+    : selectedProfileLabel;
 
   return (
     <div className="runtime-settings-wrap" ref={pickerRef}>
@@ -650,9 +659,9 @@ export function RuntimeSettingsPicker({
                 aria-haspopup="menu"
                 aria-expanded={section === "model"}
                 data-runtime-section="model"
-                disabled={disabled}
+                disabled={disabled || codexSettingsDisabled}
                 onClick={() => setSection("model")}
-                onPointerEnter={() => { if (!disabled) setSection("model"); }}
+                onPointerEnter={() => { if (!disabled && !codexSettingsDisabled) setSection("model"); }}
               >
                 <strong>Model</strong>
                 <span>{codexModelLabel(codexModels, selectedCodexModel)}</span>
@@ -665,9 +674,9 @@ export function RuntimeSettingsPicker({
                 aria-haspopup="menu"
                 aria-expanded={section === "thinking"}
                 data-runtime-section="thinking"
-                disabled={disabled}
+                disabled={disabled || codexSettingsDisabled}
                 onClick={() => setSection("thinking")}
-                onPointerEnter={() => { if (!disabled) setSection("thinking"); }}
+                onPointerEnter={() => { if (!disabled && !codexSettingsDisabled) setSection("thinking"); }}
               >
                 <strong>Thinking</strong>
                 <span>{selectedCodexReasoningEffort}</span>
@@ -682,12 +691,12 @@ export function RuntimeSettingsPicker({
               aria-haspopup="menu"
               aria-expanded={section === "profile"}
               data-runtime-section="profile"
-              disabled={disabled}
+              disabled={disabled || profileDisabled}
               onClick={() => setSection("profile")}
-              onPointerEnter={() => { if (!disabled) setSection("profile"); }}
+              onPointerEnter={() => { if (!disabled && !profileDisabled) setSection("profile"); }}
             >
               <strong>Profile</strong>
-              <span>{selectedProfile}</span>
+              <span>{selectedProfileLabel}</span>
               <ChevronRight size={15} strokeWidth={1.8} />
             </button>
           )}
@@ -706,13 +715,25 @@ export function RuntimeSettingsPicker({
                   {agent.id === selectedAgent && <Check size={15} strokeWidth={2} />}
                 </button>
               ))}
+              {section === "profile" && allowDefaultProfile && (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selectedProfile === ""}
+                  disabled={disabled || profileDisabled}
+                  onClick={() => onSelectProfile("")}
+                >
+                  <span>{defaultProfileLabel}</span>
+                  {selectedProfile === "" && <Check size={15} strokeWidth={2} />}
+                </button>
+              )}
               {section === "profile" && profiles.map((profile) => (
                 <button
                   type="button"
                   role="menuitemradio"
                   aria-checked={profile.name === selectedProfile}
                   key={profile.name}
-                  disabled={disabled}
+                  disabled={disabled || profileDisabled}
                   onClick={() => onSelectProfile(profile.name)}
                 >
                   <span>{profile.name}</span>
@@ -725,7 +746,7 @@ export function RuntimeSettingsPicker({
                   role="menuitemradio"
                   aria-checked={model.id === selectedCodexModel}
                   key={model.id}
-                  disabled={disabled}
+                  disabled={disabled || codexSettingsDisabled}
                   onClick={() => onSelectCodexModel(model.id)}
                 >
                   <span>{model.display_name}</span>
@@ -738,7 +759,7 @@ export function RuntimeSettingsPicker({
                   role="menuitemradio"
                   aria-checked={effort === selectedCodexReasoningEffort}
                   key={effort}
-                  disabled={disabled}
+                  disabled={disabled || codexSettingsDisabled}
                   onClick={() => onSelectCodexReasoningEffort(effort)}
                 >
                   <span>{effort}</span>

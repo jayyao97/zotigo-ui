@@ -180,6 +180,45 @@ test("disabled settings block all choices and outside or trigger clicks close th
   }
 });
 
+test("unavailable Codex settings still allow switching the Agent back to Zotigo", async () => {
+  const restore = installDom();
+  try {
+    function RecoverableHarness() {
+      const [agent, setAgent] = useState<AgentKind>("codex");
+      return <RuntimeSettingsPicker
+        agents={agents}
+        selectedAgent={agent}
+        onSelectAgent={setAgent}
+        profiles={profiles}
+        selectedProfile="gemini"
+        onSelectProfile={() => {}}
+        codexModels={[]}
+        selectedCodexModel=""
+        onSelectCodexModel={() => {}}
+        selectedCodexReasoningEffort=""
+        onSelectCodexReasoningEffort={() => {}}
+        codexSettingsDisabled
+        disabled={false}
+      />;
+    }
+    const { container, root } = await mounted(<RecoverableHarness />);
+    const trigger = container.querySelector<HTMLButtonElement>(".runtime-settings-trigger")!;
+    assert.equal(trigger.disabled, false);
+    await act(async () => click(trigger));
+    const agentRow = container.querySelector<HTMLButtonElement>('[data-runtime-section="agent"]')!;
+    const modelRow = container.querySelector<HTMLButtonElement>('[data-runtime-section="model"]')!;
+    assert.equal(agentRow.disabled, false);
+    assert.equal(modelRow.disabled, true);
+    await act(async () => click(agentRow));
+    await act(async () => click([...container.querySelectorAll<HTMLButtonElement>('[aria-label="agent options"] button')].find((value) => value.textContent?.includes("Zotigo"))!));
+    assert.match(trigger.textContent ?? "", /gemini/);
+    await act(async () => root.unmount());
+  }
+  finally {
+    restore();
+  }
+});
+
 test("runtime submenu stacks above the root menu in constrained layouts", () => {
   const css = fs.readFileSync(path.join(process.cwd(), "src/styles.css"), "utf8");
   assert.match(css, /\.app-frame\.has-subagent-panel \.runtime-settings-submenu,[\s\S]*?\.conversation\.has-inspector \.runtime-settings-submenu\s*\{[\s\S]*?right:\s*0;[\s\S]*?bottom:\s*calc\(100% \+ 8px\);/);

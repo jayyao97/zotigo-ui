@@ -147,6 +147,8 @@ import {
 import { resizeTextareaToContent } from "./textareaSizing";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 import { shouldSmoothStreaming } from "./streamingText";
+import { ChannelsPage } from "./channels/ChannelsPage";
+import { ProjectDisclosureIcon, WorkspaceDisclosureIcon } from "./SidebarDisclosureIcons";
 import {
   composerDraftKey as draftKeyForSelection,
   emptyComposerDraft,
@@ -280,33 +282,6 @@ export function discardHostVolatileState(clientScope?: string): void {
   }
 }
 
-function ProjectDisclosureIcon({ open }: { open: boolean }) {
-  return open ? (
-    <svg className="project-disclosure-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M2.7 12.9V6.2c0-1.15.93-2.08 2.08-2.08h2.14c.45 0 .89.15 1.24.42l1.02.78c.36.27.79.42 1.24.42h4.8c1.15 0 2.08.93 2.08 2.08v.8" />
-      <path d="M5.1 8.75h11.48c.65 0 1.11.64.9 1.25l-1.44 4.3a2.08 2.08 0 0 1-1.97 1.42H4.76a2.08 2.08 0 0 1-1.98-2.72l1.06-3.24A1.32 1.32 0 0 1 5.1 8.75Z" />
-    </svg>
-  ) : (
-    <svg className="project-disclosure-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M2.7 6.2c0-1.15.93-2.08 2.08-2.08h2.14c.45 0 .89.15 1.24.42l1.02.78c.36.27.79.42 1.24.42h4.8c1.15 0 2.08.93 2.08 2.08v5.94c0 1.15-.93 2.08-2.08 2.08H4.78A2.08 2.08 0 0 1 2.7 13.76V6.2Z" />
-    </svg>
-  );
-}
-
-function WorkspaceDisclosureIcon({ open }: { open: boolean }) {
-  return open ? (
-    <svg className="workspace-disclosure-icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="2.5" y="3" width="13" height="12" rx="2" />
-      <path d="M2.8 7h12.4M7 7v7.6" />
-    </svg>
-  ) : (
-    <svg className="workspace-disclosure-icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="3" y="4.5" width="11" height="9.5" rx="1.8" />
-      <path d="M5 2.75h8.2c1.1 0 2 .9 2 2v6.5" />
-    </svg>
-  );
-}
-
 function isMarkdownFile(filePath: string): boolean {
   return /\.(?:md|markdown|mdown|mkd)$/i.test(filePath);
 }
@@ -347,7 +322,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ clientScope, thinkingDisplay, openNewSessionOnMount = false }: { clientScope: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
+export default function App({ clientScope, hostName, thinkingDisplay, openNewSessionOnMount = false }: { clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
@@ -361,14 +336,69 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
     return () => window.removeEventListener("keydown", openSearch);
   }, []);
   const [webNavigationOpen, setWebNavigationOpen] = useState(false);
+  const [channelsOpen, setChannelsOpen] = useState(false);
+  const [channelsSidebarActive, setChannelsSidebarActive] = useState(false);
+  const [channelsSessionVisible, setChannelsSessionVisible] = useState(false);
+  const [channelsSidebarRoot, setChannelsSidebarRoot] = useState<HTMLDivElement | null>(null);
+  const channelsTransitionTimer = useRef<number | null>(null);
+  const channelsEntryFrames = useRef<number[]>([]);
+  const channelsNavigationRequest = useRef(0);
   const webNavigationButton = useRef<HTMLButtonElement>(null);
+  const channelsNavigationButton = useRef<HTMLButtonElement>(null);
+  const channelsEntryButton = useRef<HTMLButtonElement>(null);
   const webNavigationCloseButton = useRef<HTMLButtonElement>(null);
   const previousWebNavigationOpen = useRef(false);
+  const cancelChannelsTransition = useCallback(() => {
+    if (channelsTransitionTimer.current !== null) window.clearTimeout(channelsTransitionTimer.current);
+    channelsTransitionTimer.current = null;
+    channelsEntryFrames.current.forEach((frame) => window.cancelAnimationFrame(frame));
+    channelsEntryFrames.current = [];
+  }, []);
+  const openChannels = useCallback(() => {
+    if (channelsOpen && channelsSidebarActive) return;
+    channelsNavigationRequest.current++;
+    cancelChannelsTransition();
+    setChannelsSessionVisible(false);
+    setChannelsOpen(true);
+    setChannelsSidebarActive(false);
+    const first = window.requestAnimationFrame(() => {
+      const second = window.requestAnimationFrame(() => {
+        channelsEntryFrames.current = [];
+        setChannelsSidebarActive(true);
+      });
+      channelsEntryFrames.current = [second];
+    });
+    channelsEntryFrames.current = [first];
+  }, [cancelChannelsTransition, channelsOpen, channelsSidebarActive]);
+  const closeChannels = useCallback(() => {
+    channelsNavigationRequest.current++;
+    cancelChannelsTransition();
+    setChannelsSidebarActive(false);
+    channelsTransitionTimer.current = window.setTimeout(() => {
+      channelsTransitionTimer.current = null;
+      setChannelsOpen(false);
+      setChannelsSessionVisible(false);
+      window.requestAnimationFrame(() => channelsEntryButton.current?.focus());
+    }, 200);
+  }, [cancelChannelsTransition]);
+  const leaveChannelsImmediately = useCallback(() => {
+    channelsNavigationRequest.current++;
+    cancelChannelsTransition();
+    setChannelsSidebarActive(false);
+    setChannelsOpen(false);
+    setChannelsSessionVisible(false);
+  }, [cancelChannelsTransition]);
+  useEffect(() => () => {
+    channelsNavigationRequest.current++;
+    cancelChannelsTransition();
+  }, [cancelChannelsTransition]);
   useEffect(() => {
     if (webNavigationOpen) webNavigationCloseButton.current?.focus();
-    else if (previousWebNavigationOpen.current) webNavigationButton.current?.focus();
+    else if (previousWebNavigationOpen.current) {
+      (channelsOpen ? channelsNavigationButton : webNavigationButton).current?.focus();
+    }
     previousWebNavigationOpen.current = webNavigationOpen;
-  }, [webNavigationOpen]);
+  }, [channelsOpen, webNavigationOpen]);
   const [daemonUrl, setDaemonUrl] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [sessions, setSessions] = useState<ZotigoSession[]>([]);
@@ -1712,6 +1742,7 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
   }
 
   async function openProjectOverview(project: DesktopProject) {
+    leaveChannelsImmediately();
     setProjectOverviewId(project.id);
     await selectProject(project.id);
   }
@@ -1841,17 +1872,18 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
     });
   }
 
-  function selectConversation(id: string) {
+  function selectConversation(id: string, sourceState = desktopState, preserveChannels = false) {
+    if (!preserveChannels) leaveChannelsImmediately();
     setWebNavigationOpen(false);
     setConversationContextMenu(null);
     markConversationRead(id);
-    const conversation = desktopState.conversations.find((candidate) => candidate.id === id);
-    if (!conversation || desktopState.selectedConversationId === id) {
+    const conversation = sourceState.conversations.find((candidate) => candidate.id === id);
+    if (!conversation || sourceState.selectedConversationId === id) {
       return;
     }
     setProjectOverviewId(null);
     setMessage(null);
-    const binding = desktopState.bindings.find((candidate) => candidate.conversation_id === id);
+    const binding = sourceState.bindings.find((candidate) => candidate.conversation_id === id);
     const cachedHistory = binding ? cachedSessionHistory(binding.daemon_session_id) : null;
     sessionItemsRef.current = cachedHistory?.items ?? [];
     setSessionItems(cachedHistory?.items ?? []);
@@ -1877,6 +1909,7 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
   }
 
   async function openNewConversation() {
+    leaveChannelsImmediately();
     setWebNavigationOpen(false);
     setProjectOverviewId(null);
     setMessage(null);
@@ -1885,6 +1918,7 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
   }
 
   async function openNewConversationForWorkspace(workspace: DesktopWorkspace) {
+    leaveChannelsImmediately();
     setWebNavigationOpen(false);
     setProjectOverviewId(null);
     setMessage(null);
@@ -2962,6 +2996,7 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
         path: filePath,
         content,
         expectedMtimeMs: current.file.mtimeMs,
+        expectedContentRevision: current.file.contentRevision,
         sessionId: current.sessionId,
       });
       const existing = openFilesRef.current[filePath];
@@ -3159,6 +3194,7 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.isComposing || document.querySelector("dialog[open], [aria-modal=true]")) return;
+      if (channelsOpen) return;
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "p") {
         event.preventDefault(); browseFiles();
       } else if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === "KeyB") {
@@ -3167,14 +3203,14 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [workspaceFileRoot, selectedSession?.id]);
+  }, [channelsOpen, workspaceFileRoot, selectedSession?.id]);
 
   const activeSidePanelTab = sidePanelTabs.tabs.find((tab) => tab.id === sidePanelTabs.activeTabId) ?? null;
 
   return (
     <main
       ref={appFrameRef}
-      className={`app-frame ${webNavigationOpen ? "web-navigation-open" : ""} ${sidePanelOpen ? "has-subagent-panel" : ""} ${sidePanelOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${isSidePanelResizing ? "resizing-side-panel" : ""}`}
+      className={`app-frame ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
       style={{ "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
       onClickCapture={(event) => void handleMarkdownLinkClick(event)}
       onKeyDown={(event) => {
@@ -3214,12 +3250,14 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
             <CalendarClock size={15} strokeWidth={1.8} />
             Scheduled
           </button>
-          <button type="button" disabled className="utility-placeholder">
+          <button ref={channelsEntryButton} type="button" className={channelsOpen ? "selected" : ""} onClick={() => { openChannels(); setProjectOverviewId(null); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
             <Blocks size={15} strokeWidth={1.8} />
-            Plugins
+            Channels
           </button>
         </nav>
 
+        <div className="sidebar-lower-stack">
+        <div className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
         <section className="sidebar-section" aria-label="Pinned conversations">
           <div className="sidebar-section-title">Pinned</div>
           {pinnedConversations.length === 0 ? (
@@ -3574,6 +3612,9 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
             </button>
           </div>
         )}
+        </div>
+        <div ref={setChannelsSidebarRoot} className={`channels-sidebar-root ${channelsSidebarActive ? "is-active" : ""}`} />
+        </div>
 
         <div className="sidebar-footer">
           <div className="user-chip">ZT</div>
@@ -3644,7 +3685,28 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
         </div>
       )}
 
-      <section className={`conversation ${selectedConversation ? "has-composer" : ""}`}>
+      {channelsOpen && channelsSidebarRoot && <ChannelsPage hostName={hostName} projects={desktopState.projects} workspaces={desktopState.workspaces} agents={runtimeAgents} sessions={sessions} sessionCatalog={desktopState.conversations} navigationRoot={channelsSidebarRoot} navigationButtonRef={channelsNavigationButton} navigationOpen={webNavigationOpen} sessionVisible={channelsSessionVisible} selectedSessionId={selectedSession?.id} onOpenNavigation={() => setWebNavigationOpen(true)} onShowConfiguration={() => setChannelsSessionVisible(false)} onBack={closeChannels} onOpenSession={async (id, leaveChannels) => {
+        const request = ++channelsNavigationRequest.current;
+        let state: DesktopState;
+        try {
+          state = await client.getDesktopState();
+        } catch (error) {
+          if (request !== channelsNavigationRequest.current) return;
+          throw error;
+        }
+        if (request !== channelsNavigationRequest.current) return;
+        applyDesktopState(state);
+        const binding = state.bindings.find((value) => value.daemon_session_id === id);
+        if (!binding || !state.conversations.some((value) => value.id === binding.conversation_id)) {
+          throw new Error("The bound session is not available in this host's catalog.");
+        }
+        if (request !== channelsNavigationRequest.current) return;
+        selectConversation(binding.conversation_id, state, !leaveChannels);
+        setChannelsSessionVisible(!leaveChannels);
+        setWebNavigationOpen(false);
+      }} />}
+
+      <section hidden={channelsOpen && !channelsSessionVisible} className={`conversation ${selectedConversation ? "has-composer" : ""}`}>
         <header className="conversation-titlebar">
           {kind === "web" && <button ref={webNavigationButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(true)} aria-label="Open navigation" aria-expanded={webNavigationOpen}><PanelLeft size={18} /></button>}
           {selectedConversation ? (
@@ -3974,7 +4036,7 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
         )}
       </section>
 
-      {detailsOpen && <aside className="inspector" aria-label="Session details">
+      {detailsOpen && !channelsOpen && <aside className="inspector" aria-label="Session details">
         <section className="inspector-card">
           <div className="inspector-heading">
             <h2>Environment</h2>
@@ -4119,7 +4181,7 @@ export default function App({ clientScope, thinkingDisplay, openNewSessionOnMoun
       </aside>}
 
       {(
-        <aside hidden={!sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
+        <aside hidden={channelsOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
           <div
             className="side-panel-resize-handle"
             role="separator"
