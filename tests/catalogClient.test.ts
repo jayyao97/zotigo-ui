@@ -128,6 +128,16 @@ before(async () => {
             original_tokens: 183421, compressed_tokens: 91736,
             messages_before: 108, messages_after: 19,
           },
+        }, {
+          id: "item-3", sequence: 3, type: "user_message", role: "user", created_at: timestamp,
+          command: {
+            type: "message", text: "hello",
+            request_context: {
+              source: "feishu", connection_id: "connection-1", conversation_name: "Shadow Test",
+              external_conversation_id: "oc_test", external_message_id: "om_test",
+              actor: { id: "ou_owner", display_name: "Owner", role: "owner" },
+            },
+          },
         }],
         next_cursor: "", prev_cursor: "", has_more: false,
       });
@@ -399,6 +409,23 @@ test("preserves context compaction metrics in display items", async () => {
     compressed_tokens: 91736,
     messages_before: 108,
     messages_after: 19,
+  });
+});
+
+test("preserves trusted channel request context in display commands", async () => {
+  const page = await listSessionItems("session-1");
+  assert.deepEqual(page.items[2]?.command?.request_context, {
+    source: "feishu",
+    connection_id: "connection-1",
+    connection_name: undefined,
+    conversation_id: undefined,
+    conversation_name: "Shadow Test",
+    conversation_type: undefined,
+    external_conversation_id: "oc_test",
+    external_root_message_id: undefined,
+    external_thread_id: undefined,
+    external_message_id: "om_test",
+    actor: { id: "ou_owner", display_name: "Owner", role: "owner" },
   });
 });
 

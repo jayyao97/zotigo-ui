@@ -43,7 +43,7 @@ export function HostShell() {
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [settingsPageOpen, setSettingsPageOpen] = useState(false);
+  const [surface, setSurface] = useState<"workbench" | "settings">("workbench");
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const [thinkingDisplay, setThinkingDisplay] = useState<ThinkingDisplayMode>(() => {
     try { return parseThinkingDisplayMode(localStorage.getItem(thinkingDisplayStorageKey)); }
@@ -74,7 +74,7 @@ export function HostShell() {
     const openSettings = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "," && !event.shiftKey && !event.altKey && !event.isComposing) {
         event.preventDefault();
-        setSettingsPageOpen(true);
+        setSurface("settings");
       }
     };
     window.addEventListener("keydown", openSettings);
@@ -114,17 +114,17 @@ export function HostShell() {
     try { localStorage.setItem(thinkingDisplayStorageKey, mode); } catch { /* In-memory preference still works. */ }
   }
   function closePicker(values: SourceCandidate[]) { setPicker(false); pickerResult.current?.(values); pickerResult.current = null; }
-  return <HostContext.Provider value={{ profiles, selected, busy, switchHost: (id) => void switchHost(id), settings: () => setSettingsPageOpen(true) }}>
+  return <HostContext.Provider value={{ profiles, selected, busy, switchHost: (id) => void switchHost(id), settings: () => setSurface("settings") }}>
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <>
-        <div style={{ display: settingsPageOpen ? "none" : "contents" }} inert={busy || settingsPageOpen}>
-          <App key={`${selected}:${generation}`} clientScope={selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
+        <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
+          <App key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
-        {settingsPageOpen && <SettingsPage
+        {surface === "settings" && <SettingsPage
           thinkingDisplay={thinkingDisplay}
           onThinkingDisplayChange={updateThinkingDisplay}
           onManageHosts={openHostSettings}
-          onBack={() => setSettingsPageOpen(false)}
+          onBack={() => setSurface("workbench")}
         />}
       </> : <main className="web-login"><p>{error || "Loading hosts…"}</p></main>}
     </ClientContext.Provider>

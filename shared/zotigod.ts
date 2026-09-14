@@ -208,6 +208,25 @@ export interface DisplayCommand {
   reason?: string;
   profile?: string;
   approval_policy?: ApprovalPolicy;
+  request_context?: RequestContext;
+}
+
+export interface RequestContext {
+  source: string;
+  connection_id?: string;
+  connection_name?: string;
+  conversation_id?: string;
+  conversation_name?: string;
+  conversation_type?: string;
+  external_conversation_id?: string;
+  external_root_message_id?: string;
+  external_thread_id?: string;
+  external_message_id?: string;
+  actor: {
+    id: string;
+    display_name?: string;
+    role: string;
+  };
 }
 
 export interface DisplayContextCompaction {

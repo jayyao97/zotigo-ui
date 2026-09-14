@@ -193,6 +193,7 @@ export interface TextFileSnapshot {
   path: string;
   name: string;
   content: string;
+  contentRevision?: string;
   sizeBytes: number;
   mtimeMs: number;
   readOnly: boolean;
@@ -230,6 +231,7 @@ export interface SaveTextFileInput {
   path: string;
   content: string;
   expectedMtimeMs: number;
+  expectedContentRevision?: string;
   sessionId?: string;
 }
 
@@ -241,6 +243,14 @@ export interface DirectoryListing {
 }
 
 export interface ClientApi {
+	listChannelConnections(): Promise<import("./channels").ChannelConnection[]>;
+	createChannelConnection(input: import("./channels").ChannelConnectionInput): Promise<import("./channels").ChannelConnection>;
+	updateChannelConnection(id: string, input: import("./channels").ChannelConnectionInput): Promise<import("./channels").ChannelConnection>;
+	deleteChannelConnection(id: string): Promise<void>;
+	listChannelGroups(connectionId: string): Promise<import("./channels").ChannelGroup[]>;
+	listChannelConversations(connectionId?: string): Promise<import("./channels").ChannelConversation[]>;
+	updateChannelConversation(id: string, input: import("./channels").ChannelConversationInput): Promise<import("./channels").ChannelConversation>;
+	listChannelMessages(conversationId: string): Promise<import("./channels").ChannelMessage[]>;
   listDirectory(input: { path: string; purpose: "files" | "sources"; sessionId?: string }): Promise<DirectoryListing>;
   openFile(path: string, sessionId?: string): Promise<WorkspaceFileOpenResult>;
   listHosts(): Promise<import("./hosts").HostProfile[]>;
