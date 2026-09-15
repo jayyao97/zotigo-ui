@@ -295,9 +295,10 @@ test("group settings can bind one shared Session", async () => {
   const restore = installDom();
   try {
     const connected = conversation({ id: "group-connected", workspace_id: workspace.id, enabled: true });
-    const sharedSession: ZotigoSession = { id: "session-shared", state: "running", live: true, working_directory: workspace.root_path, agent: "codex", model: "gpt-channel", reasoning_effort: "high", created_at: "", working: false };
+    const sharedSession: ZotigoSession = { id: "session-shared", state: "running", live: true, working_directory: workspace.root_path, agent: "codex", model: "gpt-channel", reasoning_effort: "high", channel_tools_eligible: true, created_at: "", working: false };
     const boundSession: ZotigoSession = { ...sharedSession, id: "session-bound" };
     const archivedSession: ZotigoSession = { ...sharedSession, id: "session-archived", state: "offline" };
+    const legacyCodexSession: ZotigoSession = { ...sharedSession, id: "session-legacy", channel_tools_eligible: false };
     const boundElsewhere = conversation({ id: "other-group", connection_id: "connection-2", chat_id: "other-chat", session_strategy: "shared", session_id: boundSession.id, workspace_id: workspace.id, enabled: true });
     let savedInput: ChannelConversationInput | undefined;
     const api = {
@@ -311,7 +312,7 @@ test("group settings can bind one shared Session", async () => {
       },
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} sessions={[sharedSession, boundSession, archivedSession]} sessionCatalog={[{ id: sharedSession.id, project_id: project.id, workspace_id: workspace.id, title: "Investigate session labels", created_at: "", updated_at: "" }]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} sessions={[sharedSession, boundSession, archivedSession, legacyCodexSession]} sessionCatalog={[{ id: sharedSession.id, project_id: project.id, workspace_id: workspace.id, title: "Investigate session labels", created_at: "", updated_at: "" }, { id: legacyCodexSession.id, project_id: project.id, workspace_id: workspace.id, title: "Legacy Codex", created_at: "", updated_at: "" }]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
     await flush();
@@ -323,6 +324,7 @@ test("group settings can bind one shared Session", async () => {
     assert.match(session.textContent ?? "", /Investigate session labels · session-shared · gpt-channel/);
     assert.doesNotMatch(session.textContent ?? "", /session-bound/);
     assert.doesNotMatch(session.textContent ?? "", /session-archived/);
+    assert.doesNotMatch(session.textContent ?? "", /session-legacy/);
     await act(async () => changeSelect(session, sharedSession.id));
     await act(async () => click(button(document.querySelector("#root")!, "Save")));
     await flush();

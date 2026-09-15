@@ -27,6 +27,8 @@ export interface ZotigoSession {
   error_code?: string;
   working: boolean;
   active_tool?: string;
+  channel_tools_version?: number;
+  channel_tools_eligible?: boolean;
   context_usage?: {
     tokens: number;
     window: number;

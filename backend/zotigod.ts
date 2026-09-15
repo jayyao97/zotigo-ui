@@ -1036,6 +1036,8 @@ function parseSession(value: unknown, context: string): ZotigoSession {
     error_code: expectOptionalString(record.error_code, `${context} error_code`),
     working: expectOptionalBoolean(record.working, `${context} working`) ?? false,
     active_tool: expectOptionalString(record.active_tool, `${context} active_tool`),
+    channel_tools_version: expectOptionalNumber(record.channel_tools_version, `${context} channel_tools_version`),
+    channel_tools_eligible: expectOptionalBoolean(record.channel_tools_eligible, `${context} channel_tools_eligible`),
     context_usage: parseOptionalContextUsage(record.context_usage, `${context} context_usage`),
   };
 }
