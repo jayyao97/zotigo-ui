@@ -320,6 +320,7 @@ test("group settings can bind one shared Session", async () => {
     const selects = [...document.querySelectorAll<HTMLSelectElement>("#root select")];
     const strategy = selects.find((value) => value.textContent?.includes("Shared Session in group"))!;
     await act(async () => changeSelect(strategy, "shared"));
+	assert.match(document.querySelector("#root")!.textContent ?? "", /all replies stay in the main group/);
     const session = [...document.querySelectorAll<HTMLSelectElement>("#root select")].find((value) => value.textContent?.includes("session-shared"))!;
     assert.match(session.textContent ?? "", /Investigate session labels · session-shared · gpt-channel/);
     assert.doesNotMatch(session.textContent ?? "", /session-bound/);
