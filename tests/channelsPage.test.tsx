@@ -291,6 +291,36 @@ test("group settings persist the selected Codex model and reasoning effort", asy
   } finally { restore(); }
 });
 
+test("group Save includes prompt overrides shown below workspace settings", async () => {
+  const restore = installDom();
+  try {
+    const connected = conversation({ id: "group-connected", workspace_id: workspace.id, enabled: true, agent_instructions_mode: "replace", agent_instructions: "Use the current group vocabulary." });
+    let savedInput: ChannelConversationInput | undefined;
+    const api = {
+      listChannelConnections: async () => [connection("connection-1", "Bot One")],
+      listChannelGroups: async () => [{ ...groupRuntime, chat_id: connected.chat_id, name: "Connected group", available: true, conversation_id: connected.id, workspace_id: workspace.id, enabled: true, allowed_sender_ids: ["owner-1"] } satisfies ChannelGroup],
+      listChannelConversations: async () => [connected],
+      getProfiles: async () => ({ default_profile: "default-profile", profiles: [] }),
+      updateChannelConversation: async (_id: string, input: ChannelConversationInput) => {
+        savedInput = input;
+        return { ...connected, ...input };
+      },
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
+    await flush();
+
+    await act(async () => click(button(document.querySelector("#root")!, "Save")));
+    await flush();
+    assert.equal(savedInput?.agent_instructions_mode, "replace");
+    assert.equal(savedInput?.agent_instructions, "Use the current group vocabulary.");
+    assert.match(document.querySelector("#root .channels-form-actions")?.textContent ?? "", /next turn/);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
 test("group settings can bind one shared Session", async () => {
   const restore = installDom();
   try {

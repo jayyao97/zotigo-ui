@@ -5084,6 +5084,8 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .channels-member-picker .channels-member-option:hover { background: var(--surface-row); }
 .channels-member-option input { width: 15px; height: 15px; margin: 0; accent-color: var(--green-400); }
 .channels-actions { display: flex; align-items: center; gap: 9px; padding-top: 1px; }
+.channels-form-actions { flex-wrap: wrap; padding-top: 3px; }
+.channels-form-actions small { flex-basis: 100%; color: var(--text-dim); font-size: 11px; }
 .channels-actions button { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 11px; border: 1px solid var(--border-heavy); border-radius: 8px; background: var(--surface-row); color: var(--text); cursor: pointer; }
 .channels-actions button.primary { border-color: var(--green-700); background: var(--green-700); }
 .channels-actions button:disabled { opacity: .45; cursor: default; }
