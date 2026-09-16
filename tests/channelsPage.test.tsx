@@ -341,6 +341,49 @@ test("group settings can bind one shared Session", async () => {
   } finally { restore(); }
 });
 
+test("unbinding a shared Session keeps its runtime available for the replacement Session", async () => {
+  const restore = installDom();
+  try {
+    const connected = conversation({ id: "group-connected", workspace_id: workspace.id, enabled: true, session_strategy: "shared", session_id: "session-shared", agent: "codex", model: "gpt-channel", reasoning_effort: "high" });
+    const sharedSession: ZotigoSession = { id: "session-shared", state: "running", live: true, working_directory: workspace.root_path, agent: "codex", model: "gpt-channel", reasoning_effort: "high", channel_tools_eligible: true, created_at: "", working: false };
+    let savedInput: ChannelConversationInput | undefined;
+    const api = {
+      listChannelConnections: async () => [connection("connection-1", "Bot One")],
+      listChannelGroups: async () => [{ ...groupRuntime, session_strategy: "shared", session_id: sharedSession.id, agent: "codex", model: "gpt-channel", reasoning_effort: "high", chat_id: connected.chat_id, name: "Connected group", available: true, conversation_id: connected.id, workspace_id: workspace.id, enabled: true, allowed_sender_ids: ["owner-1"] } satisfies ChannelGroup],
+      listChannelConversations: async () => [connected],
+      getProfiles: async () => ({ default_profile: "default-profile", profiles: [] }),
+      updateChannelConversation: async (_id: string, input: ChannelConversationInput) => {
+        savedInput = input;
+        return { ...connected, ...input };
+      },
+    } as unknown as ClientApi;
+    const agents: AgentCatalogEntry[] = [
+      { id: "codex", label: "Codex", availability: "installed", capabilities: { profiles: false, models: true, steering: true, approvals: true }, models: [{ id: "gpt-channel", display_name: "GPT Channel", is_default: true, supported_reasoning_efforts: ["medium", "high"] }] },
+    ];
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} agents={agents} sessions={[sharedSession]} sessionCatalog={[{ id: sharedSession.id, project_id: project.id, workspace_id: workspace.id, title: "Existing shared Session", created_at: "", updated_at: "" }]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
+    await flush();
+
+    const session = [...document.querySelectorAll<HTMLSelectElement>("#root select")].find((value) => value.textContent?.includes("Create on first @mention"))!;
+    await act(async () => changeSelect(session, ""));
+    const save = button(document.querySelector("#root")!, "Save");
+    assert.equal(save.disabled, false);
+    assert.match(document.querySelector<HTMLButtonElement>('#root [aria-label^="Runtime settings:"]')?.textContent ?? "", /GPT Channel · high/);
+
+    await act(async () => click(save));
+    await flush();
+    assert.deepEqual(savedInput && {
+      session: savedInput.session_id,
+      agent: savedInput.agent,
+      model: savedInput.model,
+      effort: savedInput.reasoning_effort,
+    }, { session: "", agent: "codex", model: "gpt-channel", effort: "high" });
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
 test("topic-mode Feishu groups cannot select a shared Session", async () => {
   const restore = installDom();
   try {
