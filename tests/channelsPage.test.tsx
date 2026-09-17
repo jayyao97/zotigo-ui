@@ -55,6 +55,55 @@ function button(container: ParentNode, label: string) {
   return result;
 }
 
+test("connection deletion requires confirmation and preserves a binding conflict", async () => {
+  const restore = installDom();
+  try {
+    let deletes = 0;
+    let finishDelete = () => {};
+    const api = {
+      listChannelConnections: async () => [connection("connection-1", "Bot One")],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+      deleteChannelConnection: async (id: string) => {
+        assert.equal(id, "connection-1");
+        deletes++;
+        if (deletes === 1) throw new Error("connection has bound sessions; unbind or archive them before deleting");
+        await new Promise<void>((resolve) => { finishDelete = resolve; });
+      },
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    await act(async () => click(button(document.querySelector(".channels-form-actions")!, "Delete")));
+    assert.equal(deletes, 0);
+    let dialog = document.querySelector('[role="dialog"]')!;
+    assert.match(dialog.textContent ?? "", /Bot One/);
+    await act(async () => click(button(dialog, "Cancel")));
+    assert.equal(document.querySelector('[role="dialog"]'), null);
+    assert.equal(deletes, 0);
+    await act(async () => click(button(document.querySelector(".channels-form-actions")!, "Delete")));
+    dialog = document.querySelector('[role="dialog"]')!;
+    await act(async () => click(button(dialog, "Delete connection")));
+    await flush();
+    assert.equal(deletes, 1);
+    assert.match(dialog.textContent ?? "", /connection has bound sessions/);
+    await act(async () => click(button(dialog, "Delete connection")));
+    assert.equal(deletes, 2);
+    assert.ok(button(dialog, "Cancel").disabled);
+    assert.ok(button(dialog, "Working").disabled);
+    await act(async () => {
+      dialog.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      click(button(dialog, "Working"));
+    });
+    assert.equal(deletes, 2);
+    assert.ok(document.querySelector('[role="dialog"]'));
+    await act(async () => finishDelete());
+    await flush();
+    assert.equal(document.querySelector('[role="dialog"]'), null);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
 test("connection Save follows and includes prompt settings", async () => {
   const restore = installDom();
   try {

@@ -1,3 +1,4 @@
+import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { HostMenu } from "./HostShell";
 import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
@@ -405,6 +406,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const [sessionsInitialized, setSessionsInitialized] = useState(false);
   const [desktopState, setDesktopState] = useState<DesktopState>(emptyDesktopState);
   const [message, setMessage] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<DesktopConversation | null>(null);
+  const [archivingSession, setArchivingSession] = useState(false);
   const [sidebarActionError, setSidebarActionError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [pauseRequestedTurnId, setPauseRequestedTurnId] = useState<string | null>(null);
@@ -2765,12 +2768,23 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     }
   }
 
-  async function archiveConversation(conversation: DesktopConversation) {
+  function archiveConversation(conversation: DesktopConversation) {
+    setSidebarActionError(null);
+    setArchiveTarget(conversation);
+  }
+
+  async function confirmArchiveSession() {
+    if (!archiveTarget || archivingSession) return;
+    const conversation = archiveTarget;
+    setArchivingSession(true);
     setSidebarActionError(null);
     try {
       applyDesktopState(await client.archiveConversation(conversation.id));
+      setArchiveTarget(null);
     } catch (error) {
       setSidebarActionError(`Could not archive “${conversation.title}”: ${errorMessage(error)}`);
+    } finally {
+      setArchivingSession(false);
     }
   }
 
@@ -4325,6 +4339,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
           </form>
         </div>
       )}
+
+      {archiveTarget && <ConfirmActionDialog title={`Archive “${archiveTarget.title}”?`} description="History is kept. Any Channel binding will be removed: a shared group creates a new Session on its next mention, and an old topic no longer continues this Session. Unarchiving does not restore the binding." action="Archive Session" busy={archivingSession} error={sidebarActionError} onCancel={() => setArchiveTarget(null)} onConfirm={() => void confirmArchiveSession()} />}
 
       {removeSourceTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setRemoveSourceTarget(null); }} onKeyDown={(event) => { if (event.key === "Escape" && !isBusy) setRemoveSourceTarget(null); }}>

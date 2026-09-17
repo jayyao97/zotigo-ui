@@ -6,6 +6,7 @@ import { canConfigureChannelGroup, channelGroupName, type ChannelConnection, typ
 import type { DesktopConversation, DesktopProject, DesktopWorkspace } from "../../shared/clientTypes";
 import type { AgentCatalogEntry, AgentModel, RuntimeProfile, ZotigoSession } from "../../shared/zotigod";
 import { useClient } from "../ClientContext";
+import { ConfirmActionDialog } from "../ConfirmActionDialog";
 import { ProjectDisclosureIcon } from "../SidebarDisclosureIcons";
 import { compatibleReasoningEffort, RuntimeSettingsPicker } from "../conversation/ConversationComposer";
 
@@ -61,6 +62,7 @@ export function ChannelsPage({ hostName, projects, workspaces, agents = [], sess
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ChannelConnection | null>(null);
   const [status, setStatus] = useState("");
   const [groupMembers, setGroupMembers] = useState<ChannelSender[]>([]);
   const [groupMembersError, setGroupMembersError] = useState("");
@@ -298,7 +300,7 @@ export function ChannelsPage({ hostName, projects, workspaces, agents = [], sess
             <label className="channels-check"><input type="checkbox" checked={connectionDraft.review_all_tools} onChange={(event) => setConnectionDraft({ ...connectionDraft, review_all_tools: event.target.checked })} />Enable automatic approval review for Channel sessions</label>
             <p className="channels-help">Zotigo reviews otherwise-safe tool calls. Codex automatically reviews the approval requests that Codex emits.</p>
             <div className="channels-capability"><CheckCircle2 size={15} /><span>COT execution display supported</span><small>The final answer is sent separately in the same Feishu topic.</small></div>
-            <div className="channels-actions channels-form-actions"><button className="primary" disabled={busy} onClick={() => run(async () => { const input = { ...connectionDraft, allow_chat_ids: [] }; if (!input.app_secret) delete input.app_secret; const saved = !creatingConnection && selectedConnection ? await api.updateChannelConnection(selectedConnection.id, input) : await api.createChannelConnection(input); await load(saved.id, true); setStatus("Connection saved."); })}><Save size={14} />Save</button>{!creatingConnection && selectedConnection && <button disabled={busy} onClick={() => run(async () => { await api.deleteChannelConnection(selectedConnection.id); await load("", true); })}><Trash2 size={14} />Delete</button>}<small>Saves the connection, prompt, and approval settings above.</small></div>
+            <div className="channels-actions channels-form-actions"><button className="primary" disabled={busy} onClick={() => run(async () => { const input = { ...connectionDraft, allow_chat_ids: [] }; if (!input.app_secret) delete input.app_secret; const saved = !creatingConnection && selectedConnection ? await api.updateChannelConnection(selectedConnection.id, input) : await api.createChannelConnection(input); await load(saved.id, true); setStatus("Connection saved."); })}><Save size={14} />Save</button>{!creatingConnection && selectedConnection && <button disabled={busy} onClick={() => { setStatus(""); setDeleteTarget(selectedConnection); }}><Trash2 size={14} />Delete</button>}<small>Saves the connection, prompt, and approval settings above.</small></div>
           </section>
         </div>}
         {selectedGroup && groupConversation && groupDraft && <div className="channels-grid">
@@ -343,5 +345,6 @@ export function ChannelsPage({ hostName, projects, workspaces, agents = [], sess
         {selectedGroup && !groupConversation && <div className="channels-empty"><CircleAlert size={18} /><p>This group could not be prepared for configuration. Refresh the group list and try again.</p></div>}
       </div>
     </section>
+    {deleteTarget && <ConfirmActionDialog title={`Delete “${deleteTarget.name}”?`} description="This removes the connection and its cached Channel messages. All Sessions must be unbound or archived first. Session history is kept." action="Delete connection" busy={busy} error={status} onCancel={() => setDeleteTarget(null)} onConfirm={() => run(async () => { await api.deleteChannelConnection(deleteTarget.id); setDeleteTarget(null); await load("", true); })} />}
   </section>;
 }
