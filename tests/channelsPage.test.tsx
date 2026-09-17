@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import { act, createRef } from "react";
 import { createRoot } from "react-dom/client";
 
-import type { ChannelConnection, ChannelConversation, ChannelConversationInput, ChannelGroup } from "../shared/channels";
+import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, ChannelConversationInput, ChannelGroup } from "../shared/channels";
 import type { ClientApi, DesktopProject, DesktopWorkspace } from "../shared/clientTypes";
 import type { AgentCatalogEntry, ZotigoSession } from "../shared/zotigod";
 import { ChannelsPage } from "../src/channels/ChannelsPage";
@@ -54,6 +54,36 @@ function button(container: ParentNode, label: string) {
   assert.ok(result, `button containing ${label}`);
   return result;
 }
+
+test("connection Save follows and includes prompt settings", async () => {
+  const restore = installDom();
+  try {
+    const configured = { ...connection("connection-1", "Bot One"), agent_instructions: "Use connection vocabulary.", approval_instructions: "Review connection actions." };
+    let savedInput: ChannelConnectionInput | undefined;
+    const api = {
+      listChannelConnections: async () => [configured],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+      updateChannelConnection: async (_id: string, input: ChannelConnectionInput) => {
+        savedInput = input;
+        return { ...configured, ...input };
+      },
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+
+    const prompt = [...document.querySelectorAll("h2")].find((heading) => heading.textContent === "Prompt and approval")!;
+    const actions = document.querySelector("#root .channels-form-actions")!;
+    assert.ok(prompt.compareDocumentPosition(actions) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    await act(async () => click(button(actions, "Save")));
+    await flush();
+    assert.equal(savedInput?.agent_instructions, "Use connection vocabulary.");
+    assert.equal(savedInput?.approval_instructions, "Review connection actions.");
+    assert.match(actions.textContent ?? "", /connection, prompt, and approval/);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
 
 test("channel navigation separates available groups from bound Project sessions", async () => {
   const restore = installDom();
