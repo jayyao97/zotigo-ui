@@ -3994,7 +3994,11 @@ p {
 .workspace-overview-row { grid-template-columns: 20px minmax(0, 1fr) auto auto auto; }
 .workspace-overview-row > button { min-height: 26px; border: 0; background: transparent; color: var(--text-muted); font-size: 10.5px; }
 .project-overview-empty { color: var(--text-dim); font-size: 12px; padding: 16px 13px; }
-.workspace-sources-dialog { width: min(640px, calc(100vw - 48px)); }
+.workspace-sources-dialog {
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
 .workspace-sources-dialog header p { margin-top: 4px; color: var(--text-muted); font-size: 12px; }
 .workspace-binding-list, .workspace-add-source { display: grid; gap: 7px; margin-top: 14px; }
 .workspace-binding-list > span, .workspace-add-source > span { color: var(--text-muted); font-size: 12px; font-weight: 500; }
