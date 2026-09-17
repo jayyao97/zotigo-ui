@@ -1,12 +1,33 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import type { ImageFileSnapshot, SaveTextFileInput, TextFileSnapshot } from "../shared/clientTypes";
 
 const maximumPreviewBytes = 5 * 1024 * 1024;
 const maximumEditableBytes = 1024 * 1024;
 const maximumImagePreviewBytes = 10 * 1024 * 1024;
 const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".ico", ".svg"]);
+const localFileWrites = new Map<string, Promise<void>>();
+
+function contentRevision(content: Uint8Array): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+async function withLocalFileWrite<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
+  const previous = localFileWrites.get(filePath) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const current = previous.catch(() => {}).then(() => gate);
+  localFileWrites.set(filePath, current);
+  await previous.catch(() => {});
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (localFileWrites.get(filePath) === current) localFileWrites.delete(filePath);
+  }
+}
 
 export type LocalPathOpenResult =
   | { kind: "system"; path: string }
@@ -55,6 +76,7 @@ export async function openAuthorizedLocalPath(requestedPath: string, roots: stri
       path: resolved,
       name: path.basename(resolved),
       content,
+      contentRevision: contentRevision(buffer),
       sizeBytes: stat.size,
       mtimeMs: stat.mtimeMs,
       readOnly: stat.size > maximumEditableBytes,
@@ -95,16 +117,23 @@ export function imageMediaType(extension: string, data: Uint8Array): string | nu
 
 export async function saveAuthorizedTextFile(input: SaveTextFileInput, roots: string[]): Promise<TextFileSnapshot> {
   const resolved = authorizedExistingPath(input.path, roots);
-  const stat = await fs.promises.stat(resolved);
-  if (!stat.isFile()) throw new Error("Only files can be saved.");
-  if (stat.size > maximumEditableBytes) throw new Error("Large files are read-only.");
-  if (stat.mtimeMs !== input.expectedMtimeMs) throw new Error("File changed on disk. Reopen it before saving.");
-  if (Buffer.byteLength(input.content, "utf8") > maximumEditableBytes) throw new Error("File is too large to save in Zotigo.");
+  return withLocalFileWrite(resolved, async () => {
+    const stat = await fs.promises.stat(resolved);
+    if (!stat.isFile()) throw new Error("Only files can be saved.");
+    if (stat.size > maximumEditableBytes) throw new Error("Large files are read-only.");
+    if (input.expectedContentRevision !== undefined) {
+      const current = await fs.promises.readFile(resolved);
+      if (contentRevision(current) !== input.expectedContentRevision) throw new Error("File changed on disk. Reopen it before saving.");
+    } else if (stat.mtimeMs !== input.expectedMtimeMs) {
+      throw new Error("File changed on disk. Reopen it before saving.");
+    }
+    if (Buffer.byteLength(input.content, "utf8") > maximumEditableBytes) throw new Error("File is too large to save in Zotigo.");
 
-  await fs.promises.writeFile(resolved, input.content, "utf8");
-  const saved = await openAuthorizedLocalPath(resolved, roots);
-  if (saved.kind !== "text") throw new Error("Saved file is no longer readable as text.");
-  return saved.file;
+    await fs.promises.writeFile(resolved, input.content, "utf8");
+    const saved = await openAuthorizedLocalPath(resolved, roots);
+    if (saved.kind !== "text") throw new Error("Saved file is no longer readable as text.");
+    return saved.file;
+  });
 }
 
 export function resolveLocalPathReference(

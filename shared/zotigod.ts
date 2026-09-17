@@ -27,6 +27,8 @@ export interface ZotigoSession {
   error_code?: string;
   working: boolean;
   active_tool?: string;
+  channel_tools_version?: number;
+  channel_tools_eligible?: boolean;
   context_usage?: {
     tokens: number;
     window: number;
@@ -126,6 +128,15 @@ export interface DisplayTurn {
   provider_finish_reason?: string;
   last_agent_message?: string;
   duration_ms?: number;
+  usage?: TokenUsage;
+}
+
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
 }
 
 export interface DisplayApproval {
@@ -208,6 +219,25 @@ export interface DisplayCommand {
   reason?: string;
   profile?: string;
   approval_policy?: ApprovalPolicy;
+  request_context?: RequestContext;
+}
+
+export interface RequestContext {
+  source: string;
+  connection_id?: string;
+  connection_name?: string;
+  conversation_id?: string;
+  conversation_name?: string;
+  conversation_type?: string;
+  external_conversation_id?: string;
+  external_root_message_id?: string;
+  external_thread_id?: string;
+  external_message_id?: string;
+  actor: {
+    id: string;
+    display_name?: string;
+    role: string;
+  };
 }
 
 export interface DisplayContextCompaction {

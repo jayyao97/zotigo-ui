@@ -14,6 +14,15 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     return transport.invoke(channel, ...args);
   };
   return {
+	listChannelConnections: () => invoke("channels:list-connections"),
+	createChannelConnection: (input) => invoke("channels:create-connection", input),
+	updateChannelConnection: (id, input) => invoke("channels:update-connection", id, input),
+	deleteChannelConnection: (id) => invoke("channels:delete-connection", id),
+	listChannelGroups: (connectionId) => invoke("channels:list-groups", connectionId),
+	listChannelGroupMembers: (connectionId, chatId) => invoke("channels:list-group-members", connectionId, chatId),
+	listChannelConversations: (connectionId) => invoke("channels:list-conversations", connectionId),
+	updateChannelConversation: (id, input) => invoke("channels:update-conversation", id, input),
+	listChannelMessages: (conversationId) => invoke("channels:list-messages", conversationId),
     listDirectory: (input) => invoke("desktop:list-directory", input),
     openFile: async (path, sessionId) => {
       try {
