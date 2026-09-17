@@ -23,6 +23,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
 	listChannelConversations: (connectionId) => invoke("channels:list-conversations", connectionId),
 	updateChannelConversation: (id, input) => invoke("channels:update-conversation", id, input),
 	listChannelMessages: (conversationId) => invoke("channels:list-messages", conversationId),
+    previewImage: (input) => invoke("desktop:preview-image", input),
     listDirectory: (input) => invoke("desktop:list-directory", input),
     openFile: async (path, sessionId) => {
       try {

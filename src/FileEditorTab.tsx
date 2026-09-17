@@ -1,3 +1,4 @@
+import { MarkdownImage, MarkdownImageContext } from "./MarkdownImage";
 import { Check, ChevronRight, Code2, Copy, Eye, LoaderCircle, Save } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,6 +11,7 @@ export type FileEditorMode = "preview" | "source";
 export type FileSaveStatus = "clean" | "dirty" | "saving" | "error";
 
 export function FileEditorTab({
+  sessionId,
   file,
   draft,
   mode,
@@ -22,6 +24,7 @@ export function FileEditorTab({
   onModeChange,
   onSave,
 }: {
+  sessionId?: string;
   file: TextFileSnapshot;
   draft: string;
   mode: FileEditorMode;
@@ -90,18 +93,20 @@ export function FileEditorTab({
           <Save size={14} />
         </button>
       </header>
-      {file.readOnly && <div className="file-editor-banner">Large file opened read-only</div>}
+      {file.readOnly && <div className="file-editor-banner">File opened read-only</div>}
       {saveError && <div className="file-editor-banner error">{saveError}</div>}
       {preview ? (
+        <MarkdownImageContext.Provider value={{ sessionId, basePath: file.path, baseKind: "file" }}>
         <div className="file-markdown-preview markdown-copy" data-markdown-file={file.path}>
           <ReactMarkdown
-            components={{ pre: MarkdownCodeBlock }}
+            components={{ pre: MarkdownCodeBlock, img: MarkdownImage }}
             remarkPlugins={[remarkGfm]}
             urlTransform={markdownUrlTransform}
           >
             {draft}
           </ReactMarkdown>
         </div>
+        </MarkdownImageContext.Provider>
       ) : (
         <CodeEditor
           value={draft}

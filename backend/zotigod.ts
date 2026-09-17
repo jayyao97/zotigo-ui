@@ -1668,6 +1668,12 @@ function isDisplayItemType(value: string): value is DisplayItemType {
 export function openDaemonFile(input: unknown): Promise<import("./localFileService").LocalPathOpenResult> {
   return requestJSON("/files/open", { signal: AbortSignal.timeout(30000), method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }) as Promise<import("./localFileService").LocalPathOpenResult>;
 }
+export async function previewDaemonImage(input: unknown): Promise<import("../shared/clientTypes").ImagePreviewResult> {
+  const result = await requestJSON("/files/open", { signal: AbortSignal.timeout(30000), method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  const value = result as import("../shared/clientTypes").ImagePreviewResult;
+  if (value?.kind !== "image" && value?.kind !== "requires_confirmation") throw new Error("This file is not an image.");
+  return value;
+}
 export function saveDaemonFile(input: unknown): Promise<import("../shared/clientTypes").TextFileSnapshot> {
   return requestJSON("/files/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }) as Promise<import("../shared/clientTypes").TextFileSnapshot>;
 }

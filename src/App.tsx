@@ -1,3 +1,6 @@
+import { WorkspaceSessionList } from "./WorkspaceSessionList";
+import { MarkdownImageContext } from "./MarkdownImage";
+import { useSessionSidePanel, type SessionSidePanels } from "./useSessionSidePanel";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { HostMenu } from "./HostShell";
 import { WorkspaceFileTree } from "./WorkspaceFileTree";
@@ -103,12 +106,10 @@ import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering"
 import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "./sidebarDisclosure";
 import {
   closeSidePanelTab,
-  emptySidePanelTabs,
   retainFileTabs,
   fileSidePanelTab,
   openSidePanelTab,
   subagentSidePanelTab,
-  type SidePanelTabsState,
   type SidePanelTab,
 } from "../shared/sidePanelTabs";
 import {
@@ -222,6 +223,7 @@ function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange
 }) {
   if (state.kind === "image") return <FileImageTab file={state.file} workspaceRoot={state.workspaceRoot} />;
   return <FileEditorTab
+    sessionId={state.sessionId}
     file={state.file}
     draft={state.draft}
     mode={state.mode}
@@ -239,9 +241,7 @@ type ComposerDraft = ComposerDraftState<ComposerAttachment>;
 type HostVolatileState = {
   composerDrafts: Record<string, ComposerDraft>;
   openFiles: Record<string, OpenFileState>;
-  sidePanelTabs: SidePanelTabsState;
-  sidePanelOpen: boolean;
-  sidePanelExpanded: boolean;
+  sessionSidePanels: SessionSidePanels;
 };
 type ConversationContextMenu = {
   conversationId: string;
@@ -506,17 +506,16 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const [renameDialogWorkspaceId, setRenameDialogWorkspaceId] = useState<string | null>(null);
   const [renameDialogWorkspaceTitleDraft, setRenameDialogWorkspaceTitleDraft] = useState("");
   const [isSavingWorkspaceTitle, setIsSavingWorkspaceTitle] = useState(false);
-  const [sidePanelTabs, setSidePanelTabs] = useState<SidePanelTabsState>(() => restoredHostState?.sidePanelTabs ?? emptySidePanelTabs);
+  const { panels: sessionSidePanels, sidePanelTabs, setSidePanelTabs, sidePanelOpen, setSidePanelOpen,
+    sidePanelExpanded, setSidePanelExpanded, directoryLocation, setDirectoryLocation, fileOpenInOtherSession,
+  } = useSessionSidePanel(desktopState.selectedConversationId ?? "new", restoredHostState?.sessionSidePanels);
   const [sidePanelWidth, setSidePanelWidth] = useState(defaultSidePanelWidth);
   const [isSidePanelResizing, setIsSidePanelResizing] = useState(false);
-  const [sidePanelOpen, setSidePanelOpen] = useState(restoredHostState?.sidePanelOpen ?? false);
-  const [sidePanelExpanded, setSidePanelExpanded] = useState(restoredHostState?.sidePanelExpanded ?? false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [treeVisible, setTreeVisible] = useState(true);
   const fileOpenRequest = useRef(0);
   const [fileOpenError, setFileOpenError] = useState("");
   const [fileOpening, setFileOpening] = useState(false);
-  const [directoryLocation, setDirectoryLocation] = useState<{ path: string; sessionId?: string } | null>(null);
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>(() => normalizeHostFilesForRestore(restoredHostState?.openFiles ?? {}));
   const openFilesRef = useRef(openFiles);
   const hostSwitchingRef = useRef(false);
@@ -593,16 +592,12 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const volatileStateRef = useRef<HostVolatileState>({
     composerDrafts,
     openFiles,
-    sidePanelTabs,
-    sidePanelOpen,
-    sidePanelExpanded,
+    sessionSidePanels,
   });
   volatileStateRef.current = {
     composerDrafts,
     openFiles,
-    sidePanelTabs: retainFileTabs(sidePanelTabs),
-    sidePanelOpen,
-    sidePanelExpanded,
+    sessionSidePanels: Object.fromEntries(Object.entries(sessionSidePanels).map(([id, panel]) => [id, { ...panel, tabs: retainFileTabs(panel.tabs) }])),
   };
 
   useEffect(() => () => {
@@ -996,7 +991,9 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     setIsEditingConversationTitle(false);
     setConversationTitleDraft(selectedConversation?.title ?? "");
     setPauseRequestedTurnId(null);
-    setSidePanelTabs(retainFileTabs);
+    fileOpenRequest.current++;
+    setFileOpening(false);
+    setFileOpenError("");
     setAvailableSkills([]);
     setSkillsError(null);
     setSkillMenuDismissed(false);
@@ -3055,7 +3052,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
       if (timer !== undefined) window.clearTimeout(timer);
       fileSaveTimersRef.current.delete(tab.path);
       const next = { ...openFilesRef.current };
-      delete next[tab.path];
+      if (!fileOpenInOtherSession(tab.path)) delete next[tab.path];
       openFilesRef.current = next;
       setOpenFiles(next);
     }
@@ -3176,7 +3173,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const workspaceFileRoot = selectedWorkspace?.root_path || selectedSession?.working_directory || "";
   const treeLocation = directoryLocation ?? { path: workspaceFileRoot, sessionId: selectedSession?.id };
   useEffect(() => {
-    setDirectoryLocation(null);
     fileOpenRequest.current++;
     setFileOpenError(""); setFileOpening(false);
   }, [workspaceFileRoot, selectedSession?.id]);
@@ -3222,6 +3218,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const activeSidePanelTab = sidePanelTabs.tabs.find((tab) => tab.id === sidePanelTabs.activeTabId) ?? null;
 
   return (
+    <MarkdownImageContext.Provider value={{ sessionId: selectedSession?.id, basePath: selectedSession?.working_directory ?? selectedWorkspace?.root_path ?? null, baseKind: "directory" }}>
     <main
       ref={appFrameRef}
       className={`app-frame ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
@@ -3552,7 +3549,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                                 )}
                               </div>
                               {workspaceOpen && workspaceConversations.length > 0 && (
-                                <div className="sidebar-session-list workspace-sessions">
+                                <WorkspaceSessionList>
                                   {workspaceConversations.map((conversation) => (
                                     <ConversationNavItem
                                       key={conversation.id}
@@ -3571,7 +3568,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                                       )}
                                     />
                                   ))}
-                                </div>
+                                </WorkspaceSessionList>
                               )}
                             </div>
                           );
@@ -4808,6 +4805,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
         </div>
       )}
     </main>
+    </MarkdownImageContext.Provider>
   );
 }
 

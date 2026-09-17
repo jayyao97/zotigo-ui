@@ -326,3 +326,29 @@ test("directory browsing and literal file paths stay on the selected daemon", as
     assert.equal(rejected.ok, false); assert.equal(seen.length, 5);
   } finally { service.dispose(); const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed; }
 });
+
+test("explicit local links preview outside text read-only and never launch unsupported files", async () => {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "explicit-preview-"));
+  const oldUrl = getDaemonConfig().baseUrl;
+  const daemon = createServer((request, response) => {
+    const data = request.url === "/projects" ? { projects: [] } : { sessions: [] };
+    response.end(JSON.stringify({ code: "ok", data }));
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+  let launched = false;
+  const service = createApplicationService(platform({ openPath: async () => { launched = true; } }), () => {});
+  try {
+    const text = path.join(root, "outside.txt"); const binary = path.join(root, "outside.bin");
+    await fs.writeFile(text, "read me"); await fs.writeFile(binary, Buffer.from([0, 1, 2]));
+    const result = await service.invoke("desktop:open-markdown-link", [{ href: text, basePath: null, baseKind: "directory" }]);
+    assert.ok(result.ok);
+    assert.equal((result.value as {file:{readOnly:boolean}}).file.readOnly, true);
+    const blocked = await service.invoke("desktop:open-markdown-link", [{ href: binary, basePath: null, baseKind: "directory" }]);
+    assert.equal(blocked.ok, false); assert.equal(launched, false);
+  } finally {service.dispose();setDaemonBaseUrl(oldUrl);daemon.close();await fs.rm(root,{recursive:true,force:true});}
+});
