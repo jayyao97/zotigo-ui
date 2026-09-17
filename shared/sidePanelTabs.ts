@@ -35,7 +35,7 @@ export function fileSidePanelTab(path: string, line?: number, column?: number): 
   return { id: `file:${path}`, kind: "file", path, line, column };
 }
 
-/** Session-bound transcripts expire on navigation; file drafts remain open. */
+/** Only file tabs survive a host remount; transcripts are reloaded from the daemon. */
 export function retainFileTabs(state: SidePanelTabsState): SidePanelTabsState {
   const tabs = state.tabs.filter((tab) => tab.kind === "file" || tab.kind === "files");
   return { tabs, activeTabId: tabs.some((tab) => tab.id === state.activeTabId) ? state.activeTabId : null };

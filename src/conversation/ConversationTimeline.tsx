@@ -1,3 +1,4 @@
+import { MarkdownImage } from "../MarkdownImage";
 import {
   Children,
   type ReactNode,
@@ -1093,7 +1094,7 @@ export function UserMessage({ text, kicker, children, attachments }: { text: str
 const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
   return (
     <ReactMarkdown
-      components={{ pre: MarkdownCodeBlock }}
+      components={{ pre: MarkdownCodeBlock, img: MarkdownImage }}
       remarkPlugins={[remarkGfm]}
       urlTransform={markdownUrlTransform}
     >

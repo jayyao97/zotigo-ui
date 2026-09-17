@@ -40,7 +40,7 @@ test("closing an active side panel tab selects its neighbor", () => {
   assert.equal(closed.activeTabId, "file:/workspace/main.go");
 });
 
-test("navigating sessions retains open files and discards session-bound transcripts", () => {
+test("host restore retains file tabs and discards transient transcripts", () => {
   let state = openSidePanelTab(emptySidePanelTabs, { id: "files", kind: "files" });
   state = openSidePanelTab(state, subagentSidePanelTab("session-a-run"));
   state = openSidePanelTab(state, fileSidePanelTab("/session-a/README.md", 5));

@@ -212,6 +212,8 @@ export type WorkspaceFileOpenResult =
   | { kind: "text"; file: TextFileSnapshot }
   | { kind: "image"; file: ImageFileSnapshot };
 
+export type ImagePreviewResult = { kind: "image"; file: ImageFileSnapshot } | { kind: "requires_confirmation" };
+
 export interface OpenMarkdownLinkInput {
   href: string;
   basePath: string | null;
@@ -253,6 +255,7 @@ export interface ClientApi {
 	updateChannelConversation(id: string, input: import("./channels").ChannelConversationInput): Promise<import("./channels").ChannelConversation>;
 	listChannelMessages(conversationId: string): Promise<import("./channels").ChannelMessage[]>;
   listDirectory(input: { path: string; purpose: "files" | "sources"; sessionId?: string }): Promise<DirectoryListing>;
+  previewImage(input: OpenMarkdownLinkInput & { explicitOpen?: boolean }): Promise<ImagePreviewResult>;
   openFile(path: string, sessionId?: string): Promise<WorkspaceFileOpenResult>;
   listHosts(): Promise<import("./hosts").HostProfile[]>;
   saveHost(input: import("./hosts").HostInput): Promise<import("./hosts").HostProfile>;

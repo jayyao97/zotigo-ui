@@ -1,5 +1,5 @@
 import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost } from "./hosts";
-import { openDaemonFile, saveDaemonFile, inspectCatalogSource, listDaemonDirectory } from "./zotigod";
+import { previewDaemonImage, openDaemonFile, saveDaemonFile, inspectCatalogSource, listDaemonDirectory } from "./zotigod";
 import fs from "node:fs";
 import path from "node:path";
 import { parseMarkdownLink } from "../shared/markdownLinks";
@@ -255,6 +255,14 @@ addWorkspaceSourceToCatalog,
     if (opened.kind !== "text") throw new Error("This file cannot be previewed as text.");
     return opened.file;
   });
+  handle("desktop:preview-image", async (input) => {
+    const value = assertOpenMarkdownLinkInput(input);
+    const explicitOpen = (input as { explicitOpen?: unknown }).explicitOpen;
+    if (explicitOpen !== undefined && typeof explicitOpen !== "boolean") throw new Error("Invalid preview intent.");
+    const link = parseMarkdownLink(value.href);
+    if (link.kind !== "local") throw new Error("Expected a file image path.");
+    return previewDaemonImage({ path: link.path, basePath: value.basePath, baseKind: value.baseKind, sessionId: value.sessionId, imageOnly: true, explicitOpen: explicitOpen === true });
+  });
   handle("desktop:open-markdown-link", async (input) => {
     const value = assertOpenMarkdownLinkInput(input);
     const link = parseMarkdownLink(value.href);
@@ -265,21 +273,20 @@ addWorkspaceSourceToCatalog,
     }
 
     if (currentHost()?.id && currentHost()?.id !== "local") {
-      const opened = await openDaemonFile({ path: link.path, basePath: value.basePath, baseKind: value.baseKind, sessionId: value.sessionId });
+      const opened = await openDaemonFile({ path: link.path, basePath: value.basePath, baseKind: value.baseKind, sessionId: value.sessionId, explicitOpen: true });
       if (opened.kind === "directory") return opened;
       if (opened.kind === "image") return opened;
       if (opened.kind !== "text") throw new Error("This remote file cannot be previewed.");
       return { kind: "text", file: opened.file, line: link.line, column: link.column } as const;
     }
     const requestedPath = resolveLocalPathReference(link.path, value.basePath, value.baseKind);
-    const opened = await openAuthorizedLocalPath(requestedPath, await authorizedFileRoots(requestedPath, value.sessionId));
+    const opened = await openAuthorizedLocalPath(requestedPath, [path.parse(requestedPath).root]);
     if (opened.kind === "directory") return opened;
-    if (opened.kind === "system") {
-      await platform.openPath(opened.path);
-      return { kind: "system" } as const;
-    }
+    if (opened.kind === "system") throw new Error("This file cannot be previewed.");
     if (opened.kind === "image") return opened;
-    return { kind: "text", file: opened.file, line: link.line, column: link.column } as const;
+    const roots = await authorizedFileRoots(requestedPath, value.sessionId);
+    const insideRoots = roots.some((root) => fs.existsSync(root) && isExistingPathInside(root, opened.file.path));
+    return { kind: "text", file: { ...opened.file, readOnly: opened.file.readOnly || !insideRoots }, line: link.line, column: link.column } as const;
   });
   handle("desktop:save-text-file", async (input) => {
     const value = assertSaveTextFileInput(input);
