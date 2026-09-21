@@ -312,6 +312,7 @@ export interface ClientApi {
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
   suggestConversationTitle(conversationId: string): Promise<DesktopState>;
   renameConversation(conversationId: string, title: string): Promise<DesktopState>;
+  forkConversation(conversationId: string, requestId: string, throughTurnId?: string): Promise<DesktopActionResult>;
   setConversationPinned(conversationId: string, pinned: boolean): Promise<DesktopState>;
   reorderWorkspaceConversations(conversationIds: string[]): Promise<DesktopState>;
   reorderPinnedConversations(conversationIds: string[]): Promise<DesktopState>;

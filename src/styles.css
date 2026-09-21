@@ -745,6 +745,30 @@ p {
   padding-left: 26px;
 }
 
+.sidebar-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms ease-in-out;
+}
+
+.sidebar-collapse.is-open {
+  grid-template-rows: 1fr;
+}
+
+.sidebar-collapse-content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Expanded workspace menus must be able to extend beyond the tree. */
+.sidebar-collapse.is-settled > .sidebar-collapse-content {
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-collapse { transition: none; }
+}
+
 .workspace-list {
   position: relative;
   display: grid;
@@ -5239,3 +5263,13 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 
 .workspace-sessions-more { border: 0; background: transparent; color: var(--text-dim); text-align: left; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 12px; }
 .workspace-sessions-more:hover { color: var(--text); }
+/* Turn actions remain discoverable for keyboard and touch users. */
+.turn-actions { display: flex; align-items: center; gap: 6px; opacity: 0; padding: 4px 0 12px; color: var(--text-muted); }
+.turn-response:hover .turn-actions, .turn-response:focus-within .turn-actions, .turn-response.is-latest .turn-actions { opacity: 1; }
+.turn-actions button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; background: transparent; color: inherit; border-radius: 8px; cursor: pointer; }
+.turn-actions button:hover { background: var(--surface-row); }
+.turn-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.turn-actions span { font-size: 12px; }
+.fork-lineage { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.fork-lineage button { color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; }
+@media (hover: none) { .turn-actions { opacity: 1; } }

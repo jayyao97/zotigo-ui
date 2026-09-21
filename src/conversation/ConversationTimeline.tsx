@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  GitBranch,
   Image,
   LoaderCircle,
   ShieldAlert,
@@ -50,6 +51,19 @@ import { PreviewImage } from "../ImagePreview";
 import { markdownUrlTransform } from "../markdownUrlTransform";
 import { defaultThinkingDisclosureOpen, latestReasoningItemId, type ThinkingDisplayMode } from "../thinkingDisplay";
 import { initialStreamingTextState, planStreamingTextUpdate } from "../streamingText";
+import { sessionTurnActions } from "../../shared/sessionFork";
+
+export function TurnActions({ text, disabled, title, onFork }: { text: string; disabled: boolean; title: string; onFork: () => void }) {
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  return <div className="turn-actions">
+    <button type="button" aria-label="Copy response" disabled={!text} title={copyStatus ?? "Copy response"} onClick={() => {
+      if (!navigator.clipboard) { setCopyStatus("Clipboard unavailable"); return; }
+      void navigator.clipboard.writeText(text).then(() => setCopyStatus("Copied"), () => setCopyStatus("Could not copy response"));
+    }}><Copy size={15} /></button>
+    <button type="button" aria-label="Fork from this turn" title={title} disabled={disabled} onClick={onFork}><GitBranch size={15} /></button>
+    {copyStatus && <span role="status">{copyStatus}</span>}
+  </div>;
+}
 
 export function formatCompactTokenCount(tokens: number): string {
   if (tokens < 1_000) return tokens.toLocaleString();
@@ -73,6 +87,9 @@ export const SessionTimeline = memo(function SessionTimeline({
   onSubmitApproval,
   submittingInteractionIds,
   onSubmitInteraction,
+  onFork,
+  forkBusy = false,
+  onOpenForkSource,
 }: {
   binding: DaemonSessionBinding | null;
   session: ZotigoSession | null;
@@ -89,6 +106,9 @@ export const SessionTimeline = memo(function SessionTimeline({
   onSubmitApproval: (approvalId: string, decisions: ApprovalDecisionInput[]) => Promise<void>;
   submittingInteractionIds: ReadonlySet<string>;
   onSubmitInteraction: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
+  onFork?: (turnId: string) => void;
+  forkBusy?: boolean;
+  onOpenForkSource?: (sessionId: string) => void;
 }) {
   const compactedItemCacheRef = useRef(new WeakMap<DisplayItem, { workspaceRoot: string; item: DisplayItem }>());
   const displayItems = useMemo(
@@ -96,6 +116,7 @@ export const SessionTimeline = memo(function SessionTimeline({
     [items, session?.working_directory],
   );
   const orderedItems = useMemo(() => orderLateTurnItems(displayItems), [displayItems]);
+  const turnActions = useMemo(() => sessionTurnActions(orderedItems), [orderedItems]);
   const visibleItems = useMemo(() => visibleDisplayItems(orderedItems), [orderedItems]);
   const recordedActiveTurn = latestActiveTurn(items);
   const activeTurn = itemsAuthoritative && (session?.state === "starting" || session?.state === "running")
@@ -123,6 +144,12 @@ export const SessionTimeline = memo(function SessionTimeline({
     <>
       {binding ? (
         <div className="display-log">
+          {session?.forked_from && <div className="assistant-note fork-lineage">
+            <GitBranch size={14} />
+            <button type="button" onClick={() => onOpenForkSource?.(session.forked_from!.session_id)}>
+              Forked from {session.forked_from.session_id} · {session.forked_from.through_turn_id}
+            </button>
+          </div>}
           {itemsLoading && visibleItems.length === 0 ? (
             <div className="assistant-note">
               <p>Loading display history...</p>
@@ -138,7 +165,8 @@ export const SessionTimeline = memo(function SessionTimeline({
           ) : (
             <>
               {timelineGroups.map((group) => {
-                const renderItem = (item: DisplayItem) => (
+                const renderItem = (item: DisplayItem) => {
+                  const rendered = (
                   <DisplayTimelineItem
                     key={item.id}
                     item={item}
@@ -157,7 +185,16 @@ export const SessionTimeline = memo(function SessionTimeline({
                     onSubmitInteraction={onSubmitInteraction}
                     smoothStreaming={smoothStreaming && streamingItemIds.has(item.id)}
                   />
-                );
+                  );
+                  const action = turnActions.get(item.id);
+                  if (!action || !onFork) return rendered;
+                  return <div key={item.id} className={`turn-response ${action.latest ? "is-latest" : ""}`}>
+                    {rendered}
+                    <TurnActions text={action.text} disabled={!itemsAuthoritative || forkBusy || !action.completed}
+                      title={action.completed ? "Fork from this turn" : "Fork is available after this turn completes"}
+                      onFork={() => onFork(action.turnId)} />
+                  </div>;
+                };
                 if (group.kind === "tools") {
                   return (
                     <HistoricalToolGroup
@@ -187,6 +224,9 @@ export const SessionTimeline = memo(function SessionTimeline({
               })}
               {activeTurn && !activeToolCall && (session?.active_tool || showThinking) && (
                 <ThinkingStatus label={session?.active_tool ? `Running ${session.active_tool}` : "Thinking"} />
+              )}
+              {onFork && activeTurn && ![...turnActions.values()].some((action) => action.turnId === activeTurn.turn?.id) && (
+                <div className="turn-response is-latest"><TurnActions text="" disabled title="Fork is available after this turn completes" onFork={() => {}} /></div>
               )}
             </>
           )}
