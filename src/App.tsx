@@ -1,4 +1,6 @@
 import { WorkspaceSessionList } from "./WorkspaceSessionList";
+import { SidebarCollapse } from "./SidebarCollapse";
+import { createForkRequestId } from "../shared/sessionFork";
 import { MarkdownImageContext } from "./MarkdownImage";
 import { useSessionSidePanel, type SessionSidePanels } from "./useSessionSidePanel";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
@@ -567,6 +569,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const olderSessionItemsLoadingRef = useRef(false);
   const conversationTitleInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const forkRequestsRef = useRef(new Map<string, string>());
+  const forkInFlightRef = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const stickToBottomRef = useRef(true);
   const sessionItemsRef = useRef<DisplayItem[]>([]);
@@ -1864,7 +1868,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   function openConversationContextMenu(event: ReactMouseEvent, conversationId: string) {
     event.preventDefault();
     const menuWidth = 184;
-    const menuHeight = 132;
+    const menuHeight = 170;
     setConversationContextMenu({
       conversationId,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
@@ -2765,6 +2769,29 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     }
   }
 
+  async function forkConversation(conversationId: string, throughTurnId?: string) {
+    if (isBusy || forkInFlightRef.current) return;
+    forkInFlightRef.current = true;
+    setIsBusy(true);
+    setMessage(null);
+    try {
+      const requestKey = JSON.stringify([conversationId, throughTurnId ?? null]);
+      const requestId = forkRequestsRef.current.get(requestKey) ?? createForkRequestId();
+      // Preserve the request identity on an uncertain response, including a catalog refresh failure.
+      forkRequestsRef.current.set(requestKey, requestId);
+      const result = await client.forkConversation(conversationId, requestId, throughTurnId);
+      applyDesktopActionResult(result);
+      if (result.error) throw new Error(result.error);
+      const binding = result.state.bindings.find((value) => value.daemon_session_id === result.session?.id);
+      if (binding) {
+        selectConversation(binding.conversation_id, result.state);
+        window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
+      }
+      forkRequestsRef.current.delete(requestKey);
+    } catch (error) { setMessage(errorMessage(error)); }
+    finally { forkInFlightRef.current = false; setIsBusy(false); }
+  }
+
   function archiveConversation(conversation: DesktopConversation) {
     setSidebarActionError(null);
     setArchiveTarget(conversation);
@@ -3416,7 +3443,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                       </div>
                     </div>
 
-                    {isOpen && (
+                    <SidebarCollapse open={isOpen}>
                       <div className="workspace-list">
                         {projectWorkspaces.map((workspace) => {
                           const workspaceConversations = projectConversations.filter(
@@ -3548,7 +3575,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                                   </div>
                                 )}
                               </div>
-                              {workspaceOpen && workspaceConversations.length > 0 && (
+                              {workspaceConversations.length > 0 && <SidebarCollapse open={workspaceOpen}>
                                 <WorkspaceSessionList>
                                   {workspaceConversations.map((conversation) => (
                                     <ConversationNavItem
@@ -3569,7 +3596,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                                     />
                                   ))}
                                 </WorkspaceSessionList>
-                              )}
+                              </SidebarCollapse>}
                             </div>
                           );
                         })}
@@ -3584,7 +3611,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                           </button>
                         )}
                       </div>
-                    )}
+                    </SidebarCollapse>
                   </div>
                 );
               })}
@@ -3671,6 +3698,12 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
             <span>{contextMenuConversation.pinned_at ? "Unpin" : "Pin"}</span>
           </button>
           <div className="workspace-action-menu-separator" />
+          <button type="button" role="menuitem" disabled={isBusy} onClick={() => {
+            setConversationContextMenu(null);
+            void forkConversation(contextMenuConversation.id);
+          }}>
+            <GitBranch size={14} strokeWidth={1.8} /><span>Fork session</span>
+          </button>
           <button
             type="button"
             role="menuitem"
@@ -3784,6 +3817,9 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
           <article className="conversation-body">
             {selectedConversation ? (
               <SessionTimeline
+                onFork={(turnId) => void forkConversation(selectedConversation.id, turnId)}
+                forkBusy={isBusy}
+                onOpenForkSource={(id) => selectConversation(id)}
                 binding={selectedBinding}
                 session={selectedSession}
                 items={timelineItems}

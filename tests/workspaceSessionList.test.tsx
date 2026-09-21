@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { WorkspaceSessionList } from "../src/WorkspaceSessionList";
+import { SidebarCollapse } from "../src/SidebarCollapse";
 function installDom() {
   const dom = new JSDOM("<!doctype html><html><body><main id=outside></main><div id=root></div></body></html>", {
     pretendToBeVisual: true,
@@ -45,4 +46,37 @@ test("workspace sessions reveal five at a time and collapse resets the limit",as
   await render(false);await render(true);assert.equal(document.querySelectorAll(".session").length,5);assert.ok(more());
   await render(false);await render(true,5);assert.equal(more(),null);
  } finally {await act(async()=>root.unmount());restore();}
+});
+
+test("sidebar collapse retains the list during motion, resets after closing, and tolerates reversal", async () => {
+  const restore = installDom();
+  const root = createRoot(document.getElementById("root")!);
+  const render = async (open: boolean) => {
+    await act(async () => root.render(<SidebarCollapse open={open}>
+      <WorkspaceSessionList>{Array.from({ length: 12 }, (_, i) => <span className="session" key={i}>{i}</span>)}</WorkspaceSessionList>
+    </SidebarCollapse>));
+  };
+  const settle = async () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 290)); });
+  try {
+    await render(true);
+    await act(async () => document.querySelector<HTMLButtonElement>(".workspace-sessions-more")!.click());
+    await render(false);
+    assert.equal(document.querySelectorAll(".session").length, 10);
+    assert.ok(document.querySelector(".sidebar-collapse[inert][aria-hidden=true]"));
+    await render(true);
+    await settle();
+    assert.equal(document.querySelectorAll(".session").length, 10);
+    assert.ok(document.querySelector(".sidebar-collapse.is-open.is-settled:not([inert])"));
+    await render(false);
+    await settle();
+    assert.equal(document.querySelectorAll(".session").length, 0);
+    await render(true);
+    assert.equal(document.querySelectorAll(".session").length, 5);
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: true }) });
+    await render(false);
+    assert.equal(document.querySelectorAll(".session").length, 0);
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
 });

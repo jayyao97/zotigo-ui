@@ -7,6 +7,7 @@ import { decodedBase64Size, maxMessageImageCount, messageImageSizeError } from "
 import { imageDownloadUrl } from "./imageDownload";
 import {
   createSession,
+  forkSession,
   getAgents,
   getDaemonConfig,
   getSession,
@@ -350,6 +351,14 @@ addWorkspaceSourceToCatalog,
   handle("desktop:rename-conversation", (conversationIdValue, title) => {
     const conversationId = assertString(conversationIdValue, "conversationId");
     return renameCatalogConversation(conversationId, assertNonEmptyString(title, "title"));
+  });
+  handle("desktop:fork-conversation", async (conversationId, requestId, throughTurnId) => {
+    const session = await forkSession(
+      assertNonEmptyString(conversationId, "conversationId"),
+      assertNonEmptyString(requestId, "requestId"),
+      throughTurnId === undefined ? undefined : assertNonEmptyString(throughTurnId, "throughTurnId"),
+    );
+    return { state: await getCatalogDesktopState(), session };
   });
   handle("desktop:set-conversation-pinned", (conversationId, pinned) =>
     pinCatalogConversation(assertString(conversationId, "conversationId"), assertBoolean(pinned, "pinned")),

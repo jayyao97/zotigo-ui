@@ -9,6 +9,7 @@ import {
   deleteCatalogProject,
   previewCatalogProjectDelete,
   createSession,
+  forkSession,
   changeSessionCodexSettings,
   getAgents,
   getSession,
@@ -48,6 +49,9 @@ before(async () => {
   server = http.createServer(async (request, response) => {
     const body = await readJSONBody(request);
     requests.push({ method: request.method, url: request.url, body });
+    if (request.method === "POST" && request.url === "/sessions/session-1/fork") {
+      return writeOK(response, { ...session(), id: "fork-1", forked_from: { session_id: "session-1", through_turn_id: "turn-2" } }, 201);
+    }
     if (request.method === "GET" && request.url === "/projects/project-1/delete-preview") {
       return writeOK(response, projectImpact);
     }
@@ -438,6 +442,15 @@ test("pauses the active turn through the public session endpoint", async () => {
     url: "/sessions/session-1/pause",
     body: { turn_id: "turn-1" },
   });
+});
+
+test("fork sends a stable request ID and optional exact boundary and parses lineage", async () => {
+  const created = await forkSession("session-1", "request-1", "turn-2");
+  assert.equal(created.id, "fork-1");
+  assert.deepEqual(created.forked_from, { session_id: "session-1", through_turn_id: "turn-2" });
+  assert.deepEqual(requests.at(-1), { method: "POST", url: "/sessions/session-1/fork", body: { request_id: "request-1", through_turn_id: "turn-2" } });
+  await forkSession("session-1", "request-2");
+  assert.deepEqual(requests.at(-1)?.body, { request_id: "request-2" });
 });
 
 function session() {

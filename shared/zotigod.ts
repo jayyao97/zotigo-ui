@@ -29,6 +29,7 @@ export interface ZotigoSession {
   active_tool?: string;
   channel_tools_version?: number;
   channel_tools_eligible?: boolean;
+  forked_from?: { session_id: string; through_turn_id: string };
   context_usage?: {
     tokens: number;
     window: number;

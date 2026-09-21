@@ -92,6 +92,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     sendConversationMessage: (input) => invoke("desktop:send-conversation-message", input),
     suggestConversationTitle: (conversationId) => invoke("desktop:suggest-conversation-title", conversationId),
     renameConversation: (conversationId, title) => invoke("desktop:rename-conversation", conversationId, title),
+    forkConversation: (conversationId, requestId, throughTurnId) => invoke("desktop:fork-conversation", conversationId, requestId, throughTurnId),
     setConversationPinned: (conversationId, pinned) => invoke("desktop:set-conversation-pinned", conversationId, pinned),
     reorderWorkspaceConversations: (conversationIds) => invoke("desktop:reorder-workspace-conversations", conversationIds),
     reorderPinnedConversations: (conversationIds) => invoke("desktop:reorder-pinned-conversations", conversationIds),

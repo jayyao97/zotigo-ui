@@ -413,6 +413,14 @@ export function getSession(id: string): Promise<ZotigoSession> {
   return requestJSON(`/sessions/${encodeURIComponent(id)}`).then((value) => parseSession(value, "get session response"));
 }
 
+export function forkSession(id: string, requestId: string, throughTurnId?: string): Promise<ZotigoSession> {
+  return requestJSON(`/sessions/${encodeURIComponent(id)}/fork`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request_id: requestId, through_turn_id: throughTurnId }),
+  }).then((value) => parseSession(value, "fork session response"));
+}
+
 export function startSession(id: string): Promise<ZotigoSession> {
   return requestJSON(`/sessions/${encodeURIComponent(id)}/start`, {
     method: "POST",
@@ -1010,6 +1018,7 @@ function parseSessionListResponse(value: unknown): SessionListResponse {
 function parseSession(value: unknown, context: string): ZotigoSession {
   const record = expectRecord(value, context);
   const state = expectString(record.state, `${context} state`);
+  const fork = record.forked_from === undefined ? undefined : expectRecord(record.forked_from, `${context} forked_from`);
   if (!isSessionState(state)) {
     throw new Error(`${context} state is not supported: ${state}`);
   }
@@ -1021,6 +1030,10 @@ function parseSession(value: unknown, context: string): ZotigoSession {
   return {
     id: expectString(record.id, `${context} id`),
     state,
+    forked_from: fork ? {
+      session_id: expectString(fork.session_id, `${context} forked_from session_id`),
+      through_turn_id: expectString(fork.through_turn_id, `${context} forked_from through_turn_id`),
+    } : undefined,
     live: expectOptionalBoolean(record.live, `${context} live`) ?? state !== "offline",
     working_directory: expectOptionalString(record.working_directory, `${context} working_directory`),
     profile: expectOptionalString(record.profile, `${context} profile`),
