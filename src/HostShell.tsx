@@ -1,3 +1,4 @@
+import { ModelFavoritesProvider } from "./modelFavorites";
 import { bindClientGeneration } from "../shared/bindClientGeneration";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Plus, Server, Settings, Trash2, X } from "lucide-react";
@@ -116,17 +117,18 @@ export function HostShell() {
   function closePicker(values: SourceCandidate[]) { setPicker(false); pickerResult.current?.(values); pickerResult.current = null; }
   return <HostContext.Provider value={{ profiles, selected, busy, switchHost: (id) => void switchHost(id), settings: () => setSurface("settings") }}>
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
-      {ready ? <>
+      {ready ? <ModelFavoritesProvider key={selected} host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
           <App key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
         {surface === "settings" && <SettingsPage
+          hostName={profiles.find((host) => host.id === selected)?.name ?? selected}
           thinkingDisplay={thinkingDisplay}
           onThinkingDisplayChange={updateThinkingDisplay}
           onManageHosts={openHostSettings}
           onBack={() => setSurface("workbench")}
         />}
-      </> : <main className="web-login"><p>{error || "Loading hosts…"}</p></main>}
+      </ModelFavoritesProvider> : <main className="web-login"><p>{error || "Loading hosts…"}</p></main>}
     </ClientContext.Provider>
     {error && ready && <div className="host-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss error"><X size={14} /></button></div>}
     {hostSettingsOpen && <dialog ref={dialog} className="host-settings" onCancel={() => setHostSettingsOpen(false)}>

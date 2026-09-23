@@ -21,15 +21,15 @@ function item(sequence: number, type: DisplayItemType, turnId?: string, text?: s
     turn: turnId ? { id: turnId } : undefined, content: text ? [{ type: "text", text }] : undefined };
 }
 
-test("one footer per completed turn, latest is persistent and active is disabled", () => {
+test("only completed turns have a footer, copying the final response without progress messages", () => {
   const actions = sessionTurnActions([
     item(1, "turn_started", "a"), item(2, "assistant_message", "a", "First"),
     item(3, "assistant_message", "a", "Second"), item(4, "turn_completed", "a"),
     item(5, "user_message"), item(6, "turn_started", "b"), item(7, "assistant_message", "b", "Working"),
   ]);
-  assert.equal(actions.size, 2);
-  assert.deepEqual(actions.get("3"), { turnId: "a", completed: true, latest: false, text: "First\n\nSecond" });
-  assert.deepEqual(actions.get("7"), { turnId: "b", completed: false, latest: true, text: "Working" });
+  assert.equal(actions.size, 1);
+  assert.deepEqual(actions.get("3"), { turnId: "a", latest: false, text: "Second" });
+  assert.equal(actions.has("7"), false);
 });
 
 test("synced Codex user message does not erase turn boundary; hidden tool-only message does not steal footer", () => {
@@ -37,11 +37,28 @@ test("synced Codex user message does not erase turn boundary; hidden tool-only m
     item(1, "turn_started", "a"), item(2, "user_message", "a", "question"),
     item(3, "assistant_message", "a", "Answer"), item(4, "assistant_message", "a"), item(5, "turn_completed", "a"),
   ]);
-  assert.deepEqual(actions.get("3"), { turnId: "a", completed: true, latest: true, text: "Answer" });
+  assert.deepEqual(actions.get("3"), { turnId: "a", latest: true, text: "Answer" });
 });
 
 test("failed, incomplete and paginated turns cannot be forked", () => {
   assert.equal(sessionTurnActions([item(1, "assistant_message", "a", "Partial"), item(2, "turn_completed", "a")]).size, 0);
   const actions = sessionTurnActions([item(1, "turn_started", "a"), item(2, "assistant_message", "a", "Partial"), item(3, "turn_failed", "a")]);
-  assert.equal(actions.get("2")?.completed, false);
+  assert.equal(actions.size, 0);
+});
+
+test("progress between tool calls never owns actions until the final response completes", () => {
+  const items = [
+    item(1, "turn_started", "a"), item(2, "assistant_message", "a", "Checking"),
+    { ...item(3, "assistant_message", "a"), content: [{ type: "tool_call" }] },
+    { ...item(4, "assistant_message", "a"), content: [{ type: "tool_result" }] },
+    item(5, "assistant_message", "a", "Still checking"),
+    { ...item(6, "assistant_message", "a"), content: [{ type: "tool_call" }] },
+    { ...item(7, "assistant_message", "a"), content: [{ type: "tool_result" }] },
+    item(8, "assistant_message", "a", "Final answer"),
+  ];
+  for (let length = 1; length <= items.length; length++) {
+    assert.equal(sessionTurnActions(items.slice(0, length)).size, 0);
+  }
+  const actions = sessionTurnActions([...items, item(9, "turn_completed", "a")]);
+  assert.deepEqual([...actions.entries()], [["8", { turnId: "a", latest: true, text: "Final answer" }]]);
 });

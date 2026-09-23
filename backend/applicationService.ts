@@ -29,6 +29,7 @@ import {
   ZotigodRequestError,
   isMessageDuringActiveTurnError,
   setCatalogSessionPosition,
+  parseNavigationItem,
   setCatalogSessionTitle,
 	listChannelConnections,
 	createChannelConnection,
@@ -90,6 +91,8 @@ addWorkspaceSourceToCatalog,
   renameProjectInCatalog,
   renameWorkspaceInCatalog,
   reorderCatalogPinnedSessions,
+  reorderCatalogPinnedItems,
+  pinCatalogNavigation,
   reorderCatalogProjects,
   reorderCatalogWorkspaces,
   reorderCatalogWorkspaceSessions,
@@ -373,6 +376,13 @@ addWorkspaceSourceToCatalog,
   handle("desktop:reorder-pinned-conversations", (conversationIds) =>
     reorderCatalogPinnedSessions(assertStringArray(conversationIds, "conversationIds")),
   );
+  handle("desktop:set-navigation-pinned", (item, pinned) =>
+    pinCatalogNavigation(parseNavigationItem(item), assertBoolean(pinned, "pinned")),
+  );
+  handle("desktop:reorder-pinned-items", (items) => {
+    if (!Array.isArray(items)) throw new Error("Expected navigation items");
+    return reorderCatalogPinnedItems(items.map(parseNavigationItem));
+  });
   handle("desktop:archive-conversation", (conversationId) =>
     archiveCatalogConversation(assertString(conversationId, "conversationId")),
   );

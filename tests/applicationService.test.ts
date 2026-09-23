@@ -42,6 +42,7 @@ test("Project deletion crosses the shared client boundary and clears only its ow
     if (request.url === "/projects/p/workspaces") data = { workspaces: [] };
     if (request.url === "/projects/other/workspaces") data = { workspaces: [] };
     if (request.url === "/catalog/sessions") data = { sessions: [] };
+    if (request.url === "/catalog/navigation") data = { projects: [], workspaces: [], pinned: [], legacy_order_imported: true };
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ code: "ok", data }));
   });
@@ -146,7 +147,7 @@ test("Codex conversation creation forwards the selected approval policy", async 
       response.end(JSON.stringify({ code: "invalid_request", message: "captured" }));
       return;
     }
-    const data = request.url === "/projects" ? { projects: [] } : { sessions: [] };
+    const data = request.url === "/catalog/navigation" ? { projects: [], workspaces: [], pinned: [], legacy_order_imported: true } : request.url === "/projects" ? { projects: [] } : { sessions: [] };
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ code: "ok", data }));
   });
@@ -334,7 +335,7 @@ test("explicit local links preview outside text read-only and never launch unsup
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "explicit-preview-"));
   const oldUrl = getDaemonConfig().baseUrl;
   const daemon = createServer((request, response) => {
-    const data = request.url === "/projects" ? { projects: [] } : { sessions: [] };
+    const data = request.url === "/catalog/navigation" ? { projects: [], workspaces: [], pinned: [], legacy_order_imported: true } : request.url === "/projects" ? { projects: [] } : { sessions: [] };
     response.end(JSON.stringify({ code: "ok", data }));
   });
   daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");

@@ -1834,6 +1834,12 @@ p {
   padding-left: 2px;
 }
 
+.user-message-content.markdown-copy,
+.user-message-content.markdown-copy ul,
+.user-message-content.markdown-copy ol {
+  gap: 4px;
+}
+
 .markdown-copy .task-list-item {
   list-style: none;
   padding-left: 0;
@@ -3392,7 +3398,7 @@ p {
   width: 272px;
   border: 1px solid var(--border-heavy);
   border-radius: var(--radius-2xl);
-  background: color-mix(in srgb, var(--surface-elevated) 98%, transparent);
+  background: var(--color-background-editor-opaque);
   box-shadow: var(--elevation-prominent), 0 16px 40px rgb(0 0 0 / 0.28);
   padding: 6px;
 }
@@ -3454,7 +3460,7 @@ p {
   overflow-y: auto;
   border: 1px solid var(--border-heavy);
   border-radius: var(--radius-2xl);
-  background: color-mix(in srgb, var(--surface-elevated) 98%, transparent);
+  background: var(--color-background-editor-opaque);
   box-shadow: var(--elevation-prominent), 0 16px 40px rgb(0 0 0 / 0.28);
   padding: 6px;
 }
@@ -3488,18 +3494,24 @@ p {
   opacity: 0.55;
 }
 
-.app-frame.has-subagent-panel .runtime-settings-submenu,
-.conversation.has-inspector .runtime-settings-submenu {
+.runtime-settings-menu[data-submenu-side="right"] .runtime-settings-submenu {
+  right: auto;
+  left: calc(100% + 8px);
+}
+.runtime-settings-menu[data-submenu-side="inline"] .runtime-settings-submenu {
   right: 0;
-  bottom: calc(100% + 8px);
+  bottom: 0;
+  max-width: 100%;
 }
-
-@media (max-width: 900px) {
-  .runtime-settings-submenu {
-    right: 0;
-    bottom: calc(100% + 8px);
-  }
-}
+.runtime-settings-menu { max-width: calc(100vw - 16px); z-index: 100; }
+.runtime-favorites-list { max-height: min(320px, 40vh); overflow-y: auto; }
+.runtime-favorite { display: flex; align-items: center; }
+.runtime-favorite > button { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; background: transparent; text-align: left; padding: 8px; }
+.runtime-favorite > button:first-child { flex: 1; }
+.runtime-favorite > button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.runtime-favorite small { display: block; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.runtime-favorite > button:hover:not(:disabled), .runtime-favorite > button[aria-checked="true"] { background: var(--surface-row); }
+.runtime-favorites-empty { padding: 8px; margin: 0; color: var(--text-muted); font-size: 12px; }
 
 .runtime-settings-submenu button span {
   white-space: normal;
@@ -3610,6 +3622,16 @@ p {
 .image-preview-trigger:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 3px;
+}
+
+.markdown-copy .image-preview-trigger img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(480px, 60vh);
+  object-fit: contain;
+  border-radius: var(--radius-md);
 }
 
 .image-preview-dialog {
@@ -5019,6 +5041,7 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .settings-row strong { margin-bottom: 4px; font-size: 13px; }
 .settings-row small { max-width: 560px; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 
+.settings-favorite-fields select,
 .settings-row select,
 .settings-secondary-button {
   flex: 0 0 auto;
@@ -5264,12 +5287,27 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .workspace-sessions-more { border: 0; background: transparent; color: var(--text-dim); text-align: left; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 12px; }
 .workspace-sessions-more:hover { color: var(--text); }
 /* Turn actions remain discoverable for keyboard and touch users. */
-.turn-actions { display: flex; align-items: center; gap: 6px; opacity: 0; padding: 4px 0 12px; color: var(--text-muted); }
+.turn-actions { display: flex; align-items: center; gap: 4px; opacity: 0; padding: 4px 0 12px; color: var(--text-muted); }
 .turn-response:hover .turn-actions, .turn-response:focus-within .turn-actions, .turn-response.is-latest .turn-actions { opacity: 1; }
-.turn-actions button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; background: transparent; color: inherit; border-radius: 8px; cursor: pointer; }
+.turn-actions button { display: inline-flex; flex: 0 0 30px; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; background: transparent; color: inherit; border-radius: 8px; cursor: pointer; }
+.turn-actions button svg { flex-shrink: 0; }
 .turn-actions button:hover { background: var(--surface-row); }
 .turn-actions button:disabled { opacity: .4; cursor: not-allowed; }
 .turn-actions span { font-size: 12px; }
-.fork-lineage { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
-.fork-lineage button { color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; }
+.fork-lineage { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fork-lineage > svg { flex-shrink: 0; }
+.fork-lineage button { min-width: 0; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; }
+.fork-lineage button:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
 @media (hover: none) { .turn-actions { opacity: 1; } }
+
+.settings-favorites-description { margin: -4px 0 12px; color: var(--text-muted); font-size: 13px; }
+.settings-favorite-form { border-top: 1px solid var(--border); padding: 18px; }
+.settings-favorite-form h3 { margin: 0 0 14px; font-size: 14px; }
+.settings-favorite-fields { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.settings-favorite-fields label { display: grid; flex: 1 1 140px; min-width: 0; gap: 6px; color: var(--text-muted); font-size: 12px; }
+.settings-favorite-fields select { width: 100%; min-width: 0; }
+
+.settings-page { color-scheme: dark; }
+.workspace-sources-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.workspace-sources-heading > div { display: flex; gap: 6px; }
+.workspace-sources-heading button { min-height: 26px; padding: 0 8px; font-size: 12px; }

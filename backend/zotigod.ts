@@ -1,7 +1,7 @@
 import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplaySubagent, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
-import type { DaemonConfig } from "../shared/clientTypes";
+import type { DaemonConfig, NavigationItem } from "../shared/clientTypes";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, ChannelConversationInput, ChannelGroup, ChannelMessage } from "../shared/channels";
 
@@ -319,6 +319,36 @@ export async function listCatalogSessions(
   const record = expectRecord(await requestJSON(path), "catalog session list response");
   return expectArray(record.sessions, "catalog session list response sessions")
     .map((value, index) => parseCatalogSessionProjection(value, `catalog session list response sessions[${index}]`));
+}
+
+export function parseNavigationItem(value: unknown): NavigationItem {
+  const item = expectRecord(value, "navigation item");
+  if (item.kind !== "project" && item.kind !== "workspace" && item.kind !== "session") throw new Error("Invalid navigation item kind");
+  if (typeof item.id !== "string" || !item.id) throw new Error("Invalid navigation item id");
+  return { kind: item.kind, id: item.id };
+}
+
+export async function getCatalogNavigation() {
+  const record = expectRecord(await requestJSON("/catalog/navigation"), "navigation");
+  if (typeof record.legacy_order_imported !== "boolean") throw new Error("Invalid navigation migration state");
+  return {
+    legacyOrderImported: record.legacy_order_imported,
+    projects: expectArray(record.projects, "navigation projects").map(parseNavigationItem),
+    workspaces: expectArray(record.workspaces, "navigation workspaces").map(parseNavigationItem),
+    pinned: expectArray(record.pinned, "navigation pinned").map(parseNavigationItem),
+  };
+}
+
+export async function reorderCatalogNavigation(scope: "projects" | "workspaces" | "sessions" | "pinned", items: NavigationItem[], parentId?: string): Promise<void> {
+  await requestJSON("/catalog/navigation/order", jsonRequest("PUT", { scope, parent_id: parentId, items }));
+}
+
+export async function importCatalogNavigation(orders: { scope: string; parent_id?: string; items: NavigationItem[] }[]): Promise<void> {
+  await requestJSON("/catalog/navigation/import", jsonRequest("POST", { orders }));
+}
+
+export async function setCatalogNavigationPinned(item: NavigationItem, pinned: boolean): Promise<void> {
+  await requestJSON("/catalog/navigation/pin", jsonRequest("PUT", { item, pinned }));
 }
 
 export function setCatalogSessionTitle(id: string, title: string): Promise<CatalogSessionProjection> {

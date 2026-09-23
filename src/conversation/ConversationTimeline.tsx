@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 
 import {
   buildToolRenderProjection,
@@ -59,8 +60,8 @@ export function TurnActions({ text, disabled, title, onFork }: { text: string; d
     <button type="button" aria-label="Copy response" disabled={!text} title={copyStatus ?? "Copy response"} onClick={() => {
       if (!navigator.clipboard) { setCopyStatus("Clipboard unavailable"); return; }
       void navigator.clipboard.writeText(text).then(() => setCopyStatus("Copied"), () => setCopyStatus("Could not copy response"));
-    }}><Copy size={15} /></button>
-    <button type="button" aria-label="Fork from this turn" title={title} disabled={disabled} onClick={onFork}><GitBranch size={15} /></button>
+    }}><Copy size={16} strokeWidth={1.8} /></button>
+    <button type="button" aria-label="Fork from this turn" title={title} disabled={disabled} onClick={onFork}><GitBranch size={16} strokeWidth={1.8} /></button>
     {copyStatus && <span role="status">{copyStatus}</span>}
   </div>;
 }
@@ -90,6 +91,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   onFork,
   forkBusy = false,
   onOpenForkSource,
+  forkSourceTitle,
 }: {
   binding: DaemonSessionBinding | null;
   session: ZotigoSession | null;
@@ -109,6 +111,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   onFork?: (turnId: string) => void;
   forkBusy?: boolean;
   onOpenForkSource?: (sessionId: string) => void;
+  forkSourceTitle?: string;
 }) {
   const compactedItemCacheRef = useRef(new WeakMap<DisplayItem, { workspaceRoot: string; item: DisplayItem }>());
   const displayItems = useMemo(
@@ -146,8 +149,10 @@ export const SessionTimeline = memo(function SessionTimeline({
         <div className="display-log">
           {session?.forked_from && <div className="assistant-note fork-lineage">
             <GitBranch size={14} />
-            <button type="button" onClick={() => onOpenForkSource?.(session.forked_from!.session_id)}>
-              Forked from {session.forked_from.session_id} · {session.forked_from.through_turn_id}
+            <button type="button" disabled={!onOpenForkSource}
+              title={`${forkSourceTitle || session.forked_from.session_id}\n${session.forked_from.session_id} · ${session.forked_from.through_turn_id}${onOpenForkSource ? "" : "\nSource conversation unavailable"}`}
+              onClick={() => onOpenForkSource?.(session.forked_from!.session_id)}>
+              Forked from {forkSourceTitle || session.forked_from.session_id}
             </button>
           </div>}
           {itemsLoading && visibleItems.length === 0 ? (
@@ -190,8 +195,8 @@ export const SessionTimeline = memo(function SessionTimeline({
                   if (!action || !onFork) return rendered;
                   return <div key={item.id} className={`turn-response ${action.latest ? "is-latest" : ""}`}>
                     {rendered}
-                    <TurnActions text={action.text} disabled={!itemsAuthoritative || forkBusy || !action.completed}
-                      title={action.completed ? "Fork from this turn" : "Fork is available after this turn completes"}
+                    <TurnActions text={action.text} disabled={!itemsAuthoritative || forkBusy}
+                      title="Fork from this turn"
                       onFork={() => onFork(action.turnId)} />
                   </div>;
                 };
@@ -224,9 +229,6 @@ export const SessionTimeline = memo(function SessionTimeline({
               })}
               {activeTurn && !activeToolCall && (session?.active_tool || showThinking) && (
                 <ThinkingStatus label={session?.active_tool ? `Running ${session.active_tool}` : "Thinking"} />
-              )}
-              {onFork && activeTurn && ![...turnActions.values()].some((action) => action.turnId === activeTurn.turn?.id) && (
-                <div className="turn-response is-latest"><TurnActions text="" disabled title="Fork is available after this turn completes" onFork={() => {}} /></div>
               )}
             </>
           )}
@@ -1109,7 +1111,7 @@ export function UserMessage({ text, kicker, children, attachments }: { text: str
               ref={contentRef}
               className={`user-message-content markdown-copy ${collapsed ? "collapsed" : ""}`}
             >
-              <MarkdownBody text={text} />
+              <MarkdownBody text={text} userMessage />
             </div>
           )}
           {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}
@@ -1131,11 +1133,17 @@ export function UserMessage({ text, kicker, children, attachments }: { text: str
   );
 }
 
-const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
+const userMarkdownComponents = {
+  pre: MarkdownCodeBlock,
+  img: MarkdownImage,
+  h1: "p", h2: "p", h3: "p", h4: "p", h5: "p", h6: "p",
+} as const;
+
+const MarkdownBody = memo(function MarkdownBody({ text, userMessage = false }: { text: string; userMessage?: boolean }) {
   return (
     <ReactMarkdown
-      components={{ pre: MarkdownCodeBlock, img: MarkdownImage }}
-      remarkPlugins={[remarkGfm]}
+      components={userMessage ? userMarkdownComponents : { pre: MarkdownCodeBlock, img: MarkdownImage }}
+      remarkPlugins={userMessage ? [remarkGfm, remarkBreaks] : [remarkGfm]}
       urlTransform={markdownUrlTransform}
     >
       {text}

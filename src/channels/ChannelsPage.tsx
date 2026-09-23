@@ -1,3 +1,4 @@
+import type { ModelFavoritesControl } from "../modelFavorites";
 import { ArrowLeft, ArrowUpRight, Bot, CheckCircle2, CircleAlert, MessageSquare, PanelLeft, Plus, RefreshCw, Save, Settings2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
@@ -24,6 +25,7 @@ function assertRuntimeSaved(input: ChannelConversationInput, saved: ChannelConve
 }
 
 interface ChannelsPageProps {
+  favorites: Omit<ModelFavoritesControl, "select">;
   hostName: string;
   projects: DesktopProject[];
   workspaces: DesktopWorkspace[];
@@ -41,7 +43,7 @@ interface ChannelsPageProps {
   onOpenSession: (id: string, leaveChannels?: boolean) => Promise<void>;
 }
 
-export function ChannelsPage({ hostName, projects, workspaces, agents = [], sessions = [], sessionCatalog = [], navigationRoot, navigationButtonRef, navigationOpen, sessionVisible, selectedSessionId, onOpenNavigation, onShowConfiguration, onBack, onOpenSession }: ChannelsPageProps) {
+export function ChannelsPage({ favorites, hostName, projects, workspaces, agents = [], sessions = [], sessionCatalog = [], navigationRoot, navigationButtonRef, navigationOpen, sessionVisible, selectedSessionId, onOpenNavigation, onShowConfiguration, onBack, onOpenSession }: ChannelsPageProps) {
   const { api } = useClient();
   const mounted = useRef(true);
   const requestVersion = useRef(0);
@@ -311,6 +313,9 @@ export function ChannelsPage({ hostName, projects, workspaces, agents = [], sess
             <label>Workspace<select value={groupDraft.workspace_id} disabled={!groupProjectId} onChange={(event) => setGroupDraft({ ...groupDraft, workspace_id: event.target.value, session_id: "", profile_name: "" })}><option value="">Select a ready workspace</option>{visibleWorkspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.title}</option>)}</select><small>Changing this affects newly created Channel Sessions. Existing Sessions keep their current Workspace.</small></label>
             {groupDraft.session_strategy === "shared" && <label>Shared Session<select value={groupDraft.session_id} disabled={!selectedWorkspace} onChange={(event) => { const sessionID = event.target.value; if (!sessionID) { setGroupDraft({ ...groupDraft, session_id: "" }); return; } const session = sessions.find((value) => value.id === sessionID); setGroupDraft({ ...groupDraft, session_id: sessionID, agent: session?.agent ?? groupDraft.agent, profile_name: session?.profile ?? "", model: session?.model ?? "", reasoning_effort: session?.reasoning_effort ?? "" }); }}><option value="">Create on first @mention</option>{compatibleSessions.map((session) => <option key={session.id} value={session.id}>{sessionTitleById.get(session.id)?.trim() || "New session"} · {session.id}{session.profile || session.model ? ` · ${session.profile || session.model}` : ""}</option>)}</select><small>Existing Sessions must be idle and not connected to another group. Codex Sessions created by an older daemon are available only before their Codex thread starts, so Channel tools can be installed.</small></label>}
             <div className="channels-runtime-setting"><span>Runtime</span><RuntimeSettingsPicker
+              favorites={{ ...favorites, select: (favorite) => setGroupDraft(favorite.agent === "codex"
+                ? { ...groupDraft, agent: "codex", model: favorite.model, reasoning_effort: favorite.reasoningEffort, profile_name: "" }
+                : { ...groupDraft, agent: "zotigo", profile_name: favorite.profile, model: "", reasoning_effort: "" }) }}
               agents={agents}
               selectedAgent={groupDraft.agent}
               onSelectAgent={(agent) => {

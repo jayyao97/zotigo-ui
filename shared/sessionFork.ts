@@ -8,7 +8,6 @@ export function createForkRequestId(): string {
 
 export interface TurnAction {
   turnId: string;
-  completed: boolean;
   latest: boolean;
   text: string;
 }
@@ -21,7 +20,7 @@ export function sessionTurnActions(items: DisplayItem[]): Map<string, TurnAction
   let text: string[] = [];
   let completed = false;
   const finish = (latest: boolean) => {
-    if (turnId && answerId) actions.set(answerId, { turnId, completed, latest, text: text.join("\n\n") });
+    if (completed && turnId && answerId) actions.set(answerId, { turnId, latest, text: text.join("\n\n") });
   };
   for (const item of items) {
     if (item.subagent) continue;
@@ -34,7 +33,7 @@ export function sessionTurnActions(items: DisplayItem[]): Map<string, TurnAction
       completed = false;
     } else if (item.type === "assistant_message") {
       const parts = (item.content ?? []).filter((part) => part.type === "text" && part.text).map((part) => part.text!);
-      if (parts.length) { answerId = item.id; text.push(...parts); }
+      if (parts.length) { answerId = item.id; text = parts; }
     } else if (item.type === "turn_completed" && (!item.turn?.id || item.turn.id === turnId)) {
       completed = true;
     }
