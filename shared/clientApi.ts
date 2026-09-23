@@ -96,6 +96,8 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     setConversationPinned: (conversationId, pinned) => invoke("desktop:set-conversation-pinned", conversationId, pinned),
     reorderWorkspaceConversations: (conversationIds) => invoke("desktop:reorder-workspace-conversations", conversationIds),
     reorderPinnedConversations: (conversationIds) => invoke("desktop:reorder-pinned-conversations", conversationIds),
+    reorderPinnedItems: (items) => invoke("desktop:reorder-pinned-items", items),
+    setNavigationPinned: (item, pinned) => invoke("desktop:set-navigation-pinned", item, pinned),
     archiveConversation: (conversationId) => invoke("desktop:archive-conversation", conversationId),
   };
 }

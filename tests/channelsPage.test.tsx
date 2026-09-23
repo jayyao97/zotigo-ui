@@ -72,7 +72,7 @@ test("connection deletion requires confirmation and preserves a binding conflict
       },
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(button(document.querySelector(".channels-form-actions")!, "Delete")));
     assert.equal(deletes, 0);
@@ -119,7 +119,7 @@ test("connection Save follows and includes prompt settings", async () => {
       },
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
 
     const prompt = [...document.querySelectorAll("h2")].find((heading) => heading.textContent === "Prompt and approval")!;
@@ -158,7 +158,7 @@ test("channel navigation separates available groups from bound Project sessions"
       },
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async (id, leave) => { opened.push([id, leave]); }} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async (id, leave) => { opened.push([id, leave]); }} /></ClientContext.Provider>));
     await flush();
 
     const navigation = document.querySelector("#navigation")!;
@@ -181,14 +181,14 @@ test("channel navigation separates available groups from bound Project sessions"
     await act(async () => click(topicButton));
     await flush();
     assert.deepEqual(opened[0], ["session-1", undefined]);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible selectedSessionId="session-1" onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async (id, leave) => { opened.push([id, leave]); }} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible selectedSessionId="session-1" onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async (id, leave) => { opened.push([id, leave]); }} /></ClientContext.Provider>));
     assert.ok(navigation.querySelector(".channels-conversation-item.selected"));
     assert.equal(navigation.querySelector(".workspace-row.selected"), null);
     await act(async () => click(navigation.querySelector('[aria-label="Open in Sessions"]')!));
     await flush();
     assert.deepEqual(opened[1], ["session-1", true]);
 
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} selectedSessionId="session-1" onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async (id, leave) => { opened.push([id, leave]); }} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} selectedSessionId="session-1" onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async (id, leave) => { opened.push([id, leave]); }} /></ClientContext.Provider>));
     await act(async () => click(navigation.querySelector('[aria-label="Configure Connected group"]')!));
     await flush();
     await act(async () => click(button(document.querySelector("#root")!, "Disconnect")));
@@ -215,7 +215,7 @@ test("switching bot connections replaces the previous group's navigation", async
         : [...byConnection.values()].map((value) => value.conversation),
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     const navigation = document.querySelector("#navigation")!;
     await act(async () => click(navigation.querySelector('[aria-label="Connect group"]')!));
@@ -240,7 +240,7 @@ test("new connection keeps the selected bot navigation and its sessions visible"
       listChannelConversations: async () => [connected, topic],
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
 
     const navigation = document.querySelector("#navigation")!;
@@ -272,7 +272,7 @@ test("new connection survives the initial bot navigation load", async () => {
       listChannelConversations: async () => [connected, topic],
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
 
     const navigation = document.querySelector("#navigation")!;
     await act(async () => click(navigation.querySelector('[aria-label="New connection"]')!));
@@ -304,7 +304,7 @@ test("group sender policy loads Feishu members and can allow the whole group", a
       },
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
     await flush();
@@ -345,7 +345,7 @@ test("group settings persist the selected Codex model and reasoning effort", asy
       { id: "codex", label: "Codex", availability: "installed", capabilities: { profiles: false, models: true, steering: true, approvals: true }, models: [{ id: "gpt-channel", display_name: "GPT Channel", is_default: true, supported_reasoning_efforts: ["medium", "high"] }] },
     ];
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} agents={agents} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} agents={agents} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
     await flush();
@@ -354,8 +354,9 @@ test("group settings persist the selected Codex model and reasoning effort", asy
     assert.ok(runtimeTrigger);
     assert.match(runtimeTrigger.textContent ?? "", /Workspace default · default-profile/);
     await act(async () => click(runtimeTrigger));
-    await act(async () => click(button(document.querySelector("#root")!, "Agent")));
-    await act(async () => click(button(document.querySelector("#root")!, "Codex")));
+    await act(async () => click(button(document.body, "Custom")));
+    await act(async () => click(button(document.body, "Agent")));
+    await act(async () => click(button(document.querySelector('[aria-label="agent options"]')!, "Codex")));
     assert.match(runtimeTrigger.textContent ?? "", /GPT Channel · medium/);
 
     await act(async () => click(button(document.querySelector("#root")!, "Save")));
@@ -386,7 +387,7 @@ test("group Save includes prompt overrides shown below workspace settings", asyn
       },
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
     await flush();
@@ -421,7 +422,7 @@ test("group settings can bind one shared Session", async () => {
       },
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} sessions={[sharedSession, boundSession, archivedSession, legacyCodexSession]} sessionCatalog={[{ id: sharedSession.id, project_id: project.id, workspace_id: workspace.id, title: "Investigate session labels", created_at: "", updated_at: "" }, { id: legacyCodexSession.id, project_id: project.id, workspace_id: workspace.id, title: "Legacy Codex", created_at: "", updated_at: "" }]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} sessions={[sharedSession, boundSession, archivedSession, legacyCodexSession]} sessionCatalog={[{ id: sharedSession.id, project_id: project.id, workspace_id: workspace.id, title: "Investigate session labels", created_at: "", updated_at: "" }, { id: legacyCodexSession.id, project_id: project.id, workspace_id: workspace.id, title: "Legacy Codex", created_at: "", updated_at: "" }]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
     await flush();
@@ -470,7 +471,7 @@ test("unbinding a shared Session keeps its runtime available for the replacement
       { id: "codex", label: "Codex", availability: "installed", capabilities: { profiles: false, models: true, steering: true, approvals: true }, models: [{ id: "gpt-channel", display_name: "GPT Channel", is_default: true, supported_reasoning_efforts: ["medium", "high"] }] },
     ];
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} agents={agents} sessions={[sharedSession]} sessionCatalog={[{ id: sharedSession.id, project_id: project.id, workspace_id: workspace.id, title: "Existing shared Session", created_at: "", updated_at: "" }]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} agents={agents} sessions={[sharedSession]} sessionCatalog={[{ id: sharedSession.id, project_id: project.id, workspace_id: workspace.id, title: "Existing shared Session", created_at: "", updated_at: "" }]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
     await flush();
@@ -504,7 +505,7 @@ test("topic-mode Feishu groups cannot select a shared Session", async () => {
       getProfiles: async () => ({ default_profile: "default-profile", profiles: [] }),
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Configure Topic group"]')!));
     await flush();
@@ -539,14 +540,15 @@ test("group settings report an older daemon that discards runtime selection", as
       { id: "codex", label: "Codex", availability: "installed", capabilities: { profiles: false, models: true, steering: true, approvals: true }, models: [{ id: "gpt-channel", display_name: "GPT Channel", is_default: true, supported_reasoning_efforts: ["medium"] }] },
     ];
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace]} agents={agents} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} agents={agents} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Connect group"]')!));
     await act(async () => click(button(document.querySelector("#navigation")!, "Connected group")));
     await flush();
     await act(async () => click(document.querySelector('#root [aria-label^="Runtime settings:"]')!));
-    await act(async () => click(button(document.querySelector("#root")!, "Agent")));
-    await act(async () => click(button(document.querySelector("#root")!, "Codex")));
+    await act(async () => click(button(document.body, "Custom")));
+    await act(async () => click(button(document.body, "Agent")));
+    await act(async () => click(button(document.querySelector('[aria-label="agent options"]')!, "Codex")));
     await act(async () => click(button(document.querySelector("#root")!, "Connect")));
     await flush();
     assert.match(document.querySelector('[role="status"]')?.textContent ?? "", /does not support Channel runtime selection/);
@@ -578,7 +580,7 @@ test("switching workspaces clears stale profiles until the new catalog loads", a
         : secondProfiles,
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage hostName="Local" projects={[project]} workspaces={[workspace, secondWorkspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace, secondWorkspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
     await flush();
     await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
     await flush();
@@ -588,12 +590,13 @@ test("switching workspaces clears stale profiles until the new catalog loads", a
     const trigger = document.querySelector<HTMLButtonElement>('#root [aria-label^="Runtime settings:"]')!;
     assert.match(trigger.textContent ?? "", /^Workspace default/);
     await act(async () => click(trigger));
-    assert.equal(document.querySelector<HTMLButtonElement>('#root [data-runtime-section="profile"]')?.disabled, true);
+    await act(async () => click(button(document.body, "Custom")));
+    assert.equal(document.querySelector<HTMLButtonElement>('[data-runtime-section="profile"]')?.disabled, true);
     assert.equal(button(document.querySelector("#root")!, "Save").disabled, true);
     await act(async () => resolveSecond({ default_profile: "second-profile", profiles: [{ name: "second-profile", provider: "test", model: "second" }] }));
     await flush();
     assert.match(trigger.textContent ?? "", /Workspace default · second-profile/);
-    assert.equal(document.querySelector<HTMLButtonElement>('#root [data-runtime-section="profile"]')?.disabled, false);
+    assert.equal(document.querySelector<HTMLButtonElement>('[data-runtime-section="profile"]')?.disabled, false);
     await act(async () => root.unmount());
   } finally { restore(); }
 });

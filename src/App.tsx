@@ -1,3 +1,6 @@
+import type { NavigationItem } from "../shared/clientTypes";
+import { loadLastModelSelection, saveLastModelSelection } from "./lastModelSelection";
+import { useSavedModelFavorites, type ModelFavorite } from "./modelFavorites";
 import { WorkspaceSessionList } from "./WorkspaceSessionList";
 import { SidebarCollapse } from "./SidebarCollapse";
 import { createForkRequestId } from "../shared/sessionFork";
@@ -483,7 +486,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const [isConversationAtBottom, setIsConversationAtBottom] = useState(true);
   const [profiles, setProfiles] = useState<RuntimeProfile[]>([]);
   const [defaultProfile, setDefaultProfile] = useState("");
-  const [draftProfile, setDraftProfile] = useState("");
+  const [initialModelSelection] = useState(() => loadLastModelSelection(clientScope));
+  const [draftProfile, setDraftProfile] = useState(initialModelSelection?.agent === "zotigo" ? initialModelSelection.profile : "");
   const [profileOverrides, setProfileOverrides] = useState<Record<string, string>>({});
   const [draftApprovalPolicy, setDraftApprovalPolicy] = useState<ApprovalPolicy>("auto");
   const [approvalPolicyOverrides, setApprovalPolicyOverrides] = useState<Record<string, ApprovalPolicy>>({});
@@ -494,9 +498,9 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [runtimeAgents, setRuntimeAgents] = useState<AgentCatalogEntry[]>([]);
   const [runtimeAgentsLoading, setRuntimeAgentsLoading] = useState(false);
-  const [draftAgent, setDraftAgent] = useState<AgentKind>("zotigo");
-  const [draftCodexModel, setDraftCodexModel] = useState("");
-  const [draftCodexReasoningEffort, setDraftCodexReasoningEffort] = useState("");
+  const [draftAgent, setDraftAgent] = useState<AgentKind>(initialModelSelection?.agent ?? "zotigo");
+  const [draftCodexModel, setDraftCodexModel] = useState(initialModelSelection?.agent === "codex" ? initialModelSelection.model : "");
+  const [draftCodexReasoningEffort, setDraftCodexReasoningEffort] = useState(initialModelSelection?.agent === "codex" ? initialModelSelection.reasoningEffort : "");
   const [isEditingConversationTitle, setIsEditingConversationTitle] = useState(false);
   const [isSavingConversationTitle, setIsSavingConversationTitle] = useState(false);
   const [conversationTitleDraft, setConversationTitleDraft] = useState("");
@@ -770,6 +774,21 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
       sessionFromBinding(selectedBinding)
     );
   }, [selectedBinding, sessions]);
+  const forkSourceBinding = desktopState.bindings.find((binding) => binding.daemon_session_id === selectedSession?.forked_from?.session_id);
+  const forkSourceConversation = forkSourceBinding
+    ? desktopState.conversations.find((conversation) => conversation.id === forkSourceBinding.conversation_id)
+    : undefined;
+  const savedModelFavorites = useSavedModelFavorites();
+  const modelFavorites = { ...savedModelFavorites, select: selectModelFavorite };
+  function selectModelFavorite(favorite: ModelFavorite) {
+    if (selectedSession) {
+      if (favorite.agent !== selectedAgent) return;
+      if (favorite.agent === "codex") void selectSessionCodexSettings(favorite.model, favorite.reasoningEffort);
+      else void selectProfile(favorite.profile);
+    } else {
+      rememberModelSelection(favorite);
+    }
+  }
   const profileWorkspace = selectedConversation?.workspace_id
     ? desktopState.workspaces.find((workspace) => workspace.id === selectedConversation.workspace_id) ?? null
     : selectedWorkspace;
@@ -785,13 +804,14 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const codexModels = codexAgent?.models ?? [];
   const selectedCodexModel = selectedSession?.model ?? draftCodexModel;
   const selectedCodexReasoningEffort = selectedSession?.reasoning_effort ?? draftCodexReasoningEffort;
-  const pinnedConversations = useMemo(
-    () =>
-      desktopState.conversations
-        .filter((conversation) => conversation.pinned_at)
-        .sort((left, right) => (left.pinned_order ?? 0) - (right.pinned_order ?? 0)),
-    [desktopState.conversations],
-  );
+  const pinnedItems = useMemo(() => (desktopState.pinnedItems ?? desktopState.conversations
+    .filter((conversation) => conversation.pinned_at)
+    .sort((left, right) => (left.pinned_order ?? 0) - (right.pinned_order ?? 0))
+    .map((conversation): NavigationItem => ({ kind: "session", id: conversation.id })))
+    .filter((item) => (item.kind === "project" ? desktopState.projects : item.kind === "workspace" ? desktopState.workspaces : desktopState.conversations).some((candidate) => candidate.id === item.id)), [desktopState]);
+  const navigationKey = (item: NavigationItem) => `${item.kind}:${item.id}`;
+  const pinnedKeys = pinnedItems.map(navigationKey);
+  const isNavigationPinned = (kind: NavigationItem["kind"], id: string) => pinnedItems.some((item) => item.kind === kind && item.id === id);
   const actionableSessionItems = useMemo(
     () => authoritativeSessionItems(
       sessionItems,
@@ -937,7 +957,11 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
           ? await client.reorderWorkspaces(scopeId, orderedIds)
           : kind === "workspace-session"
             ? await client.reorderWorkspaceConversations(orderedIds)
-            : await client.reorderPinnedConversations(orderedIds);
+            : await client.reorderPinnedItems(orderedIds.map((key) => {
+              const item = pinnedItems.find((candidate) => navigationKey(candidate) === key);
+              if (!item) throw new Error("Pinned item is no longer available");
+              return item;
+            }));
       applyDesktopState(state);
     } catch (error) {
       setMessage(errorMessage(error));
@@ -945,7 +969,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     }
   }
   const previousConversations = useMemo(
-    () => desktopState.conversations.filter((conversation) => conversation.workspace_id === null),
+    () => desktopState.conversations.filter((conversation) => conversation.workspace_id === null && !conversation.pinned_at),
     [desktopState.conversations],
   );
   const selectedActiveTurnId = selectedActiveTurn?.turn?.id ?? null;
@@ -1242,7 +1266,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
         const availableAgents = [nativeAgent, preparedCodex].filter((agent): agent is AgentCatalogEntry => Boolean(agent));
         setRuntimeAgents(availableAgents);
         const models = preparedCodex?.models ?? [];
-        const defaultModel = models.find((model) => model.is_default) ?? models[0];
+        const defaultModel = models.find((model) => initialModelSelection?.agent === "codex" && model.id === initialModelSelection.model)
+          ?? models.find((model) => model.is_default) ?? models[0];
         setDraftCodexModel((current) => models.some((model) => model.id === current) ? current : defaultModel?.id ?? "");
         setDraftCodexReasoningEffort((current) => {
           const efforts = defaultModel?.supported_reasoning_efforts ?? [];
@@ -1678,6 +1703,26 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     })));
     setWorkspaceFolderModes(selection.folderModes);
     setCreateWorkspaceProjectId(project.id);
+  }
+
+  const availableWorkspaceFolders = desktopState.folders.filter((folder) => folder.project_id === createWorkspaceProject?.id && folder.availability === "available");
+  const canSelectAllWorkspaceSources = workspaceRepositories.some((draft) => draft.repository.availability === "available" && !draft.selected)
+    || availableWorkspaceFolders.some((folder) => !workspaceFolderModes[folder.id]);
+  const canDeselectAllWorkspaceSources = workspaceRepositories.some((draft) => draft.repository.availability === "available" && draft.selected)
+    || availableWorkspaceFolders.some((folder) => Boolean(workspaceFolderModes[folder.id]));
+
+  function selectAllWorkspaceSources(selected: boolean) {
+    if (!createWorkspaceProject || isBusy) return;
+    setWorkspaceRepositories((current) => current.map((draft) => draft.repository.availability === "available" ? { ...draft, selected } : draft));
+    setWorkspaceFolderModes((current) => {
+      const next = { ...current };
+      for (const folder of desktopState.folders) {
+        if (folder.project_id === createWorkspaceProject.id && folder.availability === "available") {
+          next[folder.id] = selected ? current[folder.id] || folder.default_mode : "";
+        }
+      }
+      return next;
+    });
   }
 
   function closeCreateWorkspaceDialog() {
@@ -2236,16 +2281,26 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     }
   }
 
+  function rememberModelSelection(selection: ModelFavorite) {
+    setDraftAgent(selection.agent);
+    if (selection.agent === "codex") {
+      setDraftCodexModel(selection.model);
+      setDraftCodexReasoningEffort(selection.reasoningEffort);
+    } else setDraftProfile(selection.profile);
+    saveLastModelSelection(clientScope, selection);
+  }
+
   function selectAgent(agent: AgentKind) {
     if (selectedSession) return;
-    setDraftAgent(agent);
+    rememberModelSelection(agent === "codex"
+      ? { agent, model: draftCodexModel, reasoningEffort: draftCodexReasoningEffort }
+      : { agent, profile: draftProfile || defaultProfile });
   }
 
   function selectCodexModel(modelId: string) {
     if (selectedSession) return;
-    setDraftCodexModel(modelId);
     const model = codexModels.find((candidate) => candidate.id === modelId);
-    setDraftCodexReasoningEffort((current) => compatibleReasoningEffort(model?.supported_reasoning_efforts ?? [], current));
+    rememberModelSelection({ agent: "codex", model: modelId, reasoningEffort: compatibleReasoningEffort(model?.supported_reasoning_efforts ?? [], draftCodexReasoningEffort) });
   }
 
   async function selectSessionCodexSettings(model: string, reasoningEffort: string) {
@@ -2254,6 +2309,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     setMessage(null);
     try {
       const session = await client.changeSessionCodexSettings(selectedSession.id, { model, reasoningEffort });
+      rememberModelSelection({ agent: "codex", model, reasoningEffort });
       setSessions((current) => upsertSession(current, session));
     } catch (error) {
       setMessage(errorMessage(error));
@@ -2264,7 +2320,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
 
   async function selectProfile(profile: string) {
     if (!selectedSession) {
-      setDraftProfile(profile);
+      rememberModelSelection({ agent: "zotigo", profile });
       return;
     }
 
@@ -2273,6 +2329,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     setMessage(null);
     try {
       const result = await client.changeSessionProfile(selectedSession.id, profile);
+      rememberModelSelection({ agent: "zotigo", profile });
       setMessage(result.status === "pending" ? `Switching to ${profile} before the next model generation.` : `Profile changed to ${profile}.`);
       if (result.status === "applied") {
         const session = await client.getSession(selectedSession.id);
@@ -2761,6 +2818,16 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     }
   }
 
+  async function toggleNavigationPinned(item: NavigationItem) {
+    setProjectMenuId(null);
+    setWorkspaceMenuId(null);
+    try {
+      applyDesktopState(await client.setNavigationPinned(item, !isNavigationPinned(item.kind, item.id)));
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+  }
+
   async function toggleConversationPinned(conversation: DesktopConversation) {
     try {
       applyDesktopState(await client.setConversationPinned(conversation.id, !conversation.pinned_at));
@@ -3154,6 +3221,289 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     }
   }
 
+  function renderWorkspaceNavigation(workspace: DesktopWorkspace, pinned = false) {
+    const workspaceConversations = desktopState.conversations.filter(
+      (conversation) => conversation.workspace_id === workspace.id && !conversation.pinned_at,
+    );
+    const orderedWorkspaceIds = pinned ? pinnedKeys : desktopState.workspaces.filter((candidate) => candidate.project_id === workspace.project_id && !isNavigationPinned("workspace", candidate.id)).map((candidate) => candidate.id);
+    const workspaceSort = sidebarSortProps(
+      pinned ? { kind: "pinned-session", id: navigationKey({ kind: "workspace", id: workspace.id }), scopeId: "pinned" } : { kind: "workspace", id: workspace.id, scopeId: workspace.project_id },
+      orderedWorkspaceIds,
+    );
+    const workspaceTailSort = sidebarSortProps(
+      pinned ? { kind: "pinned-session", id: navigationKey({ kind: "workspace", id: workspace.id }), scopeId: "pinned" } : { kind: "workspace", id: workspace.id, scopeId: workspace.project_id },
+      orderedWorkspaceIds,
+      "after",
+    );
+    const workspaceOpen = !collapsedWorkspaceIds.has(workspace.id);
+    return (
+      <div
+        className={`workspace-group ${workspaceSort.dropPosition === "after" ? "drop-after" : ""}`}
+        key={workspace.id}
+        onDragOver={(event) => {
+          if (event.target instanceof Element && event.target.closest(".workspace-row-shell")) return;
+          workspaceTailSort.onDragOver(event);
+        }}
+        onDrop={(event) => {
+          if (event.target instanceof Element && event.target.closest(".workspace-row-shell")) return;
+          workspaceTailSort.onDrop(event);
+        }}
+      >
+        <div
+          className={`workspace-row-shell ${workspaceSort.dragging ? "dragging" : ""} ${workspaceSort.dropPosition === "before" ? "drop-before" : ""}`}
+          draggable={workspaceSort.draggable}
+          onDragStart={workspaceSort.onDragStart}
+          onDragOver={workspaceSort.onDragOver}
+          onDrop={workspaceSort.onDrop}
+          onDragEnd={workspaceSort.onDragEnd}
+        >
+          <button
+            type="button"
+            className="workspace-collapse-button"
+            onClick={() => toggleWorkspaceCollapsed(workspace.id)}
+            aria-label={`${workspaceOpen ? "Collapse" : "Expand"} ${workspace.title}`}
+            aria-expanded={workspaceOpen}
+          >
+            <WorkspaceDisclosureIcon open={workspaceOpen} />
+          </button>
+          <button
+            type="button"
+            className={`workspace-row ${workspace.id === selectedWorkspace?.id && !selectedConversation ? "selected" : ""}`}
+            onClick={() => toggleWorkspaceCollapsed(workspace.id)}
+            aria-expanded={workspaceOpen}
+            title={workspace.error}
+          >
+            <span>{workspace.title}</span>
+          </button>
+          {workspace.status !== "provisioning" && (
+            <div className="workspace-row-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectMenuId(null);
+                  setWorkspaceMenuId((current) => current === workspace.id ? null : workspace.id);
+                }}
+                disabled={isBusy}
+                aria-label={`More actions for ${workspace.title}`}
+                aria-expanded={workspaceMenuId === workspace.id}
+              >
+                <MoreHorizontal size={14} strokeWidth={1.8} />
+              </button>
+              {workspaceMenuId === workspace.id && (
+                <div
+                  ref={sidebarActionMenuRef}
+                  className={`workspace-action-menu ${sidebarActionMenuOpensUp ? "opens-up" : ""}`}
+                  role="menu"
+                >
+                  <button type="button" role="menuitem" onClick={() => void toggleNavigationPinned({ kind: "workspace", id: workspace.id })}>
+                    <Pin size={13} strokeWidth={1.8} /><span>{pinned ? "Unpin workspace" : "Pin workspace"}</span>
+                  </button>
+                  {<button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setWorkspaceMenuId(null);
+                      browseFiles(workspace.root_path);
+                    }}
+                  >
+                    <FolderOpen size={13} strokeWidth={1.8} />
+                    <span>Browse files</span>
+                  </button>}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setWorkspaceMenuId(null);
+                      void copyWorkspacePath(workspace.root_path);
+                    }}
+                  >
+                    <Copy size={13} strokeWidth={1.8} />
+                    <span>{kind === "web" ? "Copy server path" : "Copy absolute path"}</span>
+                  </button>
+                  <div className="workspace-action-menu-separator" role="separator" />
+                  <button type="button" role="menuitem" onClick={() => openRenameWorkspaceDialog(workspace)}>
+                    <SquarePen size={13} strokeWidth={1.8} />
+                    <span>Rename</span>
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => void openArchiveWorkspaceDialog(workspace)}>
+                    <Archive size={13} strokeWidth={1.8} />
+                    <span>Archive</span>
+                  </button>
+                  <button type="button" role="menuitem" className="destructive" onClick={() => void openDeleteWorkspaceDialog(workspace)}>
+                    <Trash2 size={13} strokeWidth={1.8} />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setWorkspaceMenuId(null);
+                  if (workspace.status === "error") {
+                    void retryWorkspace(workspace);
+                  } else {
+                    void openNewConversationForWorkspace(workspace);
+                  }
+                }}
+                disabled={isBusy}
+                aria-label={workspace.status === "error" ? `Retry ${workspace.title}` : `New session in ${workspace.title}`}
+                title={workspace.status === "error" ? "Retry workspace" : "New session"}
+              >
+                {workspace.status === "error" ? <RefreshCw size={13} strokeWidth={1.8} /> : <SquarePen size={13} strokeWidth={1.8} />}
+              </button>
+            </div>
+          )}
+        </div>
+        {workspaceConversations.length > 0 && <SidebarCollapse open={workspaceOpen}>
+          <WorkspaceSessionList>
+            {workspaceConversations.map((conversation) => (
+              <ConversationNavItem
+                key={conversation.id}
+                conversation={conversation}
+                selected={conversation.id === selectedConversation?.id}
+                working={workingConversationIds.has(conversation.id)}
+                unread={unreadConversationIds.has(conversation.id)}
+                onSelect={() => void selectConversation(conversation.id)}
+                onContextMenu={(event) => openConversationContextMenu(event, conversation.id)}
+                onRename={() => openRenameConversationDialog(conversation)}
+                onPin={() => void toggleConversationPinned(conversation)}
+                onArchive={() => void archiveConversation(conversation)}
+                sort={sidebarSortProps(
+                  { kind: "workspace-session", id: conversation.id, scopeId: workspace.id },
+                  workspaceConversations.map((candidate) => candidate.id),
+                )}
+              />
+            ))}
+          </WorkspaceSessionList>
+        </SidebarCollapse>}
+      </div>
+    );
+  }
+
+  function renderProjectNavigation(project: DesktopProject, pinned = false) {
+    const projectWorkspaces = desktopState.workspaces.filter(
+      (workspace) => workspace.project_id === project.id && !isNavigationPinned("workspace", workspace.id),
+    );
+    const isOpen = !collapsedProjectIds.has(project.id);
+    const orderedProjectIds = pinned ? pinnedKeys : desktopState.projects.filter((candidate) => !isNavigationPinned("project", candidate.id)).map((candidate) => candidate.id);
+    const projectSort = sidebarSortProps(
+      pinned ? { kind: "pinned-session", id: navigationKey({ kind: "project", id: project.id }), scopeId: "pinned" } : { kind: "project", id: project.id, scopeId: "projects" },
+      orderedProjectIds,
+    );
+    const projectTailSort = sidebarSortProps(
+      pinned ? { kind: "pinned-session", id: navigationKey({ kind: "project", id: project.id }), scopeId: "pinned" } : { kind: "project", id: project.id, scopeId: "projects" },
+      orderedProjectIds,
+      "after",
+    );
+    return (
+      <div
+        className={`project-group ${projectSort.dropPosition === "after" ? "drop-after" : ""}`}
+        key={project.id}
+        onDragOver={(event) => {
+          if (event.target instanceof Element && event.target.closest(".project-row-shell")) return;
+          projectTailSort.onDragOver(event);
+        }}
+        onDrop={(event) => {
+          if (event.target instanceof Element && event.target.closest(".project-row-shell")) return;
+          projectTailSort.onDrop(event);
+        }}
+      >
+        <div
+          className={`project-row-shell ${projectSort.dragging ? "dragging" : ""} ${projectSort.dropPosition === "before" ? "drop-before" : ""}`}
+          draggable={projectSort.draggable}
+          onDragStart={projectSort.onDragStart}
+          onDragOver={projectSort.onDragOver}
+          onDrop={projectSort.onDrop}
+          onDragEnd={projectSort.onDragEnd}
+        >
+          <button
+            type="button"
+            className="project-collapse-button"
+            onClick={() => toggleProjectOpen(project.id)}
+            aria-label={`${isOpen ? "Collapse" : "Expand"} ${project.name}`}
+            aria-expanded={isOpen}
+          >
+            <ProjectDisclosureIcon open={isOpen} />
+          </button>
+          <button
+            type="button"
+            className={`project-row ${project.id === projectOverviewId ? "selected" : ""}`}
+            onClick={() => toggleProjectOpen(project.id)}
+            aria-expanded={isOpen}
+          >
+            <span>{project.name}</span>
+          </button>
+          <div className="project-row-actions">
+            <button
+              type="button"
+              onClick={() => {
+                setWorkspaceMenuId(null);
+                setProjectMenuId((current) => current === project.id ? null : project.id);
+              }}
+              disabled={isBusy}
+              aria-label={`More actions for ${project.name}`}
+              aria-expanded={projectMenuId === project.id}
+            >
+              <MoreHorizontal size={14} strokeWidth={1.8} />
+            </button>
+            {projectMenuId === project.id && (
+              <div
+                ref={sidebarActionMenuRef}
+                className={`workspace-action-menu project-action-menu ${sidebarActionMenuOpensUp ? "opens-up" : ""}`}
+                role="menu"
+              >
+                <button type="button" role="menuitem" onClick={() => void toggleNavigationPinned({ kind: "project", id: project.id })}>
+                  <Pin size={13} strokeWidth={1.8} /><span>{pinned ? "Unpin project" : "Pin project"}</span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => { setProjectMenuId(null); void openProjectOverview(project); }}>
+                  <FileText size={13} strokeWidth={1.8} />
+                  <span>Open overview</span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => { setProjectMenuId(null); void addSourcesToProject(project.id); }}>
+                  <FolderPlus size={13} strokeWidth={1.8} />
+                  <span>Add Sources</span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => openRenameProjectDialog(project)}>
+                  <SquarePen size={13} strokeWidth={1.8} />
+                  <span>Rename</span>
+                </button>
+                <button type="button" role="menuitem" className="destructive" disabled={isBusy} onClick={() => void openDeleteProjectDialog(project)}>
+                  <Trash2 size={13} strokeWidth={1.8} />
+                  <span>Delete project</span>
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => openCreateWorkspaceDialog(project)}
+              disabled={isBusy}
+              aria-label={`New workspace in ${project.name}`}
+              title="New workspace"
+            >
+              <FolderPlus size={14} strokeWidth={1.8} />
+            </button>
+          </div>
+        </div>
+
+        <SidebarCollapse open={isOpen}>
+          <div className="workspace-list">
+            {projectWorkspaces.map((workspace) => renderWorkspaceNavigation(workspace))}
+
+        {projectWorkspaces.length === 0 && !desktopState.workspaces.some((workspace) => workspace.project_id === project.id) && (
+              <button
+                type="button"
+                className="workspace-empty-action"
+                onClick={() => openCreateWorkspaceDialog(project)}
+              >
+                <Plus size={13} /> Create workspace
+              </button>
+            )}
+          </div>
+        </SidebarCollapse>
+      </div>
+    );
+  }
+
   function updateSidePanelWidth(requestedWidth: number) {
     const frame = appFrameRef.current;
     const sidebar = frame?.querySelector<HTMLElement>(".sidebar");
@@ -3248,7 +3598,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     <MarkdownImageContext.Provider value={{ sessionId: selectedSession?.id, basePath: selectedSession?.working_directory ?? selectedWorkspace?.root_path ?? null, baseKind: "directory" }}>
     <main
       ref={appFrameRef}
-      className={`app-frame ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
+      className={`app-frame ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
       style={{ "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
       onClickCapture={(event) => void handleMarkdownLinkClick(event)}
       onKeyDown={(event) => {
@@ -3296,15 +3646,18 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
 
         <div className="sidebar-lower-stack">
         <div className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
-        <section className="sidebar-section" aria-label="Pinned conversations">
+        <section className="sidebar-section" aria-label="Pinned">
           <div className="sidebar-section-title">Pinned</div>
-          {pinnedConversations.length === 0 ? (
-            <p className="sidebar-empty">No pinned sessions</p>
+          {pinnedItems.length === 0 ? (
+            <p className="sidebar-empty">No pinned items</p>
           ) : (
             <div className="sidebar-session-list">
-              {pinnedConversations.map((conversation) => (
-                <ConversationNavItem
-                  key={conversation.id}
+              {pinnedItems.map((item) => {
+                if (item.kind === "project") return renderProjectNavigation(desktopState.projects.find((project) => project.id === item.id)!, true);
+                if (item.kind === "workspace") return renderWorkspaceNavigation(desktopState.workspaces.find((workspace) => workspace.id === item.id)!, true);
+                const conversation = desktopState.conversations.find((candidate) => candidate.id === item.id)!;
+                return <ConversationNavItem
+                  key={navigationKey(item)}
                   conversation={conversation}
                   selected={conversation.id === selectedConversation?.id}
                   working={workingConversationIds.has(conversation.id)}
@@ -3314,12 +3667,9 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                   onRename={() => openRenameConversationDialog(conversation)}
                   onPin={() => void toggleConversationPinned(conversation)}
                   onArchive={() => void archiveConversation(conversation)}
-                  sort={sidebarSortProps(
-                    { kind: "pinned-session", id: conversation.id, scopeId: "pinned" },
-                    pinnedConversations.map((candidate) => candidate.id),
-                  )}
-                />
-              ))}
+                  sort={sidebarSortProps({ kind: "pinned-session", id: navigationKey(item), scopeId: "pinned" }, pinnedKeys)}
+                />;
+              })}
             </div>
           )}
         </section>
@@ -3338,283 +3688,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
             <p className="sidebar-empty">No projects yet</p>
           ) : (
             <>
-              {desktopState.projects.map((project) => {
-                const projectConversations = desktopState.conversations.filter(
-                  (conversation) => conversation.project_id === project.id,
-                );
-                const projectWorkspaces = desktopState.workspaces.filter(
-                  (workspace) => workspace.project_id === project.id,
-                );
-                const isOpen = !collapsedProjectIds.has(project.id);
-                const orderedProjectIds = desktopState.projects.map((candidate) => candidate.id);
-                const projectSort = sidebarSortProps(
-                  { kind: "project", id: project.id, scopeId: "projects" },
-                  orderedProjectIds,
-                );
-                const projectTailSort = sidebarSortProps(
-                  { kind: "project", id: project.id, scopeId: "projects" },
-                  orderedProjectIds,
-                  "after",
-                );
-                return (
-                  <div
-                    className={`project-group ${projectSort.dropPosition === "after" ? "drop-after" : ""}`}
-                    key={project.id}
-                    onDragOver={(event) => {
-                      if (event.target instanceof Element && event.target.closest(".project-row-shell")) return;
-                      projectTailSort.onDragOver(event);
-                    }}
-                    onDrop={(event) => {
-                      if (event.target instanceof Element && event.target.closest(".project-row-shell")) return;
-                      projectTailSort.onDrop(event);
-                    }}
-                  >
-                    <div
-                      className={`project-row-shell ${projectSort.dragging ? "dragging" : ""} ${projectSort.dropPosition === "before" ? "drop-before" : ""}`}
-                      draggable={projectSort.draggable}
-                      onDragStart={projectSort.onDragStart}
-                      onDragOver={projectSort.onDragOver}
-                      onDrop={projectSort.onDrop}
-                      onDragEnd={projectSort.onDragEnd}
-                    >
-                      <button
-                        type="button"
-                        className="project-collapse-button"
-                        onClick={() => toggleProjectOpen(project.id)}
-                        aria-label={`${isOpen ? "Collapse" : "Expand"} ${project.name}`}
-                        aria-expanded={isOpen}
-                      >
-                        <ProjectDisclosureIcon open={isOpen} />
-                      </button>
-                      <button
-                        type="button"
-                        className={`project-row ${project.id === projectOverviewId ? "selected" : ""}`}
-                        onClick={() => toggleProjectOpen(project.id)}
-                        aria-expanded={isOpen}
-                      >
-                        <span>{project.name}</span>
-                      </button>
-                      <div className="project-row-actions">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setWorkspaceMenuId(null);
-                            setProjectMenuId((current) => current === project.id ? null : project.id);
-                          }}
-                          disabled={isBusy}
-                          aria-label={`More actions for ${project.name}`}
-                          aria-expanded={projectMenuId === project.id}
-                        >
-                          <MoreHorizontal size={14} strokeWidth={1.8} />
-                        </button>
-                        {projectMenuId === project.id && (
-                          <div
-                            ref={sidebarActionMenuRef}
-                            className={`workspace-action-menu project-action-menu ${sidebarActionMenuOpensUp ? "opens-up" : ""}`}
-                            role="menu"
-                          >
-                            <button type="button" role="menuitem" onClick={() => { setProjectMenuId(null); void openProjectOverview(project); }}>
-                              <FileText size={13} strokeWidth={1.8} />
-                              <span>Open overview</span>
-                            </button>
-                            <button type="button" role="menuitem" onClick={() => { setProjectMenuId(null); void addSourcesToProject(project.id); }}>
-                              <FolderPlus size={13} strokeWidth={1.8} />
-                              <span>Add Sources</span>
-                            </button>
-                            <button type="button" role="menuitem" onClick={() => openRenameProjectDialog(project)}>
-                              <SquarePen size={13} strokeWidth={1.8} />
-                              <span>Rename</span>
-                            </button>
-                            <button type="button" role="menuitem" className="destructive" disabled={isBusy} onClick={() => void openDeleteProjectDialog(project)}>
-                              <Trash2 size={13} strokeWidth={1.8} />
-                              <span>Delete project</span>
-                            </button>
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => openCreateWorkspaceDialog(project)}
-                          disabled={isBusy}
-                          aria-label={`New workspace in ${project.name}`}
-                          title="New workspace"
-                        >
-                          <FolderPlus size={14} strokeWidth={1.8} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <SidebarCollapse open={isOpen}>
-                      <div className="workspace-list">
-                        {projectWorkspaces.map((workspace) => {
-                          const workspaceConversations = projectConversations.filter(
-                            (conversation) => conversation.workspace_id === workspace.id,
-                          );
-                          const orderedWorkspaceIds = projectWorkspaces.map((candidate) => candidate.id);
-                          const workspaceSort = sidebarSortProps(
-                            { kind: "workspace", id: workspace.id, scopeId: project.id },
-                            orderedWorkspaceIds,
-                          );
-                          const workspaceTailSort = sidebarSortProps(
-                            { kind: "workspace", id: workspace.id, scopeId: project.id },
-                            orderedWorkspaceIds,
-                            "after",
-                          );
-                          const workspaceOpen = !collapsedWorkspaceIds.has(workspace.id);
-                          return (
-                            <div
-                              className={`workspace-group ${workspaceSort.dropPosition === "after" ? "drop-after" : ""}`}
-                              key={workspace.id}
-                              onDragOver={(event) => {
-                                if (event.target instanceof Element && event.target.closest(".workspace-row-shell")) return;
-                                workspaceTailSort.onDragOver(event);
-                              }}
-                              onDrop={(event) => {
-                                if (event.target instanceof Element && event.target.closest(".workspace-row-shell")) return;
-                                workspaceTailSort.onDrop(event);
-                              }}
-                            >
-                              <div
-                                className={`workspace-row-shell ${workspaceSort.dragging ? "dragging" : ""} ${workspaceSort.dropPosition === "before" ? "drop-before" : ""}`}
-                                draggable={workspaceSort.draggable}
-                                onDragStart={workspaceSort.onDragStart}
-                                onDragOver={workspaceSort.onDragOver}
-                                onDrop={workspaceSort.onDrop}
-                                onDragEnd={workspaceSort.onDragEnd}
-                              >
-                                <button
-                                  type="button"
-                                  className="workspace-collapse-button"
-                                  onClick={() => toggleWorkspaceCollapsed(workspace.id)}
-                                  aria-label={`${workspaceOpen ? "Collapse" : "Expand"} ${workspace.title}`}
-                                  aria-expanded={workspaceOpen}
-                                >
-                                  <WorkspaceDisclosureIcon open={workspaceOpen} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`workspace-row ${workspace.id === selectedWorkspace?.id && !selectedConversation ? "selected" : ""}`}
-                                  onClick={() => toggleWorkspaceCollapsed(workspace.id)}
-                                  aria-expanded={workspaceOpen}
-                                  title={workspace.error}
-                                >
-                                  <span>{workspace.title}</span>
-                                </button>
-                                {workspace.status !== "provisioning" && (
-                                  <div className="workspace-row-actions">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setProjectMenuId(null);
-                                        setWorkspaceMenuId((current) => current === workspace.id ? null : workspace.id);
-                                      }}
-                                      disabled={isBusy}
-                                      aria-label={`More actions for ${workspace.title}`}
-                                      aria-expanded={workspaceMenuId === workspace.id}
-                                    >
-                                      <MoreHorizontal size={14} strokeWidth={1.8} />
-                                    </button>
-                                    {workspaceMenuId === workspace.id && (
-                                      <div
-                                        ref={sidebarActionMenuRef}
-                                        className={`workspace-action-menu ${sidebarActionMenuOpensUp ? "opens-up" : ""}`}
-                                        role="menu"
-                                      >
-                                        {<button
-                                          type="button"
-                                          role="menuitem"
-                                          onClick={() => {
-                                            setWorkspaceMenuId(null);
-                                            browseFiles(workspace.root_path);
-                                          }}
-                                        >
-                                          <FolderOpen size={13} strokeWidth={1.8} />
-                                          <span>Browse files</span>
-                                        </button>}
-                                        <button
-                                          type="button"
-                                          role="menuitem"
-                                          onClick={() => {
-                                            setWorkspaceMenuId(null);
-                                            void copyWorkspacePath(workspace.root_path);
-                                          }}
-                                        >
-                                          <Copy size={13} strokeWidth={1.8} />
-                                          <span>{kind === "web" ? "Copy server path" : "Copy absolute path"}</span>
-                                        </button>
-                                        <div className="workspace-action-menu-separator" role="separator" />
-                                        <button type="button" role="menuitem" onClick={() => openRenameWorkspaceDialog(workspace)}>
-                                          <SquarePen size={13} strokeWidth={1.8} />
-                                          <span>Rename</span>
-                                        </button>
-                                        <button type="button" role="menuitem" onClick={() => void openArchiveWorkspaceDialog(workspace)}>
-                                          <Archive size={13} strokeWidth={1.8} />
-                                          <span>Archive</span>
-                                        </button>
-                                        <button type="button" role="menuitem" className="destructive" onClick={() => void openDeleteWorkspaceDialog(workspace)}>
-                                          <Trash2 size={13} strokeWidth={1.8} />
-                                          <span>Delete</span>
-                                        </button>
-                                      </div>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setWorkspaceMenuId(null);
-                                        if (workspace.status === "error") {
-                                          void retryWorkspace(workspace);
-                                        } else {
-                                          void openNewConversationForWorkspace(workspace);
-                                        }
-                                      }}
-                                      disabled={isBusy}
-                                      aria-label={workspace.status === "error" ? `Retry ${workspace.title}` : `New session in ${workspace.title}`}
-                                      title={workspace.status === "error" ? "Retry workspace" : "New session"}
-                                    >
-                                      {workspace.status === "error" ? <RefreshCw size={13} strokeWidth={1.8} /> : <SquarePen size={13} strokeWidth={1.8} />}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                              {workspaceConversations.length > 0 && <SidebarCollapse open={workspaceOpen}>
-                                <WorkspaceSessionList>
-                                  {workspaceConversations.map((conversation) => (
-                                    <ConversationNavItem
-                                      key={conversation.id}
-                                      conversation={conversation}
-                                      selected={conversation.id === selectedConversation?.id}
-                                      working={workingConversationIds.has(conversation.id)}
-                                      unread={unreadConversationIds.has(conversation.id)}
-                                      onSelect={() => void selectConversation(conversation.id)}
-                                      onContextMenu={(event) => openConversationContextMenu(event, conversation.id)}
-                                      onRename={() => openRenameConversationDialog(conversation)}
-                                      onPin={() => void toggleConversationPinned(conversation)}
-                                      onArchive={() => void archiveConversation(conversation)}
-                                      sort={sidebarSortProps(
-                                        { kind: "workspace-session", id: conversation.id, scopeId: workspace.id },
-                                        workspaceConversations.map((candidate) => candidate.id),
-                                      )}
-                                    />
-                                  ))}
-                                </WorkspaceSessionList>
-                              </SidebarCollapse>}
-                            </div>
-                          );
-                        })}
-
-                        {projectWorkspaces.length === 0 && (
-                          <button
-                            type="button"
-                            className="workspace-empty-action"
-                            onClick={() => openCreateWorkspaceDialog(project)}
-                          >
-                            <Plus size={13} /> Create workspace
-                          </button>
-                        )}
-                      </div>
-                    </SidebarCollapse>
-                  </div>
-                );
-              })}
+{desktopState.projects.filter((project) => !isNavigationPinned("project", project.id)).map((project) => renderProjectNavigation(project))}
 
               {previousConversations.length > 0 && (
                 <div className="previous-sessions-group">
@@ -3729,7 +3803,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
         </div>
       )}
 
-      {channelsOpen && channelsSidebarRoot && <ChannelsPage hostName={hostName} projects={desktopState.projects} workspaces={desktopState.workspaces} agents={runtimeAgents} sessions={sessions} sessionCatalog={desktopState.conversations} navigationRoot={channelsSidebarRoot} navigationButtonRef={channelsNavigationButton} navigationOpen={webNavigationOpen} sessionVisible={channelsSessionVisible} selectedSessionId={selectedSession?.id} onOpenNavigation={() => setWebNavigationOpen(true)} onShowConfiguration={() => setChannelsSessionVisible(false)} onBack={closeChannels} onOpenSession={async (id, leaveChannels) => {
+      {channelsOpen && channelsSidebarRoot && <ChannelsPage favorites={savedModelFavorites} hostName={hostName} projects={desktopState.projects} workspaces={desktopState.workspaces} agents={runtimeAgents} sessions={sessions} sessionCatalog={desktopState.conversations} navigationRoot={channelsSidebarRoot} navigationButtonRef={channelsNavigationButton} navigationOpen={webNavigationOpen} sessionVisible={channelsSessionVisible} selectedSessionId={selectedSession?.id} onOpenNavigation={() => setWebNavigationOpen(true)} onShowConfiguration={() => setChannelsSessionVisible(false)} onBack={closeChannels} onOpenSession={async (id, leaveChannels) => {
         const request = ++channelsNavigationRequest.current;
         let state: DesktopState;
         try {
@@ -3819,7 +3893,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
               <SessionTimeline
                 onFork={(turnId) => void forkConversation(selectedConversation.id, turnId)}
                 forkBusy={isBusy}
-                onOpenForkSource={(id) => selectConversation(id)}
+                forkSourceTitle={forkSourceConversation?.title}
+                onOpenForkSource={forkSourceConversation ? () => selectConversation(forkSourceConversation.id) : undefined}
                 binding={selectedBinding}
                 session={selectedSession}
                 items={timelineItems}
@@ -3850,6 +3925,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
               />
             ) : (
               <NewSessionPrompt
+                favorites={modelFavorites}
                 selectedProject={selectedProject}
                 selectedWorkspace={selectedWorkspace}
                 requiresWorkspace={selectedAgent === "codex"
@@ -3892,7 +3968,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                 selectedCodexModel={selectedCodexModel}
                 selectedCodexReasoningEffort={selectedCodexReasoningEffort}
                 onSelectCodexModel={selectCodexModel}
-                onSelectCodexReasoningEffort={setDraftCodexReasoningEffort}
+                onSelectCodexReasoningEffort={(reasoningEffort) => rememberModelSelection({ agent: "codex", model: draftCodexModel, reasoningEffort })}
                 selectedApprovalPolicy={draftApprovalPolicy}
                 onSelectApprovalPolicy={(approvalPolicy) => void selectApprovalPolicy(approvalPolicy)}
                 runtimeAvailable={true}
@@ -4009,6 +4085,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                 <div className="composer-actions-right">
                   {selectedAgent === "codex" ? (
                     <RuntimeSettingsPicker
+                      favorites={modelFavorites}
                       agents={codexAgent ? [codexAgent] : []}
                       selectedAgent="codex"
                       onSelectAgent={selectAgent}
@@ -4034,6 +4111,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                     />
                   ) : (
                     <RuntimeSettingsPicker
+                      favorites={modelFavorites}
                       agents={runtimeAgents}
                       selectedAgent="zotigo"
                       onSelectAgent={() => {}}
@@ -4228,7 +4306,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
       </aside>}
 
       {(
-        <aside hidden={channelsOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
+        <aside inert={channelsOpen || !sidePanelOpen} aria-hidden={channelsOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
           <div
             className="side-panel-resize-handle"
             role="separator"
@@ -4461,7 +4539,13 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
             )}
 
             <div className="workspace-sources-field">
-              <span>Sources <small>(optional)</small></span>
+              <div className="workspace-sources-heading">
+                <span>Sources <small>(optional)</small></span>
+                <div>
+                  <button type="button" disabled={isBusy || !canSelectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(true)}>Select all</button>
+                  <button type="button" disabled={isBusy || !canDeselectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(false)}>Deselect all</button>
+                </div>
+              </div>
               {(workspaceRepositories.length > 0 || desktopState.folders.some((folder) => folder.project_id === createWorkspaceProject.id)) && (
                 <small className="workspace-sources-help">Available Sources are selected by default. Uncheck anything this Workspace does not need.</small>
               )}

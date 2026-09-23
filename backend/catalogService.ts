@@ -1,10 +1,15 @@
 import path from "node:path";
+import type { NavigationItem } from "../shared/clientTypes";
 import { mapWithConcurrency } from "../shared/asyncConcurrency";
 import { orderSidebarItems } from "../shared/sidebarOrdering";
 import type { CatalogWorkspaceSource, CatalogProjectDetail, WorkspaceArchivePreview, WorkspaceDeletePreview } from "../shared/zotigod";
 import type { AddWorkspaceSourceInput, CreateProjectInput, CreateWorkspaceInput, DaemonSessionBinding, DesktopConversation, DesktopProject, DesktopProjectFolder, DesktopProjectRepository, DesktopState, DesktopWorkspace, ProjectSourceInput } from "../shared/clientTypes";
-import { getCatalogOrder, getCatalogSelection, setCatalogOrder, setCatalogSelection } from "./preferencesStore";
+import { getCatalogOrder, getCatalogSelection, setCatalogSelection } from "./preferencesStore";
 import {
+  getCatalogNavigation,
+  importCatalogNavigation,
+  reorderCatalogNavigation,
+  setCatalogNavigationPinned,
   addCatalogWorkspaceSource,
   addCatalogSource,
   archiveCatalogSession,
@@ -28,7 +33,6 @@ import {
   renameCatalogWorkspace,
   retryCatalogWorkspace,
   setCatalogSessionPinned,
-  setCatalogSessionPosition,
   setCatalogSessionTitle,
 } from "./zotigod";
 
@@ -43,6 +47,8 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
   const { getCatalogSelection, setCatalogSelection } = selection;
   async function getCatalogDesktopState(options: { syncCodex?: boolean } = {}): Promise<DesktopState> {
     const projects = await listCatalogProjects();
+    let navigation = await getCatalogNavigation();
+
     const [projectCatalogs, projections] = await Promise.all([
       mapWithConcurrency(projects, catalogRequestConcurrency, async (project) => {
         const [detail, workspaces] = await Promise.all([
@@ -53,14 +59,26 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
       }),
       listCatalogSessions(options),
     ]);
+    if (!navigation.legacyOrderImported) {
+      const savedPins = getCatalogOrder("pinnedSessions");
+      const importedPins = [...navigation.pinned].sort((left, right) => {
+        const leftPosition = left.kind === "session" ? savedPins.indexOf(left.id) : -1;
+        const rightPosition = right.kind === "session" ? savedPins.indexOf(right.id) : -1;
+        return (leftPosition < 0 ? Number.MAX_SAFE_INTEGER : leftPosition) - (rightPosition < 0 ? Number.MAX_SAFE_INTEGER : rightPosition);
+      });
+      await importCatalogNavigation([
+        { scope: "projects", items: orderSidebarItems(projects, getCatalogOrder("projects")).map(({ id }) => ({ kind: "project", id })) },
+        { scope: "pinned", items: importedPins },
+        ...projectCatalogs.map(({ detail, workspaces }) => ({ scope: "workspaces", parent_id: detail.id,
+          items: orderSidebarItems(workspaces, getCatalogOrder(`workspaces.${detail.id}`)).map(({ id }) => ({ kind: "workspace" as const, id })) })),
+      ]);
+      navigation = await getCatalogNavigation();
+    }
     const details = projectCatalogs.map(({ detail }) => detail);
     const workspaceGroups = projectCatalogs.map(({ workspaces }) => workspaces);
     const repositories = details.flatMap(projectRepositories);
     const folders = details.flatMap(projectFolders);
-    const workspaces = orderBySaved(
-      workspaceGroups.flat(),
-      (workspace) => `workspaces.${workspace.project_id}`,
-    );
+    const workspaces = orderSidebarItems(workspaceGroups.flat(), navigation.workspaces.map((item) => item.id));
     const conversations = projections.flatMap((projection): DesktopConversation[] => {
       if (!projection.runtime) return [];
       const organization = projection.organization;
@@ -76,7 +94,9 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
         updated_at: latestTimestamp(organization?.updated_at, projection.runtime.updated_at, projection.runtime.created_at),
       }];
     });
-    const orderedConversations = orderPinnedLocally(conversations);
+    const orderedConversations = conversations.sort((left, right) =>
+      (left.workspace_position ?? Number.MAX_SAFE_INTEGER) - (right.workspace_position ?? Number.MAX_SAFE_INTEGER)
+      || right.updated_at.localeCompare(left.updated_at) || left.id.localeCompare(right.id));
     const bindings: DaemonSessionBinding[] = projections.flatMap((projection) => projection.runtime ? [{
       conversation_id: projection.runtime.id,
       daemon_session_id: projection.runtime.id,
@@ -87,7 +107,7 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
       daemon_ended_at: projection.runtime.ended_at,
       created_at: projection.runtime.created_at,
     }] : []);
-    const orderedProjects = orderBySaved(projects, () => "projects");
+    const orderedProjects = orderSidebarItems(projects, navigation.projects.map((item) => item.id));
     const selection = reconcileSelection(
       getCatalogSelection(),
       orderedProjects,
@@ -96,6 +116,7 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     );
     setCatalogSelection(selection);
     return {
+      pinnedItems: navigation.pinned,
       projects: orderedProjects,
       repositories,
       folders,
@@ -267,23 +288,26 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
   }
 
   async function reorderCatalogProjects(ids: string[]): Promise<DesktopState> {
-    setCatalogOrder("projects", ids);
+    await reorderCatalogNavigation("projects", ids.map((id) => ({ kind: "project", id })));
     return getCatalogDesktopState();
   }
 
   async function reorderCatalogWorkspaces(projectId: string, ids: string[]): Promise<DesktopState> {
-    setCatalogOrder(`workspaces.${projectId}`, ids);
+    await reorderCatalogNavigation("workspaces", ids.map((id) => ({ kind: "workspace", id })), projectId);
     return getCatalogDesktopState();
   }
 
   async function reorderCatalogWorkspaceSessions(ids: string[]): Promise<DesktopState> {
-    await mapWithConcurrency(ids, catalogRequestConcurrency, (id, index) =>
-      setCatalogSessionPosition(id, (index + 1) * 1000));
+    if (!ids.length) return getCatalogDesktopState();
+    const projections = await listCatalogSessions();
+    const workspaceId = projections.find((item) => item.runtime?.id === ids[0])?.organization?.workspace_id;
+    if (!workspaceId) throw new Error("Session has no workspace");
+    await reorderCatalogNavigation("sessions", ids.map((id) => ({ kind: "session", id })), workspaceId);
     return getCatalogDesktopState();
   }
 
   async function reorderCatalogPinnedSessions(ids: string[]): Promise<DesktopState> {
-    setCatalogOrder("pinnedSessions", ids);
+    await reorderCatalogNavigation("pinned", ids.map((id) => ({ kind: "session", id })));
     return getCatalogDesktopState();
   }
 
@@ -317,28 +341,14 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     }));
   }
 
-  function orderBySaved<T extends { id: string; created_at: string }>(items: T[], scope: (item: T) => string): T[] {
-    const grouped = new Map<string, T[]>();
-    for (const item of items) grouped.set(scope(item), [...(grouped.get(scope(item)) ?? []), item]);
-    return [...grouped.values()].flatMap((group) => {
-      const order = getCatalogOrder(scope(group[0]!));
-      return orderSidebarItems(group, order);
-    });
+  async function pinCatalogNavigation(item: NavigationItem, pinned: boolean): Promise<DesktopState> {
+    await setCatalogNavigationPinned(item, pinned);
+    return getCatalogDesktopState();
   }
 
-  function orderPinnedLocally(items: DesktopConversation[]): DesktopConversation[] {
-    const pinnedOrder = getCatalogOrder("pinnedSessions");
-    const positions = new Map(pinnedOrder.map((id, index) => [id, index]));
-    return items.sort((left, right) => {
-      if (left.workspace_id && left.workspace_id === right.workspace_id) {
-        return (left.workspace_position ?? Number.MAX_SAFE_INTEGER) - (right.workspace_position ?? Number.MAX_SAFE_INTEGER);
-      }
-      if (left.pinned_at && right.pinned_at) {
-        return (positions.get(left.id) ?? left.pinned_order ?? Number.MAX_SAFE_INTEGER)
-          - (positions.get(right.id) ?? right.pinned_order ?? Number.MAX_SAFE_INTEGER);
-      }
-      return right.updated_at.localeCompare(left.updated_at);
-    });
+  async function reorderCatalogPinnedItems(items: NavigationItem[]): Promise<DesktopState> {
+    await reorderCatalogNavigation("pinned", items);
+    return getCatalogDesktopState();
   }
 
   function reconcileSelection(
@@ -382,5 +392,7 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     reorderCatalogWorkspaces,
     reorderCatalogWorkspaceSessions,
     reorderCatalogPinnedSessions,
+    reorderCatalogPinnedItems,
+    pinCatalogNavigation,
   };
 }

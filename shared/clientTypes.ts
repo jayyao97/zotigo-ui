@@ -119,7 +119,13 @@ export interface DaemonSessionBinding {
   created_at: string;
 }
 
+export interface NavigationItem {
+  kind: "project" | "workspace" | "session";
+  id: string;
+}
+
 export interface DesktopState {
+  pinnedItems?: NavigationItem[];
   projects: DesktopProject[];
   repositories: DesktopProjectRepository[];
   folders: DesktopProjectFolder[];
@@ -316,5 +322,7 @@ export interface ClientApi {
   setConversationPinned(conversationId: string, pinned: boolean): Promise<DesktopState>;
   reorderWorkspaceConversations(conversationIds: string[]): Promise<DesktopState>;
   reorderPinnedConversations(conversationIds: string[]): Promise<DesktopState>;
+  reorderPinnedItems(items: NavigationItem[]): Promise<DesktopState>;
+  setNavigationPinned(item: NavigationItem, pinned: boolean): Promise<DesktopState>;
   archiveConversation(conversationId: string): Promise<DesktopState>;
 }

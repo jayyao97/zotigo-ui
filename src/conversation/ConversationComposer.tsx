@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { favoriteKey, type ModelFavorite, type ModelFavoritesControl } from "../modelFavorites";
 import {
   type ClipboardEvent,
   type FormEvent,
@@ -13,6 +15,7 @@ import {
   Blocks,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Circle,
   Folder,
@@ -158,6 +161,7 @@ export function ComposerAttachmentStrip({
 }
 
 export function NewSessionPrompt({
+  favorites,
   selectedProject,
   selectedWorkspace,
   requiresWorkspace,
@@ -203,6 +207,7 @@ export function NewSessionPrompt({
   onSelectApprovalPolicy,
   runtimeAvailable,
 }: {
+  favorites: ModelFavoritesControl;
   selectedProject: DesktopProject | null;
   selectedWorkspace: DesktopWorkspace | null;
   requiresWorkspace: boolean;
@@ -466,6 +471,7 @@ export function NewSessionPrompt({
             disabled={isBusy}
           />
           <RuntimeSettingsPicker
+            favorites={favorites}
             agents={agents}
             selectedAgent={selectedAgent}
             onSelectAgent={onSelectAgent}
@@ -477,7 +483,8 @@ export function NewSessionPrompt({
             onSelectCodexModel={onSelectCodexModel}
             selectedCodexReasoningEffort={selectedCodexReasoningEffort}
             onSelectCodexReasoningEffort={onSelectCodexReasoningEffort}
-            disabled={isBusy || profilesLoading || agentsLoading || !selectedCodexModelEntry && selectedAgent === "codex"}
+            codexSettingsDisabled={!selectedCodexModelEntry}
+            disabled={isBusy || profilesLoading || agentsLoading}
           />
         </div>
       </form>
@@ -496,6 +503,7 @@ export function compatibleReasoningEffort(efforts: string[], current: string): s
 }
 
 export function RuntimeSettingsPicker({
+  favorites,
   agents,
   selectedAgent,
   onSelectAgent,
@@ -514,6 +522,7 @@ export function RuntimeSettingsPicker({
   agentLocked = false,
   disabled,
 }: {
+  favorites: ModelFavoritesControl;
   agents: AgentCatalogEntry[];
   selectedAgent: AgentKind;
   onSelectAgent: (agent: AgentKind) => void;
@@ -533,6 +542,8 @@ export function RuntimeSettingsPicker({
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState(false);
+  const [position, setPosition] = useState({ left: 8, bottom: 8, side: "left" });
   const [section, setSection] = useState<"agent" | "profile" | "model" | "thinking" | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -541,12 +552,30 @@ export function RuntimeSettingsPicker({
   const selectedAgentLabel = agents.find((agent) => agent.id === selectedAgent)?.label ?? selectedAgent;
 
   useLayoutEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const rect = pickerRef.current!.getBoundingClientRect();
+      const left = Math.max(8, Math.min(rect.right - 272, window.innerWidth - 280));
+      setPosition({ left, bottom: Math.min(Math.max(8, window.innerHeight - rect.top + 10), Math.max(8, window.innerHeight - (menuRef.current?.offsetHeight ?? 200) - 8)),
+        side: left >= 288 ? "left" : window.innerWidth - left - 272 >= 288 ? "right" : "inline" });
+    };
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(pickerRef.current!);
+    const conversation = pickerRef.current?.closest(".conversation");
+    if (conversation) observer?.observe(conversation);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
+  }, [open, custom]);
+
+  useLayoutEffect(() => {
     if (open) {
       const activeMenu = section ? submenuRef.current : menuRef.current;
-      const selected = activeMenu?.querySelector<HTMLButtonElement>('[aria-checked="true"]');
+      const selected = activeMenu?.querySelector<HTMLButtonElement>('[aria-checked="true"]:not(:disabled)');
       (selected ?? activeMenu?.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus();
     }
-  }, [open, section]);
+  }, [open, section, custom]);
 
   function focusSectionTrigger(target: NonNullable<typeof section>) {
     requestAnimationFrame(() => {
@@ -557,7 +586,7 @@ export function RuntimeSettingsPicker({
   useEffect(() => {
     if (!open) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !pickerRef.current?.contains(event.target)) {
+      if (event.target instanceof Node && !pickerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) {
         setOpen(false);
         setSection(null);
       }
@@ -570,6 +599,7 @@ export function RuntimeSettingsPicker({
           setSection(null);
           focusSectionTrigger(previousSection);
         }
+        else if (custom) setCustom(false);
         else {
           setOpen(false);
           pickerRef.current?.querySelector("button")?.focus();
@@ -582,7 +612,21 @@ export function RuntimeSettingsPicker({
       window.removeEventListener("pointerdown", closeOnOutsidePointer);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [open, section]);
+  }, [open, section, custom]);
+
+  const currentFavorite: ModelFavorite = selectedAgent === "codex"
+    ? { agent: "codex", model: selectedCodexModel, reasoningEffort: selectedCodexReasoningEffort }
+    : { agent: "zotigo", profile: selectedProfile };
+  function favoriteUnavailable(item: ModelFavorite): boolean {
+    if (disabled || (agentLocked && item.agent !== selectedAgent)) return true;
+    if (!agents.some((agent) => agent.id === item.agent)) return true;
+    if (item.agent === "zotigo") return profileDisabled || !profiles.some((profile) => profile.name === item.profile);
+    const model = codexModels.find((model) => model.id === item.model);
+    return codexSettingsDisabled || !model || !model.supported_reasoning_efforts.includes(item.reasoningEffort);
+  }
+  function favoriteLabel(item: ModelFavorite) {
+    return item.agent === "codex" ? `${codexModelLabel(codexModels, item.model)} · ${item.reasoningEffort}` : item.profile;
+  }
 
   const selectedProfileLabel = selectedProfile || (allowDefaultProfile ? defaultProfileLabel : "Zotigo");
   const label = selectedAgent === "codex"
@@ -601,14 +645,15 @@ export function RuntimeSettingsPicker({
         disabled={disabled}
         onClick={() => {
           setSection(null);
+          setCustom(false);
           setOpen((current) => !current);
         }}
       >
         {label}
         <ChevronDown size={14} strokeWidth={1.8} />
       </button>
-      {open && (
-        <div className="runtime-settings-menu" ref={menuRef} role="menu" aria-label="Runtime settings"
+      {open && createPortal(
+        <div style={{ position: "fixed", left: position.left, bottom: position.bottom, right: "auto" }} data-submenu-side={position.side} className="runtime-settings-menu" ref={menuRef} role="menu" aria-label="Runtime settings"
           onKeyDown={(event) => {
             if (event.key === "ArrowRight") {
               const target = (document.activeElement as HTMLElement | null)?.dataset.runtimeSection as typeof section;
@@ -628,13 +673,27 @@ export function RuntimeSettingsPicker({
             if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
             const activeMenu = submenuRef.current?.contains(document.activeElement) ? submenuRef.current : menuRef.current;
-            const buttons = Array.from(activeMenu?.querySelectorAll<HTMLButtonElement>(":scope > button:not(:disabled)") ?? []);
+            const buttons = Array.from(activeMenu?.querySelectorAll<HTMLButtonElement>(":scope > button:not(:disabled), :scope > .runtime-favorites-list button:not(:disabled)") ?? []);
             const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
             const index = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
               : (current + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
             buttons[index]?.focus();
           }}
         >
+          {!custom ? <>
+            <div className="runtime-favorites-list">{favorites.items.map((item) => <div className="runtime-favorite" key={favoriteKey(item)}>
+              <button type="button" role="menuitemradio" aria-checked={favoriteKey(item) === favoriteKey(currentFavorite)}
+                disabled={favoriteUnavailable(item)} title={favoriteUnavailable(item) ? "Unavailable for this session or runtime" : favoriteLabel(item)}
+                onClick={() => { favorites.select(item); setOpen(false); }}>
+                <span>{favoriteLabel(item)}<small>{item.agent === "codex" ? "Codex" : "Zotigo"}</small></span>
+                {favoriteKey(item) === favoriteKey(currentFavorite) && <Check size={15} />}
+              </button>
+
+            </div>)}</div>
+            {favorites.items.length === 0 && <p className="runtime-favorites-empty">Add favorites in Settings → General.</p>}
+            <button type="button" className="runtime-settings-row" role="menuitem" disabled={disabled} onClick={() => setCustom(true)}><strong>Custom</strong><span /><ChevronRight size={15} /></button>
+          </> : <>
+          <button type="button" className="runtime-settings-row" role="menuitem" disabled={disabled} onClick={() => { setCustom(false); setSection(null); }}><strong><ChevronLeft size={14} /> Favorites</strong></button>
           <button
             type="button"
             className="runtime-settings-row"
@@ -701,7 +760,8 @@ export function RuntimeSettingsPicker({
             </button>
           )}
           {section && (
-            <div className="runtime-settings-submenu" ref={submenuRef} role="menu" aria-label={`${section} options`}>
+            <div className="runtime-settings-submenu" style={{ maxHeight: `min(360px, calc(100vh - ${position.bottom + 8}px))` }} ref={submenuRef} role="menu" aria-label={`${section} options`}>
+              {position.side === "inline" && <button type="button" role="menuitem" onClick={() => { const previous = section; setSection(null); focusSectionTrigger(previous); }}><span><ChevronLeft size={14} /> Back</span></button>}
               {section === "agent" && agents.map((agent) => (
                 <button
                   type="button"
@@ -709,7 +769,7 @@ export function RuntimeSettingsPicker({
                   aria-checked={agent.id === selectedAgent}
                   key={agent.id}
                   disabled={disabled}
-                  onClick={() => onSelectAgent(agent.id)}
+                  onClick={() => { onSelectAgent(agent.id); setSection(null); }}
                 >
                   <span>{agent.label}</span>
                   {agent.id === selectedAgent && <Check size={15} strokeWidth={2} />}
@@ -768,7 +828,8 @@ export function RuntimeSettingsPicker({
               ))}
             </div>
           )}
-        </div>
+          </>}
+        </div>, document.body
       )}
     </div>
   );

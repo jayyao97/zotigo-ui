@@ -1,12 +1,15 @@
+import { FavoriteModelSettings } from "./FavoriteModelSettings";
 import { ArrowLeft, Settings, Server } from "lucide-react";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 
 export function SettingsPage({
+  hostName,
   thinkingDisplay,
   onThinkingDisplayChange,
   onManageHosts,
   onBack,
 }: {
+  hostName: string;
   thinkingDisplay: ThinkingDisplayMode;
   onThinkingDisplayChange: (mode: ThinkingDisplayMode) => void;
   onManageHosts: () => void;
@@ -51,6 +54,8 @@ export function SettingsPage({
               </label>
             </div>
           </section>
+
+          <FavoriteModelSettings hostName={hostName} />
 
           <section className="settings-section" aria-labelledby="connection-settings-heading">
             <h2 id="connection-settings-heading">Connections</h2>
