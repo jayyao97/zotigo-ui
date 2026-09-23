@@ -1881,6 +1881,20 @@ p {
   corner-shape: superellipse(1.1);
 }
 
+.mermaid-render-host {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  width: 1200px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.mermaid-diagram { padding: 16px; }
+.mermaid-status { padding: 8px 16px; color: var(--text-muted); font-size: 12px; }
+.mermaid-diagram .image-preview-trigger { display: block; max-width: 100%; }
+.mermaid-diagram img { display: block; width: auto; height: auto; max-width: 100%; max-height: min(480px, 60vh); }
+
 .markdown-code-block-header {
   display: flex;
   min-height: 48px;

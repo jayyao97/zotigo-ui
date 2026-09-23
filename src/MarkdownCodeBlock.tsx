@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { Check, Code2, Copy, WrapText } from "lucide-react";
+import { MermaidCodeBlock } from "./MermaidCodeBlock";
 
 type CodeElementProps = {
   children?: ReactNode;
@@ -43,6 +44,15 @@ const languageLabels: Record<string, string> = {
 };
 
 export function MarkdownCodeBlock({ children }: ComponentPropsWithoutRef<"pre">) {
+  if (Children.count(children) === 1 && isValidElement<CodeElementProps>(children)
+    && /(?:^|\s)language-mermaid(?:\s|$)/i.test(children.props.className ?? "")) {
+    const code = Children.toArray(children.props.children).join("").replace(/\n$/, "");
+    return <MermaidCodeBlock code={code} />;
+  }
+  return <HighlightedCodeBlock>{children}</HighlightedCodeBlock>;
+}
+
+function HighlightedCodeBlock({ children }: ComponentPropsWithoutRef<"pre">) {
   const codeElement = Children.count(children) === 1 && isValidElement<CodeElementProps>(children)
     ? children as ReactElement<CodeElementProps>
     : null;
