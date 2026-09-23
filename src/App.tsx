@@ -3598,7 +3598,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     <MarkdownImageContext.Provider value={{ sessionId: selectedSession?.id, basePath: selectedSession?.working_directory ?? selectedWorkspace?.root_path ?? null, baseKind: "directory" }}>
     <main
       ref={appFrameRef}
-      className={`app-frame ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
+      className={`app-frame ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
       style={{ "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
       onClickCapture={(event) => void handleMarkdownLinkClick(event)}
       onKeyDown={(event) => {
@@ -4306,7 +4306,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
       </aside>}
 
       {(
-        <aside hidden={channelsOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
+        <aside inert={channelsOpen || !sidePanelOpen} aria-hidden={channelsOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
           <div
             className="side-panel-resize-handle"
             role="separator"
