@@ -1,4 +1,3 @@
-import { handleComposerKeyDown as handleComposerKeyboardEvent } from "./composerKeyboard";
 import { useTimelineActions } from "./conversation/useTimelineActions";
 import type { NavigationItem } from "../shared/clientTypes";
 import { loadLastModelSelection, saveLastModelSelection } from "./lastModelSelection";
@@ -2557,7 +2556,25 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   }, [selectedBinding]);
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    handleComposerKeyboardEvent(event, handleSkillMenuKeyDown);
+    if (event.nativeEvent.isComposing) {
+      return;
+    }
+    if (handleSkillMenuKeyDown(event)) {
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  }
+
+  function handleNewPromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.nativeEvent.isComposing) return;
+    if (handleSkillMenuKeyDown(event)) return;
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
   }
 
   function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -3935,7 +3952,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
                 skillMenuIndex={skillMenuIndex}
                 attachments={composerAttachments}
                 onPromptChange={updateActivePrompt}
-                onPromptKeyDown={handleComposerKeyDown}
+                onPromptKeyDown={handleNewPromptKeyDown}
                 onSelectSkill={selectComposerSkill}
                 onRemoveSkill={removeComposerSkill}
                 onHighlightSkill={setSkillMenuIndex}
