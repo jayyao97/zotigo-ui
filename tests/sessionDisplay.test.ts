@@ -697,3 +697,36 @@ function assistant(id: string, sequence: number, content: NonNullable<DisplayIte
 function turn(type: "turn_started" | "turn_paused" | "turn_completed" | "turn_interrupted", sequence: number): DisplayItem {
   return { id: `${type}-${sequence}`, sequence, type, created_at: new Date(0).toISOString() };
 }
+
+
+test("failed turns remain visible with their error and replayed terminal events are deduplicated", () => {
+  const failed: DisplayItem = {
+    id: "failed", sequence: 2, type: "turn_failed",
+    turn: { id: "turn-1", status: "failed" },
+    error: "Selected model is at capacity. Please try a different model.",
+    created_at: new Date(0).toISOString(),
+  };
+  const visible = visibleDisplayItems([
+    turn("turn_started", 1), failed,
+    { ...failed, id: "synced-failed", sequence: 3 },
+    { ...failed, id: "retry-failed", sequence: 4, turn: { id: "turn-2", status: "failed" } },
+    turn("turn_completed", 5), turn("turn_interrupted", 6),
+  ]);
+  assert.deepEqual(visible.map((item) => item.id), ["turn_started-1", "failed", "retry-failed"]);
+  assert.equal(visible[1].error, failed.error);
+  assert.equal(groupTimelineItems(visible).filter((group) => group.kind === "item").length, 3);
+});
+
+test("a failed turn without an error or turn ID is still visible", () => {
+  const failed: DisplayItem = { id: "failure", sequence: 1, type: "turn_failed", created_at: new Date(0).toISOString() };
+  assert.deepEqual(visibleDisplayItems([failed]), [failed]);
+});
+
+
+test("a failed terminal does not repeat the same error already shown in its turn", () => {
+  const error: DisplayItem = { id: "error", sequence: 2, type: "error", error: "Provider unavailable", created_at: new Date(0).toISOString() };
+  const failed: DisplayItem = { ...error, id: "failed", sequence: 3, type: "turn_failed", turn: { id: "a" } };
+  assert.deepEqual(visibleDisplayItems([turn("turn_started", 1), error, failed]).map((item) => item.id), ["turn_started-1", "error"]);
+  assert.equal(visibleDisplayItems([error, { ...failed, error: "Different error" }]).length, 2);
+  assert.deepEqual(visibleDisplayItems([error, turn("turn_started", 4), { ...failed, sequence: 5 }]).map((item) => item.id), ["error", "turn_started-4", "failed"]);
+});

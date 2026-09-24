@@ -182,10 +182,20 @@ export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
       .filter((id): id is string => Boolean(id)),
   );
   const duplicateSyncedUserIDs = duplicateSyncedUserItemIDs(items);
+  const visibleFailedTurns = new Set<string>();
+  const visibleErrors = new Set<string>();
 
   return items.filter((item) => {
     if (item.subagent) return false;
     if (duplicateSyncedUserIDs.has(item.id)) return false;
+    if (item.type === "turn_started") visibleErrors.clear();
+    if (item.type === "error" && item.error?.trim()) visibleErrors.add(item.error.trim());
+    if (item.type === "turn_failed") {
+      const turnID = item.turn?.id;
+      if (turnID && visibleFailedTurns.has(turnID)) return false;
+      if (turnID) visibleFailedTurns.add(turnID);
+      return !item.error?.trim() || !visibleErrors.has(item.error.trim());
+    }
     if (isTurnTerminalItem(item)) return false;
     if (item.type === "approval_request" && item.approval?.id && resolvedApprovalIds.has(item.approval.id)) {
       return false;
