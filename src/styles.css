@@ -318,8 +318,8 @@ p {
 }
 
 .app-frame {
-  --panel-motion-duration: 220ms;
-  --panel-motion-easing: cubic-bezier(.2, .8, .2, 1);
+  --panel-motion-duration: 240ms;
+  --panel-motion-easing: ease-in-out;
   --resolved-side-panel-width: clamp(360px, var(--side-panel-width, 520px), calc(100vw - var(--sidebar-width) - 420px));
   display: grid;
   position: relative;
@@ -328,6 +328,9 @@ p {
   height: 100vh;
   min-height: 0;
   overflow: hidden;
+  /* Electron's window is transparent. Keep the moving content area opaque
+     while leaving the native sidebar material visible on the left. */
+  background: linear-gradient(to right, transparent var(--sidebar-width), var(--app-bg) var(--sidebar-width));
   transition: grid-template-columns var(--panel-motion-duration) var(--panel-motion-easing);
 }
 
@@ -4305,7 +4308,7 @@ p {
   position: relative;
   grid-column: 3;
   min-width: 0;
-  width: var(--resolved-side-panel-width);
+  width: 100%;
   min-height: 0;
   height: 100%;
   flex-direction: column;
@@ -4313,13 +4316,11 @@ p {
   background: var(--app-bg);
   overflow: hidden;
   visibility: hidden;
-  opacity: 0;
-  transition: opacity var(--panel-motion-duration) var(--panel-motion-easing), visibility 0s var(--panel-motion-duration);
+  transition: visibility 0s var(--panel-motion-duration);
 }
 
 .has-subagent-panel > .subagent-side-panel {
   visibility: visible;
-  opacity: 1;
   transition-delay: 0s;
 }
 

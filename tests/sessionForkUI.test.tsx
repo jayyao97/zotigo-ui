@@ -82,3 +82,36 @@ test("fork lineage shows the source title and opens it with a single click", asy
     dom.window.close();
   }
 });
+
+
+test("timeline shows durable turn failures once, including after a later successful turn", (t) => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { matchMedia: () => ({ matches: false }) } });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, "window", previous);
+    else Reflect.deleteProperty(globalThis, "window");
+  });
+  const render = (items: DisplayItem[]) => renderToStaticMarkup(<SessionTimeline
+    binding={{ conversation_id: "s", daemon_session_id: "s", created_at: "2026-01-01T00:00:00Z" }}
+    session={{ id: "s", state: "ended", live: false, working: false, created_at: "2026-01-01T00:00:00Z" }}
+    items={items} itemsAuthoritative itemsLoading={false} itemsError={null} message={null} daemonUrl="http://127.0.0.1:18766"
+    streamingItemIds={new Set()} smoothStreaming={false} submittingApprovalIds={new Set()} onSubmitApproval={async () => {}}
+    submittingInteractionIds={new Set()} onSubmitInteraction={async () => {}} onFork={() => {}}
+  />);
+
+  const failed: DisplayItem = {
+    id: "failed", sequence: 2, type: "turn_failed", turn: { id: "a", status: "failed" },
+    error: "Selected model is at capacity. Please try a different model.", created_at: "2026-01-01T00:00:01Z",
+  };
+  const items: DisplayItem[] = [
+    { id: "start", sequence: 1, type: "turn_started", turn: { id: "a" }, created_at: "2026-01-01T00:00:00Z" },
+    failed, { ...failed, id: "replay", sequence: 3 },
+    { id: "retry", sequence: 4, type: "turn_started", turn: { id: "b" }, created_at: "2026-01-01T00:00:02Z" },
+    { id: "done", sequence: 5, type: "turn_completed", turn: { id: "b" }, created_at: "2026-01-01T00:00:03Z" },
+  ];
+  const dom = new JSDOM(render(items));
+  assert.equal(dom.window.document.querySelectorAll(".display-error").length, 1);
+  assert.equal(dom.window.document.querySelector(".display-error p")?.textContent, failed.error);
+  dom.window.close();
+  assert.match(render([{ ...failed, error: undefined }]), /This turn failed. Please try again./);
+});

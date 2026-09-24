@@ -1,3 +1,4 @@
+import { useTimelineActions } from "./conversation/useTimelineActions";
 import type { NavigationItem } from "../shared/clientTypes";
 import { loadLastModelSelection, saveLastModelSelection } from "./lastModelSelection";
 import { useSavedModelFavorites, type ModelFavorite } from "./modelFavorites";
@@ -1288,9 +1289,22 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     };
   }, [daemonUrl]);
 
+  const markdownImageContext = useMemo(() => ({
+    sessionId: selectedSession?.id,
+    basePath: selectedSession?.working_directory ?? selectedWorkspace?.root_path ?? null,
+    baseKind: "directory" as const,
+  }), [selectedSession?.id, selectedSession?.working_directory, selectedWorkspace?.root_path]);
+
+  const timelineActions = useTimelineActions({
+    onFork: (turnId) => {
+      if (selectedConversation) void forkConversation(selectedConversation.id, turnId);
+    },
+    onOpenForkSource: forkSourceConversation ? () => selectConversation(forkSourceConversation.id) : undefined,
+  });
+
   useLayoutEffect(() => {
-    resizeConversationTextarea();
-    if (stickToBottomRef.current) {
+    const heightChanged = resizeTextareaToContent(composerTextareaRef.current);
+    if (heightChanged && stickToBottomRef.current) {
       scheduleConversationScrollToBottom();
     }
   }, [activePrompt, selectedConversation?.id]);
@@ -2805,10 +2819,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     setIsConversationAtBottom((current) => (current === nextValue ? current : nextValue));
   }
 
-  function resizeConversationTextarea() {
-    resizeTextareaToContent(composerTextareaRef.current);
-  }
-
   function applyDesktopActionResult(result: DesktopActionResult) {
     applyDesktopState(result.state);
     const session = result.session;
@@ -3595,7 +3605,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
   const activeSidePanelTab = sidePanelTabs.tabs.find((tab) => tab.id === sidePanelTabs.activeTabId) ?? null;
 
   return (
-    <MarkdownImageContext.Provider value={{ sessionId: selectedSession?.id, basePath: selectedSession?.working_directory ?? selectedWorkspace?.root_path ?? null, baseKind: "directory" }}>
+    <MarkdownImageContext.Provider value={markdownImageContext}>
     <main
       ref={appFrameRef}
       className={`app-frame ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
@@ -3891,10 +3901,10 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
           <article className="conversation-body">
             {selectedConversation ? (
               <SessionTimeline
-                onFork={(turnId) => void forkConversation(selectedConversation.id, turnId)}
+                onFork={timelineActions.onFork}
                 forkBusy={isBusy}
                 forkSourceTitle={forkSourceConversation?.title}
-                onOpenForkSource={forkSourceConversation ? () => selectConversation(forkSourceConversation.id) : undefined}
+                onOpenForkSource={timelineActions.onOpenForkSource}
                 binding={selectedBinding}
                 session={selectedSession}
                 items={timelineItems}

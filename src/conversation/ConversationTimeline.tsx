@@ -417,6 +417,10 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     );
   }
 
+  if (item.type === "turn_failed") {
+    return <DisplayErrorItem error={item.error || item.turn?.reason || "This turn failed. Please try again."} />;
+  }
+
   if (item.type === "error") {
     return <DisplayErrorItem error={item.error} />;
   }

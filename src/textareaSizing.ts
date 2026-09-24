@@ -12,8 +12,9 @@ export function composerTextareaSizing(input: {
   };
 }
 
-export function resizeTextareaToContent(element: HTMLTextAreaElement | null): void {
-  if (!element) return;
+export function resizeTextareaToContent(element: HTMLTextAreaElement | null): boolean {
+  if (!element) return false;
+  const previousHeight = element.style.height;
   element.style.height = "auto";
   const style = window.getComputedStyle(element);
   const sizing = composerTextareaSizing({
@@ -23,4 +24,5 @@ export function resizeTextareaToContent(element: HTMLTextAreaElement | null): vo
   });
   element.style.height = `${sizing.height}px`;
   element.style.overflowY = sizing.overflowY;
+  return previousHeight !== element.style.height;
 }
