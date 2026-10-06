@@ -5034,6 +5034,9 @@ function ConversationNavItem({
       {working && <LoaderCircle className="sidebar-session-spinner" size={13} strokeWidth={1.9} aria-label="Running" />}
       {!working && unread && <span className="sidebar-session-unread" aria-label="Unread" />}
       <div className="sidebar-session-actions">
+        <button className="sidebar-session-touch-menu" type="button" onClick={onContextMenu} aria-label={`More actions for ${conversation.title}`}>
+          <MoreHorizontal size={18} strokeWidth={1.8} />
+        </button>
         <button type="button" onClick={onPin} title={conversation.pinned_at ? "Unpin" : "Pin"} aria-label={`${conversation.pinned_at ? "Unpin" : "Pin"} ${conversation.title}`}>
           <Pin size={12} strokeWidth={1.8} fill={conversation.pinned_at ? "currentColor" : "none"} />
         </button>

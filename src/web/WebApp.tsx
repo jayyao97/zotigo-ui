@@ -1,9 +1,11 @@
+import { useWebViewport } from "./useWebViewport";
 import { useEffect, useMemo, useState } from "react";
 import { HostShell } from "../HostShell";
 import { ClientContext } from "../ClientContext";
 import { createWebClient, webRequest, WebRequestError } from "./api";
 
 export function WebApp() {
+  useWebViewport();
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [token, setToken] = useState("");

@@ -5351,3 +5351,91 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .workspace-sources-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .workspace-sources-heading > div { display: flex; gap: 6px; }
 .workspace-sources-heading button { min-height: 26px; padding: 0 8px; font-size: 12px; }
+
+/* Web shell follows the visible viewport, including an on-screen keyboard. */
+html[data-platform="web"] body {
+  position: fixed;
+  top: var(--web-viewport-top, 0px);
+  width: 100%;
+  height: var(--web-viewport-height, 100dvh);
+}
+html[data-platform="web"] .app-frame,
+html[data-platform="web"] .settings-page {
+  height: var(--web-viewport-height, 100dvh);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+html[data-platform="web"] .modal-backdrop {
+  top: var(--web-viewport-top, 0px);
+  bottom: auto;
+  height: var(--web-viewport-height, 100dvh);
+}
+html[data-platform="web"] :is(.create-workspace-dialog, .create-project-dialog, .rename-conversation-dialog, .host-settings, .directory-browser) {
+  max-height: calc(var(--web-viewport-height, 100dvh) - 24px);
+  overflow-y: auto;
+}
+html[data-platform="web"] .web-login {
+  min-height: 0;
+  height: var(--web-viewport-height, 100dvh);
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+}
+html[data-platform="web"] .web-login form { margin-block: auto; }
+.sidebar-session-actions .sidebar-session-touch-menu { display: none; }
+
+@media (pointer: coarse) {
+  html[data-platform="web"] { --row-height: 44px; }
+  html[data-platform="web"] :is(input, textarea, select) { font-size: 16px; }
+  html[data-platform="web"] button { touch-action: manipulation; }
+  html[data-platform="web"] :is(.web-navigation-toggle, .utility-nav button, .brand-button, .brand-actions button,
+    .conversation-titlebar > button, .conversation-titlebar .title-actions button, .composer-icon-button, .composer-pill, .composer-model, .send-button,
+    .runtime-settings-row, .runtime-settings-submenu button, .settings-back, .settings-secondary-button) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  html[data-platform="web"] :is(.project-row-actions, .workspace-row-actions, .sidebar-session-actions) {
+    opacity: 1;
+    pointer-events: auto;
+    top: 0;
+  }
+  html[data-platform="web"] :is(.project-row-actions, .workspace-row-actions) > button {
+    width: 44px; min-width: 44px; min-height: 44px;
+  }
+  html[data-platform="web"] :is(.project-row, .workspace-row) { padding-right: 92px; }
+  html[data-platform="web"] :is(.project-collapse-button, .workspace-collapse-button) { height: 44px; top: 0; }
+  html[data-platform="web"] .sidebar-session-actions > button { display: none; }
+  html[data-platform="web"] .sidebar-session-actions > .sidebar-session-touch-menu { display: grid; width: 44px; min-height: 44px; }
+  html[data-platform="web"] .sidebar-session > button:first-child { padding-right: 68px; }
+  html[data-platform="web"] :is(.sidebar-session-spinner, .sidebar-session-unread) { right: 51px; }
+  html[data-platform="web"] .project-section-heading > div { opacity: 1; pointer-events: auto; }
+  html[data-platform="web"] .project-section-heading button { min-width: 44px; min-height: 44px; }
+  html[data-platform="web"] .sidebar-session-title > span.scrolling { animation: none; }
+  html[data-platform="web"] .sidebar-default-navigation { overflow-y: auto; overscroll-behavior-y: contain; }
+  html[data-platform="web"] .sidebar-default-navigation > .sidebar-section { flex: 0 0 auto; overflow: visible; }
+  html[data-platform="web"] .sidebar-default-navigation :is(.project-row-shell, .workspace-row-shell) { position: relative; top: auto; }
+  html[data-platform="web"] :is(.workspace-action-menu, .project-action-menu, .session-context-menu) button { min-height: 44px; }
+}
+
+@media (max-width: 600px) {
+  html[data-platform="web"] .composer-actions { flex-wrap: wrap; gap: 4px; }
+  html[data-platform="web"] .composer-actions-right { max-width: 100%; }
+  html[data-platform="web"] .composer-model { max-width: min(220px, calc(100vw - 140px)); }
+  html[data-platform="web"] .composer-model > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  html[data-platform="web"] .new-chat-composer { max-width: 100%; }
+  html[data-platform="web"] .settings-row { flex-wrap: wrap; gap: 12px; }
+  html[data-platform="web"] .settings-favorite-fields { flex-wrap: wrap; }
+  html[data-platform="web"] .settings-row select { max-width: 100%; }
+}
+
+@media (pointer: coarse) {
+  html[data-platform="web"] :is(.session-context-menu, .project-action-menu, .workspace-action-menu) {
+    position: fixed;
+    top: auto !important;
+    left: max(12px, env(safe-area-inset-left)) !important;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(100dvh - var(--web-viewport-height, 100dvh) - var(--web-viewport-top, 0px) + max(12px, env(safe-area-inset-bottom))) !important;
+    width: auto;
+    max-width: none;
+    max-height: calc(var(--web-viewport-height, 100dvh) - 24px);
+    overflow-y: auto;
+  }
+}
