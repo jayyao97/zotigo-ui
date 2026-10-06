@@ -1,5 +1,4 @@
 export type SidePanelTab =
-  | { id: "files"; kind: "files" }
   | { id: "subagents"; kind: "subagents" }
   | { id: `subagent:${string}`; kind: "subagent"; runId: string }
   | { id: `file:${string}`; kind: "file"; path: string; line?: number; column?: number };
@@ -37,6 +36,6 @@ export function fileSidePanelTab(path: string, line?: number, column?: number): 
 
 /** Only file tabs survive a host remount; transcripts are reloaded from the daemon. */
 export function retainFileTabs(state: SidePanelTabsState): SidePanelTabsState {
-  const tabs = state.tabs.filter((tab) => tab.kind === "file" || tab.kind === "files");
+  const tabs = state.tabs.filter((tab) => tab.kind === "file");
   return { tabs, activeTabId: tabs.some((tab) => tab.id === state.activeTabId) ? state.activeTabId : null };
 }

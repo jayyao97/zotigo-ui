@@ -227,3 +227,46 @@ test("a failed host switch keeps the current host and its restored selection", a
     await act(async () => root.unmount());
   } finally { restore(); }
 });
+
+test("refreshing Codex in Settings updates the mounted composer without mismatching its selected model and effort", async () => {
+  const restore = installDom();
+  localStorage.setItem("zotigo.model-favorites.v1:local", JSON.stringify([{ agent: "codex", model: "model-b", reasoningEffort: "high" }]));
+  const client = hostClient();
+  const capabilities = { profiles: false, models: true, steering: true, approvals: false };
+  let preparations = 0;
+  let updatedCatalog = false;
+  const api = { ...client.api,
+    getAgents: async () => ({ default_agent: "codex" as const, agents: [{ id: "codex" as const, label: "Codex", availability: "installed" as const, capabilities }] }),
+    prepareCodex: async () => {
+      preparations++;
+      return { id: "codex" as const, label: "Codex", availability: "available" as const, capabilities, models: [
+        { id: "model-a", display_name: "Model A", is_default: true, supported_reasoning_efforts: ["medium"] },
+        { id: "model-b", display_name: "Model B", is_default: false, supported_reasoning_efforts: ["high"] },
+        ...(updatedCatalog ? [{ id: "model-c", display_name: "Model C", is_default: false, supported_reasoning_efforts: ["low"] }] : []),
+      ] };
+    },
+  };
+  const root = await mountHostShell(api);
+  try {
+    await act(async () => click(document.querySelector('.runtime-settings-trigger')!));
+    await act(async () => click(document.querySelector('.runtime-favorite > button')!));
+    assert.match(document.querySelector('.runtime-settings-trigger')!.textContent!, /Model B · high/);
+    await act(async () => click(document.querySelector('[aria-label="Switch host"]')!));
+    await act(async () => click([...document.querySelectorAll('.host-menu-popover button')].find((button) => button.textContent === 'Settings')!));
+    await flush();
+    const beforeRefresh = preparations;
+    updatedCatalog = true;
+    await act(async () => click([...document.querySelectorAll('button')].find((button) => button.textContent === 'Refresh models')!));
+    await flush();
+    assert.equal(preparations, beforeRefresh + 1);
+    await act(async () => click(document.querySelector('.settings-back')!));
+    assert.match(document.querySelector('.runtime-settings-trigger')!.textContent!, /Model B · high/);
+    await act(async () => click(document.querySelector('.runtime-settings-trigger')!));
+    await act(async () => click([...document.querySelectorAll('.runtime-settings-row')].find((button) => button.textContent === 'Custom')!));
+    await act(async () => click(document.querySelector('[data-runtime-section="model"]')!));
+    assert.match(document.querySelector('.runtime-settings-submenu')!.textContent!, /Model C/);
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});

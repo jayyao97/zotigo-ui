@@ -23,9 +23,7 @@ export function useSessionSidePanel(key: string, initial: SessionSidePanels = {}
       const previous = current[key] ?? emptyPanel;
       const value = typeof action === "function" ? action(previous[field]) : action;
       const next = { ...previous, [field]: value };
-      const closedLastFile = previous.tabs.tabs.some((tab) => tab.kind === "file")
-        && next.tabs.tabs.every((tab) => tab.kind === "files");
-      if (field === "tabs" && previous.tabs.tabs.length > 0 && (next.tabs.tabs.length === 0 || closedLastFile)) {
+      if (field === "tabs" && previous.tabs.tabs.length > 0 && next.tabs.tabs.length === 0) {
         next.open = false;
         next.expanded = false;
       }

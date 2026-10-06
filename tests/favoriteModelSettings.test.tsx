@@ -15,14 +15,22 @@ test("settings add and remove persisted favorites and update mounted consumers w
   for (const [key, value] of Object.entries(replacements)) Object.defineProperty(globalThis, key, { configurable: true, value });
   const root = createRoot(document.getElementById("root")!);
   let requestedDirectory: string | undefined;
+  let refreshedCatalog: unknown;
+  let refreshCount = 0;
+  let failRefresh = false;
   const api = {
     getAgents: async () => ({ agents: [{ id: "codex", label: "Codex" }] }),
-    prepareCodex: async () => ({ id: "codex", label: "Codex", models: [{ id: "model-a", display_name: "Model A", is_default: true, supported_reasoning_efforts: ["medium", "high"] }] }),
+    prepareCodex: async () => {
+      if (failRefresh) throw new Error("model-list-test-failure");
+      refreshCount++;
+      return { id: "codex", label: "Codex", models: [{ id: "model-a", display_name: "Model A", is_default: true, supported_reasoning_efforts: ["medium", "high"] }, ...(refreshCount > 3 ? [{ id: "model-b", display_name: "Model B", is_default: false, supported_reasoning_efforts: ["medium"] }] : [])] };
+    },
     getDesktopState: async () => ({ selectedWorkspaceId: "workspace", workspaces: [{ id: "workspace", root_path: "/workspace" }] }),
     getProfiles: async (directory?: string) => { requestedDirectory = directory; return { profiles: [], default_profile: "" }; },
   } as unknown as ClientApi;
   function Consumer() { const { items } = useSavedModelFavorites(); return <output>{JSON.stringify(items)}</output>; }
-  const render = async (host: string) => { await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ModelFavoritesProvider key={host} host={host}><FavoriteModelSettings hostName={host} /><Consumer /></ModelFavoritesProvider></ClientContext.Provider>)); };
+  const onCodexRefresh = (catalog: unknown) => { refreshedCatalog = catalog; };
+  const render = async (host: string) => { await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ModelFavoritesProvider key={host} host={host}><FavoriteModelSettings hostName={host} onCodexRefresh={onCodexRefresh} /><Consumer /></ModelFavoritesProvider></ClientContext.Provider>)); };
   try {
     await render("local");
     assert.equal(requestedDirectory, "/workspace");
@@ -38,6 +46,29 @@ test("settings add and remove persisted favorites and update mounted consumers w
     await act(async () => document.querySelector<HTMLButtonElement>('[aria-label^="Remove favorite"]')!.click());
     assert.equal(document.querySelector("output")!.textContent, "[]");
     assert.equal(localStorage.getItem("zotigo.model-favorites.v1:local"), "[]");
+    const refresh = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Refresh models")!;
+    await act(async () => refresh.click());
+    assert.equal(refreshCount, 4);
+    assert.match(JSON.stringify(refreshedCatalog), /model-b/);
+    assert.ok([...document.querySelectorAll("option")].some((option) => option.value === "model-b"));
+    assert.match(document.querySelector('[role="status"]')!.textContent!, /refreshed/);
+    const lastCatalog = refreshedCatalog;
+    failRefresh = true;
+    await act(async () => refresh.click());
+    assert.match(document.querySelector('[role="alert"]')!.textContent!, /model-list-test-failure/);
+    assert.equal(refreshedCatalog, lastCatalog);
+    assert.equal(refresh.disabled, false);
+    let nativeAttempts = 0;
+    api.getAgents = async () => {
+      if (nativeAttempts++ === 0) throw new Error("temporary-catalog-failure");
+      return { default_agent: "zotigo", agents: [{ id: "zotigo", label: "Zotigo", availability: "available", capabilities: { profiles: true, models: false, steering: true, approvals: true } }] };
+    };
+    await render("native-only");
+    assert.match(document.querySelector('[role="alert"]')!.textContent!, /temporary-catalog-failure/);
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "Retry")!.click());
+    assert.equal(document.querySelector('[role="alert"]'), null);
+    assert.equal([...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "Refresh models")!.disabled, true);
+    assert.match(document.querySelector('.settings-favorite-fields')!.textContent!, /Zotigo/);
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of Object.entries(previous)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }

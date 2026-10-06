@@ -23,10 +23,12 @@ for (const host of ["127.0.0.1", "0.0.0.0"]) test(`Web ${host} startup persists 
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
     const tokenPath = path.join(home, "web/access-token");
-    for (let i = 0; i < 100 && !fs.existsSync(tokenPath); i++) {
+    // Token persistence precedes listen(); only the listening callback signals readiness.
+    for (let i = 0; i < 100 && !output.includes("Zotigo Web:"); i++) {
       assert.equal(child.exitCode, null, output);
       await new Promise((resolve) => setTimeout(resolve, 30));
     }
+    assert.match(output, /Zotigo Web:/);
     const token = fs.readFileSync(tokenPath, "utf8").trim();
     assert.ok(token.length >= 32);
     assert.equal(fs.statSync(tokenPath).mode & 0o777, 0o600);
@@ -68,6 +70,50 @@ test("remote HTTP requires an explicit origin and plaintext opt-in", () => {
       const child = spawnSync(process.execPath, [require.resolve("../web/main")], { env, encoding: "utf8", timeout: 5000 });
       assert.equal(child.status, 1);
       assert.match(child.stderr, origin === undefined ? /Set ZOTIGO_WEB_ORIGIN/ : /ZOTIGO_WEB_ALLOW_HTTP/);
+    }
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test("Web restart retains the login token but expires previous browser sessions", { timeout: 15000 }, async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-web-restart-"));
+  const listener = net.createServer().listen(0, "127.0.0.1");
+  await once(listener, "listening");
+  const address = listener.address(); assert.ok(address && typeof address !== "string");
+  await new Promise<void>((resolve) => listener.close(() => resolve()));
+  const origin = `http://127.0.0.1:${address.port}`;
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, ZOTIGO_WEB_HOST: "127.0.0.1", ZOTIGO_WEB_PORT: String(address.port), ZOTIGO_WEB_ORIGIN: origin, ZOTIGO_WEB_DATA_DIR: path.join(home, "web"), ZOTIGOD_URL: "http://127.0.0.1:8766" };
+  delete env.ZOTIGO_WEB_TOKEN;
+  let originalToken = "";
+  let cookie = "";
+  try {
+    for (let boot = 0; boot < 2; boot++) {
+      const child = spawn(process.execPath, [require.resolve("../web/main")], { env, stdio: "pipe" });
+      const closed = once(child, "close");
+      let output = "";
+      child.stdout.on("data", (chunk) => { output += chunk; });
+      child.stderr.on("data", (chunk) => { output += chunk; });
+      try {
+        for (let i = 0; i < 100 && !output.includes("Zotigo Web:"); i++) {
+          assert.equal(child.exitCode, null, output);
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+        assert.match(output, /Zotigo Web:/);
+        const token = fs.readFileSync(path.join(home, "web/access-token"), "utf8").trim();
+        if (boot === 0) originalToken = token;
+        else {
+          assert.equal(token, originalToken);
+          const oldSession = await fetch(`${origin}/api/session`, { headers: { Cookie: cookie } });
+          assert.equal(oldSession.status, 401);
+          await oldSession.arrayBuffer();
+        }
+        const response = await fetch(`${origin}/api/login`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json", "X-Zotigo-Request": "1" }, body: JSON.stringify({ token: originalToken }) });
+        assert.equal(response.status, 200);
+        cookie = response.headers.get("set-cookie")!.split(";")[0];
+        await response.arrayBuffer();
+        assert.ok(!output.includes(originalToken));
+      } finally {
+        child.kill("SIGTERM"); await closed;
+      }
     }
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });

@@ -4,7 +4,7 @@ import { favoriteKey, useSavedModelFavorites, type ModelFavorite } from "./model
 import { compatibleReasoningEffort } from "./conversation/ConversationComposer";
 import type { AgentCatalogEntry, AgentKind, RuntimeProfile } from "../shared/zotigod";
 
-export function FavoriteModelSettings({ hostName }: { hostName: string }) {
+export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: string; onCodexRefresh?: (catalog: AgentCatalogEntry) => void }) {
   const { api } = useClient();
   const favorites = useSavedModelFavorites();
   const [agents, setAgents] = useState<AgentCatalogEntry[]>([]);
@@ -16,14 +16,15 @@ export function FavoriteModelSettings({ hostName }: { hostName: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [refreshed, setRefreshed] = useState(false);
   useEffect(() => {
     let active = true;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setRefreshed(false);
     void (async () => {
       const [catalog, state] = await Promise.all([api.getAgents(), api.getDesktopState()]);
       const installedCodex = catalog.agents.find((item) => item.id === "codex");
       let availableAgents = catalog.agents;
-      if (installedCodex && !installedCodex.models?.length) {
+      if (installedCodex && (retry > 0 || !installedCodex.models?.length)) {
         const prepared = await api.prepareCodex();
         availableAgents = catalog.agents.map((item) => item.id === "codex" ? prepared : item);
       }
@@ -31,16 +32,18 @@ export function FavoriteModelSettings({ hostName }: { hostName: string }) {
       const config = await api.getProfiles(workspace?.root_path);
       if (!active) return;
       setAgents(availableAgents); setProfiles(config.profiles);
-      setAgent(availableAgents.some((item) => item.id === "codex") ? "codex" : "zotigo");
+      const codex = availableAgents.find((item) => item.id === "codex");
+      if (retry > 0 && codex) { onCodexRefresh?.(codex); setRefreshed(true); }
+      setAgent((current) => retry > 0 && availableAgents.some((item) => item.id === current) ? current : availableAgents.some((item) => item.id === "codex") ? "codex" : "zotigo");
       const models = availableAgents.find((item) => item.id === "codex")?.models ?? [];
-      const first = models.find((item) => item.is_default) ?? models[0];
+      const first = (retry > 0 ? models.find((item) => item.id === model) : undefined) ?? models.find((item) => item.is_default) ?? models[0];
       setModel(first?.id ?? "");
-      setEffort(compatibleReasoningEffort(first?.supported_reasoning_efforts ?? [], "medium"));
+      setEffort(compatibleReasoningEffort(first?.supported_reasoning_efforts ?? [], retry > 0 ? effort : "medium"));
       setProfile(config.profiles.find((item) => item.name === config.default_profile)?.name ?? config.profiles[0]?.name ?? "");
     })().catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : "Could not load models."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [api, retry]);
+  }, [api, retry, onCodexRefresh]);
   const models = agents.find((item) => item.id === "codex")?.models ?? [];
   const selectedModel = models.find((item) => item.id === model);
   const favorite: ModelFavorite = agent === "codex" ? { agent, model, reasoningEffort: effort } : { agent, profile };
@@ -53,6 +56,11 @@ export function FavoriteModelSettings({ hostName }: { hostName: string }) {
     <h2 id="favorite-models-heading">Favorite models</h2>
     <p className="settings-favorites-description">Shown first in the model picker. Saved locally for {hostName}.</p>
     <div className="settings-card">
+      <div className="settings-row">
+        <span><strong>Codex models</strong><small>Reload models from Codex on {hostName}. Does not install or update Codex.</small></span>
+        <button type="button" className="settings-secondary-button" disabled={loading || !agents.some((item) => item.id === "codex")} onClick={() => setRetry((value) => value + 1)}>Refresh models</button>
+      </div>
+      {refreshed && <div className="settings-row" role="status"><span><small>Codex models refreshed ({models.length}).{agents.find((item) => item.id === "codex")?.version ? ` Runtime: ${agents.find((item) => item.id === "codex")!.version}.` : ""}</small></span></div>}
       {favorites.items.length === 0 && <div className="settings-row"><span><small>No favorite models yet.</small></span></div>}
       {favorites.items.map((item) => <div className="settings-row" key={favoriteKey(item)}>
         <span><strong>{label(item)}</strong><small>{item.agent === "codex" ? "Codex" : "Zotigo"}</small></span>
