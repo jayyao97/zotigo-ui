@@ -1,12 +1,13 @@
 import { ModelFavoritesProvider } from "./modelFavorites";
 import { bindClientGeneration } from "../shared/bindClientGeneration";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Plus, Server, Settings, Trash2, X } from "lucide-react";
 import App, { discardHostVolatileState } from "./App";
 import { DirectoryBrowser } from "./DirectoryBrowser";
 import { ClientContext, useClient } from "./ClientContext";
 import { SettingsPage } from "./SettingsPage";
 import { parseThinkingDisplayMode, thinkingDisplayStorageKey, type ThinkingDisplayMode } from "./thinkingDisplay";
+import type { AgentCatalogEntry } from "../shared/zotigod";
 import type { HostProfile } from "../shared/hosts";
 import type { SourceCandidate } from "../shared/clientTypes";
 
@@ -41,6 +42,8 @@ export function HostShell() {
   const [generation, setGeneration] = useState(0);
   const [newSessionGeneration, setNewSessionGeneration] = useState<number | null>(null);
   const generationRef = useRef(0);
+  const [refreshedCodex, setRefreshedCodex] = useState<{ host: string; catalog: AgentCatalogEntry } | null>(null);
+  const onCodexRefresh = useCallback((catalog: AgentCatalogEntry) => setRefreshedCodex({ host: selected, catalog }), [selected]);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -97,7 +100,7 @@ export function HostShell() {
       await api.unsubscribeSessionEvents();
       generationRef.current++;
       await api.setActiveHost(id);
-      setSelected(id); setGeneration(generationRef.current); setNewSessionGeneration(generationRef.current);
+      setRefreshedCodex(null); setSelected(id); setGeneration(generationRef.current); setNewSessionGeneration(generationRef.current);
       try { storage.setItem("zotigo.host", id); } catch { /* In-memory selection still works. */ }
     } catch (cause) {
       if (prepared) window.dispatchEvent(new Event("zotigo:host-switch-cancelled"));
@@ -119,9 +122,10 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ModelFavoritesProvider key={selected} host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
+          <App refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
         {surface === "settings" && <SettingsPage
+          onCodexRefresh={onCodexRefresh}
           hostName={profiles.find((host) => host.id === selected)?.name ?? selected}
           thinkingDisplay={thinkingDisplay}
           onThinkingDisplayChange={updateThinkingDisplay}

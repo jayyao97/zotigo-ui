@@ -1,15 +1,18 @@
+import type { AgentCatalogEntry } from "../shared/zotigod";
 import { FavoriteModelSettings } from "./FavoriteModelSettings";
 import { ArrowLeft, Settings, Server } from "lucide-react";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 
 export function SettingsPage({
   hostName,
+  onCodexRefresh,
   thinkingDisplay,
   onThinkingDisplayChange,
   onManageHosts,
   onBack,
 }: {
   hostName: string;
+  onCodexRefresh?: (catalog: AgentCatalogEntry) => void;
   thinkingDisplay: ThinkingDisplayMode;
   onThinkingDisplayChange: (mode: ThinkingDisplayMode) => void;
   onManageHosts: () => void;
@@ -55,7 +58,7 @@ export function SettingsPage({
             </div>
           </section>
 
-          <FavoriteModelSettings hostName={hostName} />
+          <FavoriteModelSettings hostName={hostName} onCodexRefresh={onCodexRefresh} />
 
           <section className="settings-section" aria-labelledby="connection-settings-heading">
             <h2 id="connection-settings-heading">Connections</h2>

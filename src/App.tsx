@@ -329,7 +329,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ clientScope, hostName, thinkingDisplay, openNewSessionOnMount = false }: { clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
+export default function App({ clientScope, hostName, thinkingDisplay, refreshedCodex, openNewSessionOnMount = false }: { refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
@@ -1256,9 +1256,9 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
         const nativeAgent = catalog.agents.find((agent) => agent.id === "zotigo");
         const installedCodex = catalog.agents.find((agent) => agent.id === "codex");
         let preparedCodex: AgentCatalogEntry | undefined;
-        if (installedCodex) {
+        if (installedCodex || refreshedCodex) {
           try {
-            preparedCodex = await client.prepareCodex();
+            preparedCodex = refreshedCodex ?? await client.prepareCodex();
           } catch {
             preparedCodex = undefined;
           }
@@ -1267,7 +1267,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
         const availableAgents = [nativeAgent, preparedCodex].filter((agent): agent is AgentCatalogEntry => Boolean(agent));
         setRuntimeAgents(availableAgents);
         const models = preparedCodex?.models ?? [];
-        const defaultModel = models.find((model) => initialModelSelection?.agent === "codex" && model.id === initialModelSelection.model)
+        const defaultModel = models.find((model) => model.id === draftCodexModel)
+          ?? models.find((model) => initialModelSelection?.agent === "codex" && model.id === initialModelSelection.model)
           ?? models.find((model) => model.is_default) ?? models[0];
         setDraftCodexModel((current) => models.some((model) => model.id === current) ? current : defaultModel?.id ?? "");
         setDraftCodexReasoningEffort((current) => {
@@ -1287,7 +1288,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
     return () => {
       active = false;
     };
-  }, [daemonUrl]);
+  }, [daemonUrl, refreshedCodex]);
 
   const markdownImageContext = useMemo(() => ({
     sessionId: selectedSession?.id,
