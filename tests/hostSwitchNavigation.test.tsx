@@ -70,7 +70,7 @@ function hostClient(failDev = false, initialState = emptyState) {
   let activeHost = "local";
   const calls: Array<{ host: string; channel: string; args: unknown[] }> = [];
   const api = createClientApi({
-    onSessionEvent: () => () => {},
+    onFileEvent: () => () => {}, onSessionEvent: () => () => {},
     invoke: async <T,>(channel: string, ...args: unknown[]) => {
       calls.push({ host: activeHost, channel, args });
       if (channel === "hosts:list") return [
@@ -101,7 +101,7 @@ function hostClient(failDev = false, initialState = emptyState) {
       if (channel === "sessions:list") return [] as T;
       if (channel === "daemon:get-profiles") return { default_profile: "", profiles: [] } as T;
       if (channel === "daemon:get-agents") return { default_agent: "zotigo", agents: [] } as T;
-      if (channel === "sessions:unsubscribe-events") return undefined as T;
+      if (channel === "sessions:unsubscribe-events" || channel === "files:unsubscribe-events") return undefined as T;
       throw new Error(`Unexpected operation: ${channel}`);
     },
   });

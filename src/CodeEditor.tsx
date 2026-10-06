@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
 import { EditorView, basicSetup } from "codemirror";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { StateEffect, EditorState } from "@codemirror/state";
+import { StateEffect, EditorState, Annotation } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
+
+const externalUpdate = Annotation.define<boolean>();
 
 const syntaxTheme = HighlightStyle.define([
   { tag: tags.comment, color: "var(--color-syntax-comment)", fontStyle: "italic" },
@@ -84,7 +86,7 @@ export function CodeEditor({
         EditorState.readOnly.of(readOnly),
         EditorView.editable.of(!readOnly),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+          if (update.docChanged && !update.transactions.some((transaction) => transaction.annotation(externalUpdate))) onChangeRef.current(update.state.doc.toString());
         }),
         EditorView.domEventHandlers({
           keydown: (event) => {
@@ -109,6 +111,15 @@ export function CodeEditor({
       view.destroy();
     };
   }, [filePath, readOnly]);
+
+  useEffect(() => {
+    const view = editorRef.current;
+    if (!view || view.state.doc.toString() === value) return;
+    const anchor = Math.min(view.state.selection.main.anchor, value.length);
+    const head = Math.min(view.state.selection.main.head, value.length);
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value },
+      selection: { anchor, head }, annotations: externalUpdate.of(true) });
+  }, [value]);
 
   useEffect(() => {
     const view = editorRef.current;

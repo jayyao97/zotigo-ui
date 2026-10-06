@@ -1,3 +1,5 @@
+import { createFileEvents } from "../backend/fileEvents";
+import { parseWatchedFiles } from "../shared/fileEvents";
 import { withHost, currentHost } from "../backend/hosts";
 import { fetchDaemon } from "../backend/daemonHttp";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -15,7 +17,7 @@ import { createSelectionStore } from "../shared/catalogSelection";
 const maxBodyBytes = 30 * 1024 * 1024; // Five images, up to 20 MiB total, encoded as base64.
 const nativeOnly = new Set([
   "desktop:choose-source-folders", "desktop:reveal-path", "desktop:download-image",
-  "sessions:subscribe-events", "sessions:unsubscribe-events",
+  "sessions:subscribe-events", "sessions:unsubscribe-events", "files:subscribe-events", "files:unsubscribe-events",
 ]);
 
 export function createWebServer(options: { origin: string; token: string; assetsPath: string }) {
@@ -85,6 +87,28 @@ export function createWebServer(options: { origin: string; token: string; assets
           sources.push({ selectedPath, canonicalPath: result.canonical_path, name: path.basename(result.canonical_path), kind: result.kind });
         }
         json(response, 200, sources);
+        return;
+      }
+      if (url.pathname === "/api/file-events") {
+        const body = await readJson(request, 320 * 1024);
+        const subscriptionId = body.subscriptionId;
+        if (typeof subscriptionId !== "string" || !subscriptionId || subscriptionId.length > 128) throw new RequestError(400, "Invalid file subscription.");
+        let files;
+        try { files = parseWatchedFiles(body.files); }
+        catch { throw new RequestError(400, "Invalid file subscription."); }
+        if (streams.size >= 32) throw new RequestError(429, "Too many event streams.");
+        response.writeHead(200, { "Content-Type": "text/event-stream", "X-Accel-Buffering": "no" });
+        response.flushHeaders();
+        const controller = new AbortController();
+        const events = createFileEvents((event) => writeSessionEvent(response, event, controller.signal));
+        const heartbeat = setInterval(() => { if (!response.writableNeedDrain) response.write(": keepalive\n\n"); }, 15_000);
+        const expiry = setTimeout(() => stop(), Math.max(0, security.expiresAt(request) - Date.now()));
+        const stop = () => {
+          clearInterval(heartbeat); clearTimeout(expiry); controller.abort();
+          events.stop(); streams.delete(stop); response.destroy();
+        };
+        streams.set(stop, request); response.on("close", stop);
+        events.start(subscriptionId, files);
         return;
       }
       if (url.pathname !== "/api/rpc") throw new RequestError(404, "Unknown endpoint.");

@@ -161,6 +161,8 @@ function registerIpcHandlers(): void {
     downloadImage: (url) => { mainWindow?.webContents.downloadURL(url); },
   }, (envelope) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sessions:event", { ...envelope, hostId });
+  }, undefined, (envelope) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("files:event", { ...envelope, hostId });
   });
   applicationService = createForHost("local");
   hostApplications.set("local", applicationService);

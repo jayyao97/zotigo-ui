@@ -98,6 +98,7 @@ export function HostShell() {
       if (!window.dispatchEvent(new Event("zotigo:before-host-switch", { cancelable: true }))) return;
       prepared = true;
       await api.unsubscribeSessionEvents();
+      await api.unsubscribeFileEvents();
       generationRef.current++;
       await api.setActiveHost(id);
       setRefreshedCodex(null); setSelected(id); setGeneration(generationRef.current); setNewSessionGeneration(generationRef.current);

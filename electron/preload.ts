@@ -1,3 +1,4 @@
+import type { FileEventEnvelope } from "../shared/fileEvents";
 import { contextBridge, ipcRenderer } from "electron";
 import { createClientApi } from "../shared/clientApi";
 import type { SessionEventEnvelope } from "../shared/clientTypes";
@@ -10,6 +11,12 @@ const api = createClientApi({
     const result = await ipcRenderer.invoke(channel, { hostId: activeHost, args }) as IpcResult<T>;
     if (!result.ok) throw new Error(result.error);
     return result.value;
+  },
+  onFileEvent: (listener) => {
+    const host = activeHost;
+    const handler = (_event: Electron.IpcRendererEvent, event: FileEventEnvelope & { hostId?: string }) => { if (event.hostId === host) listener(event); };
+    ipcRenderer.on("files:event", handler);
+    return () => ipcRenderer.removeListener("files:event", handler);
   },
   onSessionEvent: (listener) => {
     const host = activeHost;

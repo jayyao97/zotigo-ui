@@ -1,7 +1,9 @@
+import type { FileEventEnvelope } from "./fileEvents";
 import type { SessionEventEnvelope, ClientApi, TextFileSnapshot, WorkspaceFileOpenResult } from "./clientTypes";
 
 export interface ClientTransport {
   invoke<T>(channel: string, ...args: unknown[]): Promise<T>;
+  onFileEvent(listener: (event: FileEventEnvelope) => void): () => void;
   onSessionEvent(listener: (event: SessionEventEnvelope) => void): () => void;
 }
 
@@ -60,6 +62,9 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     subscribeSessionEvents: (id, after) => invoke("sessions:subscribe-events", id, after),
     unsubscribeSessionEvents: () => invoke("sessions:unsubscribe-events"),
     onSessionEvent: transport.onSessionEvent,
+    subscribeFileEvents: (id, files) => invoke("files:subscribe-events", id, files),
+    unsubscribeFileEvents: () => invoke("files:unsubscribe-events"),
+    onFileEvent: transport.onFileEvent,
     getDesktopState: () => invoke("desktop:get-state"),
     syncDesktopState: () => invoke("desktop:sync-state"),
     createProject: (input) => invoke("desktop:create-project", input),

@@ -58,7 +58,7 @@ test("Project deletion crosses the shared client boundary and clears only its ow
       if (!result.ok) throw new Error(result.error);
       return result.value as T;
     },
-    onSessionEvent: () => () => {},
+    onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   try {
     assert.deepEqual((await api.previewProjectDelete("p")).workspace_ids, []);
@@ -177,7 +177,7 @@ test("optional client arguments survive JSON transport without becoming explicit
       calls.push(JSON.parse(JSON.stringify({ channel, args })));
       return undefined as T;
     },
-    onSessionEvent: () => () => {},
+    onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   await api.getProfiles();
   await api.listSkills("session");
@@ -211,7 +211,7 @@ test("new-session skills survive JSON transport with an omitted session and expl
       if (!result.ok) throw new Error(result.error);
       return result.value as T;
     },
-    onSessionEvent: () => () => {},
+    onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   try {
     assert.deepEqual(await api.listSkills(undefined, true), { skills: [], diagnostics: [] });
@@ -230,7 +230,7 @@ test("shared client mapping executes through the allowlisted application service
       if (!result.ok) throw new Error(result.error);
       return result.value as T;
     },
-    onSessionEvent: () => () => {},
+    onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   await assert.rejects(api.chooseSourceFolders(), /directory browser UI/);
   assert.deepEqual(await api.openMarkdownLink({ href: "#heading", basePath: null, baseKind: "directory" }), { kind: "anchor", anchor: "heading" });
@@ -247,7 +247,7 @@ test("file opening falls back only when an older backend does not know the new o
       if (channel === "desktop:open-file") throw new Error("Unknown application operation");
       return snapshot as T;
     },
-    onSessionEvent: () => () => {},
+    onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   assert.deepEqual(await api.openFile(snapshot.path), { kind: "text", file: snapshot });
   assert.deepEqual(calls, ["desktop:open-file", "desktop:open-text-file"]);
@@ -258,7 +258,7 @@ test("file opening falls back only when an older backend does not know the new o
       failedCalls.push(channel);
       throw new Error("Path does not exist.");
     },
-    onSessionEvent: () => () => {},
+    onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   await assert.rejects(failing.openFile(snapshot.path), /Path does not exist/);
   assert.deepEqual(failedCalls, ["desktop:open-file"]);
@@ -300,7 +300,7 @@ test("directory browsing and literal file paths stay on the selected daemon", as
   const api = createClientApi({ invoke: async <T>(channel: string, ...args: unknown[]) => {
     const result = await withConnection(connection, () => service.invoke(channel, args));
     if (!result.ok) throw new Error(result.error); return result.value as T;
-  }, onSessionEvent: () => () => {} });
+  }, onFileEvent: () => () => {}, onSessionEvent: () => () => {} });
   try {
     await api.listDirectory({ path: "/remote", purpose: "files", sessionId: "session" });
     await api.listDirectory({ path: "", purpose: "sources" });
@@ -395,7 +395,7 @@ test("prompt identity survives the client boundary and message-to-steering fallb
       if (!result.ok) throw new Error(result.error);
       return result.value as T;
     },
-    onSessionEvent: () => () => {},
+    onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   try {
     for (const useSteering of [false, true]) {

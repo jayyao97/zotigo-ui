@@ -1,3 +1,5 @@
+import { createFileEvents } from "./fileEvents";
+import { parseWatchedFiles, type FileEventEnvelope } from "../shared/fileEvents";
 import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost } from "./hosts";
 import { previewDaemonImage, openDaemonFile, saveDaemonFile, inspectCatalogSource, listDaemonDirectory } from "./zotigod";
 import fs from "node:fs";
@@ -70,7 +72,7 @@ export interface NativeServices {
 export type ApplicationResult = { ok: true; value: unknown } | { ok: false; error: string };
 
 /** One connection owns one event subscription, independent of other clients. */
-export function createApplicationService(platform: NativeServices, sendEvent: (event: SessionEventEnvelope) => void, selection?: CatalogSelectionStore) {
+export function createApplicationService(platform: NativeServices, sendEvent: (event: SessionEventEnvelope) => void, selection?: CatalogSelectionStore, sendFileEvent: (event: FileEventEnvelope) => void = () => {}) {
   const {
 addWorkspaceSourceToCatalog,
   addSourcesToCatalog,
@@ -102,6 +104,7 @@ addWorkspaceSourceToCatalog,
   selectCatalogWorkspace,
   } = createCatalogService(selection);
   const events = createSessionEvents(sendEvent);
+  const fileEvents = createFileEvents(sendFileEvent);
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   function handle(channel: string, listener: (...args: unknown[]) => unknown): void {
     handlers.set(channel, listener);
@@ -184,6 +187,8 @@ addWorkspaceSourceToCatalog,
     events.start(id, after);
   });
   handle("sessions:unsubscribe-events", () => events.stop());
+  handle("files:subscribe-events", (id, files) => fileEvents.start(assertString(id, "subscriptionId"), parseWatchedFiles(files)));
+  handle("files:unsubscribe-events", () => fileEvents.stop());
   handle("desktop:get-state", () => getCatalogDesktopState());
   handle("desktop:sync-state", () => getCatalogDesktopState({ syncCodex: true }));
   handle("desktop:create-project", async (input) => createProjectInCatalog(parseCreateProjectInput(input)));
@@ -517,7 +522,7 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
 
   return {
     channels: [...handlers.keys()],
-    dispose: () => events.stop(),
+    dispose: () => { events.stop(); fileEvents.stop(); },
     async invoke(channel: string, args: unknown[]): Promise<ApplicationResult> {
       const listener = handlers.get(channel);
       if (!listener) return { ok: false, error: "Unknown application operation" };

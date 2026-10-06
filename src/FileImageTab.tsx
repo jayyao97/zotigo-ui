@@ -1,9 +1,9 @@
-import { ChevronRight, Copy, Maximize2 } from "lucide-react";
+import { ChevronRight, Copy, Maximize2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import type { ImageFileSnapshot } from "../shared/clientTypes";
 import { ImagePreview } from "./ImagePreview";
 
-export function FileImageTab({ file, workspaceRoot }: { file: ImageFileSnapshot; workspaceRoot?: string }) {
+export function FileImageTab({ file, workspaceRoot, onRefresh, refreshError }: { file: ImageFileSnapshot; workspaceRoot?: string; onRefresh: () => void; refreshError?: string }) {
   const [expanded, setExpanded] = useState(false);
   const normalizedRoot = workspaceRoot?.replace(/\/+$/, "");
   const relativePath = normalizedRoot && file.path.startsWith(`${normalizedRoot}/`)
@@ -28,7 +28,9 @@ export function FileImageTab({ file, workspaceRoot }: { file: ImageFileSnapshot;
         <span className="file-image-size">{formatFileSize(file.sizeBytes)}</span>
         <button type="button" className="file-editor-icon-button" title="Copy path" aria-label="Copy file path" onClick={() => void navigator.clipboard.writeText(file.path)}><Copy size={14} /></button>
         <button type="button" className="file-editor-icon-button" title="Open full preview" aria-label="Open full image preview" onClick={() => setExpanded(true)}><Maximize2 size={14} /></button>
+        <button type="button" className="file-editor-icon-button" title="Refresh file" aria-label="Refresh file" onClick={onRefresh}><RefreshCw size={14} /></button>
       </header>
+      {refreshError && <div className="file-editor-banner error" role="alert">{refreshError}</div>}
       <button type="button" className="file-image-canvas" aria-label={`Open full preview of ${file.name}`} onClick={() => setExpanded(true)}>
         <img src={src} alt={file.name} draggable={false} />
       </button>
