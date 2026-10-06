@@ -5439,3 +5439,12 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
     overflow-y: auto;
   }
 }
+
+/* Directories are the panel home, not an editor tab or launcher screen. */
+.file-browser-only .workspace-panel-content { flex: 0 0 auto; }
+.file-browser-only .workspace-file-tree { width: 100%; height: auto; max-height: none; flex: 1; border: 0; }
+.workspace-panel-actions .panel-close-button { display: none; }
+.side-panel-expanded .workspace-panel-actions .panel-close-button { display: inline-flex; }
+@media (max-width: 900px) {
+  html[data-platform="web"] .workspace-panel-actions .panel-close-button { display: inline-flex; }
+}

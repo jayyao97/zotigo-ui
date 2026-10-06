@@ -51,15 +51,18 @@ test("panels follow sessions, preserve shared file references, and close when th
     assert.equal(document.querySelector("aside")!.hidden, false);
     await act(async () => panel.setSidePanelTabs((tabs) => closeSidePanelTab(tabs, file.id)));
     assert.equal(document.querySelector("aside")!.hidden, true);
-    // Explicitly opening an empty panel still provides the file browser launcher.
+    // Explicitly opening an empty panel still provides the directory browser.
     await act(async () => panel.setSidePanelOpen(true));
     assert.equal(document.querySelector("aside")!.hidden, false);
     await act(async () => {
-      panel.setSidePanelTabs((tabs) => openSidePanelTab(tabs, { id: "files", kind: "files" }));
       panel.setSidePanelTabs((tabs) => openSidePanelTab(tabs, file));
     });
+    await act(async () => panel.setSidePanelTabs((tabs) => ({ ...tabs, activeTabId: null })));
+    assert.equal(panel.sidePanelOpen, true, "browsing directories must preserve the open panel and file tabs");
+    assert.equal(panel.sidePanelTabs.tabs.length, 1);
+    assert.equal(panel.sidePanelTabs.activeTabId, null);
     await act(async () => panel.setSidePanelTabs((tabs) => closeSidePanelTab(tabs, file.id)));
-    assert.equal(panel.sidePanelOpen, false, "the file browser placeholder must not keep an empty editor panel open");
+    assert.equal(panel.sidePanelOpen, false);
     await render("new");
     assert.equal(panel.sidePanelOpen, false);
     const hostA = panel.panels;

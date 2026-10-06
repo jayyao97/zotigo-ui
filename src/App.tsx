@@ -3574,7 +3574,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   function browseFiles(path = workspaceFileRoot, context = { sessionId: selectedSession?.id }) {
     fileOpenRequest.current++; setFileOpening(false); setFileOpenError("");
     setDirectoryLocation({ path, sessionId: context.sessionId }); setTreeVisible(true); setWebNavigationOpen(false);
-    showPanelTab({ id: "files", kind: "files" });
+    setSidePanelOpen(true); setDetailsOpen(false);
+    setSidePanelTabs((state) => ({ ...state, activeTabId: null }));
     window.requestAnimationFrame(() => appFrameRef.current?.querySelector<HTMLInputElement>('[aria-label="Filter filenames"]')?.focus());
   }
 
@@ -4337,11 +4338,11 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
             {sidePanelTabs.tabs.map((tab) => {
               const run = tab.kind === "subagent" ? subagentRuns.find((candidate) => candidate.id === tab.runId) : undefined;
               const fileState = tab.kind === "file" ? openFiles[tab.path] : undefined;
-              const label = tab.kind === "subagents" ? "Subagents" : tab.kind === "files" ? "Files" : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? "Subagent";
+              const label = tab.kind === "subagents" ? "Subagents" : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? "Subagent";
               return (
                 <div key={tab.id} className={`subagent-panel-tab ${sidePanelTabs.activeTabId === tab.id ? "active" : ""}`}>
                   <button type="button" className="subagent-panel-tab-select" onClick={() => setSidePanelTabs((state) => openSidePanelTab(state, tab))}>
-                    {tab.kind === "files" ? <FolderOpen size={14} /> : tab.kind === "file" ? fileState?.kind === "image" ? <Image size={14} strokeWidth={1.8} /> : <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
+                    {tab.kind === "file" ? fileState?.kind === "image" ? <Image size={14} strokeWidth={1.8} /> : <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
                     <span>{label}</span>
                   </button>
                   <button type="button" className="subagent-panel-tab-close" aria-label={`Close ${label}`} onClick={() => void closePanelTab(tab.id)}>
@@ -4351,22 +4352,19 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
               );
             })}
             </div>
-            <button type="button" className="icon-button" aria-label="New panel tab" onClick={() => setSidePanelTabs((state) => ({ ...state, activeTabId: null }))}><Plus size={16} /></button>
+            <button type="button" className="icon-button" aria-label="Browse files" onClick={() => browseFiles()}><FolderOpen size={16} /></button>
+            {subagentRuns.length > 0 && <button type="button" className="icon-button" aria-label="Subagents" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}><Circle size={16} /></button>}
             <div className="workspace-panel-actions">
-              {(activeSidePanelTab?.kind === "file" || activeSidePanelTab?.kind === "files") && <button type="button" className="icon-button" aria-label="Toggle file tree" aria-expanded={treeVisible} onClick={() => setTreeVisible((visible) => !visible)}><FolderOpen size={16} /></button>}
+              {activeSidePanelTab?.kind === "file" && <button type="button" className="icon-button" aria-label="Toggle file tree" aria-expanded={treeVisible} onClick={() => setTreeVisible((visible) => !visible)}><FolderOpen size={16} /></button>}
               <button type="button" className="icon-button panel-expand-button" aria-label={sidePanelExpanded ? "Restore split view" : "Expand side panel"} onClick={() => setSidePanelExpanded((expanded) => !expanded)}>{sidePanelExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
-              <button type="button" className="icon-button" aria-label="Hide side panel" onClick={() => setSidePanelOpen(false)}><PanelRight size={16} /></button>
+              <button type="button" className="icon-button panel-close-button" aria-label="Hide side panel" onClick={() => setSidePanelOpen(false)}><PanelRight size={16} /></button>
             </div>
           </div>
-          <div className="workspace-panel-body">
+          <div className={`workspace-panel-body ${!activeSidePanelTab ? "file-browser-only" : ""}`}>
           <div className="workspace-panel-content">
           {fileOpening && <div className="workspace-file-notice" role="status">Opening file…</div>}
           {fileOpenError && <div className="workspace-file-notice" role="alert">{fileOpenError}<button type="button" className="icon-button" aria-label="Dismiss file error" onClick={() => setFileOpenError("")}><X size={14} /></button></div>}
-          {!activeSidePanelTab ? <div className="workspace-panel-launcher">
-            <button type="button" onClick={() => browseFiles()}><FolderOpen size={18} /><span>Files</span><kbd>⌘P / Ctrl+P</kbd></button>
-            {subagentRuns.length > 0 && <button type="button" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}><Circle size={18} /><span>Subagents</span><small>{subagentRuns.length}</small></button>}
-            <button type="button" onClick={() => setDetailsOpen(true)}><ListFilter size={18} /><span>Session details</span></button>
-          </div> : activeSidePanelTab.kind === "files" ? <div className="workspace-file-empty"><FolderOpen size={32} /><h2>Open a file</h2><p>Select a file from the workspace tree.</p>{!treeVisible && <button type="button" onClick={() => setTreeVisible(true)}>Show files</button>}</div> : activeSidePanelTab.kind === "subagents" ? (
+          {!activeSidePanelTab ? null : activeSidePanelTab.kind === "subagents" ? (
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
             <SubagentTranscript
@@ -4389,7 +4387,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
             <div className="subagent-panel-empty">File is unavailable.</div>
           )}
           </div>
-          {treeVisible && (activeSidePanelTab?.kind === "files" || activeSidePanelTab?.kind === "file") && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setFileOpenError(""); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
+          {sidePanelOpen && (!activeSidePanelTab || (treeVisible && activeSidePanelTab.kind === "file")) && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setFileOpenError(""); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
           </div>
         </aside>
       )}
