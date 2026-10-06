@@ -353,3 +353,62 @@ test("explicit local links preview outside text read-only and never launch unsup
     assert.equal(blocked.ok, false); assert.equal(launched, false);
   } finally {service.dispose();setDaemonBaseUrl(oldUrl);daemon.close();await fs.rm(root,{recursive:true,force:true});}
 });
+
+test("prompt identity survives the client boundary and message-to-steering fallback before the reply", async () => {
+  const { optimisticPromptDisplayItem, reconcileOptimisticSteering } = await import("../shared/sessionDisplay");
+  const original = getDaemonConfig().baseUrl;
+  let steering = false;
+  const received: string[] = [];
+  let pending = [optimisticPromptDisplayItem({ id: "optimistic-prompt-once", text: "same text", steering: false, createdAt: "2026-01-01T00:00:00Z" })];
+  const daemon = createServer(async (request, response) => {
+    let data: unknown = {};
+    if (request.url === "/sessions/s" && request.method === "GET") data = { id: "s", state: "running", approval_policy: "auto", live: true, working: true, created_at: "2026-01-01T00:00:00Z" };
+    if (request.method === "POST") {
+      const chunks = []; for await (const chunk of request) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      received.push(body.client_message_id);
+      if (steering && request.url === "/sessions/s/messages") {
+        response.writeHead(409, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ code: "active_turn", message: "active turn" }));
+        return;
+      }
+      // The durable stream/poll update can reach the UI before the POST response.
+      pending = reconcileOptimisticSteering(pending, [{
+        id: body.client_message_id, sequence: 1, type: steering ? "steering_message" : "user_message",
+        created_at: "2026-01-01T00:00:00Z",
+      }]);
+      data = { id: body.client_message_id, sequence: 1, type: steering ? "steering" : "message", text: body.text, created_at: "2026-01-01T00:00:00Z" };
+    }
+    if (request.url === "/projects") data = { projects: [] };
+    if (request.url === "/catalog/sessions") data = { sessions: [] };
+    if (request.url === "/catalog/navigation") data = { projects: [], workspaces: [], pinned: [], legacy_order_imported: true };
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ code: "ok", data }));
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  const api = createClientApi({
+    invoke: async <T>(channel: string, ...args: unknown[]) => {
+      const result = await service.invoke(channel, JSON.parse(JSON.stringify(args)));
+      if (!result.ok) throw new Error(result.error);
+      return result.value as T;
+    },
+    onSessionEvent: () => () => {},
+  });
+  try {
+    for (const useSteering of [false, true]) {
+      steering = useSteering;
+      pending = [optimisticPromptDisplayItem({ id: "optimistic-prompt-once", text: "same text", steering, createdAt: "2026-01-01T00:00:00Z" })];
+      const result = await api.sendConversationMessage({ conversationId: "s", clientMessageId: pending[0].id, text: "same text" });
+      assert.equal(result.error, undefined);
+      assert.equal(result.command?.id, "optimistic-prompt-once");
+      assert.deepEqual(pending, []);
+    }
+    assert.deepEqual(received, Array(3).fill("optimistic-prompt-once"));
+  } finally {
+    setDaemonBaseUrl(original);
+    daemon.close(); await once(daemon, "close");
+  }
+});

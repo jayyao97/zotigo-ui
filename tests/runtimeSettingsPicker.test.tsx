@@ -72,8 +72,10 @@ async function openCustom(trigger: Element) {
   if (custom) await act(async () => click(custom));
 }
 
-function pointerOver(element: Element) {
-  element.dispatchEvent(new window.MouseEvent("pointerover", { bubbles: true }));
+function pointerOver(element: Element, pointerType = "mouse") {
+  const event = new window.MouseEvent("pointerover", { bubbles: true });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  element.dispatchEvent(event);
 }
 
 function keydown(element: Element, key: string) {
@@ -296,6 +298,23 @@ test("picker reads saved favorites and selects without exposing management actio
     await act(async () => click(document.querySelector(".runtime-settings-trigger")!));
     assert.equal(document.querySelector(".runtime-favorite"), null);
     assert.ok(localStorage.getItem("zotigo.model-favorites.v1:test"));
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
+
+test("touch opens a section only on click, without selecting an option under the finger", async () => {
+  const restore = installDom();
+  try {
+    const { root } = await mounted(<Harness />);
+    const trigger = document.querySelector(".runtime-settings-trigger")!;
+    await openCustom(trigger);
+    const profile = document.querySelector('[data-runtime-section="profile"]')!;
+    await act(async () => pointerOver(profile, "touch"));
+    assert.equal(document.querySelector('[aria-label="profile options"]'), null);
+    await act(async () => click(profile));
+    assert.ok(document.querySelector('[aria-label="profile options"]'));
+    assert.match(trigger.getAttribute("aria-label")!, /gemini/);
     await act(async () => root.unmount());
   } finally { restore(); }
 });

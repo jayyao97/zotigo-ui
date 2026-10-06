@@ -703,7 +703,7 @@ export function RuntimeSettingsPicker({
             data-runtime-section="agent"
             disabled={disabled || agentLocked}
             onClick={() => setSection("agent")}
-            onPointerEnter={() => { if (!disabled && !agentLocked) setSection("agent"); }}
+            onPointerEnter={(event) => { if (event.pointerType === "mouse" && !disabled && !agentLocked) setSection("agent"); }}
           >
             <strong>Agent</strong>
             <span>{selectedAgentLabel}</span>
@@ -720,7 +720,7 @@ export function RuntimeSettingsPicker({
                 data-runtime-section="model"
                 disabled={disabled || codexSettingsDisabled}
                 onClick={() => setSection("model")}
-                onPointerEnter={() => { if (!disabled && !codexSettingsDisabled) setSection("model"); }}
+                onPointerEnter={(event) => { if (event.pointerType === "mouse" && !disabled && !codexSettingsDisabled) setSection("model"); }}
               >
                 <strong>Model</strong>
                 <span>{codexModelLabel(codexModels, selectedCodexModel)}</span>
@@ -735,7 +735,7 @@ export function RuntimeSettingsPicker({
                 data-runtime-section="thinking"
                 disabled={disabled || codexSettingsDisabled}
                 onClick={() => setSection("thinking")}
-                onPointerEnter={() => { if (!disabled && !codexSettingsDisabled) setSection("thinking"); }}
+                onPointerEnter={(event) => { if (event.pointerType === "mouse" && !disabled && !codexSettingsDisabled) setSection("thinking"); }}
               >
                 <strong>Thinking</strong>
                 <span>{selectedCodexReasoningEffort}</span>
@@ -752,7 +752,7 @@ export function RuntimeSettingsPicker({
               data-runtime-section="profile"
               disabled={disabled || profileDisabled}
               onClick={() => setSection("profile")}
-              onPointerEnter={() => { if (!disabled && !profileDisabled) setSection("profile"); }}
+              onPointerEnter={(event) => { if (event.pointerType === "mouse" && !disabled && !profileDisabled) setSection("profile"); }}
             >
               <strong>Profile</strong>
               <span>{selectedProfileLabel}</span>

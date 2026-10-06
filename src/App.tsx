@@ -2452,6 +2452,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
       const images = await Promise.all(submittedAttachments.map(attachmentToMessageImage));
       const result = await client.sendConversationMessage({
         conversationId,
+        clientMessageId: optimisticId,
         text,
         skills: submittedSkills.length > 0 ? submittedSkills : undefined,
         images: images.length > 0 ? images : undefined,
@@ -3656,7 +3657,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
 
         <div className="sidebar-lower-stack">
         <div className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
-        <section className="sidebar-section" aria-label="Pinned">
+        <section className="sidebar-section pinned-section" aria-label="Pinned">
           <div className="sidebar-section-title">Pinned</div>
           {pinnedItems.length === 0 ? (
             <p className="sidebar-empty">No pinned items</p>
@@ -5033,6 +5034,9 @@ function ConversationNavItem({
       {working && <LoaderCircle className="sidebar-session-spinner" size={13} strokeWidth={1.9} aria-label="Running" />}
       {!working && unread && <span className="sidebar-session-unread" aria-label="Unread" />}
       <div className="sidebar-session-actions">
+        <button className="sidebar-session-touch-menu" type="button" onClick={onContextMenu} aria-label={`More actions for ${conversation.title}`}>
+          <MoreHorizontal size={18} strokeWidth={1.8} />
+        </button>
         <button type="button" onClick={onPin} title={conversation.pinned_at ? "Unpin" : "Pin"} aria-label={`${conversation.pinned_at ? "Unpin" : "Pin"} ${conversation.title}`}>
           <Pin size={12} strokeWidth={1.8} fill={conversation.pinned_at ? "currentColor" : "none"} />
         </button>

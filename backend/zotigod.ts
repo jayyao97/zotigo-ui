@@ -470,8 +470,9 @@ export function sendSessionMessage(
   text: string,
   images: MessageImageInput[] = [],
   skills: string[] = [],
+  clientMessageId?: string,
 ): Promise<SessionCommandResponse> {
-  return postSessionTextCommand(id, "messages", text, "send session message response", images, skills);
+  return postSessionTextCommand(id, "messages", text, "send session message response", images, skills, clientMessageId);
 }
 
 export function sendSessionSteering(
@@ -479,8 +480,9 @@ export function sendSessionSteering(
   text: string,
   images: MessageImageInput[] = [],
   skills: string[] = [],
+  clientMessageId?: string,
 ): Promise<SessionCommandResponse> {
-  return postSessionTextCommand(id, "steering", text, "send session steering response", images, skills);
+  return postSessionTextCommand(id, "steering", text, "send session steering response", images, skills, clientMessageId);
 }
 
 export function listSessionItems(id: string, query: SessionItemsQuery = {}): Promise<SessionItemsResponse> {
@@ -647,9 +649,11 @@ function postSessionTextCommand(
   context: string,
   images: MessageImageInput[] = [],
   skills: string[] = [],
+  clientMessageId?: string,
 ): Promise<SessionCommandResponse> {
   const payload = {
     text,
+    ...(clientMessageId ? { client_message_id: clientMessageId } : {}),
     ...(images.length > 0 ? { images } : {}),
     ...(skills.length > 0 ? { skills } : {}),
   };
