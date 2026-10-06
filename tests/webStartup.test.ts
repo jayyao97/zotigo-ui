@@ -23,10 +23,12 @@ for (const host of ["127.0.0.1", "0.0.0.0"]) test(`Web ${host} startup persists 
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
     const tokenPath = path.join(home, "web/access-token");
-    for (let i = 0; i < 100 && !fs.existsSync(tokenPath); i++) {
+    // Token persistence precedes listen(); only the listening callback signals readiness.
+    for (let i = 0; i < 100 && !output.includes("Zotigo Web:"); i++) {
       assert.equal(child.exitCode, null, output);
       await new Promise((resolve) => setTimeout(resolve, 30));
     }
+    assert.match(output, /Zotigo Web:/);
     const token = fs.readFileSync(tokenPath, "utf8").trim();
     assert.ok(token.length >= 32);
     assert.equal(fs.statSync(tokenPath).mode & 0o777, 0o600);
