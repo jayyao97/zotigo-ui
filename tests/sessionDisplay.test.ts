@@ -730,3 +730,15 @@ test("a failed terminal does not repeat the same error already shown in its turn
   assert.equal(visibleDisplayItems([error, { ...failed, error: "Different error" }]).length, 2);
   assert.deepEqual(visibleDisplayItems([error, turn("turn_started", 4), { ...failed, sequence: 5 }]).map((item) => item.id), ["error", "turn_started-4", "failed"]);
 });
+
+test("a durable push removes the optimistic prompt before the delayed send response arrives", () => {
+  const local = optimisticPromptDisplayItem({ id: "optimistic-prompt-request", text: "same text", steering: false, createdAt: new Date(0).toISOString() });
+  const durable = { ...local, sequence: 10 };
+  assert.deepEqual(reconcileOptimisticSteering([local], [durable]), []);
+  assert.equal(acknowledgeOptimisticPrompt(local, {
+    id: local.id, sequence: 10, type: "message", text: "same text", created_at: local.created_at,
+  }, [durable]), null);
+  const repeatedPrompt = { ...local, id: "optimistic-prompt-another-request" };
+  assert.deepEqual(reconcileOptimisticSteering([local, repeatedPrompt], [durable]), [repeatedPrompt]);
+  assert.deepEqual(reconcileOptimisticSteering([local], [{ ...durable, type: "steering_message" }]), []);
+});

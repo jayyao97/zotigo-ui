@@ -339,6 +339,7 @@ addWorkspaceSourceToCatalog,
         messageInput.images,
         messageInput.skills,
         messageInput.approvalPolicy,
+        messageInput.clientMessageId,
       );
       return { state: await getCatalogDesktopState(), ...result };
     } catch (error) {
@@ -468,9 +469,10 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     images: MessageImageInput[],
     skills: string[],
     approvalPolicy?: ApprovalPolicy,
+    clientMessageId?: string,
   ): Promise<{ session: ZotigoSession; command: SessionCommandResponse }> {
     let session = await getOrCreateStartedSession(conversationId, approvalPolicy);
-    const command = await sendMessageOrSteering(session.id, text, images, skills);
+    const command = await sendMessageOrSteering(session.id, text, images, skills, clientMessageId);
     if (command.type === "steering") {
       return { session, command };
     }
@@ -501,12 +503,13 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     text: string,
     images: MessageImageInput[],
     skills: string[],
+    clientMessageId?: string,
   ): Promise<SessionCommandResponse> {
     try {
-      return await sendSessionMessage(sessionId, text, images, skills);
+      return await sendSessionMessage(sessionId, text, images, skills, clientMessageId);
     } catch (error) {
       if (isMessageDuringActiveTurnError(error)) {
-        return sendSessionSteering(sessionId, text, images, skills);
+        return sendSessionSteering(sessionId, text, images, skills, clientMessageId);
       }
       throw error;
     }
@@ -717,6 +720,7 @@ function assertApprovalPolicy(value: unknown, name: string): ApprovalPolicy {
 
 function assertSendConversationMessageInput(value: unknown): {
   conversationId: string;
+  clientMessageId?: string;
   text: string;
   images: MessageImageInput[];
   skills: string[];
@@ -730,6 +734,7 @@ function assertSendConversationMessageInput(value: unknown): {
   }
   return {
     conversationId: assertString(record.conversationId, "conversationId"),
+    clientMessageId: record.clientMessageId === undefined ? undefined : assertString(record.clientMessageId, "clientMessageId"),
     text,
     images,
     skills: assertSkillNames(record.skills),

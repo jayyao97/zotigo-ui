@@ -2452,6 +2452,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
       const images = await Promise.all(submittedAttachments.map(attachmentToMessageImage));
       const result = await client.sendConversationMessage({
         conversationId,
+        clientMessageId: optimisticId,
         text,
         skills: submittedSkills.length > 0 ? submittedSkills : undefined,
         images: images.length > 0 ? images : undefined,

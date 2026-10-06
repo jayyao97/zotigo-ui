@@ -181,6 +181,7 @@ export interface CreateConversationInput {
 
 export interface SendConversationMessageInput {
   conversationId: string;
+  clientMessageId?: string;
   text: string;
   skills?: string[];
   images?: MessageImageInput[];
