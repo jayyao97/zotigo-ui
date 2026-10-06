@@ -98,7 +98,7 @@ pnpm build
 pnpm start:web
 ```
 
-Open the URL printed by the server (default `http://127.0.0.1:8080`) and enter the generated access token from `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). The token is stored in an owner-only file, not printed to logs, and changes on restart. A successful login creates an HttpOnly, SameSite=Strict cookie that expires after 12 hours. Logout revokes that browser session; server restart invalidates all browser sessions.
+Open the URL printed by the server (default `http://127.0.0.1:8080`) and enter the generated access token from `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). The token is stored in an owner-only file, not printed to logs, and reused across restarts. Remove the file while the server is stopped to generate a new token on the next start. A successful login creates an HttpOnly, SameSite=Strict cookie that expires after 12 hours. Logout revokes that browser session; server restart invalidates all browser sessions.
 
 | Environment variable | Default / purpose |
 | --- | --- |
@@ -106,7 +106,7 @@ Open the URL printed by the server (default `http://127.0.0.1:8080`) and enter t
 | `ZOTIGO_WEB_HOST` | `127.0.0.1` |
 | `ZOTIGO_WEB_PORT` | `8080` |
 | `ZOTIGO_WEB_ORIGIN` | `http://127.0.0.1:<port>`; exact browser origin, without a path |
-| `ZOTIGO_WEB_TOKEN` | Random on startup; an explicit token must contain at least 24 characters |
+| `ZOTIGO_WEB_TOKEN` | Overrides the persisted access-token; an explicit token must contain at least 24 characters |
 | `ZOTIGO_WEB_DATA_DIR` | `~/.zotigo/web`; Web preferences, separate from Desktop preferences |
 
 Keep tokens out of source files, shell history, screenshots and shared logs. A token grants access to the entire configured workspace service, not a restricted project or account. See [security and deployment boundaries](SECURITY.md) before allowing access from another machine.

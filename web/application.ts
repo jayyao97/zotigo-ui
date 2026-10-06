@@ -1,7 +1,6 @@
-import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import fs from "node:fs";
+import { loadWebAccessToken } from "./accessToken";
 import { initializePreferencesStore } from "../backend/preferencesStore";
 import { getDaemonConfig } from "../backend/zotigod";
 import { createWebServer } from "./server";
@@ -17,18 +16,15 @@ const daemon = new URL(getDaemonConfig().baseUrl);
 if (!["127.0.0.1", "localhost", "[::1]"].includes(daemon.hostname)) {
   throw new Error("Run the Web server on the same host as a loopback zotigod; file operations use that host's filesystem.");
 }
-const token = process.env.ZOTIGO_WEB_TOKEN ?? randomBytes(32).toString("base64url");
 const dataDirectory = process.env.ZOTIGO_WEB_DATA_DIR ?? path.join(os.homedir(), ".zotigo", "web");
 initializePreferencesStore(dataDirectory);
+const token = loadWebAccessToken(dataDirectory, process.env.ZOTIGO_WEB_TOKEN);
 const server = createWebServer({ origin, token, assetsPath: path.resolve(__dirname, "../../dist") });
 server.listen(port, host, () => {
   console.log(`Zotigo Web: ${origin}`);
   if (!process.env.ZOTIGO_WEB_TOKEN) {
     const tokenPath = path.join(dataDirectory, "access-token");
-    const fd = fs.openSync(tokenPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW, 0o600);
-    try { fs.fchmodSync(fd, 0o600); fs.writeFileSync(fd, `${token}\n`); }
-    finally { fs.closeSync(fd); }
-    console.log(`Access token file (valid until restart): ${tokenPath}`);
+    console.log(`Access token file: ${tokenPath}`);
   }
 });
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => {

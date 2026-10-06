@@ -43,7 +43,7 @@ The installer registers/starts the local daemon and, for Web, the Web service. D
 - `PREFIX/config/web.env`: Web environment variables, including daemon URL and Web host/port/origin/token.
 - These are trusted shell assignment files owned by the installing user and preserved on upgrade.
 
-Web generates a login token on startup if none is configured; read `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). This owner-only file is replaced after a successful startup, and the token changes on restart. The token itself is not printed or logged. See [README remote access](../README.md#remote-access) for HTTPS, authentication and network requirements. The default Local connection uses the colocated daemon. Saved remote hosts run workspace and text-file operations on their own daemon; the Web backend must be able to reach those addresses.
+Web generates a login token on first startup if none is configured; read `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). This owner-only file is reused across restarts. To rotate the token, stop Web and remove the file before starting again. An explicit ZOTIGO_WEB_TOKEN overrides the file without replacing it. Browser login sessions still expire after 12 hours and are invalidated on server restart. The token itself is not printed or logged. See [README remote access](../README.md#remote-access) for HTTPS, authentication and network requirements. The default Local connection uses the colocated daemon. Saved remote hosts run workspace and text-file operations on their own daemon; the Web backend must be able to reach those addresses.
 
 Linux uses `zotigo-daemon.service` and `zotigo-web.service`:
 
