@@ -3656,7 +3656,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, openNewSes
 
         <div className="sidebar-lower-stack">
         <div className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
-        <section className="sidebar-section" aria-label="Pinned">
+        <section className="sidebar-section pinned-section" aria-label="Pinned">
           <div className="sidebar-section-title">Pinned</div>
           {pinnedItems.length === 0 ? (
             <p className="sidebar-empty">No pinned items</p>

@@ -820,6 +820,18 @@ p {
   z-index: 100;
 }
 
+/* Pinned trees do not share the Projects scroll container or sticky offsets. */
+.pinned-section .project-row-shell,
+.pinned-section .workspace-row-shell {
+  position: relative;
+  top: auto;
+}
+
+.pinned-section .workspace-sessions {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
 .workspace-row {
   display: block;
   width: 100%;
