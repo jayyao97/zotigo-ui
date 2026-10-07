@@ -1,3 +1,5 @@
+import type { OpenFileState } from "./openFileState";
+import { useLiveFiles } from "./useLiveFiles";
 import { useTimelineActions } from "./conversation/useTimelineActions";
 import type { NavigationItem } from "../shared/clientTypes";
 import { loadLastModelSelection, saveLastModelSelection } from "./lastModelSelection";
@@ -105,7 +107,7 @@ import {
   type EphemeralDisplayBlock,
 } from "../shared/sessionDisplay";
 import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, MessageImageInput, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
-import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ImageFileSnapshot, ProjectSourceInput, SourceCandidate, TextFileSnapshot, WorkspaceFileOpenResult } from "../shared/clientTypes";
+import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ProjectSourceInput, SourceCandidate, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
 import { maxMessageImageCount, messageImageSizeError } from "../shared/messageImages";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
@@ -124,7 +126,7 @@ import {
   defaultSidePanelWidth,
   sidePanelWidthForRatio,
 } from "../shared/sidePanelSizing";
-import type { FileEditorMode, FileSaveStatus } from "./FileEditorTab";
+import type { FileEditorMode } from "./FileEditorTab";
 import { hostSwitchHasActiveSave, normalizeHostFilesForRestore } from "./hostVolatileState";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 import { ImagePreview } from "./ImagePreview";
@@ -200,26 +202,9 @@ type SidebarSortProps = {
   onDrop: (event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
 };
-type OpenTextFileState = {
-  kind: "text";
-  file: TextFileSnapshot;
-  sessionId?: string;
-  workspaceRoot?: string;
-  draft: string;
-  mode: FileEditorMode;
-  saveStatus: FileSaveStatus;
-  saveError?: string;
-};
-type OpenImageFileState = {
-  kind: "image";
-  file: ImageFileSnapshot;
-  sessionId?: string;
-  workspaceRoot?: string;
-  saveStatus: "clean";
-};
-type OpenFileState = OpenTextFileState | OpenImageFileState;
 
-function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange, onSave }: {
+function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange, onSave, onRefresh }: {
+  onRefresh: () => void;
   state: OpenFileState;
   line?: number;
   column?: number;
@@ -227,7 +212,7 @@ function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange
   onModeChange: (mode: FileEditorMode) => void;
   onSave: () => void;
 }) {
-  if (state.kind === "image") return <FileImageTab file={state.file} workspaceRoot={state.workspaceRoot} />;
+  if (state.kind === "image") return <FileImageTab file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
   return <FileEditorTab
     sessionId={state.sessionId}
     file={state.file}
@@ -235,6 +220,9 @@ function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange
     mode={state.mode}
     saveStatus={state.saveStatus}
     saveError={state.saveError}
+    refreshError={state.refreshError}
+    diskChanged={state.diskChanged}
+    onRefresh={onRefresh}
     workspaceRoot={state.workspaceRoot}
     line={line}
     column={column}
@@ -3102,6 +3090,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     }
     const current = openFilesRef.current[filePath];
     if (!current || current.kind !== "text" || current.file.readOnly || current.saveStatus === "clean") return true;
+    if (current.diskChanged) return false;
     if (filesSavingRef.current.has(filePath)) return false;
     filesSavingRef.current.add(filePath);
     const content = current.draft;
@@ -3606,6 +3595,10 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   }, [channelsOpen, workspaceFileRoot, selectedSession?.id]);
 
   const activeSidePanelTab = sidePanelTabs.tabs.find((tab) => tab.id === sidePanelTabs.activeTabId) ?? null;
+  const liveFiles = useLiveFiles(client, openFiles, openFilesRef, setOpenFiles,
+    sidePanelOpen && !channelsOpen && activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined,
+    hostSwitchingRef);
+
 
   return (
     <MarkdownImageContext.Provider value={markdownImageContext}>
@@ -4362,6 +4355,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
           </div>
           <div className={`workspace-panel-body ${!activeSidePanelTab ? "file-browser-only" : ""}`}>
           <div className="workspace-panel-content">
+          {liveFiles.notice && activeSidePanelTab?.kind === "file" && <div className="file-editor-banner" role="status">{liveFiles.notice}</div>}
           {fileOpening && <div className="workspace-file-notice" role="status">Opening file…</div>}
           {fileOpenError && <div className="workspace-file-notice" role="alert">{fileOpenError}<button type="button" className="icon-button" aria-label="Dismiss file error" onClick={() => setFileOpenError("")}><X size={14} /></button></div>}
           {!activeSidePanelTab ? null : activeSidePanelTab.kind === "subagents" ? (
@@ -4381,6 +4375,15 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
                 onDraftChange={(draft) => updateFileDraft(activeSidePanelTab.path, draft)}
                 onModeChange={(mode) => updateFileMode(activeSidePanelTab.path, mode)}
                 onSave={() => void saveOpenFile(activeSidePanelTab.path)}
+                onRefresh={() => {
+                  const file = openFilesRef.current[activeSidePanelTab.path];
+                  if (!file || file.saveStatus === "saving") return;
+                  if (file.kind === "text" && file.draft !== file.file.content && !window.confirm("Discard your unsaved edits and reload this file from disk?")) return;
+                  const timer = fileSaveTimersRef.current.get(activeSidePanelTab.path);
+                  if (timer !== undefined) window.clearTimeout(timer);
+                  fileSaveTimersRef.current.delete(activeSidePanelTab.path);
+                  void liveFiles.refresh(activeSidePanelTab.path, true);
+                }}
               />
             </Suspense>
           ) : (

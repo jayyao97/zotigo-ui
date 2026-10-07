@@ -9,8 +9,8 @@ export function bindClientGeneration(api: ClientApi, isCurrent: () => boolean): 
       return (...args: unknown[]) => {
         if (!isCurrent()) {
           // Unmount cleanup must not cancel the newly selected host's stream.
-          if (key === "unsubscribeSessionEvents") return Promise.resolve();
-          if (key === "onSessionEvent") return () => {};
+          if ((key === "unsubscribeSessionEvents" || key === "unsubscribeFileEvents")) return Promise.resolve();
+          if ((key === "onSessionEvent" || key === "onFileEvent")) return () => {};
           throw new Error("Host changed. Retry this action on the selected host.");
         }
         return Reflect.apply(value, target, args);

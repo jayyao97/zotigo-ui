@@ -1,5 +1,5 @@
 import { MarkdownImage, MarkdownImageContext } from "./MarkdownImage";
-import { Check, ChevronRight, Code2, Copy, Eye, LoaderCircle, Save } from "lucide-react";
+import { Check, ChevronRight, Code2, Copy, Eye, LoaderCircle, RefreshCw, Save } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TextFileSnapshot } from "../shared/clientTypes";
@@ -23,7 +23,13 @@ export function FileEditorTab({
   onDraftChange,
   onModeChange,
   onSave,
+  onRefresh,
+  refreshError,
+  diskChanged,
 }: {
+  onRefresh: () => void;
+  refreshError?: string;
+  diskChanged?: boolean;
   sessionId?: string;
   file: TextFileSnapshot;
   draft: string;
@@ -87,12 +93,15 @@ export function FileEditorTab({
           className="file-editor-icon-button"
           title="Save"
           aria-label="Save file"
-          disabled={file.readOnly || saveStatus === "clean" || saveStatus === "saving"}
+          disabled={diskChanged || file.readOnly || saveStatus === "clean" || saveStatus === "saving"}
           onClick={onSave}
         >
           <Save size={14} />
         </button>
+        <button type="button" className="file-editor-icon-button" title="Refresh file" aria-label="Refresh file" disabled={saveStatus === "saving"} onClick={onRefresh}><RefreshCw size={14} /></button>
       </header>
+      {diskChanged && <div className="file-editor-banner" role="alert">File changed on disk. Your edits are preserved. Refresh to discard edits and reload.</div>}
+      {refreshError && <div className="file-editor-banner error" role="alert">{refreshError}</div>}
       {file.readOnly && <div className="file-editor-banner">File opened read-only</div>}
       {saveError && <div className="file-editor-banner error">{saveError}</div>}
       {preview ? (

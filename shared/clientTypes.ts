@@ -1,3 +1,4 @@
+import type { WatchedFile, FileEventEnvelope } from "./fileEvents";
 import type {
   SessionState,
   ApprovalPolicy,
@@ -284,6 +285,9 @@ export interface ClientApi {
   submitSessionInteraction(id: string, interactionId: string, answers: Record<string, string[]>): Promise<InteractionResponse>;
   changeSessionCodexSettings(id: string, input: CodexSettingsInput): Promise<ZotigoSession>;
   listSessionItems(id: string, query?: SessionItemsQuery): Promise<SessionItemsResponse>;
+  subscribeFileEvents(subscriptionId: string, files: WatchedFile[]): Promise<void>;
+  unsubscribeFileEvents(): Promise<void>;
+  onFileEvent(listener: (event: FileEventEnvelope) => void): () => void;
   subscribeSessionEvents(id: string, after?: number): Promise<void>;
   unsubscribeSessionEvents(): Promise<void>;
   onSessionEvent(listener: (envelope: SessionEventEnvelope) => void): () => void;

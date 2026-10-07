@@ -9,6 +9,52 @@ import { once } from "node:events";
 import { createWebServer } from "../web/server";
 import { getDaemonConfig, setDaemonBaseUrl } from "../backend/zotigod";
 
+test("Web file streams accept long subscriptions in POST bodies and release watches on logout", { timeout: 5000 }, async () => {
+  const original = getDaemonConfig().baseUrl;
+  const files = Array.from({ length: 64 }, (_, i) => ({ path: `/${"directory/".repeat(24)}file-${i}.txt`, sessionId: "session-example" }));
+  let upstreamBody: unknown;
+  let upstreamClosed!: () => void;
+  const released = new Promise<void>((resolve) => { upstreamClosed = resolve; });
+  const daemon = createServer(async (incoming, response) => {
+    assert.equal(incoming.url, "/files/events");
+    let body = ""; for await (const chunk of incoming) body += chunk;
+    upstreamBody = JSON.parse(body);
+    response.on("close", upstreamClosed);
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write('data: {"type":"ready","paths":[]}\n\n');
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const daemonAddress = daemon.address(); assert.ok(daemonAddress && typeof daemonAddress !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${daemonAddress.port}`);
+  const origin = "http://127.0.0.1:8081";
+  const server = createWebServer({ origin, token: "file-stream-test-token-not-a-secret", assetsPath: "/unused" });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+  const post = (path: string, body: unknown, cookie = "") => new Promise<IncomingMessage>((resolve, reject) => {
+    const outgoing = request(base + path, { method: "POST", headers: { Host: "127.0.0.1:8081", Origin: origin, Cookie: cookie, "Content-Type": "application/json", "X-Zotigo-Request": "1" } }, resolve);
+    outgoing.on("error", reject); outgoing.end(JSON.stringify(body));
+  });
+  try {
+    const denied = await post("/api/file-events", { subscriptionId: "x", files }); denied.resume();
+    assert.equal(denied.statusCode, 401);
+    const login = await post("/api/login", { token: "file-stream-test-token-not-a-secret" }); login.resume();
+    const cookie = login.headers["set-cookie"]![0].split(";")[0];
+    const stream = await post("/api/file-events", { subscriptionId: "long-paths", files }, cookie);
+    assert.equal(stream.statusCode, 200);
+    stream.on("error", () => {});
+    const [frame] = await once(stream, "data");
+    assert.match(String(frame), /"subscriptionId":"long-paths"/);
+    assert.deepEqual(upstreamBody, { files: files.map((file) => ({ ...file, explicitOpen: true })) });
+    const closed = new Promise<void>((resolve) => stream.once("close", resolve));
+    const logout = await post("/api/logout", {}, cookie); logout.resume();
+    await closed; await released;
+  } finally {
+    server.closeAllConnections(); server.close(); daemon.closeAllConnections(); daemon.close();
+    setDaemonBaseUrl(original);
+  }
+});
+
 test("Web streams forward reconnect cursors, isolate logout and close at session expiry", { timeout: 5000 }, async (context) => {
   const original = getDaemonConfig().baseUrl;
   const upstream = new Map<string, ServerResponse>();
