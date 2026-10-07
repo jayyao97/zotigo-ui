@@ -3620,7 +3620,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     >
       {searchOpen && <SearchPalette state={desktopState} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
-        {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(false)} aria-label="Close navigation"><X size={18} />Close navigation</button>}
         <div className="sidebar-chrome" aria-hidden="true">
           <PanelLeft size={14} strokeWidth={1.8} />
           <ArrowLeft size={14} strokeWidth={1.8} />
@@ -3632,6 +3631,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
           <div className="brand-actions">
             <button type="button" aria-label="Search" onClick={() => setSearchOpen(true)} title="Search (⌘K / Ctrl+K)"><Search size={15} strokeWidth={1.8} /></button>
             <button type="button" aria-label="Notifications" disabled title="Notifications are not available yet"><Bell size={15} strokeWidth={1.8} /></button>
+            {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle sidebar-navigation-close" type="button" onClick={() => setWebNavigationOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={18} /></button>}
           </div>
         </div>
 

@@ -353,6 +353,7 @@ p {
 .sidebar {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
+  column-gap: 8px;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-width: 0;
   flex-direction: column;
@@ -464,7 +465,10 @@ p {
   padding: 0;
 }
 
+.brand-actions .sidebar-navigation-close { display: none; }
+
 .utility-nav {
+  border-right: 1px solid var(--border-heavy);
   grid-column: 1;
   grid-row: 2 / 4;
   display: flex;
@@ -504,7 +508,6 @@ p {
   visibility: hidden;
 }
 .utility-nav button:is(:hover, :focus-visible) .utility-nav-label { visibility: visible; }
-.sidebar > .web-navigation-toggle { grid-column: 1 / -1; grid-row: 1; }
 .sidebar > .sidebar-footer { grid-column: 1 / -1; grid-row: 4; }
 
 .sidebar-section {
@@ -4932,7 +4935,7 @@ p {
   html[data-platform="web"] .app-frame.has-subagent-panel { grid-template-columns: minmax(0, 1fr); }
   html[data-platform="web"] .sidebar { display: none; }
   html[data-platform="web"] .web-navigation-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; }
-  html[data-platform="web"] .sidebar > .web-navigation-toggle { margin: 10px; align-self: flex-end; }
+  html[data-platform="web"] .sidebar-navigation-close { width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; }
   html[data-platform="web"] .web-navigation-open > .sidebar { display: grid; grid-area: 1 / 1; }
   html[data-platform="web"] .web-navigation-open > .conversation,
   html[data-platform="web"] .web-navigation-open > .subagent-side-panel,
@@ -4986,7 +4989,7 @@ p {
 .host-settings form > button { margin-top: 16px; }.host-settings footer { justify-content: flex-end; }
 .host-error { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; background: var(--surface-row); padding: 12px 16px; border: 1px solid var(--border-heavy); border-radius: 10px; display: flex; gap: 16px; }
 
-.host-menu .brand-button { max-width: 190px; }
+.host-menu .brand-button { max-width: min(190px, 100%); }
 .host-menu .brand-button span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 .settings-page {
