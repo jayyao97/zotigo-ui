@@ -53,6 +53,7 @@ import {
   FolderOpen,
   FolderPlus,
   GitBranch,
+  House,
   Image,
   Laptop,
   LoaderCircle,
@@ -317,7 +318,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ clientScope, hostName, thinkingDisplay, refreshedCodex, openNewSessionOnMount = false }: { refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
+export default function App({ clientScope, hostName, thinkingDisplay, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
@@ -573,7 +574,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   const sidebarDragItemRef = useRef<SidebarDragItem | null>(null);
   const sidebarDisclosureLoadedRef = useRef(false);
   const sidebarActionMenuRef = useRef<HTMLDivElement | null>(null);
-  const projectsSectionRef = useRef<HTMLElement | null>(null);
+  const navigationScrollRef = useRef<HTMLDivElement | null>(null);
   const lastCodexCatalogSyncAttemptAtRef = useRef(0);
   const desktopStateLoadedRef = useRef(false);
   const desktopStateGenerationRef = useRef(0);
@@ -663,7 +664,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
 
   useLayoutEffect(() => {
     const menu = sidebarActionMenuRef.current;
-    const scroller = menu?.closest<HTMLElement>(".projects-section");
+    const scroller = menu?.closest<HTMLElement>(".sidebar-default-navigation");
     const actions = menu?.parentElement;
     const anchor = actions?.querySelector<HTMLElement>('button[aria-expanded="true"]');
     if (!menu || !scroller || !anchor) {
@@ -678,7 +679,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   }, [projectMenuId, workspaceMenuId]);
 
   useLayoutEffect(() => {
-    const scroller = projectsSectionRef.current;
+    const scroller = navigationScrollRef.current;
     if (!scroller) return;
     let frame: number | null = null;
     const updateStickyRows = () => {
@@ -1382,7 +1383,11 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     }
   }
 
-  async function refreshSessions(options: { quiet?: boolean; syncCodex?: boolean } = {}): Promise<void> {
+  useEffect(() => {
+    if (catalogSyncRevision > 0) void refreshSessions({ quiet: true, refreshCatalog: true });
+  }, [catalogSyncRevision]);
+
+  async function refreshSessions(options: { quiet?: boolean; syncCodex?: boolean; refreshCatalog?: boolean } = {}): Promise<void> {
     const requestId = ++sessionRefreshRequestIdRef.current;
     const desktopStateGeneration = desktopStateGenerationRef.current;
     sessionRefreshesInFlightRef.current += 1;
@@ -1393,7 +1398,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
 
     try {
       const shouldRefreshCatalog = catalogRefreshDue({
-        syncRequested: options.syncCodex === true,
+        syncRequested: options.syncCodex === true || options.refreshCatalog === true,
         desktopStateLoaded: desktopStateLoadedRef.current,
         nowMs: Date.now(),
         lastAttemptAtMs: lastCatalogRefreshAttemptAtRef.current,
@@ -3616,7 +3621,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     >
       {searchOpen && <SearchPalette state={desktopState} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
-        {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(false)} aria-label="Close navigation"><X size={18} />Close navigation</button>}
         <div className="sidebar-chrome" aria-hidden="true">
           <PanelLeft size={14} strokeWidth={1.8} />
           <ArrowLeft size={14} strokeWidth={1.8} />
@@ -3628,30 +3632,31 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
           <div className="brand-actions">
             <button type="button" aria-label="Search" onClick={() => setSearchOpen(true)} title="Search (⌘K / Ctrl+K)"><Search size={15} strokeWidth={1.8} /></button>
             <button type="button" aria-label="Notifications" disabled title="Notifications are not available yet"><Bell size={15} strokeWidth={1.8} /></button>
+            {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle sidebar-navigation-close" type="button" onClick={() => setWebNavigationOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={18} /></button>}
           </div>
         </div>
 
         <nav className="utility-nav" aria-label="Navigation">
-          <button type="button" onClick={() => void openNewConversation()} disabled={isBusy}>
-            <SquarePen size={15} strokeWidth={1.8} />
-            New session
+          <button type="button" aria-label="Home" aria-pressed={!channelsOpen} className={!channelsOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setWebNavigationOpen(false); }}>
+            <House size={18} strokeWidth={1.8} />
+            <span className="utility-nav-label">Home</span>
           </button>
-          <button type="button" onClick={() => void refreshSessions({ syncCodex: true })} disabled={isBusy}>
-            <RefreshCw size={15} strokeWidth={1.8} />
-            Sync
-          </button>
-          <button type="button" disabled className="utility-placeholder">
+          <button type="button" aria-disabled="true" aria-label="Scheduled (not available yet)" className="utility-placeholder">
             <CalendarClock size={15} strokeWidth={1.8} />
-            Scheduled
+            <span className="utility-nav-label">Scheduled</span>
           </button>
-          <button ref={channelsEntryButton} type="button" className={channelsOpen ? "selected" : ""} onClick={() => { openChannels(); setProjectOverviewId(null); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
+          <button ref={channelsEntryButton} type="button" aria-label="Channels" aria-pressed={channelsOpen} className={channelsOpen ? "selected" : ""} onClick={() => { openChannels(); setProjectOverviewId(null); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
             <Blocks size={15} strokeWidth={1.8} />
-            Channels
+            <span className="utility-nav-label">Channels</span>
           </button>
         </nav>
 
+        <button className="sidebar-new-session" type="button" onClick={() => void openNewConversation()} disabled={isBusy}>
+          <SquarePen size={16} strokeWidth={1.8} /><span>New session</span>
+        </button>
+
         <div className="sidebar-lower-stack">
-        <div className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
+        <div ref={navigationScrollRef} className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
         <section className="sidebar-section pinned-section" aria-label="Pinned">
           <div className="sidebar-section-title">Pinned</div>
           {pinnedItems.length === 0 ? (
@@ -3680,7 +3685,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
           )}
         </section>
 
-        <section ref={projectsSectionRef} className="sidebar-section projects-section" aria-label="Projects">
+        <section className="sidebar-section projects-section" aria-label="Projects">
           <div className="project-section-heading">
             <span className="sidebar-section-title">Projects</span>
             <div>

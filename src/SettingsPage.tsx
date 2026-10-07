@@ -1,10 +1,14 @@
 import type { AgentCatalogEntry } from "../shared/zotigod";
 import { FavoriteModelSettings } from "./FavoriteModelSettings";
-import { ArrowLeft, Settings, Server } from "lucide-react";
+import { ArrowLeft, Settings, Server, RefreshCw } from "lucide-react";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 
 export function SettingsPage({
   hostName,
+  onSync,
+  syncing,
+  syncStatus,
+  syncError,
   onCodexRefresh,
   thinkingDisplay,
   onThinkingDisplayChange,
@@ -12,6 +16,10 @@ export function SettingsPage({
   onBack,
 }: {
   hostName: string;
+  onSync: () => void;
+  syncing: boolean;
+  syncStatus: string;
+  syncError: string;
   onCodexRefresh?: (catalog: AgentCatalogEntry) => void;
   thinkingDisplay: ThinkingDisplayMode;
   onThinkingDisplayChange: (mode: ThinkingDisplayMode) => void;
@@ -56,6 +64,20 @@ export function SettingsPage({
                 </select>
               </label>
             </div>
+          </section>
+
+          <section className="settings-section" aria-labelledby="sync-settings-heading">
+            <h2 id="sync-settings-heading">Sessions</h2>
+            <div className="settings-card">
+              <div className="settings-row">
+                <span><strong>Sync sessions</strong><small>Import the latest Codex sessions from {hostName}.</small></span>
+                <button type="button" className="settings-secondary-button" onClick={onSync} disabled={syncing}>
+                  <RefreshCw size={15} />{syncing ? "Syncing…" : "Sync"}
+                </button>
+              </div>
+            </div>
+            {syncStatus && <p role="status">{syncStatus}</p>}
+            {syncError && <p role="alert">{syncError}</p>}
           </section>
 
           <FavoriteModelSettings hostName={hostName} onCodexRefresh={onCodexRefresh} />

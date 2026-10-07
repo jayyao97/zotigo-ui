@@ -65,7 +65,7 @@ function installDom() {
   };
 }
 
-function hostClient(failDev = false, initialState = emptyState) {
+function hostClient(failDev = false, initialState = emptyState, sync?: () => Promise<DesktopState>) {
   let state = initialState;
   let activeHost = "local";
   const calls: Array<{ host: string; channel: string; args: unknown[] }> = [];
@@ -87,6 +87,7 @@ function hostClient(failDev = false, initialState = emptyState) {
       }
       if (channel === "daemon:get-config") return { baseUrl: "http://127.0.0.1:8766", token: "" } as T;
       if (channel === "desktop:get-state") return state as T;
+      if (channel === "desktop:sync-state" && sync) { state = await sync(); return state as T; }
       if (channel === "desktop:set-navigation-pinned") {
         const item = args[0] as NavigationItem;
         const pins = state.pinnedItems ?? [];
@@ -268,5 +269,42 @@ test("refreshing Codex in Settings updates the mounted composer without mismatch
   } finally {
     await act(async () => root.unmount());
     restore();
+  }
+});
+
+
+test("Sync lives in Settings, reports errors and refreshes the mounted sidebar after retry", async () => {
+  const restore = installDom();
+  let complete!: (state: DesktopState) => void;
+  let attempts = 0;
+  const client = hostClient(false, emptyState, async () => {
+    if (++attempts === 1) throw new Error("Sync network failure");
+    return new Promise<DesktopState>((resolve) => { complete = resolve; });
+  });
+  const root = await mountHostShell(client.api);
+  try {
+    assert.equal(document.querySelector('.utility-nav')?.textContent?.includes('Sync'), false);
+    assert.ok(document.querySelector('.utility-nav [aria-label="Home"]'));
+    assert.equal(document.querySelector('.sidebar-new-session')?.parentElement, document.querySelector('.sidebar'));
+    assert.ok(document.querySelector('.utility-nav [aria-label="Channels"]'));
+    const pinned = document.querySelector('[aria-label="Pinned"]')!;
+    const projects = document.querySelector('[aria-label="Projects"]')!;
+    assert.equal(pinned.parentElement, projects.parentElement);
+    await act(async () => click(document.querySelector('[aria-label="Switch host"]')!));
+    await act(async () => click(Array.from(document.querySelectorAll('.host-menu-popover button')).find((button) => button.textContent === 'Settings')!));
+    const syncButton = () => Array.from(document.querySelectorAll('.settings-page button')).find((button) => /^(Sync|Syncing…)$/.test(button.textContent ?? '')) as HTMLButtonElement;
+    await act(async () => click(syncButton()));
+    assert.match(document.querySelector('.settings-page [role="alert"]')?.textContent ?? '', /Sync network failure/);
+    await act(async () => click(syncButton()));
+    assert.equal(syncButton().disabled, true);
+    assert.equal((document.querySelector('[aria-label="Switch host"]') as HTMLButtonElement).disabled, true);
+    // Navigating back does not lose the completed sync or remount the workbench.
+    await act(async () => click(document.querySelector('.settings-back')!));
+    await act(async () => complete({ ...emptyState, projects: [{ id: 'synced-project', name: 'Synced project', created_at: '', updated_at: '' }] }));
+    await flush();
+    assert.ok(document.querySelector('[aria-label="Projects"]')?.textContent?.includes('Synced project'));
+    assert.equal(client.calls.filter((call) => call.channel === 'desktop:sync-state').length, 2);
+  } finally {
+    await act(async () => root.unmount()); restore();
   }
 });

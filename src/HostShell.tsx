@@ -44,6 +44,11 @@ export function HostShell() {
   const generationRef = useRef(0);
   const [refreshedCodex, setRefreshedCodex] = useState<{ host: string; catalog: AgentCatalogEntry } | null>(null);
   const onCodexRefresh = useCallback((catalog: AgentCatalogEntry) => setRefreshedCodex({ host: selected, catalog }), [selected]);
+  const [catalogSyncRevision, setCatalogSyncRevision] = useState(0);
+  const [syncingCatalog, setSyncingCatalog] = useState(false);
+  const [catalogSyncStatus, setCatalogSyncStatus] = useState("");
+  const [catalogSyncError, setCatalogSyncError] = useState("");
+  const catalogSyncInFlight = useRef(false);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -90,7 +95,7 @@ export function HostShell() {
     getDaemonConfig: async () => { const config = await api.getDaemonConfig(); const url = new URL(config.baseUrl); url.searchParams.set("zotigoHost", selected); return { ...config, baseUrl: url.toString() }; },
   }, () => generationRef.current === generation), [api, selected, generation]);
   async function switchHost(id: string) {
-    if (busy || id === selected) return;
+    if (busy || catalogSyncInFlight.current || id === selected) return;
     setBusy(true); setError("");
     let prepared = false;
     try {
@@ -101,13 +106,28 @@ export function HostShell() {
       await api.unsubscribeFileEvents();
       generationRef.current++;
       await api.setActiveHost(id);
-      setRefreshedCodex(null); setSelected(id); setGeneration(generationRef.current); setNewSessionGeneration(generationRef.current);
+      setRefreshedCodex(null); setCatalogSyncStatus(""); setCatalogSyncError(""); setSelected(id); setGeneration(generationRef.current); setNewSessionGeneration(generationRef.current);
       try { storage.setItem("zotigo.host", id); } catch { /* In-memory selection still works. */ }
     } catch (cause) {
       if (prepared) window.dispatchEvent(new Event("zotigo:host-switch-cancelled"));
       setError(cause instanceof Error ? cause.message : "Could not connect to host.");
     }
     finally { setGeneration(generationRef.current); setBusy(false); }
+  }
+  async function syncCatalog() {
+    if (busy || catalogSyncInFlight.current) return;
+    catalogSyncInFlight.current = true;
+    setSyncingCatalog(true); setCatalogSyncStatus(""); setCatalogSyncError("");
+    try {
+      if (!client.syncDesktopState) throw new Error("Session sync is unavailable on this client.");
+      await client.syncDesktopState();
+      setCatalogSyncRevision((revision) => revision + 1);
+      setCatalogSyncStatus("Sessions synced.");
+    } catch (cause) {
+      setCatalogSyncError(cause instanceof Error ? cause.message : "Could not sync sessions.");
+    } finally {
+      catalogSyncInFlight.current = false; setSyncingCatalog(false);
+    }
   }
   function openHostSettings() {
     setStatus("");
@@ -119,13 +139,17 @@ export function HostShell() {
     try { localStorage.setItem(thinkingDisplayStorageKey, mode); } catch { /* In-memory preference still works. */ }
   }
   function closePicker(values: SourceCandidate[]) { setPicker(false); pickerResult.current?.(values); pickerResult.current = null; }
-  return <HostContext.Provider value={{ profiles, selected, busy, switchHost: (id) => void switchHost(id), settings: () => setSurface("settings") }}>
+  return <HostContext.Provider value={{ profiles, selected, busy: busy || syncingCatalog, switchHost: (id) => void switchHost(id), settings: () => setSurface("settings") }}>
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ModelFavoritesProvider key={selected} host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
+          <App catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
         {surface === "settings" && <SettingsPage
+          onSync={() => void syncCatalog()}
+          syncing={syncingCatalog || busy}
+          syncStatus={catalogSyncStatus}
+          syncError={catalogSyncError}
           onCodexRefresh={onCodexRefresh}
           hostName={profiles.find((host) => host.id === selected)?.name ?? selected}
           thinkingDisplay={thinkingDisplay}
