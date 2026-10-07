@@ -284,7 +284,8 @@ test("Sync lives in Settings, reports errors and refreshes the mounted sidebar a
   const root = await mountHostShell(client.api);
   try {
     assert.equal(document.querySelector('.utility-nav')?.textContent?.includes('Sync'), false);
-    assert.ok(document.querySelector('.utility-nav [aria-label="New session"]'));
+    assert.ok(document.querySelector('.utility-nav [aria-label="Home"]'));
+    assert.equal(document.querySelector('.sidebar-new-session')?.parentElement, document.querySelector('.sidebar'));
     assert.ok(document.querySelector('.utility-nav [aria-label="Channels"]'));
     const pinned = document.querySelector('[aria-label="Pinned"]')!;
     const projects = document.querySelector('[aria-label="Projects"]')!;

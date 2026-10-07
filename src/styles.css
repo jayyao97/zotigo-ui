@@ -354,7 +354,7 @@ p {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   column-gap: 8px;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   min-width: 0;
   flex-direction: column;
   background: var(--sidebar-bg);
@@ -470,7 +470,7 @@ p {
 .utility-nav {
   border-right: 1px solid var(--border-heavy);
   grid-column: 1;
-  grid-row: 2 / 4;
+  grid-row: 2 / 5;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -508,7 +508,24 @@ p {
   visibility: hidden;
 }
 .utility-nav button:is(:hover, :focus-visible) .utility-nav-label { visibility: visible; }
-.sidebar > .sidebar-footer { grid-column: 1 / -1; grid-row: 4; }
+.sidebar > .sidebar-footer { grid-column: 1 / -1; grid-row: 5; }
+
+.sidebar-new-session {
+  grid-column: 2;
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  margin: 0 0 12px;
+  padding: 0 var(--row-x);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+.sidebar-new-session:hover { background: var(--surface-row); }
 
 .sidebar-section {
   margin-bottom: var(--panel-padding);
@@ -5111,7 +5128,7 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .settings-secondary-button { display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; cursor: pointer; }
 .settings-secondary-button:hover { background: var(--gray-600); }
 
-.sidebar-lower-stack { grid-column: 2; grid-row: 3; position: relative; min-height: 0; flex: 1; overflow: hidden; -webkit-app-region: no-drag; }
+.sidebar-lower-stack { grid-column: 2; grid-row: 4; position: relative; min-height: 0; flex: 1; overflow: hidden; -webkit-app-region: no-drag; }
 .sidebar-default-navigation { overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--text-dim) transparent; color-scheme: dark; display: flex; position: absolute; inset: 0; min-height: 0; flex-direction: column; transition: transform 200ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
 .sidebar-default-navigation > .sidebar-section { flex: 0 0 auto; }
 .sidebar-default-navigation.is-hidden { transform: translateX(-100%); opacity: 0; pointer-events: none; }
@@ -5403,7 +5420,7 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
   }
   html[data-platform="web"] :is(input, textarea, select) { font-size: 16px; }
   html[data-platform="web"] button { touch-action: manipulation; }
-  html[data-platform="web"] :is(.web-navigation-toggle, .utility-nav button, .brand-button, .brand-actions button,
+  html[data-platform="web"] :is(.web-navigation-toggle, .sidebar-new-session, .utility-nav button, .brand-button, .brand-actions button,
     .conversation-titlebar > button, .conversation-titlebar .title-actions button, .composer-icon-button, .composer-pill, .composer-model, .send-button,
     .runtime-settings-row, .runtime-settings-submenu button, .settings-back, .settings-secondary-button) {
     min-height: 44px;

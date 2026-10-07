@@ -53,6 +53,7 @@ import {
   FolderOpen,
   FolderPlus,
   GitBranch,
+  House,
   Image,
   Laptop,
   LoaderCircle,
@@ -3636,9 +3637,9 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
         </div>
 
         <nav className="utility-nav" aria-label="Navigation">
-          <button type="button" aria-label="New session" onClick={() => void openNewConversation()} disabled={isBusy}>
-            <SquarePen size={15} strokeWidth={1.8} />
-            <span className="utility-nav-label">New session</span>
+          <button type="button" aria-label="Home" aria-pressed={!channelsOpen} className={!channelsOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setWebNavigationOpen(false); }}>
+            <House size={18} strokeWidth={1.8} />
+            <span className="utility-nav-label">Home</span>
           </button>
           <button type="button" aria-disabled="true" aria-label="Scheduled (not available yet)" className="utility-placeholder">
             <CalendarClock size={15} strokeWidth={1.8} />
@@ -3649,6 +3650,10 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
             <span className="utility-nav-label">Channels</span>
           </button>
         </nav>
+
+        <button className="sidebar-new-session" type="button" onClick={() => void openNewConversation()} disabled={isBusy}>
+          <SquarePen size={16} strokeWidth={1.8} /><span>New session</span>
+        </button>
 
         <div className="sidebar-lower-stack">
         <div ref={navigationScrollRef} className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
