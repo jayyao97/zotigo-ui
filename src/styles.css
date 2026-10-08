@@ -425,6 +425,8 @@ p {
 }
 
 .sidebar-brand {
+  position: relative;
+  z-index: 1;
   grid-column: 2;
   grid-row: 2;
   display: flex;
@@ -5128,7 +5130,8 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .settings-secondary-button { display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; cursor: pointer; }
 .settings-secondary-button:hover { background: var(--gray-600); }
 
-.sidebar-lower-stack { grid-column: 2; grid-row: 4; position: relative; min-height: 0; flex: 1; overflow: hidden; -webkit-app-region: no-drag; }
+/* Keep sticky headers and row menus below the host menu in the sidebar header. */
+.sidebar-lower-stack { grid-column: 2; grid-row: 4; position: relative; z-index: 0; min-height: 0; flex: 1; overflow: hidden; -webkit-app-region: no-drag; }
 .sidebar-default-navigation { overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--text-dim) transparent; color-scheme: dark; display: flex; position: absolute; inset: 0; min-height: 0; flex-direction: column; transition: transform 200ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
 .sidebar-default-navigation > .sidebar-section { flex: 0 0 auto; }
 .sidebar-default-navigation.is-hidden { transform: translateX(-100%); opacity: 0; pointer-events: none; }
@@ -5461,6 +5464,8 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 }
 
 @media (pointer: coarse) {
+  /* Touch labels are inline; let bottom action sheets cover the icon rail. */
+  html[data-platform="web"] .utility-nav { z-index: auto; }
   html[data-platform="web"] :is(.session-context-menu, .project-action-menu, .workspace-action-menu) {
     position: fixed;
     top: auto !important;

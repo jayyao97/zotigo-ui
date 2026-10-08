@@ -687,6 +687,10 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
       const scrollerTop = scroller.getBoundingClientRect().top;
       const rowHeight = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-height")) || 30;
       for (const row of scroller.querySelectorAll<HTMLElement>(".project-row-shell, .workspace-row-shell")) {
+        if (getComputedStyle(row).position !== "sticky") {
+          row.classList.remove("is-stuck");
+          continue;
+        }
         const stickyTop = scrollerTop + (row.classList.contains("workspace-row-shell") ? rowHeight : 0);
         const bounds = row.getBoundingClientRect();
         row.classList.toggle("is-stuck", bounds.top <= stickyTop + 0.5 && bounds.bottom > stickyTop + 0.5);
