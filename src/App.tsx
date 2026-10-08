@@ -1015,6 +1015,12 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     setAvailableSkills([]);
     setSkillsError(null);
     setSkillMenuDismissed(false);
+    // Let navigation/search restore their focus first, then focus the new draft
+    // without scrolling the conversation or repeating on streamed updates.
+    const focusFrame = window.requestAnimationFrame(() => {
+      composerTextareaRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
   }, [composerDraftKey]);
 
   useEffect(() => {
