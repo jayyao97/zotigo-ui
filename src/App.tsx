@@ -4725,7 +4725,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
               <div><h2 id="delete-project-title">Delete project?</h2><p>{deleteProjectTarget.name}</p></div>
               <button type="button" className="dialog-close" disabled={isBusy} onClick={closeDeleteProjectDialog} aria-label="Close"><X size={15} /></button>
             </header>
-            <p className="archive-workspace-copy">The Project and its Source registrations will be removed. Original Source directories, session history, and all local and remote Git branches are kept.</p>
+            <p className="archive-workspace-copy">The Project and its Source registrations will be removed. Sessions in its Workspaces will be archived and unpinned; their history is kept. Original Source directories and all local and remote Git branches are kept.</p>
             <section className="archive-workspace-warning delete-workspace-warning">
               <ShieldAlert size={17} />
               <span>
@@ -4758,7 +4758,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
               </div>
               <button type="button" className="dialog-close" onClick={closeDeleteWorkspaceDialog} disabled={isBusy} aria-label="Close"><X size={15} /></button>
             </header>
-            <p className="archive-workspace-copy">Workspace files, copied folders, and linked worktrees will be permanently deleted by zotigod. Original Sources, runtime session history, and all local and remote Git branches are kept.</p>
+            <p className="archive-workspace-copy">Workspace files, copied folders, and linked worktrees will be permanently deleted by zotigod. Its sessions will be archived and unpinned; their history is kept. Original Sources and all local and remote Git branches are kept.</p>
             <div className="archive-workspace-path-row">
               <code className="archive-workspace-path">{workspaceDeletePreview.root_path}</code>
               <button type="button" className="copy-path-button" title="Copy path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(workspaceDeletePreview.root_path)}>
@@ -4770,7 +4770,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
               <ShieldAlert size={16} />
               <span>
                 <strong>This cannot be undone</strong>
-                <small>All managed Workspace files will be removed. Session history remains available in zotigod.</small>
+                <small>All managed Workspace files will be removed. Sessions will leave the sidebar; archived history remains available in zotigod.</small>
                 {workspaceDeletePreview.dirty_worktree_paths.length > 0 && <small>Uncommitted changes in {workspaceDeletePreview.dirty_worktree_paths.length} linked {workspaceDeletePreview.dirty_worktree_paths.length === 1 ? "worktree" : "worktrees"} will also be discarded.</small>}
               </span>
             </section>
