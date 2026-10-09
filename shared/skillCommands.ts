@@ -14,8 +14,8 @@ export function skillCommandQuery(prompt: string): SkillCommandQuery | null {
   };
 }
 
-export function removeSkillCommand(prompt: string, command: SkillCommandQuery): string {
-  return prompt.slice(0, command.start);
+export function insertSkillCommand(prompt: string, command: SkillCommandQuery, caret: number, name: string): string {
+  return prompt.slice(0, command.start) + "[$" + name + "] " + prompt.slice(caret);
 }
 
 export function matchingSkills(skills: SkillSummary[], query: string): SkillSummary[] {
@@ -25,4 +25,30 @@ export function matchingSkills(skills: SkillSummary[], query: string): SkillSumm
     || skill.name.toLocaleLowerCase().includes(normalized)
     || skill.description.toLocaleLowerCase().includes(normalized),
   );
+}
+
+export function skillTokens(prompt: string, names: readonly string[]): { from: number; to: number; name: string }[] {
+  const known = new Set(names);
+  return [...prompt.matchAll(/\$([a-zA-Z0-9][a-zA-Z0-9_.:/-]*)/g)]
+    .filter(match => known.has(match[1]))
+    .map(match => ({ from: match.index!, to: match.index! + match[0].length, name: match[1] }));
+}
+
+// The editor stores a bounded reference, so adjacent prose cannot become part of its name.
+// Only explicitly selected (or undo-restored) names are treated as tokens.
+export function editorSkillTokens(prompt: string, names: readonly string[]) {
+  const known = new Set(names);
+  return [...prompt.matchAll(/\[\$([a-zA-Z0-9][a-zA-Z0-9_.:/-]*)\]/g)]
+    .filter(match => known.has(match[1]))
+    .map(match => ({ from: match.index!, to: match.index! + match[0].length, name: match[1] }));
+}
+
+export function skillPromptText(prompt: string, names: readonly string[]): string {
+  let text = "", start = 0;
+  for (const token of editorSkillTokens(prompt, names)) {
+    text += prompt.slice(start, token.from) + "$" + token.name;
+    if (/[a-zA-Z0-9_.:/-]/.test(prompt[token.to] ?? "")) text += " ";
+    start = token.to;
+  }
+  return text + prompt.slice(start);
 }

@@ -1,9 +1,8 @@
+import { SkillPromptEditor, type SkillPromptEditorHandle } from "../SkillPromptEditor";
 import { createPortal } from "react-dom";
 import { favoriteKey, type ModelFavorite, type ModelFavoritesControl } from "../modelFavorites";
 import {
-  type ClipboardEvent,
   type FormEvent,
-  type KeyboardEvent,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -32,7 +31,6 @@ import {
 import type { AgentCatalogEntry, AgentKind, AgentModel, ApprovalPolicy, RuntimeProfile, SkillSummary } from "../../shared/zotigod";
 import type { DesktopProject, DesktopWorkspace } from "../../shared/clientTypes";
 import { approvalPolicyLabel } from "../../shared/approvalPolicy";
-import { resizeTextareaToContent } from "../textareaSizing";
 
 export type ComposerAttachment = {
   id: string;
@@ -45,13 +43,11 @@ export type ComposerAttachment = {
 
 export function ComposerSkills({
   skills,
-  selectedSkillNames,
   loading,
   error,
   open,
   activeIndex,
   onSelect,
-  onRemove,
   onHighlight,
 }: {
   skills: SkillSummary[];
@@ -61,25 +57,11 @@ export function ComposerSkills({
   open: boolean;
   activeIndex: number;
   onSelect: (skill: SkillSummary) => void;
-  onRemove: (name: string) => void;
   onHighlight: (index: number) => void;
 }) {
-  if (!open && selectedSkillNames.length === 0) return null;
+  if (!open) return null;
   return (
     <>
-      {selectedSkillNames.length > 0 && (
-        <div className="selected-skills" aria-label="Selected skills">
-          {selectedSkillNames.map((name) => (
-            <span className="selected-skill" key={name}>
-              <Sparkles size={12} strokeWidth={1.8} />
-              {name}
-              <button type="button" aria-label={`Remove ${name}`} onClick={() => onRemove(name)}>
-                <X size={11} strokeWidth={2} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
       {open && (
         <div className="skill-command-menu" role="listbox" aria-label="Skills">
           <div className="skill-command-heading">
@@ -161,6 +143,8 @@ export function ComposerAttachmentStrip({
 }
 
 export function NewSessionPrompt({
+  editorKey,
+  onCaretChange,
   favorites,
   selectedProject,
   selectedWorkspace,
@@ -181,7 +165,6 @@ export function NewSessionPrompt({
   onPromptChange,
   onPromptKeyDown,
   onSelectSkill,
-  onRemoveSkill,
   onHighlightSkill,
   onPromptPaste,
   onPreviewAttachment,
@@ -224,12 +207,13 @@ export function NewSessionPrompt({
   projects: DesktopProject[];
   workspaces: DesktopWorkspace[];
   onCreate: (prompt: string) => void;
-  onPromptChange: (prompt: string) => void;
-  onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  editorKey: string;
+  onCaretChange: (caret: number) => void;
+  onPromptChange: (prompt: string, caret?: number, skills?: string[]) => void;
+  onPromptKeyDown: (event: globalThis.KeyboardEvent) => void;
   onSelectSkill: (skill: SkillSummary) => void;
-  onRemoveSkill: (name: string) => void;
   onHighlightSkill: (index: number) => void;
-  onPromptPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
+  onPromptPaste: (event: globalThis.ClipboardEvent) => void;
   onPreviewAttachment: (id: string) => void;
   onRemoveAttachment: (id: string) => void;
   onSelectProject: (projectId: string | null) => void;
@@ -253,7 +237,7 @@ export function NewSessionPrompt({
   onSelectApprovalPolicy: (approvalPolicy: ApprovalPolicy) => void;
   runtimeAvailable: boolean;
 }) {
-  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const promptTextareaRef = useRef<SkillPromptEditorHandle | null>(null);
   const projectPickerRef = useRef<HTMLDivElement | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
@@ -278,9 +262,6 @@ export function NewSessionPrompt({
     });
   }, [projectQuery, projects, workspaces]);
 
-  useLayoutEffect(() => {
-    resizeTextareaToContent(promptTextareaRef.current);
-  }, [prompt]);
 
   useEffect(() => {
     if (!projectMenuOpen) {
@@ -429,7 +410,6 @@ export function NewSessionPrompt({
             open={skillMenuOpen}
             activeIndex={skillMenuIndex}
             onSelect={onSelectSkill}
-            onRemove={onRemoveSkill}
             onHighlight={onHighlightSkill}
           />
           <ComposerAttachmentStrip
@@ -437,14 +417,16 @@ export function NewSessionPrompt({
             onPreview={onPreviewAttachment}
             onRemove={onRemoveAttachment}
           />
-          <textarea
+          <SkillPromptEditor
+            key={editorKey}
+            skills={selectedSkillNames}
+            onCaretChange={onCaretChange}
             ref={promptTextareaRef}
             value={prompt}
-            onChange={(event) => onPromptChange(event.target.value)}
+            onChange={onPromptChange}
             onPaste={onPromptPaste}
             onKeyDown={onPromptKeyDown}
             placeholder="Do anything"
-            rows={3}
             autoFocus
           />
           <button

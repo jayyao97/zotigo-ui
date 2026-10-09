@@ -1,3 +1,4 @@
+import { SkillPromptEditor, type SkillPromptEditorHandle } from "./SkillPromptEditor";
 import { MobileFileNavigation } from "./FilePath";
 import type { OpenFileState } from "./openFileState";
 import { useLiveFiles } from "./useLiveFiles";
@@ -18,7 +19,6 @@ import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
 import {
-  type ClipboardEvent,
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
@@ -135,7 +135,7 @@ import { hostSwitchHasActiveSave, normalizeHostFilesForRestore } from "./hostVol
 import type { ProjectDeletePreview } from "../shared/zotigod";
 import { ImagePreview } from "./ImagePreview";
 import { clipboardImageFiles } from "./clipboardImages";
-import { matchingSkills, removeSkillCommand, skillCommandQuery } from "../shared/skillCommands";
+import { matchingSkills, editorSkillTokens, skillPromptText, skillCommandQuery, insertSkillCommand } from "../shared/skillCommands";
 import {
   formatCompactTokenCount,
   latestActiveTurn,
@@ -158,7 +158,6 @@ import {
   RuntimeSettingsPicker,
   type ComposerAttachment,
 } from "./conversation/ConversationComposer";
-import { resizeTextareaToContent } from "./textareaSizing";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 import { shouldSmoothStreaming } from "./streamingText";
 import { ChannelsPage } from "./channels/ChannelsPage";
@@ -568,7 +567,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
   const sessionHistoryBackfillNeededRef = useRef<string | null>(null);
   const olderSessionItemsLoadingRef = useRef(false);
   const conversationTitleInputRef = useRef<HTMLInputElement | null>(null);
-  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerTextareaRef = useRef<SkillPromptEditorHandle | null>(null);
   const forkRequestsRef = useRef(new Map<string, string>());
   const forkInFlightRef = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -990,10 +989,11 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     () => composerAttachments.find((attachment) => attachment.id === previewAttachmentId) ?? null,
     [composerAttachments, previewAttachmentId],
   );
-  const activeSkillCommand = skillCommandQuery(activePrompt);
+  const [promptCaret, setPromptCaret] = useState<number | null>(null);
+  const activeSkillCommand = skillCommandQuery(activePrompt.slice(0, promptCaret ?? activePrompt.length));
   const skillMatches = useMemo(
     () => matchingSkills(availableSkills, activeSkillCommand?.query ?? "")
-      .filter((skill) => skill.enabled && !selectedSkillNames.includes(skill.name)),
+      .filter((skill) => skill.enabled),
     [activeSkillCommand?.query, availableSkills, selectedSkillNames],
   );
   const skillMenuOpen = activeSkillCommand !== null && !skillMenuDismissed;
@@ -1306,13 +1306,6 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     },
     onOpenForkSource: forkSourceConversation ? () => selectConversation(forkSourceConversation.id) : undefined,
   });
-
-  useLayoutEffect(() => {
-    const heightChanged = resizeTextareaToContent(composerTextareaRef.current);
-    if (heightChanged && stickToBottomRef.current) {
-      scheduleConversationScrollToBottom();
-    }
-  }, [activePrompt, selectedConversation?.id]);
 
   useEffect(() => {
     const updateAnimationState = () => {
@@ -2193,14 +2186,15 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     setComposerDrafts((current) => updateComposerDrafts(current, key, update));
   }
 
-  function updateActivePrompt(value: string) {
-    updateComposerDraft(composerDraftKey, (draft) => ({ ...draft, prompt: value }));
+  function updateActivePrompt(value: string, caret?: number, referencedSkills?: string[]) {
+    setPromptCaret(caret ?? value.length);
+    updateComposerDraft(composerDraftKey, (draft) => ({ ...draft, prompt: value, selectedSkillNames: referencedSkills ?? [...new Set(editorSkillTokens(value, draft.selectedSkillNames).map(token => token.name))] }));
     setSkillMenuDismissed(false);
   }
 
   function selectComposerSkill(skill: SkillSummary) {
     if (!activeSkillCommand || !skill.enabled) return;
-    const prompt = removeSkillCommand(activePrompt, activeSkillCommand);
+    const prompt = insertSkillCommand(activePrompt, activeSkillCommand, promptCaret ?? activePrompt.length, skill.name);
     updateComposerDraft(composerDraftKey, (draft) => ({
       ...draft,
       prompt,
@@ -2209,18 +2203,11 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
         : [...draft.selectedSkillNames, skill.name],
     }));
     if (selectedConversation) window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
-    setSkillMenuDismissed(false);
+    setSkillMenuDismissed(true);
     setSkillMenuIndex(0);
   }
 
-  function removeComposerSkill(name: string) {
-    updateComposerDraft(composerDraftKey, (draft) => ({
-      ...draft,
-      selectedSkillNames: draft.selectedSkillNames.filter((item) => item !== name),
-    }));
-  }
-
-  function handleSkillMenuKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+  function handleSkillMenuKeyDown(event: globalThis.KeyboardEvent): boolean {
     if (!skillMenuOpen) return false;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -2246,7 +2233,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
   }
 
   async function createConversation(prompt: string) {
-    const trimmedPrompt = prompt.trim();
+    const trimmedPrompt = skillPromptText(prompt, activeComposerDraft.selectedSkillNames).trim();
     if (!trimmedPrompt && composerAttachments.length === 0) {
       return;
     }
@@ -2410,7 +2397,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
 
   async function submitSelectedPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = activePrompt.trim();
+    const text = skillPromptText(activePrompt, activeComposerDraft.selectedSkillNames).trim();
     if (!selectedConversation || runtimeOccupied || isBusy || (!text && composerAttachments.length === 0)) {
       return;
     }
@@ -2561,8 +2548,8 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     }
   }, [selectedBinding]);
 
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing) {
+  function handleComposerKeyDown(event: globalThis.KeyboardEvent) {
+    if (event.isComposing) {
       return;
     }
     if (handleSkillMenuKeyDown(event)) {
@@ -2570,20 +2557,21 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      event.currentTarget.form?.requestSubmit();
+      (event.target as HTMLElement).closest("form")?.requestSubmit();
     }
   }
 
-  function handleNewPromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing) return;
+  function handleNewPromptKeyDown(event: globalThis.KeyboardEvent) {
+    if (event.isComposing) return;
     if (handleSkillMenuKeyDown(event)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      event.currentTarget.form?.requestSubmit();
+      (event.target as HTMLElement).closest("form")?.requestSubmit();
     }
   }
 
-  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+  function handleComposerPaste(event: globalThis.ClipboardEvent) {
+    if (!event.clipboardData) return;
     const imageFiles = clipboardImageFiles(event.clipboardData);
     if (imageFiles.length === 0) {
       return;
@@ -3963,10 +3951,11 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
                 skillMenuOpen={skillMenuOpen}
                 skillMenuIndex={skillMenuIndex}
                 attachments={composerAttachments}
+                editorKey={composerDraftKey}
+                onCaretChange={setPromptCaret}
                 onPromptChange={updateActivePrompt}
                 onPromptKeyDown={handleNewPromptKeyDown}
                 onSelectSkill={selectComposerSkill}
-                onRemoveSkill={removeComposerSkill}
                 onHighlightSkill={setSkillMenuIndex}
                 onPromptPaste={handleComposerPaste}
                 onPreviewAttachment={setPreviewAttachmentId}
@@ -4033,7 +4022,6 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
                 open={skillMenuOpen}
                 activeIndex={skillMenuIndex}
                 onSelect={selectComposerSkill}
-                onRemove={removeComposerSkill}
                 onHighlight={setSkillMenuIndex}
               />
               <ComposerAttachmentStrip
@@ -4041,14 +4029,17 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
                 onPreview={setPreviewAttachmentId}
                 onRemove={removeComposerAttachment}
               />
-              <textarea
+              <SkillPromptEditor
+                key={composerDraftKey}
+                skills={selectedSkillNames}
+                onCaretChange={setPromptCaret}
+                onHeightChange={() => { if (stickToBottomRef.current) scheduleConversationScrollToBottom(); }}
                 ref={composerTextareaRef}
                 value={activePrompt}
-                onChange={(event) => updateActivePrompt(event.target.value)}
+                onChange={updateActivePrompt}
                 onKeyDown={handleComposerKeyDown}
                 onPaste={handleComposerPaste}
                 placeholder="Ask follow-up changes"
-                rows={2}
               />
               <input
                 ref={attachmentInputRef}
