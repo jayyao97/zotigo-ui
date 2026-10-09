@@ -1,5 +1,6 @@
 import type { OpenFileState } from "./openFileState";
 import { useLiveFiles } from "./useLiveFiles";
+import { useConversationTitle } from "./useConversationTitle";
 import { useTimelineActions } from "./conversation/useTimelineActions";
 import type { NavigationItem } from "../shared/clientTypes";
 import { loadLastModelSelection, saveLastModelSelection } from "./lastModelSelection";
@@ -569,7 +570,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   const stickToBottomRef = useRef(true);
   const sessionItemsRef = useRef<DisplayItem[]>([]);
   const selectedSessionIdRef = useRef<string | null>(null);
-  const titleSuggestionAttemptsRef = useRef<Set<string>>(new Set());
   const sessionEventsConnectedRef = useRef(false);
   const sidebarDragItemRef = useRef<SidebarDragItem | null>(null);
   const sidebarDisclosureLoadedRef = useRef(false);
@@ -1628,22 +1628,18 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     }
   }
 
+  useConversationTitle(
+    selectedBinding?.daemon_session_id === sessionItemsLoadedForSessionId ? selectedConversation : null,
+    sessionItems,
+    client.suggestConversationTitle,
+    (id, previousTitle, title) => applyDesktopState((current) => ({
+      ...current,
+      conversations: current.conversations.map((conversation) =>
+        conversation.id === id && conversation.title === previousTitle ? { ...conversation, title } : conversation),
+    })),
+  );
+
   function applyDurableItemEffects(binding: DaemonSessionBinding, items: DisplayItem[]) {
-    const conversation = desktopState.conversations.find((item) => item.id === binding.conversation_id);
-    const firstPrompt = firstUserPrompt(items);
-    if (
-      conversation
-      && firstPrompt
-      && conversation.title === titleFromPrompt(firstPrompt)
-      && items.some((item) => item.type === "turn_completed")
-      && !titleSuggestionAttemptsRef.current.has(conversation.id)
-    ) {
-      titleSuggestionAttemptsRef.current.add(conversation.id);
-      void client
-        .suggestConversationTitle(conversation.id)
-        .then(applyDesktopState)
-        .catch(() => undefined);
-    }
     const profileResult = latestProfileResult(items);
     if (profileResult?.profile?.to) {
       setProfileOverrides((current) => {
@@ -4975,12 +4971,6 @@ function ContextUsageBadge({ usage }: { usage: { tokens: number; window: number 
       </span>
     </span>
   );
-}
-
-function firstUserPrompt(items: DisplayItem[]): string | null {
-  const item = items.find((candidate) => candidate.type === "user_message");
-  const text = item?.content?.filter((part) => part.type === "text").map((part) => part.text?.trim() ?? "").filter(Boolean).join("\n");
-  return text || null;
 }
 
 function ConversationNavItem({
