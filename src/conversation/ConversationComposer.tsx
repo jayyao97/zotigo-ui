@@ -1,3 +1,5 @@
+import { AttachmentMenu } from "./AttachmentMenu";
+import { AttachmentCard } from "./AttachmentCard";
 import { SkillPromptEditor, type SkillPromptEditorHandle } from "../SkillPromptEditor";
 import { createPortal } from "react-dom";
 import { favoriteKey, type ModelFavorite, type ModelFavoritesControl } from "../modelFavorites";
@@ -25,7 +27,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  X,
 } from "lucide-react";
 
 import type { AgentCatalogEntry, AgentKind, AgentModel, ApprovalPolicy, RuntimeProfile, SkillSummary } from "../../shared/zotigod";
@@ -34,11 +35,12 @@ import { approvalPolicyLabel } from "../../shared/approvalPolicy";
 
 export type ComposerAttachment = {
   id: string;
-  kind: "image";
+  kind: "image" | "video" | "file";
   name: string;
   file: File;
   mimeType: string;
   url?: string;
+  upload?: { state: "uploading" } | { state: "ready"; path: string } | { state: "failed"; error: string };
 };
 
 export function ComposerSkills({
@@ -117,26 +119,7 @@ export function ComposerAttachmentStrip({
   return (
     <div className="composer-attachments" aria-label="Pending attachments">
       {attachments.map((attachment) => (
-        <div key={attachment.id} className="composer-attachment">
-          {attachment.url ? (
-            <button
-              type="button"
-              className="attachment-preview-button"
-              aria-label={`Preview ${attachment.name}`}
-              onClick={() => onPreview(attachment.id)}
-            >
-              <img src={attachment.url} alt={attachment.name} loading="lazy" decoding="async" />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="composer-attachment-remove"
-            aria-label={`Remove ${attachment.name}`}
-            onClick={() => onRemove(attachment.id)}
-          >
-            <X size={14} strokeWidth={2} />
-          </button>
-        </div>
+        <AttachmentCard key={attachment.id} attachment={attachment} onPreview={() => onPreview(attachment.id)} onRemove={() => onRemove(attachment.id)} />
       ))}
     </div>
   );
@@ -169,6 +152,7 @@ export function NewSessionPrompt({
   onPromptPaste,
   onPreviewAttachment,
   onRemoveAttachment,
+  onAddAttachment,
   onSelectProject,
   onSelectWorkspace,
   onCreateProject,
@@ -216,6 +200,7 @@ export function NewSessionPrompt({
   onPromptPaste: (event: globalThis.ClipboardEvent) => void;
   onPreviewAttachment: (id: string) => void;
   onRemoveAttachment: (id: string) => void;
+  onAddAttachment: (accept?: string) => void;
   onSelectProject: (projectId: string | null) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onCreateProject: () => void;
@@ -447,6 +432,7 @@ export function NewSessionPrompt({
           </button>
         </div>
         <div className="new-chat-meta">
+          <AttachmentMenu key={editorKey} onPick={onAddAttachment} disabled={isBusy} />
           <ApprovalPolicyPicker
             value={selectedApprovalPolicy}
             onChange={onSelectApprovalPolicy}

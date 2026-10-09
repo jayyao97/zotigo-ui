@@ -1,3 +1,4 @@
+import { attachmentReference, type MessageFileInput } from "../shared/messageFiles";
 import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplaySubagent, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
@@ -133,11 +134,12 @@ export function listSkills(sessionId?: string, forceReload = false): Promise<Ski
   return requestJSON(`/skills${search ? `?${search}` : ""}`).then(parseSkillsResponse);
 }
 
-export function getProfiles(workingDirectory?: string): Promise<ProfilesResponse> {
+export function getProfiles(workingDirectory?: string, scope?: "global"): Promise<ProfilesResponse> {
   const params = new URLSearchParams();
   if (workingDirectory !== undefined) {
     params.set("working_directory", workingDirectory);
   }
+  if (scope) params.set("scope", scope);
   const search = params.toString();
   return requestJSON(`/config/profiles${search ? `?${search}` : ""}`).then(parseProfilesResponse);
 }
@@ -680,6 +682,25 @@ function normalizeDaemonBaseUrl(value: string): string {
 
   url.pathname = url.pathname.replace(/\/+$/, "");
   return url.toString().replace(/\/$/, "");
+}
+
+export async function uploadMessageFiles(sessionId: string, text: string, files: MessageFileInput[]): Promise<string> {
+  const references: string[] = [];
+  for (const file of files) {
+    references.push(attachmentReference(file.name, await uploadMessageFile(sessionId, file)));
+  }
+  return references.length ? [text, "Attached files (use tools to read or analyze):", ...references].filter(Boolean).join("\n\n") : text;
+}
+
+export async function uploadMessageFile(sessionId: string, file: MessageFileInput): Promise<string> {
+  const query = new URLSearchParams({ sessionId, name: file.name });
+  const response = expectRecord(await requestJSON(`/files/upload?${query}`, {
+    method: "POST",
+    signal: AbortSignal.timeout(120000),
+    headers: { "Content-Type": "application/octet-stream" },
+    body: Buffer.from(file.data_base64, "base64"),
+  }), "uploaded attachment");
+  return expectString(response.path, "attachment path");
 }
 
 async function requestJSON(path: string, init: RequestInit = {}): Promise<unknown> {

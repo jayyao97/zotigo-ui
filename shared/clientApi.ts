@@ -16,6 +16,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     return transport.invoke(channel, ...args);
   };
   return {
+    uploadAttachment: (sessionId, file) => invoke("desktop:upload-attachment", sessionId, file),
 	listChannelConnections: () => invoke("channels:list-connections"),
 	createChannelConnection: (input) => invoke("channels:create-connection", input),
 	updateChannelConnection: (id, input) => invoke("channels:update-connection", id, input),
@@ -43,7 +44,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     setActiveHost: (id) => invoke("hosts:activate", id),
     inspectHostSources: (paths) => invoke("hosts:inspect", paths),
     getDaemonConfig: () => invoke("daemon:get-config"),
-    getProfiles: (workingDirectory) => invoke("daemon:get-profiles", workingDirectory),
+    getProfiles: (workingDirectory, scope) => invoke("daemon:get-profiles", workingDirectory, scope),
     listSkills: (sessionId, forceReload) => invoke("daemon:list-skills", sessionId, forceReload),
     getAgents: () => invoke("daemon:get-agents"),
     prepareCodex: () => invoke("daemon:prepare-codex"),

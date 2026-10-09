@@ -1,3 +1,4 @@
+import { attachmentSizeError, parseMessageFiles, type MessageFileInput } from "../shared/messageFiles";
 import { createFileEvents } from "./fileEvents";
 import { parseWatchedFiles, type FileEventEnvelope } from "../shared/fileEvents";
 import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost } from "./hosts";
@@ -9,6 +10,8 @@ import { decodedBase64Size, maxMessageImageCount, messageImageSizeError } from "
 import { imageDownloadUrl } from "./imageDownload";
 import {
   createSession,
+  uploadMessageFiles,
+  uploadMessageFile,
   forkSession,
   getAgents,
   getDaemonConfig,
@@ -122,9 +125,15 @@ addWorkspaceSourceToCatalog,
     return platform.downloadImage(imageDownloadUrl(assertString(url, "url"), getDaemonConfig().baseUrl));
   });
   handle("daemon:get-config", () => getDaemonConfig());
-  handle("daemon:get-profiles", (workingDirectory) =>
-    getProfiles(workingDirectory === undefined ? undefined : assertString(workingDirectory, "workingDirectory")),
-  );
+  handle("desktop:upload-attachment", (sessionId, input) => {
+    const [file] = parseMessageFiles([input]);
+    return uploadMessageFile(assertNonEmptyString(sessionId, "sessionId"), file);
+  });
+  handle("daemon:get-profiles", (workingDirectory, scope) => {
+    if (scope !== undefined && scope !== "global") throw new Error("Invalid profile scope.");
+    if (scope === "global" && workingDirectory != null) throw new Error("Global profiles cannot include a working directory.");
+    return getProfiles(workingDirectory == null ? undefined : assertString(workingDirectory, "workingDirectory"), scope);
+  });
   handle("daemon:list-skills", (sessionId, forceReload) =>
     listSkills(
       // An omitted positional argument before forceReload is null over JSON.
@@ -304,7 +313,7 @@ addWorkspaceSourceToCatalog,
   });
   handle("desktop:create-conversation-with-session", async (input) => {
     const conversationInput = assertCreateConversationInput(input);
-    if (!conversationInput.prompt && conversationInput.images.length === 0) {
+    if (!conversationInput.prompt && conversationInput.images.length === 0 && conversationInput.files.length === 0) {
       throw new Error("message requires text or images");
     }
     try {
@@ -319,6 +328,7 @@ addWorkspaceSourceToCatalog,
         conversationInput.agent,
         conversationInput.model,
         conversationInput.reasoningEffort,
+        conversationInput.files,
       );
       return { state: await getCatalogDesktopState(), ...session };
     } catch (error) {
@@ -345,6 +355,7 @@ addWorkspaceSourceToCatalog,
         messageInput.skills,
         messageInput.approvalPolicy,
         messageInput.clientMessageId,
+        messageInput.files,
       );
       return { state: await getCatalogDesktopState(), ...result };
     } catch (error) {
@@ -449,6 +460,7 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     agent: AgentKind = "zotigo",
     model?: string,
     reasoningEffort?: string,
+    files: MessageFileInput[] = [],
   ): Promise<{ session: ZotigoSession; command: SessionCommandResponse }> {
     const created = await createSession({
       workspaceId: workspaceId ?? undefined,
@@ -463,6 +475,7 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
       await setCatalogSessionPosition(created.id, -Date.now());
     }
     await selectCatalogSession(created.id);
+    text = await uploadMessageFiles(created.id, text, files);
     const started = await startSession(created.id);
     const command = await sendSessionMessage(started.id, text, images, skills);
     return { session: started, command };
@@ -475,7 +488,9 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     skills: string[],
     approvalPolicy?: ApprovalPolicy,
     clientMessageId?: string,
+    files: MessageFileInput[] = [],
   ): Promise<{ session: ZotigoSession; command: SessionCommandResponse }> {
+    text = await uploadMessageFiles(conversationId, text, files);
     let session = await getOrCreateStartedSession(conversationId, approvalPolicy);
     const command = await sendMessageOrSteering(session.id, text, images, skills, clientMessageId);
     if (command.type === "steering") {
@@ -677,6 +692,7 @@ function assertCreateConversationInput(value: unknown): {
   title?: string;
   prompt: string;
   images: MessageImageInput[];
+  files: MessageFileInput[];
   skills: string[];
   profile?: string;
   approvalPolicy?: ApprovalPolicy;
@@ -685,13 +701,15 @@ function assertCreateConversationInput(value: unknown): {
   reasoningEffort?: string;
 } {
   const record = assertRecord(value, "create conversation input");
+  const { images, files } = assertAttachments(record);
   return {
     projectId: assertNullableString(record.projectId, "projectId"),
     workspaceId:
       record.workspaceId === undefined ? null : assertNullableString(record.workspaceId, "workspaceId"),
     title: record.title === undefined ? undefined : assertString(record.title, "title"),
     prompt: record.prompt === undefined ? "" : assertString(record.prompt, "prompt").trim(),
-    images: assertMessageImages(record.images),
+    images,
+    files,
     skills: assertSkillNames(record.skills),
     profile: record.profile === undefined ? undefined : assertNonEmptyString(record.profile, "profile"),
     approvalPolicy:
@@ -728,13 +746,14 @@ function assertSendConversationMessageInput(value: unknown): {
   clientMessageId?: string;
   text: string;
   images: MessageImageInput[];
+  files: MessageFileInput[];
   skills: string[];
   approvalPolicy?: ApprovalPolicy;
 } {
   const record = assertRecord(value, "send conversation message input");
-  const images = assertMessageImages(record.images);
+  const { images, files } = assertAttachments(record);
   const text = assertString(record.text, "text").trim();
-  if (!text && images.length === 0) {
+  if (!text && images.length === 0 && files.length === 0) {
     throw new Error("message requires text or images");
   }
   return {
@@ -742,12 +761,24 @@ function assertSendConversationMessageInput(value: unknown): {
     clientMessageId: record.clientMessageId === undefined ? undefined : assertString(record.clientMessageId, "clientMessageId"),
     text,
     images,
+    files,
     skills: assertSkillNames(record.skills),
     approvalPolicy:
       record.approvalPolicy === undefined
         ? undefined
         : assertApprovalPolicy(record.approvalPolicy, "approvalPolicy"),
   };
+}
+
+function assertAttachments(record: Record<string, unknown>) {
+  const images = assertMessageImages(record.images);
+  const files = parseMessageFiles(record.files);
+  const error = attachmentSizeError([
+    ...images.map((image) => ({ size: decodedBase64Size(image.data_base64), image: true })),
+    ...files.map((file) => ({ size: decodedBase64Size(file.data_base64), image: false })),
+  ]);
+  if (error) throw new Error(error);
+  return { images, files };
 }
 
 function assertMessageImages(value: unknown): MessageImageInput[] {

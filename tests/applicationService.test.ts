@@ -180,12 +180,14 @@ test("optional client arguments survive JSON transport without becoming explicit
     onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   await api.getProfiles();
+  await api.getProfiles(undefined, "global");
   await api.listSkills("session");
   await api.listSessionItems("session");
   await api.selectConversation(null);
   await api.listSkills("session", false);
   assert.deepEqual(calls, [
     { channel: "daemon:get-profiles", args: [] },
+    { channel: "daemon:get-profiles", args: [null, "global"] },
     { channel: "daemon:list-skills", args: ["session"] },
     { channel: "sessions:list-items", args: ["session"] },
     { channel: "desktop:select-conversation", args: [null] },

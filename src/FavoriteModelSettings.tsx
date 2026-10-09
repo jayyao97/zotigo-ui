@@ -29,7 +29,7 @@ export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: 
         availableAgents = catalog.agents.map((item) => item.id === "codex" ? prepared : item);
       }
       const workspace = state.workspaces.find((item) => item.id === state.selectedWorkspaceId);
-      const config = await api.getProfiles(workspace?.root_path);
+      const config = await api.getProfiles(workspace?.root_path, workspace ? undefined : "global");
       if (!active) return;
       setAgents(availableAgents); setProfiles(config.profiles);
       const codex = availableAgents.find((item) => item.id === "codex");

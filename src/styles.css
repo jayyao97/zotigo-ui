@@ -3149,13 +3149,6 @@ p {
   background: transparent;
 }
 
-.attachment-file-icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  color: var(--text-muted);
-}
 
 .composer-attachment-remove {
   position: absolute;
@@ -4438,6 +4431,12 @@ p {
 
 .subagent-panel-tab.active { background: rgb(255 255 255 / 0.055); }
 
+.subagent-panel-tab:hover,
+.subagent-panel-tab:has(button:focus-visible) { background: rgb(255 255 255 / 0.09); }
+
+/* The tab owns the hover surface, including its separate close control. */
+.subagent-panel-tab > button:hover:not(:disabled) { background: transparent; }
+
 .subagent-panel-tab-select {
   display: inline-flex;
   max-width: 180px;
@@ -5584,3 +5583,35 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .inline-skill-token > [aria-hidden] { flex-shrink: 0; }
 .inline-skill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 760px) { .skill-prompt-editor .cm-editor { font-size: 16px; } }
+
+.attachment-file-preview { width:min(800px, calc(100vw - 32px)); max-height:90dvh; overflow:auto; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px; }
+.attachment-file-preview header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.attachment-file-preview header > span { overflow-wrap:anywhere; min-width:0; }
+.attachment-file-preview video { display:block; width:100%; max-height:70dvh; }
+
+.attachment-file-preview { color:var(--text); }
+.attachment-file-preview::backdrop { background:rgb(0 0 0 / 65%); }
+
+/* Attachment previews retain their aspect ratio instead of squeezing into icon tiles. */
+.composer-attachments { padding: 5px 4px 4px; gap: 12px; }
+.composer-attachment.attachment-card { flex: 0 0 160px; width: 160px; height: auto; display: block; overflow: visible; border-radius: 10px; background: var(--app-bg); }
+.attachment-card .attachment-preview-button { overflow: hidden; text-align: left; border-radius: inherit; }
+.attachment-card-media { position: relative; height: 90px; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--text-muted); background: var(--app-bg); }
+.attachment-card-media img, .attachment-card-media video { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.attachment-card-media pre { align-self: stretch; width: 100%; margin: 0; padding: 9px; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; line-height: 1.4; color: var(--text); font-family: inherit; }
+.attachment-card-caption { display: flex; gap: 6px; align-items: center; height: 30px; padding: 0 8px; color: var(--text); font-size: 12px; }
+.attachment-card-caption > svg { flex: 0 0 auto; color: #ae78ec; }
+.attachment-card-caption > span { flex: 1; min-width: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.attachment-card-caption .attachment-uploaded { color: var(--text-muted); }
+.attachment-card-overlay { position: absolute; inset: 0; display: flex; gap: 6px; align-items: center; justify-content: center; background: rgb(0 0 0 / 30%); color: var(--text); }
+.attachment-card-error { flex-direction: column; font-size: 11px; background: rgb(0 0 0 / 65%); }
+.attachment-card .composer-attachment-remove { top: -5px; right: -5px; box-shadow: 0 0 0 2px var(--surface); }
+.attachment-spinner { animation: attachment-spin 1s linear infinite; }
+@keyframes attachment-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) { .composer-attachment.attachment-card { flex-basis: 144px; width: 144px; } .attachment-card-media { height: 81px; } }
+@media (prefers-reduced-motion: reduce) { .attachment-spinner { animation: none; } }
+@media (pointer: coarse) {
+  .attachment-card .composer-attachment-remove { width: 44px; height: 44px; min-height: 44px; background: transparent; box-shadow: none; }
+  .attachment-card .composer-attachment-remove::before { content: ""; position: absolute; width: 22px; height: 22px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
+  .attachment-card .composer-attachment-remove > svg { position: relative; }
+}

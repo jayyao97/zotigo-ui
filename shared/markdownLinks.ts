@@ -16,27 +16,27 @@ export function parseMarkdownLink(href: string): MarkdownLink {
   if (protocol && externalProtocols.has(protocol)) return { kind: "external", url: trimmed };
   if (protocol && protocol !== "file:") throw new Error(`Unsupported link protocol: ${protocol}`);
 
-  const decoded = decodeLinkPath(trimmed);
-  const fragmentMatch = decoded.match(lineFragmentPattern);
+  const decodePath = (value: string) => protocol === "file:" ? value : decodeLinkPath(value);
+  const fragmentMatch = trimmed.match(lineFragmentPattern);
   if (fragmentMatch) {
     return {
       kind: "local",
-      path: decoded.slice(0, fragmentMatch.index),
+      path: decodePath(trimmed.slice(0, fragmentMatch.index)),
       line: Number(fragmentMatch[1]),
       column: fragmentMatch[2] ? Number(fragmentMatch[2]) : undefined,
     };
   }
 
-  const suffixMatch = decoded.match(lineSuffixPattern);
+  const suffixMatch = trimmed.match(lineSuffixPattern);
   if (suffixMatch && suffixMatch.index !== 1) {
     return {
       kind: "local",
-      path: decoded.slice(0, suffixMatch.index),
+      path: decodePath(trimmed.slice(0, suffixMatch.index)),
       line: Number(suffixMatch[1]),
       column: suffixMatch[2] ? Number(suffixMatch[2]) : undefined,
     };
   }
-  return { kind: "local", path: decoded };
+  return { kind: "local", path: decodePath(trimmed) };
 }
 
 function protocolOf(value: string): string | null {
@@ -46,7 +46,7 @@ function protocolOf(value: string): string | null {
 
 function decodeLinkPath(value: string): string {
   try {
-    return decodeURI(value);
+    return decodeURIComponent(value);
   } catch {
     throw new Error("Link contains invalid URL encoding.");
   }
