@@ -11,11 +11,10 @@ type OpenTextFileState = {
   saveError?: string;
 };
 type OpenImageFileState = {
-  kind: "image";
   file: ImageFileSnapshot;
   sessionId?: string;
   workspaceRoot?: string;
   saveStatus: "clean";
 };
-export type OpenFileState = (OpenTextFileState | OpenImageFileState) & { diskChanged?: boolean; refreshError?: string };
+export type OpenFileState = (OpenTextFileState | (OpenImageFileState & { kind: "image" }) | (OpenImageFileState & { kind: "video" })) & { diskChanged?: boolean; refreshError?: string };
 

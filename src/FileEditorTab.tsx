@@ -1,11 +1,12 @@
 import { MarkdownImage, MarkdownImageContext } from "./MarkdownImage";
-import { Check, ChevronRight, Code2, Copy, Eye, LoaderCircle, RefreshCw, Save } from "lucide-react";
+import { Check, Code2, Copy, Eye, LoaderCircle, RefreshCw, Save } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TextFileSnapshot } from "../shared/clientTypes";
 import { CodeEditor } from "./CodeEditor";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import { markdownUrlTransform } from "./markdownUrlTransform";
+import { FilePath } from "./FilePath";
 
 export type FileEditorMode = "preview" | "source";
 export type FileSaveStatus = "clean" | "dirty" | "saving" | "error";
@@ -45,25 +46,10 @@ export function FileEditorTab({
 }) {
   const markdown = /\.(?:md|markdown|mdown|mkd)$/i.test(file.path);
   const preview = markdown && mode === "preview";
-  const normalizedRoot = workspaceRoot?.replace(/\/+$/, "");
-  const relativePath = normalizedRoot && file.path.startsWith(`${normalizedRoot}/`)
-    ? file.path.slice(normalizedRoot.length + 1)
-    : file.name;
-  const breadcrumbs = [
-    ...(normalizedRoot ? [normalizedRoot.split("/").at(-1) ?? normalizedRoot] : []),
-    ...relativePath.split("/").filter(Boolean),
-  ];
   return (
     <div className="file-editor-tab-content">
       <header className="file-editor-header">
-        <nav className="file-editor-path" title={file.path} aria-label="File path">
-          {breadcrumbs.map((segment, index) => (
-            <span className="file-editor-breadcrumb" key={`${index}-${segment}`}>
-              {index > 0 && <ChevronRight size={14} strokeWidth={1.8} />}
-              <span>{segment}</span>
-            </span>
-          ))}
-        </nav>
+        <FilePath path={file.path} workspaceRoot={workspaceRoot} />
         <span className={`file-save-status ${saveStatus}`}>
           {saveStatus === "saving" && <LoaderCircle size={12} />}
           {saveStatus === "clean" && <Check size={12} />}

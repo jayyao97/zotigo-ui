@@ -255,7 +255,7 @@ addWorkspaceSourceToCatalog,
     const opened = currentHost()?.id && currentHost()?.id !== "local"
       ? await openDaemonFile({ path: requestedPath, sessionId: id })
       : await openAuthorizedLocalPath(requestedPath, await authorizedFileRoots(requestedPath, id));
-    if (opened.kind !== "text" && opened.kind !== "image") throw new Error("This file cannot be previewed.");
+    if (opened.kind !== "text" && opened.kind !== "image" && opened.kind !== "video") throw new Error("This file cannot be previewed.");
     return opened;
   };
   handle("desktop:open-file", openFile);
@@ -284,7 +284,7 @@ addWorkspaceSourceToCatalog,
     if (currentHost()?.id && currentHost()?.id !== "local") {
       const opened = await openDaemonFile({ path: link.path, basePath: value.basePath, baseKind: value.baseKind, sessionId: value.sessionId, explicitOpen: true });
       if (opened.kind === "directory") return opened;
-      if (opened.kind === "image") return opened;
+      if (opened.kind === "image" || opened.kind === "video") return opened;
       if (opened.kind !== "text") throw new Error("This remote file cannot be previewed.");
       return { kind: "text", file: opened.file, line: link.line, column: link.column } as const;
     }
@@ -292,7 +292,7 @@ addWorkspaceSourceToCatalog,
     const opened = await openAuthorizedLocalPath(requestedPath, [path.parse(requestedPath).root]);
     if (opened.kind === "directory") return opened;
     if (opened.kind === "system") throw new Error("This file cannot be previewed.");
-    if (opened.kind === "image") return opened;
+    if (opened.kind === "image" || opened.kind === "video") return opened;
     const roots = await authorizedFileRoots(requestedPath, value.sessionId);
     const insideRoots = roots.some((root) => fs.existsSync(root) && isExistingPathInside(root, opened.file.path));
     return { kind: "text", file: { ...opened.file, readOnly: opened.file.readOnly || !insideRoots }, line: link.line, column: link.column } as const;

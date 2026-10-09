@@ -148,3 +148,22 @@ test("rejects saving an opened file after its root is no longer authorized", asy
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("video previews validate format, size and authorized roots", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-video-"));
+  try {
+    const file = path.join(root, "clip.mp4");
+    const data = Buffer.from([0,0,0,20,102,116,121,112,105,115,111,109]);
+    fs.writeFileSync(file, data);
+    const opened = await openAuthorizedLocalPath(file, [root]);
+    assert.equal(opened.kind, "video");
+    if (opened.kind !== "video") throw new Error("Expected video");
+    assert.equal(opened.file.mediaType, "video/mp4");
+    assert.deepEqual(Buffer.from(opened.file.dataBase64, "base64"), data);
+    await assert.rejects(openAuthorizedLocalPath(file, [path.join(root, "other")]), /outside|registered|authorized/i);
+    fs.writeFileSync(file, "not a video");
+    await assert.rejects(openAuthorizedLocalPath(file, [root]), /not a supported video/);
+    fs.truncateSync(file, 32 * 1024 * 1024 + 1);
+    await assert.rejects(openAuthorizedLocalPath(file, [root]), /32 MB/);
+  } finally { fs.rmSync(root, {recursive:true, force:true}); }
+});

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import type { ImageFileSnapshot, SaveTextFileInput, TextFileSnapshot } from "../shared/clientTypes";
+import type { ImageFileSnapshot, VideoFileSnapshot, SaveTextFileInput, TextFileSnapshot } from "../shared/clientTypes";
 
 const maximumPreviewBytes = 5 * 1024 * 1024;
 const maximumEditableBytes = 1024 * 1024;
@@ -33,7 +33,8 @@ export type LocalPathOpenResult =
   | { kind: "system"; path: string }
   | { kind: "directory"; path: string }
   | { kind: "text"; file: TextFileSnapshot }
-  | { kind: "image"; file: ImageFileSnapshot };
+  | { kind: "image"; file: ImageFileSnapshot }
+  | { kind: "video"; file: VideoFileSnapshot };
 
 export async function openAuthorizedLocalPath(requestedPath: string, roots: string[]): Promise<LocalPathOpenResult> {
   const resolved = authorizedExistingPath(requestedPath, roots);
@@ -42,6 +43,30 @@ export async function openAuthorizedLocalPath(requestedPath: string, roots: stri
   if (!stat.isFile()) return { kind: "system", path: resolved };
 
   const extension = path.extname(resolved).toLowerCase();
+  if ([".mp4", ".m4v", ".mov", ".webm"].includes(extension)) {
+    const limit = 32 * 1024 * 1024;
+    if (stat.size > limit) throw new Error("Video preview is limited to 32 MB.");
+    const handle = await fs.promises.open(resolved, "r");
+    let data: Buffer;
+    try {
+      data = Buffer.alloc(limit + 1);
+      let size = 0;
+      while (size < data.length) {
+        const read = await handle.read(data, size, data.length - size, null);
+        if (!read.bytesRead) break;
+        size += read.bytesRead;
+      }
+      if (size > limit) throw new Error("Video preview is limited to 32 MB.");
+      data = data.subarray(0, size);
+    } finally { await handle.close(); }
+    const valid = extension === ".webm"
+      ? data.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
+      : data.length >= 12 && data.toString("ascii", 4, 8) === "ftyp";
+    if (!valid) throw new Error("This file is not a supported video.");
+    return { kind: "video", file: { path: resolved, name: path.basename(resolved),
+      mediaType: extension === ".webm" ? "video/webm" : extension === ".mov" ? "video/quicktime" : "video/mp4",
+      dataBase64: data.toString("base64"), sizeBytes: data.length, mtimeMs: stat.mtimeMs } };
+  }
   if (imageExtensions.has(extension) && stat.size <= maximumImagePreviewBytes) {
     const data = await fs.promises.readFile(resolved);
     const mediaType = imageMediaType(extension, data);

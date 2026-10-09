@@ -216,9 +216,19 @@ export interface ImageFileSnapshot {
   mtimeMs: number;
 }
 
+export interface VideoFileSnapshot {
+  path: string;
+  name: string;
+  mediaType: string;
+  dataBase64: string;
+  sizeBytes: number;
+  mtimeMs: number;
+}
+
 export type WorkspaceFileOpenResult =
   | { kind: "text"; file: TextFileSnapshot }
-  | { kind: "image"; file: ImageFileSnapshot };
+  | { kind: "image"; file: ImageFileSnapshot }
+  | { kind: "video"; file: VideoFileSnapshot };
 
 export type ImagePreviewResult = { kind: "image"; file: ImageFileSnapshot } | { kind: "requires_confirmation" };
 
@@ -235,7 +245,8 @@ export type OpenMarkdownLinkResult =
   | { kind: "system" }
   | { kind: "directory"; path: string }
   | { kind: "text"; file: TextFileSnapshot; line?: number; column?: number }
-  | { kind: "image"; file: ImageFileSnapshot };
+  | { kind: "image"; file: ImageFileSnapshot }
+  | { kind: "video"; file: VideoFileSnapshot };
 
 export interface SaveTextFileInput {
   path: string;

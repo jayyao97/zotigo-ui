@@ -1,5 +1,7 @@
+import { MobileFileNavigation } from "./FilePath";
 import type { OpenFileState } from "./openFileState";
 import { useLiveFiles } from "./useLiveFiles";
+import { useToast } from "./Toast";
 import { useConversationTitle } from "./useConversationTitle";
 import { useTimelineActions } from "./conversation/useTimelineActions";
 import type { NavigationItem } from "../shared/clientTypes";
@@ -177,6 +179,7 @@ import {
 } from "./unreadSessions";
 
 const FileEditorTab = lazy(() => import("./FileEditorTab").then((module) => ({ default: module.FileEditorTab })));
+const FileVideoTab = lazy(() => import("./FileVideoTab").then((module) => ({ default: module.FileVideoTab })));
 const FileImageTab = lazy(() => import("./FileImageTab").then((module) => ({ default: module.FileImageTab })));
 
 type ConnectionState = "checking" | "online" | "offline";
@@ -205,8 +208,9 @@ type SidebarSortProps = {
   onDragEnd: () => void;
 };
 
-function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange, onSave, onRefresh }: {
+function OpenWorkspaceFileTab({ active, state, line, column, onDraftChange, onModeChange, onSave, onRefresh }: {
   onRefresh: () => void;
+  active: boolean;
   state: OpenFileState;
   line?: number;
   column?: number;
@@ -214,6 +218,7 @@ function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange
   onModeChange: (mode: FileEditorMode) => void;
   onSave: () => void;
 }) {
+  if (state.kind === "video") return <FileVideoTab active={active} file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
   if (state.kind === "image") return <FileImageTab file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
   return <FileEditorTab
     sessionId={state.sessionId}
@@ -319,7 +324,8 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ clientScope, hostName, thinkingDisplay, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
+export default function App({ surfaceActive = true, clientScope, hostName, thinkingDisplay, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
+  const toast = useToast();
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
@@ -511,7 +517,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [treeVisible, setTreeVisible] = useState(true);
   const fileOpenRequest = useRef(0);
-  const [fileOpenError, setFileOpenError] = useState("");
   const [fileOpening, setFileOpening] = useState(false);
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>(() => normalizeHostFilesForRestore(restoredHostState?.openFiles ?? {}));
   const openFilesRef = useRef(openFiles);
@@ -1015,7 +1020,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     setPauseRequestedTurnId(null);
     fileOpenRequest.current++;
     setFileOpening(false);
-    setFileOpenError("");
+
     setAvailableSkills([]);
     setSkillsError(null);
     setSkillMenuDismissed(false);
@@ -3169,10 +3174,10 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
       const file = opened.file;
       setSidePanelOpen(true); setDetailsOpen(false);
       const existing = openFilesRef.current[file.path];
-      if (!existing || existing.kind === "image") {
-        const state: OpenFileState = opened.kind === "image"
+      if (!existing || existing.kind !== "text") {
+        const state: OpenFileState = opened.kind !== "text"
           ? {
-              kind: "image",
+              kind: opened.kind,
               file: opened.file,
               sessionId: context.sessionId,
               workspaceRoot: context.workspaceRoot,
@@ -3226,10 +3231,10 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
       }
       if (selectedSessionIdRef.current !== expectedSessionId) return;
       if (result.kind === "directory") { browseFiles(result.path, context); return; }
-      if (result.kind !== "text" && result.kind !== "image") return;
+      if (result.kind !== "text" && result.kind !== "image" && result.kind !== "video") return;
       showFile(result, result.kind === "text" ? result.line : undefined, result.kind === "text" ? result.column : undefined, context);
     } catch (error) {
-      setMessage(errorMessage(error));
+      toast(errorMessage(error), "error");
     }
   }
 
@@ -3563,7 +3568,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   const treeLocation = directoryLocation ?? { path: workspaceFileRoot, sessionId: selectedSession?.id };
   useEffect(() => {
     fileOpenRequest.current++;
-    setFileOpenError(""); setFileOpening(false);
+    setFileOpening(false);
   }, [workspaceFileRoot, selectedSession?.id]);
 
   function showPanelTab(tab: SidePanelTab) {
@@ -3572,7 +3577,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   }
 
   function browseFiles(path = workspaceFileRoot, context = { sessionId: selectedSession?.id }) {
-    fileOpenRequest.current++; setFileOpening(false); setFileOpenError("");
+    fileOpenRequest.current++; setFileOpening(false);
     setDirectoryLocation({ path, sessionId: context.sessionId }); setTreeVisible(true); setWebNavigationOpen(false);
     setSidePanelOpen(true); setDetailsOpen(false);
     setSidePanelTabs((state) => ({ ...state, activeTabId: null }));
@@ -3581,13 +3586,13 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
 
   async function openTreeFile(path: string) {
     const request = ++fileOpenRequest.current;
-    setFileOpenError(""); setFileOpening(true);
+    setFileOpening(true);
     try {
       const sessionId = treeLocation.sessionId;
       const opened = await client.openFile(path, sessionId);
       if (request === fileOpenRequest.current) showFile(opened, undefined, undefined, { sessionId, workspaceRoot: treeLocation.path });
     } catch (error) {
-      if (request === fileOpenRequest.current) setFileOpenError(errorMessage(error));
+      if (request === fileOpenRequest.current) toast(errorMessage(error), "error");
     } finally { if (request === fileOpenRequest.current) setFileOpening(false); }
   }
 
@@ -4337,7 +4342,15 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
             onLostPointerCapture={() => setIsSidePanelResizing(false)}
             onKeyDown={handleSidePanelResizeKeyDown}
           />
-          <div className="subagent-panel-tabbar">
+          {activeSidePanelTab?.kind === "file" && <MobileFileNavigation path={activeSidePanelTab.path}
+            onBack={() => {
+              const file = openFiles[activeSidePanelTab.path];
+              const path = activeSidePanelTab.path.replace(/\\/g, "/");
+              const parent = path.slice(0, path.lastIndexOf("/")) || "/";
+              browseFiles(/^[A-Za-z]:$/.test(parent) ? `${parent}/` : parent, { sessionId: file?.sessionId });
+            }}
+            onClose={() => setSidePanelOpen(false)} />}
+          <div className={`subagent-panel-tabbar ${activeSidePanelTab?.kind === "file" ? "file-tabbar" : ""}`}>
             <div className="workspace-panel-tabs">
             {sidePanelTabs.tabs.map((tab) => {
               const run = tab.kind === "subagent" ? subagentRuns.find((candidate) => candidate.id === tab.runId) : undefined;
@@ -4356,19 +4369,17 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
               );
             })}
             </div>
-            <button type="button" className="icon-button" aria-label="Browse files" onClick={() => browseFiles()}><FolderOpen size={16} /></button>
             {subagentRuns.length > 0 && <button type="button" className="icon-button" aria-label="Subagents" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}><Circle size={16} /></button>}
             <div className="workspace-panel-actions">
-              {activeSidePanelTab?.kind === "file" && <button type="button" className="icon-button" aria-label="Toggle file tree" aria-expanded={treeVisible} onClick={() => setTreeVisible((visible) => !visible)}><FolderOpen size={16} /></button>}
+              <button type="button" className="icon-button" title={activeSidePanelTab?.kind === "file" ? "Toggle file tree" : "Browse files"} aria-label={activeSidePanelTab?.kind === "file" ? "Toggle file tree" : "Browse files"} aria-expanded={activeSidePanelTab?.kind === "file" ? treeVisible : undefined} onClick={() => activeSidePanelTab?.kind === "file" ? setTreeVisible((visible) => !visible) : browseFiles()}><FolderOpen size={16} /></button>
               <button type="button" className="icon-button panel-expand-button" aria-label={sidePanelExpanded ? "Restore split view" : "Expand side panel"} onClick={() => setSidePanelExpanded((expanded) => !expanded)}>{sidePanelExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
-              <button type="button" className="icon-button panel-close-button" aria-label="Hide side panel" onClick={() => setSidePanelOpen(false)}><PanelRight size={16} /></button>
+              <button type="button" className="icon-button panel-close-button" aria-label="Close files and return to conversation" onClick={() => setSidePanelOpen(false)}><X size={16} /></button>
             </div>
           </div>
           <div className={`workspace-panel-body ${!activeSidePanelTab ? "file-browser-only" : ""}`}>
           <div className="workspace-panel-content">
           {liveFiles.notice && activeSidePanelTab?.kind === "file" && <div className="file-editor-banner" role="status">{liveFiles.notice}</div>}
           {fileOpening && <div className="workspace-file-notice" role="status">Opening file…</div>}
-          {fileOpenError && <div className="workspace-file-notice" role="alert">{fileOpenError}<button type="button" className="icon-button" aria-label="Dismiss file error" onClick={() => setFileOpenError("")}><X size={14} /></button></div>}
           {!activeSidePanelTab ? null : activeSidePanelTab.kind === "subagents" ? (
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
@@ -4380,6 +4391,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
           ) : openFiles[activeSidePanelTab.path] ? (
             <Suspense fallback={<div className="subagent-panel-empty">Loading editor…</div>}>
               <OpenWorkspaceFileTab
+                active={sidePanelOpen && !channelsOpen && surfaceActive}
                 state={openFiles[activeSidePanelTab.path]}
                 line={activeSidePanelTab.line}
                 column={activeSidePanelTab.column}
@@ -4401,7 +4413,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
             <div className="subagent-panel-empty">File is unavailable.</div>
           )}
           </div>
-          {sidePanelOpen && (!activeSidePanelTab || (treeVisible && activeSidePanelTab.kind === "file")) && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setFileOpenError(""); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
+          {sidePanelOpen && (!activeSidePanelTab || (treeVisible && activeSidePanelTab.kind === "file")) && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
           </div>
         </aside>
       )}
