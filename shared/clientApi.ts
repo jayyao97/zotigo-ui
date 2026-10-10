@@ -16,6 +16,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     return transport.invoke(channel, ...args);
   };
   return {
+    translateSelection: (id, text, language) => invoke("sessions:translate", id, text, language),
     uploadAttachment: (sessionId, file) => invoke("desktop:upload-attachment", sessionId, file),
 	listChannelConnections: () => invoke("channels:list-connections"),
 	createChannelConnection: (input) => invoke("channels:create-connection", input),
@@ -59,6 +60,8 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     submitSessionInteraction: (id, interactionId, answers) =>
       invoke("sessions:submit-interaction", id, interactionId, answers),
     changeSessionCodexSettings: (id, input) => invoke("sessions:change-codex-settings", id, input),
+    searchSession: (id, query) => invoke("sessions:search", id, query),
+    getSessionItemWindow: (id, target) => invoke("sessions:item-window", id, target),
     listSessionItems: (id, query) => invoke("sessions:list-items", id, query),
     subscribeSessionEvents: (id, after) => invoke("sessions:subscribe-events", id, after),
     unsubscribeSessionEvents: () => invoke("sessions:unsubscribe-events"),

@@ -525,3 +525,6 @@ export interface SessionCommandResponse {
   reason?: string;
   created_at: string;
 }
+
+export interface SessionSearchHit { id: string; sequence: number }
+export interface SessionSearchResponse { hits: SessionSearchHit[]; truncated: boolean }

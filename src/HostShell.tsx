@@ -1,3 +1,4 @@
+import { useTranslationLanguage } from "./translationLanguage";
 import { ModelFavoritesProvider } from "./modelFavorites";
 import { ToastProvider } from "./Toast";
 import { bindClientGeneration } from "../shared/bindClientGeneration";
@@ -55,6 +56,7 @@ export function HostShell() {
   const [error, setError] = useState("");
   const [surface, setSurface] = useState<"workbench" | "settings">("workbench");
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
+  const [translationLanguage, setTranslationLanguage] = useTranslationLanguage(selected);
   const [thinkingDisplay, setThinkingDisplay] = useState<ThinkingDisplayMode>(() => {
     try { return parseThinkingDisplayMode(localStorage.getItem(thinkingDisplayStorageKey)); }
     catch { return "expanded"; }
@@ -144,7 +146,7 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ToastProvider key={selected}><ModelFavoritesProvider host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} openNewSessionOnMount={generation === newSessionGeneration} />
+          <App surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
         {surface === "settings" && <SettingsPage
           onSync={() => void syncCatalog()}
@@ -154,6 +156,8 @@ export function HostShell() {
           onCodexRefresh={onCodexRefresh}
           hostName={profiles.find((host) => host.id === selected)?.name ?? selected}
           thinkingDisplay={thinkingDisplay}
+          translationLanguage={translationLanguage}
+          onTranslationLanguageChange={setTranslationLanguage}
           onThinkingDisplayChange={updateThinkingDisplay}
           onManageHosts={openHostSettings}
           onBack={() => setSurface("workbench")}

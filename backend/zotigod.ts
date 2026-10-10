@@ -1754,3 +1754,23 @@ export async function listDaemonDirectory(input: { path: string; purpose: "files
     throw error;
   }
 }
+
+export async function translateSelection(id: string, text: string, targetLanguage: string): Promise<string> {
+  const value = await requestJSON(`/sessions/${encodeURIComponent(id)}/translate`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(35000), body: JSON.stringify({ text, target_language: targetLanguage }),
+  });
+  return expectString(expectRecord(value, "translation").text, "translation text");
+}
+
+export async function searchSession(id: string, query: string): Promise<import("../shared/zotigod").SessionSearchResponse> {
+  const value = expectRecord(await requestJSON(`/sessions/${encodeURIComponent(id)}/search?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(5000) }), "session search");
+  if (!Array.isArray(value.hits)) throw new Error("search hits must be an array");
+  return { truncated: expectBoolean(value.truncated, "search truncated"), hits: value.hits.map(raw => {
+    const hit = expectRecord(raw, "search hit");
+    return { id: expectString(hit.id, "hit id"), sequence: expectNumber(hit.sequence, "hit sequence") };
+  }) };
+}
+export function getSessionItemWindow(id: string, target: number | string): Promise<SessionItemsResponse> {
+  const query = typeof target === "number" ? `sequence=${target}` : `message_id=${encodeURIComponent(target)}`;
+  return requestJSON(`/sessions/${encodeURIComponent(id)}/items/window?${query}`, { signal: AbortSignal.timeout(5000) }).then(value => parseSessionItemsResponse(value, "message window"));
+}

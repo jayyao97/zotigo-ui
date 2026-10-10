@@ -1,4 +1,6 @@
+import type { ConversationReference } from "../shared/conversationReferences";
 export type ComposerDraftState<Attachment> = {
+  references?: ConversationReference[];
   prompt: string;
   attachments: Attachment[];
   selectedSkillNames: string[];
@@ -24,7 +26,7 @@ export function updateComposerDrafts<Attachment>(
   update: (draft: ComposerDraftState<Attachment>) => ComposerDraftState<Attachment>,
 ): Record<string, ComposerDraftState<Attachment>> {
   const nextDraft = update(drafts[key] ?? emptyComposerDraft());
-  if (!nextDraft.prompt && nextDraft.attachments.length === 0 && nextDraft.selectedSkillNames.length === 0) {
+  if (!(nextDraft.references?.length) && !nextDraft.prompt && nextDraft.attachments.length === 0 && nextDraft.selectedSkillNames.length === 0) {
     if (!(key in drafts)) return drafts;
     const next = { ...drafts };
     delete next[key];
@@ -43,6 +45,7 @@ export function restoreSubmittedDraft<Attachment extends { id: string }>(
     if (!attachmentIds.has(attachment.id)) attachments.push(attachment);
   }
   return {
+    ...((submitted.references?.length || current.references?.length) ? { references: [...(submitted.references ?? []), ...(current.references ?? [])].filter((ref, index, all) => all.findIndex(value => value.id === ref.id) === index) } : {}),
     prompt: [submitted.prompt, current.prompt].filter(Boolean).join("\n\n"),
     attachments,
     selectedSkillNames: [...new Set([...submitted.selectedSkillNames, ...current.selectedSkillNames])],

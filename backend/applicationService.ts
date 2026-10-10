@@ -21,10 +21,13 @@ import {
   pauseSession,
   listSkills,
   listSessionItems,
+  searchSession,
+  getSessionItemWindow,
   listSessions,
   sendSessionMessage,
   sendSessionSteering,
   suggestSessionTitle,
+  translateSelection,
   startSession,
   changeSessionApprovalPolicy,
   submitSessionApproval,
@@ -187,6 +190,12 @@ addWorkspaceSourceToCatalog,
       reasoningEffort: assertNonEmptyString(value.reasoningEffort, "reasoningEffort"),
     });
   });
+  handle("sessions:search", (id, query) => {
+    const text = assertString(query, "query");
+    if (!text.trim() || [...text].length > 256) throw new Error("Search supports up to 256 characters");
+    return searchSession(assertString(id, "id"), text);
+  });
+  handle("sessions:item-window", (id, target) => getSessionItemWindow(assertString(id, "id"), typeof target === "number" ? assertOptionalPositiveInteger(target, "sequence")! : assertNonEmptyString(target, "messageId")));
   handle("sessions:list-items", (id, query) =>
     listSessionItems(assertString(id, "id"), assertSessionItemsQuery(query)),
   );
@@ -361,6 +370,12 @@ addWorkspaceSourceToCatalog,
     } catch (error) {
       return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error) };
     }
+  });
+  handle("sessions:translate", (id, text, language) => {
+    const target = assertNonEmptyString(language, "targetLanguage");
+    const source = assertNonEmptyString(text, "text");
+    if (!["zh-CN", "en"].includes(target) || [...source].length > 8000) throw new Error("Invalid translation input");
+    return translateSelection(assertNonEmptyString(id, "sessionId"), source, target);
   });
   handle("desktop:suggest-conversation-title", async (conversationId) => {
     const id = assertString(conversationId, "conversationId");

@@ -46,3 +46,12 @@ test("skill rendering preserves literal code, links and old messages with separa
   assert.equal(dom.window.document.querySelector(".message-skills")!.textContent, "imagegen");
   dom.window.close();
 });
+
+test("reference source metadata stays in the prompt without exposing internal ids in the message bubble", () => {
+  const text = "[Reference 1](#message-item_internal-id):\n\n> Quoted sentence\n\nPlease explain.";
+  const dom = new JSDOM(renderToStaticMarkup(<UserMessage text={text} />));
+  assert.equal(dom.window.document.querySelector("blockquote")?.textContent?.trim(), "Quoted sentence");
+  assert.ok(!dom.window.document.body.textContent?.includes("item_internal-id"));
+  assert.match(dom.window.document.body.textContent ?? "", /Please explain/);
+  dom.window.close();
+});

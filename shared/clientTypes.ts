@@ -299,6 +299,8 @@ export interface ClientApi {
   submitSessionApproval(id: string, approvalId: string, decisions: ApprovalDecisionInput[]): Promise<ApprovalDecisionResponse>;
   submitSessionInteraction(id: string, interactionId: string, answers: Record<string, string[]>): Promise<InteractionResponse>;
   changeSessionCodexSettings(id: string, input: CodexSettingsInput): Promise<ZotigoSession>;
+  searchSession(id: string, query: string): Promise<import("./zotigod").SessionSearchResponse>;
+  getSessionItemWindow(id: string, target: number | string): Promise<SessionItemsResponse>;
   listSessionItems(id: string, query?: SessionItemsQuery): Promise<SessionItemsResponse>;
   subscribeFileEvents(subscriptionId: string, files: WatchedFile[]): Promise<void>;
   unsubscribeFileEvents(): Promise<void>;
@@ -336,6 +338,7 @@ export interface ClientApi {
   createConversationWithSession(input: CreateConversationInput): Promise<DesktopActionResult>;
   startConversationSession(conversationId: string): Promise<DesktopActionResult>;
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
+  translateSelection(sessionId: string, text: string, targetLanguage: "zh-CN" | "en"): Promise<string>;
   suggestConversationTitle(conversationId: string): Promise<DesktopState>;
   renameConversation(conversationId: string, title: string): Promise<DesktopState>;
   forkConversation(conversationId: string, requestId: string, throughTurnId?: string): Promise<DesktopActionResult>;

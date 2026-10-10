@@ -1,3 +1,4 @@
+import type { TranslationLanguage } from "./translationLanguage";
 import type { AgentCatalogEntry } from "../shared/zotigod";
 import { FavoriteModelSettings } from "./FavoriteModelSettings";
 import { ArrowLeft, Settings, Server, RefreshCw } from "lucide-react";
@@ -10,6 +11,8 @@ export function SettingsPage({
   syncStatus,
   syncError,
   onCodexRefresh,
+  translationLanguage,
+  onTranslationLanguageChange,
   thinkingDisplay,
   onThinkingDisplayChange,
   onManageHosts,
@@ -21,6 +24,8 @@ export function SettingsPage({
   syncStatus: string;
   syncError: string;
   onCodexRefresh?: (catalog: AgentCatalogEntry) => void;
+  translationLanguage: TranslationLanguage;
+  onTranslationLanguageChange: (language: TranslationLanguage) => void;
   thinkingDisplay: ThinkingDisplayMode;
   onThinkingDisplayChange: (mode: ThinkingDisplayMode) => void;
   onManageHosts: () => void;
@@ -49,6 +54,12 @@ export function SettingsPage({
           <section className="settings-section" aria-labelledby="conversation-settings-heading">
             <h2 id="conversation-settings-heading">Conversation</h2>
             <div className="settings-card">
+              <label className="settings-row">
+                <span><strong>Translation language</strong><small>Translate selected conversation text into this language.</small></span>
+                <select aria-label="Translation language" value={translationLanguage} onChange={event => onTranslationLanguageChange(event.target.value as TranslationLanguage)}>
+                  <option value="zh-CN">Chinese</option><option value="en">English</option>
+                </select>
+              </label>
               <label className="settings-row">
                 <span>
                   <strong>Thinking display</strong>
