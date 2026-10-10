@@ -334,7 +334,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; openNewSessionOnMount?: boolean }) {
+export default function App({ surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   const toast = useToast();
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
@@ -3976,7 +3976,8 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
               search={query => client.searchSession(selectedBinding.daemon_session_id, query)}
               showHit={async (hit, signal) => { await showSearchWindow(hit.sequence, signal); }}
               onCloseSearch={() => { conversationFindOpen.current = false; closeSearchWindow(); }}
-              translate={(text, language) => client.translateSelection(selectedBinding.daemon_session_id, text, language)}
+              translationProfile={translationProfile}
+              translate={(text, language) => client.translateSelection(selectedBinding.daemon_session_id, text, language, translationProfile || undefined)}
               onReference={reference => {
                 updateComposerDraft(composerDraftKey, current => ({ ...current, references: [...(current.references ?? []), reference] }));
                 setEditingReferenceId(reference.id);

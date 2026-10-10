@@ -1,4 +1,5 @@
 import type { TranslationLanguage } from "./translationLanguage";
+import { TranslationProfileSettings } from "./TranslationProfileSettings";
 import type { AgentCatalogEntry } from "../shared/zotigod";
 import { FavoriteModelSettings } from "./FavoriteModelSettings";
 import { ArrowLeft, Settings, Server, RefreshCw } from "lucide-react";
@@ -13,6 +14,8 @@ export function SettingsPage({
   onCodexRefresh,
   translationLanguage,
   onTranslationLanguageChange,
+  translationProfile,
+  onTranslationProfileChange,
   thinkingDisplay,
   onThinkingDisplayChange,
   onManageHosts,
@@ -26,6 +29,8 @@ export function SettingsPage({
   onCodexRefresh?: (catalog: AgentCatalogEntry) => void;
   translationLanguage: TranslationLanguage;
   onTranslationLanguageChange: (language: TranslationLanguage) => void;
+  translationProfile: string;
+  onTranslationProfileChange: (profile: string) => void;
   thinkingDisplay: ThinkingDisplayMode;
   onThinkingDisplayChange: (mode: ThinkingDisplayMode) => void;
   onManageHosts: () => void;
@@ -60,6 +65,7 @@ export function SettingsPage({
                   <option value="zh-CN">Chinese</option><option value="en">English</option>
                 </select>
               </label>
+              <TranslationProfileSettings value={translationProfile} onChange={onTranslationProfileChange} />
               <label className="settings-row">
                 <span>
                   <strong>Thinking display</strong>

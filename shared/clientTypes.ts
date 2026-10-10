@@ -266,6 +266,12 @@ export interface DirectoryListing {
   truncated: boolean;
 }
 
+export interface TranslationResult {
+  text: string;
+  profile?: string;
+  model?: string;
+}
+
 export interface ClientApi {
   uploadAttachment(sessionId: string, file: MessageFileInput): Promise<string>;
 	listChannelConnections(): Promise<import("./channels").ChannelConnection[]>;
@@ -338,7 +344,7 @@ export interface ClientApi {
   createConversationWithSession(input: CreateConversationInput): Promise<DesktopActionResult>;
   startConversationSession(conversationId: string): Promise<DesktopActionResult>;
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
-  translateSelection(sessionId: string, text: string, targetLanguage: "zh-CN" | "en"): Promise<string>;
+  translateSelection(sessionId: string, text: string, targetLanguage: "zh-CN" | "en", profile?: string): Promise<TranslationResult>;
   suggestConversationTitle(conversationId: string): Promise<DesktopState>;
   renameConversation(conversationId: string, title: string): Promise<DesktopState>;
   forkConversation(conversationId: string, requestId: string, throughTurnId?: string): Promise<DesktopActionResult>;

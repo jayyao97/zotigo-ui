@@ -10,3 +10,14 @@ export function useTranslationLanguage(host: string): [TranslationLanguage, (val
     try { localStorage.setItem(key, value); } catch { /* In-memory fallback. */ }
   }];
 }
+
+export function useTranslationProfile(host: string): [string, (value: string) => void] {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const key = `zotigo.translation-profile:${host}`;
+  let saved = "";
+  try { saved = localStorage.getItem(key) ?? ""; } catch { /* In-memory fallback. */ }
+  return [values[host] ?? saved, value => {
+    setValues(previous => ({ ...previous, [host]: value }));
+    try { localStorage.setItem(key, value); } catch { /* In-memory fallback. */ }
+  }];
+}
