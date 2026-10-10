@@ -5579,7 +5579,8 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .skill-prompt-editor .cm-scroller { font-family: var(--font-sans); line-height: 1.6; max-height: 280px; overflow-y: auto; }
 .skill-prompt-editor .cm-content { padding: 2px 0; min-height: 44px; caret-color: var(--text); }
 .new-chat-input .skill-prompt-editor .cm-content { min-height: 64px; }
-.skill-prompt-editor .cm-line { padding: 0; }
+/* CodeMirror offsets its drawn caret left by 0.6px; keep it inside the scroll clip. */
+.skill-prompt-editor .cm-line { padding: 0 2px; }
 .skill-prompt-editor .cm-placeholder { color: var(--text-dim); }
 .skill-prompt-editor .cm-cursor { border-left-color: var(--text); }
 .skill-prompt-editor .cm-selectionBackground { background: #38608d66 !important; }
@@ -5635,6 +5636,7 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .selection-translation { padding: 8px; }
 .selection-translation > div { display: flex; justify-content: space-between; }
 .selection-translation p { white-space: pre-wrap; overflow-y: auto; max-height: 50dvh; user-select: text; font-size: 14px; line-height: 1.6; }
+.translation-model { display: block; color: var(--text-muted); overflow-wrap: anywhere; }
 @media (max-width: 700px) {
   .conversation-find { left: 8px; right: 8px; max-width: none; }
   .conversation-find input { width: 100px; }

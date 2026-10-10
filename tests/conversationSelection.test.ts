@@ -1,10 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { textRanges } from "../src/conversation/selectionText";
+import { selectedMessageRange, textRanges } from "../src/conversation/selectionText";
 import { referencePrompt } from "../shared/conversationReferences";
 import { emptyComposerDraft, restoreSubmittedDraft, updateComposerDrafts } from "../src/composerDrafts";
 import { avoidAnnotationMarkers } from "../src/conversation/ConversationAnnotations";
+
+test("paragraph selection accepts a trailing message boundary but rejects selected text in another message", () => {
+  const dom = new JSDOM('<main><div data-message-id="one"><p>Alpha <b>bravo</b>.</p></div>\n<div data-message-id="two"><p>Second message.</p></div></main>');
+  try {
+    const root = dom.window.document.querySelector('main')!;
+    const first = root.querySelector('[data-message-id="one"]') as HTMLElement;
+    const second = root.querySelector('[data-message-id="two"] p')!;
+    const selected = dom.window.document.createRange();
+    selected.setStart(first.querySelector('p')!.firstChild!, 0);
+    for (const endpoint of [second, second.firstChild!, root]) {
+      selected.setEnd(endpoint, endpoint === root ? 2 : 0);
+      const match = selectedMessageRange(selected, root)!;
+      assert.equal(match.message, first);
+      assert.equal(match.range.toString(), 'Alpha bravo.');
+      assert.equal(match.range.endContainer, first);
+      assert.equal(selected.endContainer, endpoint, 'must not modify native selection');
+    }
+    selected.setEnd(second.firstChild!, 1);
+    assert.equal(selectedMessageRange(selected, root), null);
+    selected.selectNodeContents(first.querySelector('b')!);
+    assert.equal(selectedMessageRange(selected, root)?.range.toString(), 'bravo');
+    assert.equal(selectedMessageRange(selected, second as HTMLElement), null);
+  } finally { dom.window.close(); }
+});
 
 test("comment popup rises only when it overlaps an annotation marker", () => {
   const dom = new JSDOM();

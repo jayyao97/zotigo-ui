@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Languages, MessageSquareQuote, X } from "lucide-react";
 import type { ConversationReference } from "../../shared/conversationReferences";
+import type { TranslationResult } from "../../shared/clientTypes";
 import { ConversationAnnotations, useAnchoredPopup } from "./ConversationAnnotations";
 export { ComposerReferences } from "./ConversationAnnotations";
 import { selectionOffset } from "./annotationRange";
+import { selectedMessageRange } from "./selectionText";
 import { ConversationFind } from "./ConversationFind";
 import type { DisplayItem, SessionSearchHit, SessionSearchResponse } from "../../shared/zotigod";
 
@@ -16,7 +18,8 @@ type Props = {
   onReferencesChange: (references: ConversationReference[]) => void;
   root: RefObject<HTMLDivElement | null>;
   onReference: (reference: ConversationReference) => void;
-  translate: (text: string, language: "zh-CN" | "en") => Promise<string>;
+  translate: (text: string, language: "zh-CN" | "en") => Promise<TranslationResult>;
+  translationProfile: string;
   items: DisplayItem[];
   search: (query: string) => Promise<SessionSearchResponse>;
   showHit: (hit: SessionSearchHit, signal: AbortSignal) => Promise<void>;
@@ -25,9 +28,9 @@ type Props = {
 };
 type SelectionText = { text: string; messageId: string; startOffset: number; rect: DOMRect };
 
-export function ConversationTools({ root, onReference, translate, items, search, showHit, onCloseSearch, onSearch, language, references, editingId, onEdit, onReferencesChange }: Props) {
+export function ConversationTools({ root, onReference, translate, translationProfile, items, search, showHit, onCloseSearch, onSearch, language, references, editingId, onEdit, onReferencesChange }: Props) {
   const [selection, setSelection] = useState<SelectionText | null>(null);
-  const [translation, setTranslation] = useState<{ text: string; pending: boolean; error?: boolean } | null>(null);
+  const [translation, setTranslation] = useState<(TranslationResult & { pending: boolean; error?: boolean; language: "zh-CN" | "en" }) | null>(null);
   const popup = useRef<HTMLDivElement>(null);
   const position = useAnchoredPopup(popup, selection?.rect ?? null);
   const request = useRef(0);
@@ -40,12 +43,10 @@ export function ConversationTools({ root, onReference, translate, items, search,
         if (popup.current?.contains(document.activeElement)) return;
         const selected = window.getSelection();
         if (!selected || selected.isCollapsed || !selected.rangeCount) { setSelection(null); return; }
-        const range = selected.getRangeAt(0);
-        if (popup.current?.contains(range.startContainer)) return;
-        const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement;
-        const end = range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer as Element : range.endContainer.parentElement;
-        const message = start?.closest<HTMLElement>('[data-message-id]');
-        if (!message || !root.current?.contains(message) || message !== end?.closest('[data-message-id]') || start?.closest('button, input, textarea')) { setSelection(null); return; }
+        if (popup.current?.contains(selected.getRangeAt(0).startContainer)) return;
+        const match = root.current && selectedMessageRange(selected.getRangeAt(0), root.current);
+        if (!match) { setSelection(null); return; }
+        const { message, range } = match;
         const rawText = range.toString();
         const text = rawText.trim();
         if (!text) return;
@@ -68,12 +69,12 @@ export function ConversationTools({ root, onReference, translate, items, search,
   async function runTranslation(target = language) {
     if (!selection) return;
     const id = ++request.current;
-    setTranslation({ text: "", pending: true });
+    setTranslation({ text: "", pending: true, profile: translationProfile || undefined, language: target });
     try {
-      const text = await translate(selection.text, target);
-      if (id === request.current) setTranslation({ text, pending: false });
+      const result = await translate(selection.text, target);
+      if (id === request.current) setTranslation({ ...result, pending: false, language: target });
     } catch (error) {
-      if (id === request.current) setTranslation({ text: error instanceof Error ? error.message : "Translation failed", pending: false, error: true });
+      if (id === request.current) setTranslation({ text: error instanceof Error ? error.message : "Translation failed", pending: false, error: true, profile: translationProfile || undefined, language: target });
     }
   }
   return <>
@@ -90,8 +91,9 @@ export function ConversationTools({ root, onReference, translate, items, search,
       </div>
       {[...selection.text].length > 8000 && <small>Select up to 8,000 characters.</small>}
       {translation && <div className="selection-translation">
-        <div><span>{language === "zh-CN" ? "Chinese" : "English"}</span><button type="button" aria-label="Close translation" onClick={() => { request.current++; setSelection(null); setTranslation(null); }}><X size={16} /></button></div>
+        <div><span>{translation.language === "zh-CN" ? "Chinese" : "English"}</span><button type="button" aria-label="Close translation" onClick={() => { request.current++; setSelection(null); setTranslation(null); }}><X size={16} /></button></div>
         <p role={translation.error ? "alert" : "status"}>{translation.pending ? "Translating…" : translation.text}</p>
+        {(translation.profile || translation.model) && <small className="translation-model">{translation.profile && <>Profile: {translation.profile}</>}{translation.model && <> · Model: {translation.model}</>}</small>}
       </div>}
     </div>, document.body)}
   </>;

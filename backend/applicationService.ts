@@ -371,11 +371,11 @@ addWorkspaceSourceToCatalog,
       return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error) };
     }
   });
-  handle("sessions:translate", (id, text, language) => {
+  handle("sessions:translate", (id, text, language, profile) => {
     const target = assertNonEmptyString(language, "targetLanguage");
     const source = assertNonEmptyString(text, "text");
     if (!["zh-CN", "en"].includes(target) || [...source].length > 8000) throw new Error("Invalid translation input");
-    return translateSelection(assertNonEmptyString(id, "sessionId"), source, target);
+    return translateSelection(assertNonEmptyString(id, "sessionId"), source, target, profile == null ? undefined : assertString(profile, "profile"));
   });
   handle("desktop:suggest-conversation-title", async (conversationId) => {
     const id = assertString(conversationId, "conversationId");

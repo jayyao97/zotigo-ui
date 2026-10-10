@@ -16,7 +16,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     return transport.invoke(channel, ...args);
   };
   return {
-    translateSelection: (id, text, language) => invoke("sessions:translate", id, text, language),
+    translateSelection: (id, text, language, profile) => invoke("sessions:translate", id, text, language, profile),
     uploadAttachment: (sessionId, file) => invoke("desktop:upload-attachment", sessionId, file),
 	listChannelConnections: () => invoke("channels:list-connections"),
 	createChannelConnection: (input) => invoke("channels:create-connection", input),

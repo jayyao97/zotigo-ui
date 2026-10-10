@@ -1755,11 +1755,12 @@ export async function listDaemonDirectory(input: { path: string; purpose: "files
   }
 }
 
-export async function translateSelection(id: string, text: string, targetLanguage: string): Promise<string> {
+export async function translateSelection(id: string, text: string, targetLanguage: string, profile?: string): Promise<import("../shared/clientTypes").TranslationResult> {
   const value = await requestJSON(`/sessions/${encodeURIComponent(id)}/translate`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(35000), body: JSON.stringify({ text, target_language: targetLanguage }),
+    method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(35000), body: JSON.stringify({ text, target_language: targetLanguage, ...(profile ? { profile } : {}) }),
   });
-  return expectString(expectRecord(value, "translation").text, "translation text");
+  const result = expectRecord(value, "translation");
+  return { text: expectString(result.text, "translation text"), profile: typeof result.profile === "string" ? result.profile : undefined, model: typeof result.model === "string" ? result.model : undefined };
 }
 
 export async function searchSession(id: string, query: string): Promise<import("../shared/zotigod").SessionSearchResponse> {
