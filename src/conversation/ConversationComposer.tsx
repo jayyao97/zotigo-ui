@@ -1,9 +1,10 @@
+import { AttachmentMenu } from "./AttachmentMenu";
+import { AttachmentCard } from "./AttachmentCard";
+import { SkillPromptEditor, type SkillPromptEditorHandle } from "../SkillPromptEditor";
 import { createPortal } from "react-dom";
 import { favoriteKey, type ModelFavorite, type ModelFavoritesControl } from "../modelFavorites";
 import {
-  type ClipboardEvent,
   type FormEvent,
-  type KeyboardEvent,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -26,32 +27,29 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  X,
 } from "lucide-react";
 
 import type { AgentCatalogEntry, AgentKind, AgentModel, ApprovalPolicy, RuntimeProfile, SkillSummary } from "../../shared/zotigod";
 import type { DesktopProject, DesktopWorkspace } from "../../shared/clientTypes";
 import { approvalPolicyLabel } from "../../shared/approvalPolicy";
-import { resizeTextareaToContent } from "../textareaSizing";
 
 export type ComposerAttachment = {
   id: string;
-  kind: "image";
+  kind: "image" | "video" | "file";
   name: string;
   file: File;
   mimeType: string;
   url?: string;
+  upload?: { state: "uploading" } | { state: "ready"; path: string } | { state: "failed"; error: string };
 };
 
 export function ComposerSkills({
   skills,
-  selectedSkillNames,
   loading,
   error,
   open,
   activeIndex,
   onSelect,
-  onRemove,
   onHighlight,
 }: {
   skills: SkillSummary[];
@@ -61,25 +59,11 @@ export function ComposerSkills({
   open: boolean;
   activeIndex: number;
   onSelect: (skill: SkillSummary) => void;
-  onRemove: (name: string) => void;
   onHighlight: (index: number) => void;
 }) {
-  if (!open && selectedSkillNames.length === 0) return null;
+  if (!open) return null;
   return (
     <>
-      {selectedSkillNames.length > 0 && (
-        <div className="selected-skills" aria-label="Selected skills">
-          {selectedSkillNames.map((name) => (
-            <span className="selected-skill" key={name}>
-              <Sparkles size={12} strokeWidth={1.8} />
-              {name}
-              <button type="button" aria-label={`Remove ${name}`} onClick={() => onRemove(name)}>
-                <X size={11} strokeWidth={2} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
       {open && (
         <div className="skill-command-menu" role="listbox" aria-label="Skills">
           <div className="skill-command-heading">
@@ -135,32 +119,15 @@ export function ComposerAttachmentStrip({
   return (
     <div className="composer-attachments" aria-label="Pending attachments">
       {attachments.map((attachment) => (
-        <div key={attachment.id} className="composer-attachment">
-          {attachment.url ? (
-            <button
-              type="button"
-              className="attachment-preview-button"
-              aria-label={`Preview ${attachment.name}`}
-              onClick={() => onPreview(attachment.id)}
-            >
-              <img src={attachment.url} alt={attachment.name} loading="lazy" decoding="async" />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="composer-attachment-remove"
-            aria-label={`Remove ${attachment.name}`}
-            onClick={() => onRemove(attachment.id)}
-          >
-            <X size={14} strokeWidth={2} />
-          </button>
-        </div>
+        <AttachmentCard key={attachment.id} attachment={attachment} onPreview={() => onPreview(attachment.id)} onRemove={() => onRemove(attachment.id)} />
       ))}
     </div>
   );
 }
 
 export function NewSessionPrompt({
+  editorKey,
+  onCaretChange,
   favorites,
   selectedProject,
   selectedWorkspace,
@@ -181,11 +148,11 @@ export function NewSessionPrompt({
   onPromptChange,
   onPromptKeyDown,
   onSelectSkill,
-  onRemoveSkill,
   onHighlightSkill,
   onPromptPaste,
   onPreviewAttachment,
   onRemoveAttachment,
+  onAddAttachment,
   onSelectProject,
   onSelectWorkspace,
   onCreateProject,
@@ -224,14 +191,16 @@ export function NewSessionPrompt({
   projects: DesktopProject[];
   workspaces: DesktopWorkspace[];
   onCreate: (prompt: string) => void;
-  onPromptChange: (prompt: string) => void;
-  onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  editorKey: string;
+  onCaretChange: (caret: number) => void;
+  onPromptChange: (prompt: string, caret?: number, skills?: string[]) => void;
+  onPromptKeyDown: (event: globalThis.KeyboardEvent) => void;
   onSelectSkill: (skill: SkillSummary) => void;
-  onRemoveSkill: (name: string) => void;
   onHighlightSkill: (index: number) => void;
-  onPromptPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
+  onPromptPaste: (event: globalThis.ClipboardEvent) => void;
   onPreviewAttachment: (id: string) => void;
   onRemoveAttachment: (id: string) => void;
+  onAddAttachment: (accept?: string) => void;
   onSelectProject: (projectId: string | null) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onCreateProject: () => void;
@@ -253,7 +222,7 @@ export function NewSessionPrompt({
   onSelectApprovalPolicy: (approvalPolicy: ApprovalPolicy) => void;
   runtimeAvailable: boolean;
 }) {
-  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const promptTextareaRef = useRef<SkillPromptEditorHandle | null>(null);
   const projectPickerRef = useRef<HTMLDivElement | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
@@ -278,9 +247,6 @@ export function NewSessionPrompt({
     });
   }, [projectQuery, projects, workspaces]);
 
-  useLayoutEffect(() => {
-    resizeTextareaToContent(promptTextareaRef.current);
-  }, [prompt]);
 
   useEffect(() => {
     if (!projectMenuOpen) {
@@ -429,7 +395,6 @@ export function NewSessionPrompt({
             open={skillMenuOpen}
             activeIndex={skillMenuIndex}
             onSelect={onSelectSkill}
-            onRemove={onRemoveSkill}
             onHighlight={onHighlightSkill}
           />
           <ComposerAttachmentStrip
@@ -437,14 +402,16 @@ export function NewSessionPrompt({
             onPreview={onPreviewAttachment}
             onRemove={onRemoveAttachment}
           />
-          <textarea
+          <SkillPromptEditor
+            key={editorKey}
+            skills={selectedSkillNames}
+            onCaretChange={onCaretChange}
             ref={promptTextareaRef}
             value={prompt}
-            onChange={(event) => onPromptChange(event.target.value)}
+            onChange={onPromptChange}
             onPaste={onPromptPaste}
             onKeyDown={onPromptKeyDown}
             placeholder="Do anything"
-            rows={3}
             autoFocus
           />
           <button
@@ -465,6 +432,7 @@ export function NewSessionPrompt({
           </button>
         </div>
         <div className="new-chat-meta">
+          <AttachmentMenu key={editorKey} onPick={onAddAttachment} disabled={isBusy} />
           <ApprovalPolicyPicker
             value={selectedApprovalPolicy}
             onChange={onSelectApprovalPolicy}

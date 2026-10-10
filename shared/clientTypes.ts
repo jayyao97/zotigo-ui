@@ -1,3 +1,4 @@
+import type { MessageFileInput } from "./messageFiles";
 import type { WatchedFile, FileEventEnvelope } from "./fileEvents";
 import type {
   SessionState,
@@ -173,6 +174,7 @@ export interface CreateConversationInput {
   prompt?: string;
   skills?: string[];
   images?: MessageImageInput[];
+  files?: MessageFileInput[];
   profile?: string;
   approvalPolicy?: ApprovalPolicy;
   agent?: AgentKind;
@@ -186,6 +188,7 @@ export interface SendConversationMessageInput {
   text: string;
   skills?: string[];
   images?: MessageImageInput[];
+  files?: MessageFileInput[];
   approvalPolicy?: ApprovalPolicy;
 }
 
@@ -216,9 +219,19 @@ export interface ImageFileSnapshot {
   mtimeMs: number;
 }
 
+export interface VideoFileSnapshot {
+  path: string;
+  name: string;
+  mediaType: string;
+  dataBase64: string;
+  sizeBytes: number;
+  mtimeMs: number;
+}
+
 export type WorkspaceFileOpenResult =
   | { kind: "text"; file: TextFileSnapshot }
-  | { kind: "image"; file: ImageFileSnapshot };
+  | { kind: "image"; file: ImageFileSnapshot }
+  | { kind: "video"; file: VideoFileSnapshot };
 
 export type ImagePreviewResult = { kind: "image"; file: ImageFileSnapshot } | { kind: "requires_confirmation" };
 
@@ -235,7 +248,8 @@ export type OpenMarkdownLinkResult =
   | { kind: "system" }
   | { kind: "directory"; path: string }
   | { kind: "text"; file: TextFileSnapshot; line?: number; column?: number }
-  | { kind: "image"; file: ImageFileSnapshot };
+  | { kind: "image"; file: ImageFileSnapshot }
+  | { kind: "video"; file: VideoFileSnapshot };
 
 export interface SaveTextFileInput {
   path: string;
@@ -253,6 +267,7 @@ export interface DirectoryListing {
 }
 
 export interface ClientApi {
+  uploadAttachment(sessionId: string, file: MessageFileInput): Promise<string>;
 	listChannelConnections(): Promise<import("./channels").ChannelConnection[]>;
 	createChannelConnection(input: import("./channels").ChannelConnectionInput): Promise<import("./channels").ChannelConnection>;
 	updateChannelConnection(id: string, input: import("./channels").ChannelConnectionInput): Promise<import("./channels").ChannelConnection>;
@@ -272,7 +287,7 @@ export interface ClientApi {
   setActiveHost(id: string): Promise<void>;
   inspectHostSources(paths: string[]): Promise<SourceCandidate[]>;
   getDaemonConfig(): Promise<DaemonConfig>;
-  getProfiles(workingDirectory?: string): Promise<ProfilesResponse>;
+  getProfiles(workingDirectory?: string, scope?: "global"): Promise<ProfilesResponse>;
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;
   getAgents(): Promise<AgentCatalogResponse>;
   prepareCodex(): Promise<AgentCatalogEntry>;

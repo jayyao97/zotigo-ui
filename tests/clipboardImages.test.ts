@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clipboardImageFiles } from "../src/clipboardImages";
+import { clipboardFiles } from "../src/clipboardFiles";
 
 function clipboardData(
   files: File[] = [],
@@ -15,23 +15,23 @@ function clipboardData(
 test("reads image files exposed directly by the clipboard", () => {
   const image = { type: "image/png" } as File;
 
-  assert.deepEqual(clipboardImageFiles(clipboardData([image])), [image]);
+  assert.deepEqual(clipboardFiles(clipboardData([image])), [image]);
 });
 
 test("falls back to clipboard items when the file list is empty", () => {
   const image = { type: "image/png" } as File;
 
-  assert.deepEqual(clipboardImageFiles(clipboardData([], [
+  assert.deepEqual(clipboardFiles(clipboardData([], [
     { kind: "file", getAsFile: () => image },
   ])), [image]);
 });
 
-test("ignores non-image and empty clipboard items", () => {
+test("accepts file attachments and ignores empty clipboard items", () => {
   const textFile = { type: "text/plain" } as File;
 
-  assert.deepEqual(clipboardImageFiles(clipboardData([], [
+  assert.deepEqual(clipboardFiles(clipboardData([], [
     { kind: "string", getAsFile: () => null },
     { kind: "file", getAsFile: () => textFile },
     { kind: "file", getAsFile: () => null },
-  ])), []);
+  ])), [textFile]);
 });

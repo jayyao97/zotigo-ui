@@ -1,5 +1,10 @@
+import { AttachmentMenu } from "./conversation/AttachmentMenu";
+import { AttachmentPreview } from "./AttachmentPreview";
+import { SkillPromptEditor, type SkillPromptEditorHandle } from "./SkillPromptEditor";
+import { MobileFileNavigation } from "./FilePath";
 import type { OpenFileState } from "./openFileState";
 import { useLiveFiles } from "./useLiveFiles";
+import { useToast } from "./Toast";
 import { useConversationTitle } from "./useConversationTitle";
 import { useTimelineActions } from "./conversation/useTimelineActions";
 import type { NavigationItem } from "../shared/clientTypes";
@@ -16,7 +21,6 @@ import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
 import {
-  type ClipboardEvent,
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
@@ -64,7 +68,6 @@ import {
   ListFilter,
   Maximize2,
   Minimize2,
-  Paperclip,
   Pin,
   Plus,
   RefreshCw,
@@ -111,7 +114,7 @@ import {
 import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, MessageImageInput, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ProjectSourceInput, SourceCandidate, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
-import { maxMessageImageCount, messageImageSizeError } from "../shared/messageImages";
+import { attachmentReference, attachmentSizeError, modelImageTypes, type MessageFileInput } from "../shared/messageFiles";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
 import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "./sidebarDisclosure";
 import {
@@ -132,8 +135,8 @@ import type { FileEditorMode } from "./FileEditorTab";
 import { hostSwitchHasActiveSave, normalizeHostFilesForRestore } from "./hostVolatileState";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 import { ImagePreview } from "./ImagePreview";
-import { clipboardImageFiles } from "./clipboardImages";
-import { matchingSkills, removeSkillCommand, skillCommandQuery } from "../shared/skillCommands";
+import { clipboardFiles } from "./clipboardFiles";
+import { matchingSkills, editorSkillTokens, skillPromptText, skillCommandQuery, insertSkillCommand } from "../shared/skillCommands";
 import {
   formatCompactTokenCount,
   latestActiveTurn,
@@ -156,7 +159,6 @@ import {
   RuntimeSettingsPicker,
   type ComposerAttachment,
 } from "./conversation/ConversationComposer";
-import { resizeTextareaToContent } from "./textareaSizing";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 import { shouldSmoothStreaming } from "./streamingText";
 import { ChannelsPage } from "./channels/ChannelsPage";
@@ -177,6 +179,7 @@ import {
 } from "./unreadSessions";
 
 const FileEditorTab = lazy(() => import("./FileEditorTab").then((module) => ({ default: module.FileEditorTab })));
+const FileVideoTab = lazy(() => import("./FileVideoTab").then((module) => ({ default: module.FileVideoTab })));
 const FileImageTab = lazy(() => import("./FileImageTab").then((module) => ({ default: module.FileImageTab })));
 
 type ConnectionState = "checking" | "online" | "offline";
@@ -205,8 +208,9 @@ type SidebarSortProps = {
   onDragEnd: () => void;
 };
 
-function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange, onSave, onRefresh }: {
+function OpenWorkspaceFileTab({ active, state, line, column, onDraftChange, onModeChange, onSave, onRefresh }: {
   onRefresh: () => void;
+  active: boolean;
   state: OpenFileState;
   line?: number;
   column?: number;
@@ -214,6 +218,7 @@ function OpenWorkspaceFileTab({ state, line, column, onDraftChange, onModeChange
   onModeChange: (mode: FileEditorMode) => void;
   onSave: () => void;
 }) {
+  if (state.kind === "video") return <FileVideoTab active={active} file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
   if (state.kind === "image") return <FileImageTab file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
   return <FileEditorTab
     sessionId={state.sessionId}
@@ -256,7 +261,6 @@ const initialCodexCatalogSyncDelayMs = 15_000;
 const sessionDeltaFlushIntervalMs = 50;
 const maxSessionHistoryCacheEntries = 3;
 const inactiveSessionHistoryItemLimit = 200;
-const supportedImageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 const volatileStateByHost = new Map<string, HostVolatileState>();
 let volatileStateGeneration = 0;
 
@@ -306,6 +310,15 @@ async function attachmentToMessageImage(attachment: ComposerAttachment): Promise
   };
 }
 
+function appendUploadedReferences(text: string, attachments: ComposerAttachment[]): string {
+  const references = attachments.flatMap(file => file.upload?.state === "ready" ? [attachmentReference(file.name, file.upload.path)] : []);
+  return references.length ? [text, "Attached files (use tools to read or analyze):", ...references].filter(Boolean).join("\n\n") : text;
+}
+
+async function attachmentToMessageFile(attachment: ComposerAttachment): Promise<MessageFileInput> {
+  return { name: attachment.name, data_base64: await readFileAsBase64(attachment.file) };
+}
+
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -314,12 +327,13 @@ function readFileAsBase64(file: File): Promise<string> {
       const commaIndex = value.indexOf(",");
       resolve(commaIndex >= 0 ? value.slice(commaIndex + 1) : value);
     });
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read image attachment")));
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read attachment")));
     reader.readAsDataURL(file);
   });
 }
 
-export default function App({ clientScope, hostName, thinkingDisplay, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
+export default function App({ surfaceActive = true, clientScope, hostName, thinkingDisplay, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
+  const toast = useToast();
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
@@ -472,7 +486,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   }
   const previousSelectedConversationIdRef = useRef<string | null>(null);
   const [conversationContextMenu, setConversationContextMenu] = useState<ConversationContextMenu | null>(null);
-  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [previewAttachmentId, setPreviewAttachmentId] = useState<string | null>(null);
   const [isConversationAtBottom, setIsConversationAtBottom] = useState(true);
   const [profiles, setProfiles] = useState<RuntimeProfile[]>([]);
@@ -511,13 +524,18 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [treeVisible, setTreeVisible] = useState(true);
   const fileOpenRequest = useRef(0);
-  const [fileOpenError, setFileOpenError] = useState("");
   const [fileOpening, setFileOpening] = useState(false);
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>(() => normalizeHostFilesForRestore(restoredHostState?.openFiles ?? {}));
   const openFilesRef = useRef(openFiles);
   const hostSwitchingRef = useRef(false);
+  const pendingUploadsRef = useRef(0);
   useEffect(() => {
     const beforeSwitch = (event: Event) => {
+      if (pendingUploadsRef.current > 0) {
+        toast("Wait for attachment uploads before switching hosts.", "info");
+        event.preventDefault();
+        return;
+      }
       if (hostSwitchHasActiveSave(openFilesRef.current, filesSavingRef.current.size)) {
         window.alert("Wait for the current file save before switching hosts.");
         event.preventDefault();
@@ -563,7 +581,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   const sessionHistoryBackfillNeededRef = useRef<string | null>(null);
   const olderSessionItemsLoadingRef = useRef(false);
   const conversationTitleInputRef = useRef<HTMLInputElement | null>(null);
-  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerTextareaRef = useRef<SkillPromptEditorHandle | null>(null);
   const forkRequestsRef = useRef(new Map<string, string>());
   const forkInFlightRef = useRef(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -786,7 +804,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   const profileWorkspace = selectedConversation?.workspace_id
     ? desktopState.workspaces.find((workspace) => workspace.id === selectedConversation.workspace_id) ?? null
     : selectedWorkspace;
-  const profileWorkingDirectory = profileWorkspace?.root_path;
+  const profileWorkingDirectory = selectedSession?.working_directory || profileWorkspace?.root_path;
   const selectedProfile = selectedSession
     ? profileOverrides[selectedSession.id] ?? selectedSession.profile ?? defaultProfile
     : draftProfile || defaultProfile;
@@ -985,16 +1003,18 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     () => composerAttachments.find((attachment) => attachment.id === previewAttachmentId) ?? null,
     [composerAttachments, previewAttachmentId],
   );
-  const activeSkillCommand = skillCommandQuery(activePrompt);
+  const [promptCaret, setPromptCaret] = useState<number | null>(null);
+  const activeSkillCommand = skillCommandQuery(activePrompt.slice(0, promptCaret ?? activePrompt.length));
   const skillMatches = useMemo(
     () => matchingSkills(availableSkills, activeSkillCommand?.query ?? "")
-      .filter((skill) => skill.enabled && !selectedSkillNames.includes(skill.name)),
+      .filter((skill) => skill.enabled),
     [activeSkillCommand?.query, availableSkills, selectedSkillNames],
   );
   const skillMenuOpen = activeSkillCommand !== null && !skillMenuDismissed;
   const hasComposerDraft = activePrompt.trim() !== "" || composerAttachments.length > 0;
   const runtimeOccupied = selectedSession?.error_code === "runtime_occupied";
-  const canSubmitSelectedPrompt = Boolean(selectedConversation && !runtimeOccupied && !isBusy && hasComposerDraft);
+  const attachmentsBlocked = composerAttachments.some(file => file.upload?.state === "uploading" || file.upload?.state === "failed");
+  const canSubmitSelectedPrompt = Boolean(selectedConversation && !runtimeOccupied && !isBusy && !attachmentsBlocked && hasComposerDraft);
   const showStopControl = Boolean(
     selectedSession?.state === "running" && selectedActiveTurnId && !hasComposerDraft && !isBusy,
   );
@@ -1015,7 +1035,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     setPauseRequestedTurnId(null);
     fileOpenRequest.current++;
     setFileOpening(false);
-    setFileOpenError("");
+
     setAvailableSkills([]);
     setSkillsError(null);
     setSkillMenuDismissed(false);
@@ -1199,7 +1219,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
 
   useLayoutEffect(() => {
     setPreviewAttachmentId(null);
-    setAttachmentMenuOpen(false);
     cancelScheduledConversationAutoScroll();
     conversationScrollIntentRef.current = null;
     setStickToBottom(true);
@@ -1222,7 +1241,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     let active = true;
     setProfilesLoading(true);
     client
-      .getProfiles(profileWorkingDirectory)
+      .getProfiles(profileWorkingDirectory, profileWorkingDirectory ? undefined : "global")
       .then((response) => {
         if (!active) return;
         setProfiles(response.profiles);
@@ -1301,13 +1320,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     },
     onOpenForkSource: forkSourceConversation ? () => selectConversation(forkSourceConversation.id) : undefined,
   });
-
-  useLayoutEffect(() => {
-    const heightChanged = resizeTextareaToContent(composerTextareaRef.current);
-    if (heightChanged && stickToBottomRef.current) {
-      scheduleConversationScrollToBottom();
-    }
-  }, [activePrompt, selectedConversation?.id]);
 
   useEffect(() => {
     const updateAnimationState = () => {
@@ -2188,14 +2200,15 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     setComposerDrafts((current) => updateComposerDrafts(current, key, update));
   }
 
-  function updateActivePrompt(value: string) {
-    updateComposerDraft(composerDraftKey, (draft) => ({ ...draft, prompt: value }));
+  function updateActivePrompt(value: string, caret?: number, referencedSkills?: string[]) {
+    setPromptCaret(caret ?? value.length);
+    updateComposerDraft(composerDraftKey, (draft) => ({ ...draft, prompt: value, selectedSkillNames: referencedSkills ?? [...new Set(editorSkillTokens(value, draft.selectedSkillNames).map(token => token.name))] }));
     setSkillMenuDismissed(false);
   }
 
   function selectComposerSkill(skill: SkillSummary) {
     if (!activeSkillCommand || !skill.enabled) return;
-    const prompt = removeSkillCommand(activePrompt, activeSkillCommand);
+    const prompt = insertSkillCommand(activePrompt, activeSkillCommand, promptCaret ?? activePrompt.length, skill.name);
     updateComposerDraft(composerDraftKey, (draft) => ({
       ...draft,
       prompt,
@@ -2204,18 +2217,11 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
         : [...draft.selectedSkillNames, skill.name],
     }));
     if (selectedConversation) window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
-    setSkillMenuDismissed(false);
+    setSkillMenuDismissed(true);
     setSkillMenuIndex(0);
   }
 
-  function removeComposerSkill(name: string) {
-    updateComposerDraft(composerDraftKey, (draft) => ({
-      ...draft,
-      selectedSkillNames: draft.selectedSkillNames.filter((item) => item !== name),
-    }));
-  }
-
-  function handleSkillMenuKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+  function handleSkillMenuKeyDown(event: globalThis.KeyboardEvent): boolean {
     if (!skillMenuOpen) return false;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -2241,7 +2247,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   }
 
   async function createConversation(prompt: string) {
-    const trimmedPrompt = prompt.trim();
+    const trimmedPrompt = skillPromptText(prompt, activeComposerDraft.selectedSkillNames).trim();
+    if (attachmentsBlocked) return;
     if (!trimmedPrompt && composerAttachments.length === 0) {
       return;
     }
@@ -2252,12 +2259,12 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     const submittedSkills = submittedDraft.selectedSkillNames;
     updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
     setPreviewAttachmentId(null);
-    setAttachmentMenuOpen(false);
     setIsBusy(true);
     setMessage(null);
     try {
       const provisionalTitle = titleFromPrompt(trimmedPrompt);
-      const images = await Promise.all(submittedAttachments.map(attachmentToMessageImage));
+      const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
+      const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
       const result = await client.createConversationWithSession({
         projectId: desktopState.selectedProjectId,
         workspaceId: desktopState.selectedWorkspaceId,
@@ -2265,6 +2272,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
         prompt: trimmedPrompt,
         skills: submittedSkills.length > 0 ? submittedSkills : undefined,
         images: images.length > 0 ? images : undefined,
+        files: files.length > 0 ? files : undefined,
         agent: selectedAgent,
         ...(selectedAgent === "codex"
           ? {
@@ -2279,7 +2287,12 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
       });
       applyDesktopActionResult(result);
       if (result.error) {
-        updateComposerDraft(submittedDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
+        const retryDraftKey = draftKeyForSelection({
+          conversationId: result.state.selectedConversationId,
+          projectId: result.state.selectedProjectId,
+          workspaceId: result.state.selectedWorkspaceId,
+        });
+        updateComposerDraft(retryDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
         setMessage(result.error);
       } else {
         for (const attachment of submittedAttachments) {
@@ -2405,8 +2418,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
 
   async function submitSelectedPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = activePrompt.trim();
-    if (!selectedConversation || runtimeOccupied || isBusy || (!text && composerAttachments.length === 0)) {
+    const text = skillPromptText(activePrompt, activeComposerDraft.selectedSkillNames).trim();
+    if (!selectedConversation || runtimeOccupied || isBusy || attachmentsBlocked || (!text && composerAttachments.length === 0)) {
       return;
     }
 
@@ -2419,8 +2432,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     const isSteering = Boolean(selectedSession?.working && sessionAllowsActiveTurn(selectedSession.state));
     const optimisticItem = optimisticPromptDisplayItem({
       id: optimisticId,
-      text,
-      images: submittedAttachments.map((attachment) => ({
+      text: [text, ...submittedAttachments.filter((attachment) => attachment.kind !== "image").map((attachment) => attachment.name)].filter(Boolean).join("\n\n"),
+      images: submittedAttachments.filter((attachment) => attachment.kind === "image").map((attachment) => ({
         url: attachment.url,
         mime_type: attachment.mimeType,
       })),
@@ -2440,7 +2453,6 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     setOptimisticPromptItems((current) => [...current, optimisticItem]);
     updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
     setPreviewAttachmentId(null);
-    setAttachmentMenuOpen(false);
     if (selectedSession) {
       setSessions((current) => upsertSession(current, {
         ...selectedSession,
@@ -2449,13 +2461,15 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
       }));
     }
     try {
-      const images = await Promise.all(submittedAttachments.map(attachmentToMessageImage));
+      const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
+      const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
       const result = await client.sendConversationMessage({
         conversationId,
         clientMessageId: optimisticId,
-        text,
+        text: appendUploadedReferences(text, submittedAttachments),
         skills: submittedSkills.length > 0 ? submittedSkills : undefined,
         images: images.length > 0 ? images : undefined,
+        files: files.length > 0 ? files : undefined,
         approvalPolicy: selectedSession ? undefined : selectedApprovalPolicy ?? "auto",
       });
       applyDesktopActionResult(result);
@@ -2556,8 +2570,8 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     }
   }, [selectedBinding]);
 
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing) {
+  function handleComposerKeyDown(event: globalThis.KeyboardEvent) {
+    if (event.isComposing) {
       return;
     }
     if (handleSkillMenuKeyDown(event)) {
@@ -2565,21 +2579,22 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      event.currentTarget.form?.requestSubmit();
+      (event.target as HTMLElement).closest("form")?.requestSubmit();
     }
   }
 
-  function handleNewPromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing) return;
+  function handleNewPromptKeyDown(event: globalThis.KeyboardEvent) {
+    if (event.isComposing) return;
     if (handleSkillMenuKeyDown(event)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      event.currentTarget.form?.requestSubmit();
+      (event.target as HTMLElement).closest("form")?.requestSubmit();
     }
   }
 
-  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
-    const imageFiles = clipboardImageFiles(event.clipboardData);
+  function handleComposerPaste(event: globalThis.ClipboardEvent) {
+    if (!event.clipboardData) return;
+    const imageFiles = clipboardFiles(event.clipboardData);
     if (imageFiles.length === 0) {
       return;
     }
@@ -2591,47 +2606,64 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     if (files.length === 0) {
       return;
     }
-    const unsupportedCount = files.filter((file) => !supportedImageTypes.has(file.type)).length;
-    const imageFiles = files.filter((file) => supportedImageTypes.has(file.type));
-    if (unsupportedCount > 0) {
-      setMessage("Only PNG, JPEG, and WebP images can be attached.");
-    }
-    if (imageFiles.length === 0) {
-      return;
-    }
-    const remainingSlots = Math.max(0, maxMessageImageCount - composerAttachments.length);
-    if (remainingSlots === 0) {
-      setMessage(`A message can include at most ${maxMessageImageCount} images.`);
-      return;
-    }
-    if (imageFiles.length > remainingSlots) {
-      setMessage(`A message can include at most ${maxMessageImageCount} images.`);
-    }
     const acceptedFiles: File[] = [];
-    const acceptedSizes = composerAttachments.map((attachment) => attachment.file.size);
-    let sizeError: string | null = null;
-    for (const file of imageFiles.slice(0, remainingSlots)) {
-      const error = messageImageSizeError([...acceptedSizes, file.size]);
-      if (error) {
-        sizeError ??= error;
+    const sizes = composerAttachments.map((attachment) => ({ size: attachment.file.size, image: attachment.kind === "image" }));
+    for (const file of files) {
+      const name = file.name || "Pasted file";
+      if (new TextEncoder().encode(name).length > 180 || /[/\\\x00-\x1f]/.test(name) || name === "." || name === "..") {
+        setMessage("Invalid attachment filename (maximum 180 UTF-8 bytes).");
         continue;
       }
+      const size = { size: file.size, image: modelImageTypes.has(file.type) };
+      const error = attachmentSizeError([...sizes, size]);
+      if (error) { setMessage(error); continue; }
       acceptedFiles.push(file);
-      acceptedSizes.push(file.size);
+      sizes.push(size);
     }
-    if (sizeError) setMessage(sizeError);
-    const attachments: ComposerAttachment[] = acceptedFiles.map((file, index) => ({
-      id: `${Date.now()}-${index}-${file.name}`,
-      kind: "image",
-      name: file.name || "Pasted image",
+    const attachments: ComposerAttachment[] = acceptedFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      kind: modelImageTypes.has(file.type) ? "image" : file.type.startsWith("video/") ? "video" : "file",
+      name: file.name || "Pasted file",
       file,
       mimeType: file.type,
       url: URL.createObjectURL(file),
+      ...(selectedConversation && !modelImageTypes.has(file.type) ? { upload: { state: "uploading" as const } } : {}),
     }));
     updateComposerDraft(composerDraftKey, (current) => ({
       ...current,
       attachments: [...current.attachments, ...attachments],
     }));
+    if (selectedConversation) {
+      for (const attachment of attachments) {
+        if (attachment.kind !== "image") void uploadComposerAttachment(attachment, composerDraftKey, selectedConversation.id);
+      }
+    }
+  }
+
+  async function uploadComposerAttachment(attachment: ComposerAttachment, draftKey: string, sessionId: string) {
+    pendingUploadsRef.current++;
+    const update = (upload: ComposerAttachment["upload"]) => updateComposerDraft(draftKey, current => ({
+      ...current, attachments: current.attachments.map(file => file.id === attachment.id ? { ...file, upload } : file),
+    }));
+    update({ state: "uploading" });
+    try {
+      const path = await client.uploadAttachment(sessionId, await attachmentToMessageFile(attachment));
+      update({ state: "ready", path });
+    } catch (error) {
+      update({ state: "failed", error: errorMessage(error) });
+    } finally { pendingUploadsRef.current--; }
+  }
+
+  function previewComposerAttachment(id: string) {
+    const attachment = composerAttachments.find(file => file.id === id);
+    if (!attachment) return;
+    if (attachment.upload?.state === "failed" && selectedConversation) {
+      void uploadComposerAttachment(attachment, composerDraftKey, selectedConversation.id);
+    } else if (attachment.upload?.state === "ready") {
+      void openTreeFile(attachment.upload.path, { sessionId: selectedConversation?.id, path: workspaceFileRoot });
+    } else {
+      setPreviewAttachmentId(id);
+    }
   }
 
   function removeComposerAttachment(id: string) {
@@ -2645,11 +2677,17 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
     setPreviewAttachmentId((current) => (current === id ? null : current));
   }
 
+  function openAttachmentPicker(accept = "") {
+    const input = attachmentInputRef.current;
+    if (!input) return;
+    input.accept = accept;
+    input.click();
+  }
+
   function handleAttachmentInputChange(event: SyntheticEvent<HTMLInputElement>) {
     const input = event.currentTarget;
     addComposerAttachments(Array.from(input.files ?? []));
     input.value = "";
-    setAttachmentMenuOpen(false);
   }
 
   async function requestStopSelectedTurn() {
@@ -3169,10 +3207,10 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
       const file = opened.file;
       setSidePanelOpen(true); setDetailsOpen(false);
       const existing = openFilesRef.current[file.path];
-      if (!existing || existing.kind === "image") {
-        const state: OpenFileState = opened.kind === "image"
+      if (!existing || existing.kind !== "text") {
+        const state: OpenFileState = opened.kind !== "text"
           ? {
-              kind: "image",
+              kind: opened.kind,
               file: opened.file,
               sessionId: context.sessionId,
               workspaceRoot: context.workspaceRoot,
@@ -3226,10 +3264,10 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
       }
       if (selectedSessionIdRef.current !== expectedSessionId) return;
       if (result.kind === "directory") { browseFiles(result.path, context); return; }
-      if (result.kind !== "text" && result.kind !== "image") return;
+      if (result.kind !== "text" && result.kind !== "image" && result.kind !== "video") return;
       showFile(result, result.kind === "text" ? result.line : undefined, result.kind === "text" ? result.column : undefined, context);
     } catch (error) {
-      setMessage(errorMessage(error));
+      toast(errorMessage(error), "error");
     }
   }
 
@@ -3563,7 +3601,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   const treeLocation = directoryLocation ?? { path: workspaceFileRoot, sessionId: selectedSession?.id };
   useEffect(() => {
     fileOpenRequest.current++;
-    setFileOpenError(""); setFileOpening(false);
+    setFileOpening(false);
   }, [workspaceFileRoot, selectedSession?.id]);
 
   function showPanelTab(tab: SidePanelTab) {
@@ -3572,22 +3610,22 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
   }
 
   function browseFiles(path = workspaceFileRoot, context = { sessionId: selectedSession?.id }) {
-    fileOpenRequest.current++; setFileOpening(false); setFileOpenError("");
+    fileOpenRequest.current++; setFileOpening(false);
     setDirectoryLocation({ path, sessionId: context.sessionId }); setTreeVisible(true); setWebNavigationOpen(false);
     setSidePanelOpen(true); setDetailsOpen(false);
     setSidePanelTabs((state) => ({ ...state, activeTabId: null }));
     window.requestAnimationFrame(() => appFrameRef.current?.querySelector<HTMLInputElement>('[aria-label="Filter filenames"]')?.focus());
   }
 
-  async function openTreeFile(path: string) {
+  async function openTreeFile(path: string, context = treeLocation) {
     const request = ++fileOpenRequest.current;
-    setFileOpenError(""); setFileOpening(true);
+    setFileOpening(true);
     try {
-      const sessionId = treeLocation.sessionId;
+      const sessionId = context.sessionId;
       const opened = await client.openFile(path, sessionId);
-      if (request === fileOpenRequest.current) showFile(opened, undefined, undefined, { sessionId, workspaceRoot: treeLocation.path });
+      if (request === fileOpenRequest.current) showFile(opened, undefined, undefined, { sessionId, workspaceRoot: context.path });
     } catch (error) {
-      if (request === fileOpenRequest.current) setFileOpenError(errorMessage(error));
+      if (request === fileOpenRequest.current) toast(errorMessage(error), "error");
     } finally { if (request === fileOpenRequest.current) setFileOpening(false); }
   }
 
@@ -3949,7 +3987,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
                   ? selectedWorkspace?.status !== "ready"
                   : Boolean(selectedProject && selectedWorkspace?.status !== "ready")}
                 message={message}
-                isBusy={isBusy}
+                isBusy={isBusy || attachmentsBlocked}
                 prompt={activePrompt}
                 skills={skillMatches}
                 selectedSkillNames={selectedSkillNames}
@@ -3958,14 +3996,16 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
                 skillMenuOpen={skillMenuOpen}
                 skillMenuIndex={skillMenuIndex}
                 attachments={composerAttachments}
+                editorKey={composerDraftKey}
+                onCaretChange={setPromptCaret}
                 onPromptChange={updateActivePrompt}
                 onPromptKeyDown={handleNewPromptKeyDown}
                 onSelectSkill={selectComposerSkill}
-                onRemoveSkill={removeComposerSkill}
                 onHighlightSkill={setSkillMenuIndex}
                 onPromptPaste={handleComposerPaste}
-                onPreviewAttachment={setPreviewAttachmentId}
+                onPreviewAttachment={previewComposerAttachment}
                 onRemoveAttachment={removeComposerAttachment}
+                onAddAttachment={openAttachmentPicker}
                 onCreate={(prompt) => void createConversation(prompt)}
                 onSelectProject={(projectId) => void selectProject(projectId)}
                 onSelectWorkspace={(workspaceId) => void selectWorkspace(workspaceId)}
@@ -4028,71 +4068,28 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
                 open={skillMenuOpen}
                 activeIndex={skillMenuIndex}
                 onSelect={selectComposerSkill}
-                onRemove={removeComposerSkill}
                 onHighlight={setSkillMenuIndex}
               />
               <ComposerAttachmentStrip
                 attachments={composerAttachments}
-                onPreview={setPreviewAttachmentId}
+                onPreview={previewComposerAttachment}
                 onRemove={removeComposerAttachment}
               />
-              <textarea
+              <SkillPromptEditor
+                key={composerDraftKey}
+                skills={selectedSkillNames}
+                onCaretChange={setPromptCaret}
+                onHeightChange={() => { if (stickToBottomRef.current) scheduleConversationScrollToBottom(); }}
                 ref={composerTextareaRef}
                 value={activePrompt}
-                onChange={(event) => updateActivePrompt(event.target.value)}
+                onChange={updateActivePrompt}
                 onKeyDown={handleComposerKeyDown}
                 onPaste={handleComposerPaste}
                 placeholder="Ask follow-up changes"
-                rows={2}
-              />
-              <input
-                ref={attachmentInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                multiple
-                hidden
-                onChange={handleAttachmentInputChange}
               />
               <div className="composer-actions">
                 <div className="composer-actions-left">
-                  <div className="composer-add-wrap">
-                    <button
-                      type="button"
-                      className="composer-icon-button"
-                      aria-label="Add attachment"
-                      aria-expanded={attachmentMenuOpen}
-                      onClick={() => setAttachmentMenuOpen((open) => !open)}
-                    >
-                      <Plus size={20} strokeWidth={1.8} />
-                    </button>
-                    {attachmentMenuOpen && (
-                      <div className="attachment-menu" role="menu">
-                        <div className="attachment-menu-label">Add</div>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            attachmentInputRef.current?.click();
-                          }}
-                        >
-                          <Paperclip size={16} strokeWidth={1.8} />
-                          Images
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setAttachmentMenuOpen(false);
-                            composerTextareaRef.current?.focus();
-                          }}
-                        >
-                          <Image size={16} strokeWidth={1.8} />
-                          Paste image
-                          <small>⌘V</small>
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <AttachmentMenu key={composerDraftKey} onPick={openAttachmentPicker} disabled={isBusy} />
                   <ApprovalPolicyPicker
                     value={selectedApprovalPolicy}
                     onChange={(approvalPolicy) => void selectApprovalPolicy(approvalPolicy)}
@@ -4173,6 +4170,16 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
           </div>
         )}
 
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={handleAttachmentInputChange}
+              />
+        {previewAttachment && previewAttachment.kind !== "image" && (
+          <AttachmentPreview attachment={previewAttachment} onClose={() => setPreviewAttachmentId(null)} />
+        )}
         {previewAttachment?.kind === "image" && previewAttachment.url && (
           <ImagePreview key={previewAttachment.url} src={previewAttachment.url} alt={previewAttachment.name} onClose={() => setPreviewAttachmentId(null)} />
         )}
@@ -4337,7 +4344,15 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
             onLostPointerCapture={() => setIsSidePanelResizing(false)}
             onKeyDown={handleSidePanelResizeKeyDown}
           />
-          <div className="subagent-panel-tabbar">
+          {activeSidePanelTab?.kind === "file" && <MobileFileNavigation path={activeSidePanelTab.path}
+            onBack={() => {
+              const file = openFiles[activeSidePanelTab.path];
+              const path = activeSidePanelTab.path.replace(/\\/g, "/");
+              const parent = path.slice(0, path.lastIndexOf("/")) || "/";
+              browseFiles(/^[A-Za-z]:$/.test(parent) ? `${parent}/` : parent, { sessionId: file?.sessionId });
+            }}
+            onClose={() => setSidePanelOpen(false)} />}
+          <div className={`subagent-panel-tabbar ${activeSidePanelTab?.kind === "file" ? "file-tabbar" : ""}`}>
             <div className="workspace-panel-tabs">
             {sidePanelTabs.tabs.map((tab) => {
               const run = tab.kind === "subagent" ? subagentRuns.find((candidate) => candidate.id === tab.runId) : undefined;
@@ -4356,19 +4371,17 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
               );
             })}
             </div>
-            <button type="button" className="icon-button" aria-label="Browse files" onClick={() => browseFiles()}><FolderOpen size={16} /></button>
             {subagentRuns.length > 0 && <button type="button" className="icon-button" aria-label="Subagents" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}><Circle size={16} /></button>}
             <div className="workspace-panel-actions">
-              {activeSidePanelTab?.kind === "file" && <button type="button" className="icon-button" aria-label="Toggle file tree" aria-expanded={treeVisible} onClick={() => setTreeVisible((visible) => !visible)}><FolderOpen size={16} /></button>}
+              <button type="button" className="icon-button" title={activeSidePanelTab?.kind === "file" ? "Toggle file tree" : "Browse files"} aria-label={activeSidePanelTab?.kind === "file" ? "Toggle file tree" : "Browse files"} aria-expanded={activeSidePanelTab?.kind === "file" ? treeVisible : undefined} onClick={() => activeSidePanelTab?.kind === "file" ? setTreeVisible((visible) => !visible) : browseFiles()}><FolderOpen size={16} /></button>
               <button type="button" className="icon-button panel-expand-button" aria-label={sidePanelExpanded ? "Restore split view" : "Expand side panel"} onClick={() => setSidePanelExpanded((expanded) => !expanded)}>{sidePanelExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
-              <button type="button" className="icon-button panel-close-button" aria-label="Hide side panel" onClick={() => setSidePanelOpen(false)}><PanelRight size={16} /></button>
+              <button type="button" className="icon-button panel-close-button" aria-label="Close files and return to conversation" onClick={() => setSidePanelOpen(false)}><X size={16} /></button>
             </div>
           </div>
           <div className={`workspace-panel-body ${!activeSidePanelTab ? "file-browser-only" : ""}`}>
           <div className="workspace-panel-content">
           {liveFiles.notice && activeSidePanelTab?.kind === "file" && <div className="file-editor-banner" role="status">{liveFiles.notice}</div>}
           {fileOpening && <div className="workspace-file-notice" role="status">Opening file…</div>}
-          {fileOpenError && <div className="workspace-file-notice" role="alert">{fileOpenError}<button type="button" className="icon-button" aria-label="Dismiss file error" onClick={() => setFileOpenError("")}><X size={14} /></button></div>}
           {!activeSidePanelTab ? null : activeSidePanelTab.kind === "subagents" ? (
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
@@ -4380,6 +4393,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
           ) : openFiles[activeSidePanelTab.path] ? (
             <Suspense fallback={<div className="subagent-panel-empty">Loading editor…</div>}>
               <OpenWorkspaceFileTab
+                active={sidePanelOpen && !channelsOpen && surfaceActive}
                 state={openFiles[activeSidePanelTab.path]}
                 line={activeSidePanelTab.line}
                 column={activeSidePanelTab.column}
@@ -4401,7 +4415,7 @@ export default function App({ clientScope, hostName, thinkingDisplay, refreshedC
             <div className="subagent-panel-empty">File is unavailable.</div>
           )}
           </div>
-          {sidePanelOpen && (!activeSidePanelTab || (treeVisible && activeSidePanelTab.kind === "file")) && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setFileOpenError(""); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
+          {sidePanelOpen && (!activeSidePanelTab || (treeVisible && activeSidePanelTab.kind === "file")) && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
           </div>
         </aside>
       )}

@@ -38,6 +38,7 @@ test("Web file streams accept long subscriptions in POST bodies and release watc
   try {
     const denied = await post("/api/file-events", { subscriptionId: "x", files }); denied.resume();
     assert.equal(denied.statusCode, 401);
+    assert.match(String(denied.headers["content-security-policy"]), /(?:^|; )media-src 'self' blob:;/);
     const login = await post("/api/login", { token: "file-stream-test-token-not-a-secret" }); login.resume();
     const cookie = login.headers["set-cookie"]![0].split(";")[0];
     const stream = await post("/api/file-events", { subscriptionId: "long-paths", files }, cookie);

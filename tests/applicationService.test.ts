@@ -180,12 +180,14 @@ test("optional client arguments survive JSON transport without becoming explicit
     onFileEvent: () => () => {}, onSessionEvent: () => () => {},
   });
   await api.getProfiles();
+  await api.getProfiles(undefined, "global");
   await api.listSkills("session");
   await api.listSessionItems("session");
   await api.selectConversation(null);
   await api.listSkills("session", false);
   assert.deepEqual(calls, [
     { channel: "daemon:get-profiles", args: [] },
+    { channel: "daemon:get-profiles", args: [null, "global"] },
     { channel: "daemon:list-skills", args: ["session"] },
     { channel: "sessions:list-items", args: ["session"] },
     { channel: "desktop:select-conversation", args: [null] },
@@ -319,9 +321,9 @@ test("directory browsing and literal file paths stay on the selected daemon", as
     assert.deepEqual(seen, [
       { url: "/files/list", token: "Bearer directory-secret", body: { path: "/remote", sessionId: "session" } },
       { url: "/sources/directories", token: "Bearer directory-secret", body: { path: "" } },
-      { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/report#L12" } },
-      { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/pixel.png", sessionId: "session" } },
-      { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/report#L12" } },
+      { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/report#L12", includeVideo: true } },
+      { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/pixel.png", sessionId: "session", includeVideo: true } },
+      { url: "/files/open", token: "Bearer directory-secret", body: { path: "/remote/report#L12", includeVideo: true } },
     ]);
     const rejected = await service.invoke("desktop:list-directory", [{ path: "/", purpose: "anything" }]);
     assert.equal(rejected.ok, false); assert.equal(seen.length, 5);

@@ -26,3 +26,23 @@ test("explicit Markdown breaks do not duplicate and list soft breaks are preserv
   assert.equal(dom.window.document.querySelectorAll("li br").length, 1);
   dom.window.close();
 });
+
+test("sent messages render selected skills in place without duplicate badges", () => {
+  const dom = new JSDOM(renderToStaticMarkup(<UserMessage text={"先用 $review-taste 检查，再用 **$technical-doc-writing** 写说明。"} skills={["review-taste", "technical-doc-writing"]} />));
+  const document = dom.window.document;
+  assert.deepEqual([...document.querySelectorAll(".inline-skill-token")].map(node => node.textContent), ["✧ review-taste", "✧ technical-doc-writing"]);
+  assert.equal(document.querySelector(".message-skills"), null);
+  assert.equal(document.querySelector(".user-message-content")!.textContent, "先用 ✧ review-taste 检查，再用 ✧ technical-doc-writing 写说明。");
+  assert.ok(document.querySelector("strong .inline-skill-token"));
+  assert.equal(document.querySelector(".inline-skill-token button"), null);
+  dom.window.close();
+});
+
+test("skill rendering preserves literal code, links and old messages with separate selection metadata", () => {
+  const dom = new JSDOM(renderToStaticMarkup(<UserMessage text={"`$review-taste` [$review-taste](https://example.com) $unknown"} skills={["review-taste", "imagegen"]} />));
+  assert.equal(dom.window.document.querySelectorAll(".inline-skill-token").length, 0);
+  assert.equal(dom.window.document.querySelector("code")!.textContent, "$review-taste");
+  assert.equal(dom.window.document.querySelector("a")!.textContent, "$review-taste");
+  assert.equal(dom.window.document.querySelector(".message-skills")!.textContent, "imagegen");
+  dom.window.close();
+});

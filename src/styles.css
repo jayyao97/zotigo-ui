@@ -2494,21 +2494,25 @@ p {
 
 .tool-process-line.running p,
 .tool-disclosure.running > .disclosure-trigger p {
-  background: linear-gradient(90deg, #8f8d86 38%, #d4d2cc 50%, #8f8d86 62%);
+  background: linear-gradient(90deg, #8f8d86 45%, #d4d2cc 50%, #8f8d86 55%);
   background-size: 300% 100%;
+  background-repeat: no-repeat;
+  background-position: 100% 0;
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: active-action-icon 1.6s ease-in-out infinite;
+  animation: active-action-text 2.4s linear infinite;
 }
 
 .thinking-status {
-  background: linear-gradient(90deg, var(--text-dim) 38%, #aaa8a1 50%, var(--text-dim) 62%);
+  background: linear-gradient(90deg, var(--text-dim) 45%, #aaa8a1 50%, var(--text-dim) 55%);
   background-size: 300% 100%;
+  background-repeat: no-repeat;
+  background-position: 100% 0;
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: active-action-icon 1.6s ease-in-out infinite;
+  animation: active-action-text 2.4s linear infinite;
 }
 
 .tool-process-line.running .process-icon,
@@ -2764,6 +2768,11 @@ p {
 @keyframes active-action-icon {
   0%, 100% { opacity: 0.58; }
   50% { opacity: 1; }
+}
+
+@keyframes active-action-text {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3140,13 +3149,6 @@ p {
   background: transparent;
 }
 
-.attachment-file-icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  color: var(--text-muted);
-}
 
 .composer-attachment-remove {
   position: absolute;
@@ -4429,6 +4431,12 @@ p {
 
 .subagent-panel-tab.active { background: rgb(255 255 255 / 0.055); }
 
+.subagent-panel-tab:hover,
+.subagent-panel-tab:has(button:focus-visible) { background: rgb(255 255 255 / 0.09); }
+
+/* The tab owns the hover surface, including its separate close control. */
+.subagent-panel-tab > button:hover:not(:disabled) { background: transparent; }
+
 .subagent-panel-tab-select {
   display: inline-flex;
   max-width: 180px;
@@ -5486,4 +5494,124 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .side-panel-expanded .workspace-panel-actions .panel-close-button { display: inline-flex; }
 @media (max-width: 900px) {
   html[data-platform="web"] .workspace-panel-actions .panel-close-button { display: inline-flex; }
+}
+
+/* Shared operation feedback, outside panel scrolling and layout. */
+.app-toasts {
+  position: fixed;
+  z-index: 2000;
+  top: calc(env(safe-area-inset-top, 0px) + 56px);
+  right: max(16px, env(safe-area-inset-right, 0px));
+  width: min(380px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+.app-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  border: 1px solid #484848;
+  border-radius: 12px;
+  background: #282828;
+  color: #ededed;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+  font-size: 13px;
+  line-height: 20px;
+  pointer-events: auto;
+  animation: toast-enter 180ms ease-out;
+}
+.app-toast > svg { flex-shrink: 0; margin-top: 2px; color: #afafaf; }
+.app-toast.error > svg { color: #e9ad54; }
+.app-toast > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.app-toast > button {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: -2px 0;
+  border: 0;
+  border-radius: 5px;
+  color: #afafaf;
+  background: transparent;
+}
+.app-toast > button:hover { background: #414141; color: #fff; }
+@keyframes toast-enter { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+@media (max-width: 760px) {
+  .app-toasts { top: calc(env(safe-area-inset-top, 0px) + 56px); right: max(12px, env(safe-area-inset-right, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); width: auto; }
+  .app-toast > button { width: 36px; height: 36px; margin: -8px -6px; }
+}
+@media (prefers-reduced-motion: reduce) { .app-toast { animation: none; } }
+
+.file-video-canvas { flex: 1; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 16px; overflow: hidden; }
+.file-video-canvas video { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.file-video-tab { min-width: 0; width: 100%; }
+.file-editor-tab-content { min-width: 0; }
+.file-path { position: relative; min-width: 0; flex: 1 1 180px; font-size: 12px; color: var(--text-muted); }
+.file-path-toggle { width: 100%; display: block; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.file-path-desktop { display: flex; align-items: center; overflow: hidden; white-space: nowrap; }
+.file-path-desktop > span { display: inline-flex; align-items: center; flex-shrink: 0; gap: 4px; }
+.file-path-desktop > span + span { margin-left: 4px; }
+.file-path-mobile, .mobile-file-navigation { display: none; }
+.file-path-expanded { position: absolute; z-index: 30; top: calc(100% + 8px); left: 0; width: min(480px, 100%); padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; white-space: normal; overflow-wrap: anywhere; box-shadow: 0 6px 20px #0006; user-select: text; }
+@media (max-width: 760px) {
+  .file-path-desktop { display: none; }
+  .file-path-mobile { display: block; overflow: hidden; white-space: nowrap; }
+  .mobile-file-navigation { display: flex; flex-shrink: 0; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .mobile-file-navigation > button { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; padding: 0; border: 0; background: transparent; color: var(--text); }
+  .mobile-file-navigation .file-path { font-size: 14px; color: var(--text); }
+  .file-tabbar { display: none; }
+  .workspace-panel-content .file-editor-header > .file-path { display: none; }
+  .file-editor-header .file-editor-icon-button { min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 760px) { .mobile-file-navigation .file-path-toggle { min-height: 44px; } }
+.skill-prompt-editor { min-width: 0; width: 100%; }
+.skill-prompt-editor .cm-editor { background: transparent; color: var(--text); font-size: 14px; }
+.skill-prompt-editor .cm-editor.cm-focused { outline: none; }
+.skill-prompt-editor .cm-scroller { font-family: var(--font-sans); line-height: 1.6; max-height: 280px; overflow-y: auto; }
+.skill-prompt-editor .cm-content { padding: 2px 0; min-height: 44px; caret-color: var(--text); }
+.new-chat-input .skill-prompt-editor .cm-content { min-height: 64px; }
+.skill-prompt-editor .cm-line { padding: 0; }
+.skill-prompt-editor .cm-placeholder { color: var(--text-dim); }
+.skill-prompt-editor .cm-cursor { border-left-color: var(--text); }
+.skill-prompt-editor .cm-selectionBackground { background: #38608d66 !important; }
+/* Match the surrounding text metrics; only color identifies a skill. */
+.inline-skill-token { display: inline-flex; align-items: baseline; gap: .2em; max-width: 100%; padding: 0; margin: 0; border: 0; background: none; color: #74adfa; font: inherit; line-height: inherit; vertical-align: baseline; white-space: nowrap; }
+.inline-skill-token > [aria-hidden] { flex-shrink: 0; }
+.inline-skill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 760px) { .skill-prompt-editor .cm-editor { font-size: 16px; } }
+
+.attachment-file-preview { width:min(800px, calc(100vw - 32px)); max-height:90dvh; overflow:auto; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px; }
+.attachment-file-preview header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.attachment-file-preview header > span { overflow-wrap:anywhere; min-width:0; }
+.attachment-file-preview video { display:block; width:100%; max-height:70dvh; }
+
+.attachment-file-preview { color:var(--text); }
+.attachment-file-preview::backdrop { background:rgb(0 0 0 / 65%); }
+
+/* Attachment previews retain their aspect ratio instead of squeezing into icon tiles. */
+.composer-attachments { padding: 5px 4px 4px; gap: 12px; }
+.composer-attachment.attachment-card { flex: 0 0 160px; width: 160px; height: auto; display: block; overflow: visible; border-radius: 10px; background: var(--app-bg); }
+.attachment-card .attachment-preview-button { overflow: hidden; text-align: left; border-radius: inherit; }
+.attachment-card-media { position: relative; height: 90px; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--text-muted); background: var(--app-bg); }
+.attachment-card-media img, .attachment-card-media video { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.attachment-card-media pre { align-self: stretch; width: 100%; margin: 0; padding: 9px; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; line-height: 1.4; color: var(--text); font-family: inherit; }
+.attachment-card-caption { display: flex; gap: 6px; align-items: center; height: 30px; padding: 0 8px; color: var(--text); font-size: 12px; }
+.attachment-card-caption > svg { flex: 0 0 auto; color: #ae78ec; }
+.attachment-card-caption > span { flex: 1; min-width: 0; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.attachment-card-caption .attachment-uploaded { color: var(--text-muted); }
+.attachment-card-overlay { position: absolute; inset: 0; display: flex; gap: 6px; align-items: center; justify-content: center; background: rgb(0 0 0 / 30%); color: var(--text); }
+.attachment-card-error { flex-direction: column; font-size: 11px; background: rgb(0 0 0 / 65%); }
+.attachment-card .composer-attachment-remove { top: -5px; right: -5px; box-shadow: 0 0 0 2px var(--surface); }
+.attachment-spinner { animation: attachment-spin 1s linear infinite; }
+@keyframes attachment-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) { .composer-attachment.attachment-card { flex-basis: 144px; width: 144px; } .attachment-card-media { height: 81px; } }
+@media (prefers-reduced-motion: reduce) { .attachment-spinner { animation: none; } }
+@media (pointer: coarse) {
+  .attachment-card .composer-attachment-remove { width: 44px; height: 44px; min-height: 44px; background: transparent; box-shadow: none; }
+  .attachment-card .composer-attachment-remove::before { content: ""; position: absolute; width: 22px; height: 22px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
+  .attachment-card .composer-attachment-remove > svg { position: relative; }
 }

@@ -1,3 +1,5 @@
+import { rehypeSkillTokens } from "../rehypeSkillTokens";
+import { skillTokens } from "../../shared/skillCommands";
 import { MarkdownImage } from "../MarkdownImage";
 import {
   Children,
@@ -456,18 +458,11 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     const imageSummary = formatImageAttachmentSummary(hiddenImageCount);
     const originKicker = formatChannelOrigin(item.command?.request_context);
     return (
-      <UserMessage text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
+      <UserMessage skills={skills} text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
         <div className="message-image-grid" aria-label="Attached images">
           {images.map((image) => <PreviewImage key={image.id} src={image.url} alt={image.name} />)}
         </div>
       ) : undefined}>
-        {skills.length > 0 && (
-          <div className="message-skills" aria-label="Selected skills">
-            {skills.map((skill) => (
-              <span key={skill}><Sparkles size={11} strokeWidth={1.8} />{skill}</span>
-            ))}
-          </div>
-        )}
         {imageSummary && (
           <span className="message-image-summary">
             <Image size={14} strokeWidth={1.8} />
@@ -1083,12 +1078,14 @@ function MarkdownContent({ text, smoothStreaming = false }: { text: string; smoo
 
 const userMessageCollapsedLines = 20;
 
-export function UserMessage({ text, kicker, children, attachments }: { text: string; kicker?: string; children?: ReactNode; attachments?: ReactNode }) {
+export function UserMessage({ text, skills = [], kicker, children, attachments }: { text: string; skills?: string[]; kicker?: string; children?: ReactNode; attachments?: ReactNode }) {
+  const mentioned = new Set(skillTokens(text, skills).map(token => token.name));
+  const legacySkills = skills.filter(name => !mentioned.has(name));
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [collapsible, setCollapsible] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const collapsed = collapsible && !expanded;
-  const hasBubble = Boolean(text || kicker || Children.toArray(children).length);
+  const hasBubble = Boolean(text || kicker || legacySkills.length || Children.toArray(children).length);
 
   useLayoutEffect(() => {
     const element = contentRef.current;
@@ -1115,10 +1112,11 @@ export function UserMessage({ text, kicker, children, attachments }: { text: str
               ref={contentRef}
               className={`user-message-content markdown-copy ${collapsed ? "collapsed" : ""}`}
             >
-              <MarkdownBody text={text} userMessage />
+              <MarkdownBody text={text} userMessage skills={skills} />
             </div>
           )}
           {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}
+          {legacySkills.length > 0 && <div className="message-skills" aria-label="Selected skills">{legacySkills.map(name => <span key={name}><Sparkles size={11} />{name}</span>)}</div>}
           {children}
         </div>}
         {collapsible && (
@@ -1143,11 +1141,12 @@ const userMarkdownComponents = {
   h1: "p", h2: "p", h3: "p", h4: "p", h5: "p", h6: "p",
 } as const;
 
-const MarkdownBody = memo(function MarkdownBody({ text, userMessage = false }: { text: string; userMessage?: boolean }) {
+const MarkdownBody = memo(function MarkdownBody({ text, userMessage = false, skills = [] }: { text: string; userMessage?: boolean; skills?: string[] }) {
   return (
     <ReactMarkdown
       components={userMessage ? userMarkdownComponents : { pre: MarkdownCodeBlock, img: MarkdownImage }}
       remarkPlugins={userMessage ? [remarkGfm, remarkBreaks] : [remarkGfm]}
+      rehypePlugins={userMessage && skills.length ? [[rehypeSkillTokens, { skills }]] : []}
       urlTransform={markdownUrlTransform}
     >
       {text}
