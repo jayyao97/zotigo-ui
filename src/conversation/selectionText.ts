@@ -1,3 +1,19 @@
+// Triple-click paragraph selection can end at the next message's offset zero.
+// Keep the selected message when only trailing whitespace crosses its boundary.
+export function selectedMessageRange(selected: Range, root: HTMLElement): { message: HTMLElement; range: Range } | null {
+  const start = selected.startContainer.nodeType === 1 ? selected.startContainer as Element : selected.startContainer.parentElement;
+  const message = start?.closest<HTMLElement>('[data-message-id]');
+  if (!message || !root.contains(message) || start?.closest('button, input, textarea')) return null;
+  const range = selected.cloneRange();
+  if (!message.contains(range.endContainer)) {
+    const trailing = range.cloneRange();
+    trailing.setStart(message, message.childNodes.length);
+    if (trailing.toString().trim()) return null;
+    range.setEnd(message, message.childNodes.length);
+  }
+  return { message, range };
+}
+
 // Match across inline Markdown elements without modifying React-owned DOM.
 export function textRanges(root: HTMLElement, query: string, limit = 1000): Range[] {
   if (!query || limit < 1) return [];

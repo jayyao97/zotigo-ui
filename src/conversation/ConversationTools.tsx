@@ -5,6 +5,7 @@ import type { ConversationReference } from "../../shared/conversationReferences"
 import { ConversationAnnotations, useAnchoredPopup } from "./ConversationAnnotations";
 export { ComposerReferences } from "./ConversationAnnotations";
 import { selectionOffset } from "./annotationRange";
+import { selectedMessageRange } from "./selectionText";
 import { ConversationFind } from "./ConversationFind";
 import type { DisplayItem, SessionSearchHit, SessionSearchResponse } from "../../shared/zotigod";
 
@@ -40,12 +41,10 @@ export function ConversationTools({ root, onReference, translate, items, search,
         if (popup.current?.contains(document.activeElement)) return;
         const selected = window.getSelection();
         if (!selected || selected.isCollapsed || !selected.rangeCount) { setSelection(null); return; }
-        const range = selected.getRangeAt(0);
-        if (popup.current?.contains(range.startContainer)) return;
-        const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement;
-        const end = range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer as Element : range.endContainer.parentElement;
-        const message = start?.closest<HTMLElement>('[data-message-id]');
-        if (!message || !root.current?.contains(message) || message !== end?.closest('[data-message-id]') || start?.closest('button, input, textarea')) { setSelection(null); return; }
+        if (popup.current?.contains(selected.getRangeAt(0).startContainer)) return;
+        const match = root.current && selectedMessageRange(selected.getRangeAt(0), root.current);
+        if (!match) { setSelection(null); return; }
+        const { message, range } = match;
         const rawText = range.toString();
         const text = rawText.trim();
         if (!text) return;
