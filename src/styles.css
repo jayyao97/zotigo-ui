@@ -311,6 +311,11 @@ p {
   .tool-disclosure,
   .tool-detail-card,
   .process-line,
+  .conversation-find,
+  .selection-tools,
+  .annotation-editor,
+  .annotation-chip,
+  .annotation-preview,
   .status-pill,
   .state-badge {
     corner-shape: var(--codex-corner-shape);
@@ -5615,3 +5620,51 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
   .attachment-card .composer-attachment-remove::before { content: ""; position: absolute; width: 22px; height: 22px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
   .attachment-card .composer-attachment-remove > svg { position: relative; }
 }
+
+::highlight(conversation-find-active) { background: var(--yellow-300); color: var(--gray-1000); }
+.conversation-find { position: absolute; z-index: 30; top: 48px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--border-heavy); border-radius: var(--radius-lg); background: var(--color-background-elevated-primary-opaque); box-shadow: var(--elevation-prominent); max-width: calc(100% - 24px); flex-wrap: wrap; }
+.conversation-find input { width: 190px; min-width: 80px; flex: 1; }
+.conversation-find span { font-size: 12px; color: var(--text-muted); }
+.conversation-find button, .selection-tools button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; padding: 6px; background: transparent; color: var(--text); border-radius: var(--radius-md); }
+.conversation-find button:hover:not(:disabled), .selection-tools button:hover:not(:disabled) { background: var(--surface-row); }
+.conversation-find small { flex-basis: 100%; color: var(--text-muted); }
+.selection-tools { position: fixed; z-index: 45; border-radius: var(--radius-lg); border: 1px solid var(--border-heavy); background: var(--color-background-elevated-primary-opaque); box-shadow: var(--elevation-prominent); padding: 4px; max-width: calc(100vw - 16px); }
+.selection-actions { display: flex; gap: 2px; }
+.selection-actions button { min-height: 34px; font-size: 12px; white-space: nowrap; }
+.selection-tools.has-translation { width: 380px; }
+.selection-translation { padding: 8px; }
+.selection-translation > div { display: flex; justify-content: space-between; }
+.selection-translation p { white-space: pre-wrap; overflow-y: auto; max-height: 50dvh; user-select: text; font-size: 14px; line-height: 1.6; }
+@media (max-width: 700px) {
+  .conversation-find { left: 8px; right: 8px; max-width: none; }
+  .conversation-find input { width: 100px; }
+  .conversation-find button, .selection-tools button { min-width: 36px; min-height: 44px; }
+}
+::highlight(conversation-annotations) { background: color-mix(in srgb, var(--blue) 25%, transparent); }
+/* Source markers stay below the composer (20); floating tools use the existing menu layer (45). */
+.annotation-marker { position: fixed; z-index: 1; min-width: 26px; height: 26px; padding: 0 6px; border: 1px solid var(--blue-100); border-radius: var(--radius-full) var(--radius-full) var(--radius-full) var(--radius-xs); background: var(--blue-400); color: var(--gray-0); font-size: 12px; cursor: pointer; }
+.annotation-marker:hover:not(:disabled) { background: var(--blue); }
+.annotation-editor { position: fixed; z-index: 45; width: min(340px, calc(100vw - 16px)); padding: 12px; border: 1px solid var(--border-heavy); border-radius: var(--radius-2xl); background: var(--color-background-elevated-primary-opaque); box-shadow: var(--elevation-prominent); }
+.annotation-editor textarea { width: 100%; min-height: 52px; max-height: 30dvh; resize: none; border: 0; outline: none; background: transparent; color: inherit; font: inherit; font-size: 14px; }
+.annotation-editor footer { display: flex; align-items: center; gap: 8px; }
+.annotation-editor footer span { flex: 1; }
+.annotation-editor button, .annotation-chip button, .annotation-preview button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 8px; border: 0; border-radius: var(--radius-md); background: transparent; color: inherit; cursor: pointer; }
+.annotation-editor button:hover:not(:disabled), .annotation-chip button:hover:not(:disabled), .annotation-preview button:hover:not(:disabled) { background: var(--surface-row); }
+.annotation-editor footer button:last-child { border-radius: var(--radius-full); background: var(--text); color: var(--app-bg); }
+.annotation-editor footer button:last-child:hover:not(:disabled) { background: var(--gray-100); }
+.composer-annotations { position: relative; width: fit-content; margin: 0 0 10px; }
+.annotation-chip { display: flex; width: fit-content; border: 1px solid var(--border-heavy); border-radius: var(--radius-xl); padding: 4px; font-size: 13px; }
+.annotation-preview { position: absolute; bottom: 100%; left: 0; z-index: 45; width: min(440px, calc(100vw - 56px)); max-height: 45dvh; overflow: auto; padding: 12px; background: var(--color-background-elevated-primary-opaque); border: 1px solid var(--border-heavy); border-radius: var(--radius-xl); box-shadow: var(--elevation-prominent); }
+.annotation-preview-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; }
+.annotation-preview-item > div { flex: 1; min-width: 0; }
+.annotation-preview-item small { color: var(--text-muted); }
+.annotation-preview-item blockquote, .annotation-preview-item p { margin: 4px 0 12px; border: 0; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.annotation-preview-item button { flex-shrink: 0; }
+.selection-translation > div > span { font-size: 12px; color: var(--text-muted); }
+@media (pointer: coarse) {
+  .annotation-chip button, .annotation-editor button, .annotation-preview button { min-height: 44px; min-width: 36px; }
+  .annotation-marker { min-width: 32px; height: 32px; }
+  .annotation-editor textarea { font-size: 16px; }
+}
+.search-history-notice { position: sticky; top: 0; z-index: 0; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px; background: var(--surface); color: var(--text-muted); font-size: 12px; }
+.search-history-notice button { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 5px 8px; }

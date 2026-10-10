@@ -1,3 +1,5 @@
+import { referencePrompt } from "../shared/conversationReferences";
+import { ConversationTools, ComposerReferences } from "./conversation/ConversationTools";
 import { AttachmentMenu } from "./conversation/AttachmentMenu";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { SkillPromptEditor, type SkillPromptEditorHandle } from "./SkillPromptEditor";
@@ -332,7 +334,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ surfaceActive = true, clientScope, hostName, thinkingDisplay, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; openNewSessionOnMount?: boolean }) {
+export default function App({ surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; openNewSessionOnMount?: boolean }) {
   const toast = useToast();
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
@@ -860,6 +862,12 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     projectId: desktopState.selectedProjectId,
     workspaceId: desktopState.selectedWorkspaceId,
   });
+  const [searchWindow, setSearchWindow] = useState<DisplayItem[] | null>(null);
+  const searchWindowRequest = useRef(0);
+  const conversationFindOpen = useRef(false);
+  useEffect(() => { searchWindowRequest.current++; setSearchWindow(null); }, [composerDraftKey]);
+  const [editingReferenceId, setEditingReferenceId] = useState<string | null>(null);
+  useEffect(() => { setEditingReferenceId(null); }, [composerDraftKey, surfaceActive]);
   const activeComposerDraft = composerDrafts[composerDraftKey] ?? emptyComposerDraft<ComposerAttachment>();
   const activePrompt = activeComposerDraft.prompt;
   const composerAttachments = activeComposerDraft.attachments;
@@ -1011,7 +1019,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     [activeSkillCommand?.query, availableSkills, selectedSkillNames],
   );
   const skillMenuOpen = activeSkillCommand !== null && !skillMenuDismissed;
-  const hasComposerDraft = activePrompt.trim() !== "" || composerAttachments.length > 0;
+  const hasComposerDraft = activePrompt.trim() !== "" || composerAttachments.length > 0 || Boolean(activeComposerDraft.references?.length);
   const runtimeOccupied = selectedSession?.error_code === "runtime_occupied";
   const attachmentsBlocked = composerAttachments.some(file => file.upload?.state === "uploading" || file.upload?.state === "failed");
   const canSubmitSelectedPrompt = Boolean(selectedConversation && !runtimeOccupied && !isBusy && !attachmentsBlocked && hasComposerDraft);
@@ -2418,11 +2426,12 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
 
   async function submitSelectedPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = skillPromptText(activePrompt, activeComposerDraft.selectedSkillNames).trim();
+    const text = referencePrompt(skillPromptText(activePrompt, activeComposerDraft.selectedSkillNames).trim(), activeComposerDraft.references);
     if (!selectedConversation || runtimeOccupied || isBusy || attachmentsBlocked || (!text && composerAttachments.length === 0)) {
       return;
     }
 
+    closeSearchWindow();
     const conversationId = selectedConversation.id;
     const submittedDraftKey = composerDraftKey;
     const submittedDraft = activeComposerDraft;
@@ -2782,11 +2791,35 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     conversationTouchYRef.current = null;
   }
 
+  async function showSearchWindow(target: number | string, signal?: AbortSignal) {
+    const binding = selectedBinding;
+    if (!binding) return;
+    const request = ++searchWindowRequest.current;
+    const page = await client.getSessionItemWindow(binding.daemon_session_id, target);
+    if (signal?.aborted || request !== searchWindowRequest.current || selectedSessionIdRef.current !== binding.daemon_session_id) return;
+    cancelScheduledConversationAutoScroll(); setStickToBottom(false);
+    setSearchWindow(page.items);
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    return request === searchWindowRequest.current && !signal?.aborted && selectedSessionIdRef.current === binding.daemon_session_id;
+  }
+  function closeSearchWindow() { searchWindowRequest.current++; setSearchWindow(null); }
+
+  async function editReference(id: string) {
+    const reference = activeComposerDraft.references?.find(value => value.id === id);
+    if (!reference) return;
+    const source = Array.from(conversationScrollRef.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? []).find(node => node.dataset.messageId === reference.messageId);
+    if (!source) {
+      try { if (!await showSearchWindow(reference.messageId)) return; }
+      catch (error) { toast(errorMessage(error), "error"); return; }
+    }
+    if (selectedSessionIdRef.current === selectedBinding?.daemon_session_id) setEditingReferenceId(id);
+  }
+
   async function loadOlderSessionItems() {
     const element = conversationScrollRef.current;
     const binding = selectedBinding;
     const cursor = sessionItemsPrevCursorRef.current;
-    if (!element || !binding || !cursor || olderSessionItemsLoadingRef.current) {
+    if (conversationFindOpen.current || searchWindow || !element || !binding || !cursor || olderSessionItemsLoadingRef.current) {
       return;
     }
 
@@ -3259,6 +3292,11 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
         sessionId: context.sessionId,
       });
       if (result.kind === "anchor") {
+        if (result.anchor.startsWith("message-") && anchor.closest("[data-message-id]") && !document.getElementById(result.anchor)) {
+          await showSearchWindow(decodeURIComponent(result.anchor.slice("message-".length)));
+          if (selectedSessionIdRef.current !== expectedSessionId) return;
+          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        }
         document.getElementById(result.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
@@ -3925,6 +3963,25 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
             </>
           ) : null}
           <div className="workspace-panel-actions">
+            {selectedBinding && <ConversationTools
+              key={clientScope + ":" + selectedBinding.daemon_session_id}
+              root={conversationScrollRef}
+              language={translationLanguage}
+              references={activeComposerDraft.references ?? []}
+              editingId={editingReferenceId}
+              onEdit={setEditingReferenceId}
+              onReferencesChange={references => updateComposerDraft(composerDraftKey, current => ({ ...current, references }))}
+              onSearch={() => { conversationFindOpen.current = true; cancelScheduledConversationAutoScroll(); setStickToBottom(false); }}
+              items={timelineItems}
+              search={query => client.searchSession(selectedBinding.daemon_session_id, query)}
+              showHit={async (hit, signal) => { await showSearchWindow(hit.sequence, signal); }}
+              onCloseSearch={() => { conversationFindOpen.current = false; closeSearchWindow(); }}
+              translate={(text, language) => client.translateSelection(selectedBinding.daemon_session_id, text, language)}
+              onReference={reference => {
+                updateComposerDraft(composerDraftKey, current => ({ ...current, references: [...(current.references ?? []), reference] }));
+                setEditingReferenceId(reference.id);
+              }}
+            />}
             <button type="button" className="icon-button" aria-label="Session details" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((open) => !open)}><ListFilter size={17} /></button>
             <button type="button" className="icon-button" aria-label="Toggle side panel" title="Toggle side panel (⌘⌥B / Ctrl+Alt+B)" aria-expanded={sidePanelOpen} onClick={() => { setSidePanelOpen((open) => !open); setDetailsOpen(false); }}><PanelRight size={17} /></button>
           </div>
@@ -3943,6 +4000,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
           onTouchEnd={handleConversationTouchEnd}
           onTouchCancel={handleConversationTouchEnd}
         >
+          {searchWindow && <div className="search-history-notice">Showing messages near a search result <button type="button" onClick={closeSearchWindow}>Return to conversation</button></div>}
           <article className="conversation-body">
             {selectedConversation ? (
               <SessionTimeline
@@ -3952,7 +4010,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
                 onOpenForkSource={timelineActions.onOpenForkSource}
                 binding={selectedBinding}
                 session={selectedSession}
-                items={timelineItems}
+                items={searchWindow ?? timelineItems}
                 itemsAuthoritative={sessionItemsLoadedForSessionId === selectedBinding?.daemon_session_id}
                 itemsLoading={sessionItemsLoading}
                 itemsError={sessionItemsError}
@@ -4039,7 +4097,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
             type="button"
             className="scroll-to-bottom-button"
             aria-label="Scroll to latest message"
-            onClick={() => scrollConversationToBottom({ smooth: true })}
+            onClick={() => { if (searchWindow) { closeSearchWindow(); requestAnimationFrame(() => scrollConversationToBottom({ smooth: true })); } else scrollConversationToBottom({ smooth: true }); }}
           >
             <ArrowDown size={17} strokeWidth={2} />
           </button>
@@ -4060,6 +4118,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
               </div>
             )}
             <form className="composer" onSubmit={(event) => void submitSelectedPrompt(event)}>
+              <ComposerReferences onEdit={id => { void editReference(id); }} references={activeComposerDraft.references ?? []} onChange={references => updateComposerDraft(composerDraftKey, current => ({ ...current, references }))} />
               <ComposerSkills
                 skills={skillMatches}
                 selectedSkillNames={selectedSkillNames}

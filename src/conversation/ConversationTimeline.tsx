@@ -458,7 +458,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     const imageSummary = formatImageAttachmentSummary(hiddenImageCount);
     const originKicker = formatChannelOrigin(item.command?.request_context);
     return (
-      <UserMessage skills={skills} text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
+      <UserMessage messageId={item.id} skills={skills} text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
         <div className="message-image-grid" aria-label="Attached images">
           {images.map((image) => <PreviewImage key={image.id} src={image.url} alt={image.name} />)}
         </div>
@@ -482,7 +482,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
       return null;
     }
     return (
-      <div className="message-row assistant">
+      <div className="message-row assistant" data-message-id={item.id} id={`message-${encodeURIComponent(item.id)}`}>
         <div className="message-bubble assistant">
           <AssistantContentView itemId={item.id} content={item.content ?? []} projection={toolProjection} daemonUrl={daemonUrl} smoothStreaming={smoothStreaming} />
         </div>
@@ -1078,7 +1078,7 @@ function MarkdownContent({ text, smoothStreaming = false }: { text: string; smoo
 
 const userMessageCollapsedLines = 20;
 
-export function UserMessage({ text, skills = [], kicker, children, attachments }: { text: string; skills?: string[]; kicker?: string; children?: ReactNode; attachments?: ReactNode }) {
+export function UserMessage({ messageId, text, skills = [], kicker, children, attachments }: { messageId?: string; text: string; skills?: string[]; kicker?: string; children?: ReactNode; attachments?: ReactNode }) {
   const mentioned = new Set(skillTokens(text, skills).map(token => token.name));
   const legacySkills = skills.filter(name => !mentioned.has(name));
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -1102,7 +1102,7 @@ export function UserMessage({ text, skills = [], kicker, children, attachments }
   }, [text]);
 
   return (
-    <div className="message-row user">
+    <div className="message-row user" data-message-id={messageId} id={messageId ? `message-${encodeURIComponent(messageId)}` : undefined}>
       <div className="user-message-stack">
         {attachments}
         {hasBubble && <div className="message-bubble user">
