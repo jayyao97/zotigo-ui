@@ -1,10 +1,38 @@
+import { ComposerSkills } from "../components/ComposerSkills";
+import { ContextUsage } from "../components/ContextUsage";
+import { ProfilePicker } from "../components/ProfilePicker";
+import { TurnStatus } from "../components/TurnStatus";
+import { useThinkingDisplay } from "../platform/preferences";
+import {
+  defaultThinkingDisclosureOpen,
+  latestReasoningItemId,
+} from "@zotigo/shared/thinkingDisplay";
+import {
+  approvalPolicyLabel,
+  approvalPolicyDescription,
+} from "@zotigo/shared/approvalPolicy";
+import { ModelPicker } from "../components/ModelPicker";
+import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
+import { useLayoutTransition } from "../components/useLayoutTransition";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
+import Terminal from "lucide-react-native/icons/terminal";
+import ShieldCheck from "lucide-react-native/icons/shield-check";
+import ShieldAlert from "lucide-react-native/icons/shield-alert";
+import {
+  groupTimelineItems,
+  orderLateTurnItems,
+  visibleDisplayItems,
+  buildToolRenderProjection,
+  historicalToolSummary,
+} from "@zotigo/shared/sessionDisplay";
+import { sessionTurnActions } from "@zotigo/shared/sessionFork";
 import ArrowUp from "lucide-react-native/icons/arrow-up";
 import ArrowDown from "lucide-react-native/icons/arrow-down";
 import Plus from "lucide-react-native/icons/plus";
 import Square from "lucide-react-native/icons/square";
 import X from "lucide-react-native/icons/x";
 import Ellipsis from "lucide-react-native/icons/ellipsis";
-import Sparkles from "lucide-react-native/icons/sparkles";
 import {
   useCallback,
   useEffect,
@@ -19,8 +47,8 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
+  Pressable,
   Text,
   TextInput,
   View,
@@ -41,7 +69,6 @@ import type {
   AgentCatalogResponse,
   DisplayItem,
   ProfilesResponse,
-  SkillsResponse,
 } from "@zotigo/shared/zotigod";
 import { pendingHumanRequestIDs } from "@zotigo/shared/sessionDisplay";
 import {
@@ -69,7 +96,7 @@ import {
   colors,
   errorText,
   Notice,
-  Screen,
+  Loading,
   Section,
   styles,
   TextField,
@@ -77,7 +104,16 @@ import {
 import { MessageCard } from "../components/MessageCard";
 import { HumanRequest } from "../components/HumanRequests";
 
+type TimelineRow =
+  | {
+      kind: "item";
+      key: string;
+      item: DisplayItem;
+      revealReasoning?: boolean;
+    }
+  | { kind: "activity"; key: string; label: string; open: boolean };
 export function ConversationScreen() {
+  const animateLayout = useLayoutTransition();
   const client = useDaemon(),
     route = useRoute<RouteProp<Routes, "Conversation">>(),
     nav = useNavigation<NativeStackNavigationProp<Routes>>();
@@ -111,13 +147,15 @@ export function ConversationScreen() {
       );
   });
   const [options, setOptions] = useState(false);
-  const [skillsOpen, setSkillsOpen] = useState(false);
-  const [skills, setSkills] = useState<SkillsResponse>();
+  const [optionPane, setOptionPane] = useState<
+    "session" | "model" | "policy" | "context"
+  >("session");
+  const [pinned, setPinned] = useState<boolean | null>(null);
   const [agents, setAgents] = useState<AgentCatalogResponse>();
   const [profiles, setProfiles] = useState<ProfilesResponse>();
   const [title, setTitle] = useState(route.params.title);
   const [steer, setSteer] = useState(false);
-  const list = useRef<FlatList<DisplayItem>>(null);
+  const list = useRef<FlatList<TimelineRow>>(null);
   const follow = useRef(new TimelineFollow());
   const [following, setFollowing] = useState(true);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -294,8 +332,9 @@ export function ConversationScreen() {
       ),
     [state.items, pending],
   );
-  const data = useMemo(
-    () => [...state.items, ...state.previews],
+  const thinking = useThinkingDisplay();
+  const ordered = useMemo(
+    () => orderLateTurnItems([...state.items, ...state.previews]),
     [state.items, state.previews],
   );
   const previewIds = useMemo(
@@ -303,43 +342,210 @@ export function ConversationScreen() {
     [state.previews],
   );
   const turn = activeTurn(state.items);
+  const [disclosures, setDisclosures] = useState<Record<string, boolean>>({});
+  const projection = useMemo(
+    () => buildToolRenderProjection(ordered),
+    [ordered],
+  );
+  const data = useMemo<TimelineRow[]>(() => {
+    const sequence = turn
+      ? state.items.find(
+          (i) => i.type === "turn_started" && i.turn?.id === turn,
+        )?.sequence
+      : undefined;
+    return groupTimelineItems(
+      visibleDisplayItems(ordered),
+      sequence,
+    ).flatMap<TimelineRow>((group) => {
+      if (group.kind === "item")
+        return [{ kind: "item", key: group.item.id, item: group.item }];
+      const key = group.kind + ":" + group.items[0].id;
+      const open =
+        disclosures[key] ??
+        ((group.kind === "tools" && group.active) ||
+          (state.session?.agent !== "codex" &&
+            group.items.some(
+              (item) =>
+                item.content?.some((p) => p.type === "reasoning") &&
+                defaultThinkingDisclosureOpen(
+                  thinking.mode,
+                  item.id === latestReasoningItemId(ordered),
+                ),
+            )));
+      return [
+        {
+          kind: "activity",
+          key,
+          label:
+            group.kind === "tools"
+              ? historicalToolSummary(group.items)
+              : "Thinking",
+          open,
+        },
+        ...(open
+          ? group.items.map((item) => ({
+              kind: "item" as const,
+              key: item.id,
+              item,
+              revealReasoning: true,
+            }))
+          : []),
+      ];
+    });
+  }, [
+    ordered,
+    state.items,
+    state.session?.agent,
+    turn,
+    disclosures,
+    thinking.mode,
+  ]);
+  const turnActions = useMemo(
+    () => sessionTurnActions(state.items),
+    [state.items],
+  );
+  const forkRequests = useRef(new Map<string, string>());
+  const forkFrom = useCallback(
+    (turnId: string) => {
+      void run(async () => {
+        let request = forkRequests.current.get(turnId);
+        if (!request) {
+          request = randomUUID();
+          forkRequests.current.set(turnId, request);
+        }
+        const session = await client.fork(id, request, turnId);
+        if (focused.current && !client.signal.aborted)
+          nav.push("Conversation", {
+            id: session.id,
+            title: "Fork · " + title,
+          });
+      });
+    },
+    [client, id, title],
+  );
+
   const openFile = useCallback(
     (path: string) =>
       nav.navigate("Files", { path, sessionId: id, open: true }),
     [nav, id],
   );
   const renderItem = useCallback(
-    ({ item }: { item: DisplayItem }) => (
-      <MessageCard
-        item={item}
-        openFile={openFile}
-        live={previewIds.has(item.id)}
-      />
-    ),
-    [openFile, previewIds],
+    ({ item: row }: { item: TimelineRow }) => {
+      if (row.kind === "activity")
+        return (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={row.label}
+            accessibilityState={{ expanded: row.open }}
+            onPress={() => {
+              follow.current.leaveLatest();
+              setFollowing(false);
+              animateLayout();
+              setDisclosures((previous) => ({
+                ...previous,
+                [row.key]: !row.open,
+              }));
+            }}
+            style={{
+              minHeight: 44,
+              paddingHorizontal: 18,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Terminal size={16} color={colors.muted} />
+            <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+              {row.label}
+            </Text>
+            {row.open ? (
+              <ChevronDown size={16} color={colors.muted} />
+            ) : (
+              <ChevronRight size={16} color={colors.muted} />
+            )}
+          </Pressable>
+        );
+      const item = row.item;
+      if (item.type === "turn_started")
+        return (
+          <TurnStatus
+            item={item}
+            items={ordered}
+            active={item.turn?.id === turn}
+            paused={state.session?.state === "paused"}
+            terminalAt={!turn ? state.session?.ended_at : undefined}
+          />
+        );
+      return (
+        <MessageCard
+          item={item}
+          openFile={openFile}
+          live={previewIds.has(item.id)}
+          turnAction={turnActions.get(item.id)}
+          onFork={forkFrom}
+          forkDisabled={busy || !!turn}
+          projection={projection}
+          revealReasoning={row.revealReasoning}
+        />
+      );
+    },
+    [
+      openFile,
+      previewIds,
+      turnActions,
+      forkFrom,
+      busy,
+      turn,
+      projection,
+      ordered,
+      state.session?.state,
+      state.session?.ended_at,
+    ],
   );
+
   useEffect(() => {
-    if (!options && !skillsOpen) return;
+    if (!options) return;
     let active = true;
-    Promise.all([
-      client.agents(),
-      client.profiles(state.session?.working_directory),
-      client.skills(id),
-    ])
-      .then(([a, p, s]) => {
-        if (active) {
-          setAgents(a);
-          setProfiles(p);
-          setSkills(s);
-        }
-      })
-      .catch((e) => {
-        if (active) setError(errorText(e));
-      });
+    if (options && optionPane === "session") setPinned(null);
+    const request =
+      options && optionPane === "model"
+        ? state.session?.agent === "codex"
+          ? client.modelCatalog().then((value) => {
+              if (active) setAgents(value);
+            })
+          : client.profiles(state.session?.working_directory).then((value) => {
+              if (active) setProfiles(value);
+            })
+        : options && optionPane === "session"
+          ? client.catalog().then((items) => {
+              if (active)
+                setPinned(
+                  !!items.find(
+                    (item) =>
+                      item.organization?.session_id === id ||
+                      item.runtime?.id === id,
+                  )?.organization?.pinned_at,
+                );
+            })
+          : undefined;
+    void request?.catch((e) => {
+      if (active) setError(errorText(e));
+    });
     return () => {
       active = false;
     };
-  }, [client, id, options, skillsOpen, state.session?.working_directory]);
+  }, [
+    client,
+    id,
+    options,
+    optionPane,
+    state.session?.agent,
+    state.session?.working_directory,
+  ]);
+  const AccessIcon =
+    state.session?.approval_policy === "bypass_permissions"
+      ? ShieldAlert
+      : ShieldCheck;
   const canSend = loaded && !busy && !client.signal.aborted;
   function scrollToBottom() {
     follow.current.jump();
@@ -367,7 +573,10 @@ export function ConversationScreen() {
         <IconButton
           icon={Ellipsis}
           label="Conversation details"
-          onPress={() => setOptions(true)}
+          onPress={() => {
+            setOptionPane("session");
+            setOptions(true);
+          }}
         />
       </View>
       {!!(state.error || error) && (
@@ -391,7 +600,7 @@ export function ConversationScreen() {
         ref={list}
         data={data}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.key}
         initialNumToRender={12}
         maxToRenderPerBatch={8}
         windowSize={7}
@@ -538,9 +747,13 @@ export function ConversationScreen() {
             ))}
           </View>
         )}
-        {!!draft.skills.length && (
-          <Text style={styles.muted}>Skills: {draft.skills.join(", ")}</Text>
-        )}
+        <ComposerSkills
+          text={draft.text}
+          selected={draft.skills}
+          sessionId={id}
+          disabled={!canSend || !!saved.attempt}
+          onChange={(text, skills) => update({ text, skills })}
+        />
         <View
           style={{
             backgroundColor: colors.surface,
@@ -550,27 +763,38 @@ export function ConversationScreen() {
             padding: 4,
           }}
         >
-          <TextInput
-            accessibilityLabel="Message"
-            editable={canSend && !saved.attempt}
-            multiline
-            value={draft.text}
-            onChangeText={(text) => update({ text })}
-            placeholder="Ask Zotigo…"
-            placeholderTextColor={colors.muted}
-            style={[
-              styles.input,
-              {
-                maxHeight: 160,
-                minHeight: 44,
-                borderWidth: 0,
-                backgroundColor: "transparent",
-                paddingHorizontal: 14,
-                paddingTop: 10,
-                paddingBottom: 6,
-              },
-            ]}
-          />
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <TextInput
+              accessibilityLabel="Message"
+              editable={canSend && !saved.attempt}
+              multiline
+              value={draft.text}
+              onChangeText={(text) => update({ text })}
+              placeholder="Ask Zotigo…"
+              placeholderTextColor={colors.muted}
+              style={[
+                styles.input,
+                {
+                  flex: 1,
+                  maxHeight: 160,
+                  minHeight: 44,
+                  borderWidth: 0,
+                  backgroundColor: "transparent",
+                  paddingHorizontal: 14,
+                  paddingTop: 10,
+                  paddingBottom: 6,
+                },
+              ]}
+            />
+            {turn && (
+              <Action
+                label={steer ? "Steer" : "Auto"}
+                secondary
+                disabled={!canSend || !!saved.attempt}
+                onPress={() => setSteer(!steer)}
+              />
+            )}
+          </View>
           <View
             style={{
               flexDirection: "row",
@@ -589,38 +813,102 @@ export function ConversationScreen() {
               }
               onPress={() => void run(attach)}
             />
-            <IconButton
-              icon={Sparkles}
-              label="Choose skills"
-              disabled={!canSend || !!saved.attempt}
-              onPress={() => setSkillsOpen(true)}
-            />
-            {turn && (
-              <Action
-                label={steer ? "Steer" : "Auto"}
-                secondary
-                disabled={!canSend || !!saved.attempt}
-                onPress={() => setSteer(!steer)}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Permissions"
+              accessibilityHint={
+                state.session?.approval_policy === "bypass_permissions"
+                  ? "Full access"
+                  : "Auto"
+              }
+              style={{
+                minHeight: 44,
+                minWidth: 44,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 12,
+                backgroundColor: colors.elevated,
+              }}
+              onPress={() => {
+                setOptionPane("policy");
+                setOptions(true);
+              }}
+            >
+              <AccessIcon
+                size={18}
+                color={
+                  state.session?.approval_policy === "bypass_permissions"
+                    ? "#ff8549"
+                    : colors.muted
+                }
+              />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Model and reasoning"
+              accessibilityHint={[
+                state.session?.model || state.session?.profile,
+                state.session?.reasoning_effort,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              style={{
+                flex: 1,
+                minWidth: 44,
+                minHeight: 44,
+                justifyContent: "center",
+                alignItems: "center",
+                backgroundColor: colors.elevated,
+                borderRadius: 12,
+                paddingHorizontal: 8,
+              }}
+              onPress={() => {
+                setOptionPane("model");
+                setOptions(true);
+              }}
+            >
+              <Text numberOfLines={1} style={[styles.muted, { maxWidth: 130 }]}>
+                {[
+                  state.session?.model || state.session?.profile || "Model",
+                  state.session?.reasoning_effort,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+            </Pressable>
+            {state.session?.context_usage && (
+              <ContextUsage
+                tokens={state.session.context_usage.tokens}
+                window={state.session.context_usage.window}
+                onPress={() => {
+                  setOptionPane("context");
+                  setOptions(true);
+                }}
               />
             )}
-            <View style={{ flex: 1 }} />
-            {turn && (
+
+            {turn &&
+            !draft.text.trim() &&
+            !draft.images.length &&
+            !saved.attempt ? (
               <IconButton
+                filled
                 icon={Square}
                 label="Stop response"
                 disabled={busy || !state.session?.live}
                 onPress={() => void run(() => client.pause(id, turn))}
               />
+            ) : (
+              <IconButton
+                icon={ArrowUp}
+                filled
+                label={busy ? "Working…" : saved.attempt ? "Retry" : "Send"}
+                disabled={
+                  !canSend || (!draft.text.trim() && !draft.images.length)
+                }
+                onPress={() => void run(send)}
+              />
             )}
-            <IconButton
-              icon={ArrowUp}
-              filled
-              label={busy ? "Working…" : saved.attempt ? "Retry" : "Send"}
-              disabled={
-                !canSend || (!draft.text.trim() && !draft.images.length)
-              }
-              onPress={() => void run(send)}
-            />
           </View>
         </View>
         {saved.attempt && (
@@ -652,230 +940,232 @@ export function ConversationScreen() {
           />
         )}
       </View>
-      <Modal
-        visible={options || skillsOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => {
-          if (!busy) {
-            setOptions(false);
-            setSkillsOpen(false);
-          }
+      <BottomSheet
+        visible={options}
+        disabled={busy}
+        title={
+          optionPane === "model"
+            ? "Model and reasoning"
+            : optionPane === "policy"
+              ? "Permissions"
+              : optionPane === "context"
+                ? "Context usage"
+                : "Conversation"
+        }
+        onClose={() => {
+          setOptions(false);
         }}
       >
-        <Screen>
-          <Action
-            label="Done"
-            disabled={busy}
-            onPress={() => {
-              setOptions(false);
-              setSkillsOpen(false);
-            }}
-          />
-          <Notice text={error} error />
-          {skillsOpen ? (
-            <Section title="Skills">
-              {skills?.skills.map((skill) => (
-                <Action
-                  key={skill.name}
-                  label={`${draft.skills.includes(skill.name) ? "Selected: " : ""}${skill.name} · ${skill.description}`}
-                  disabled={busy || !skill.enabled || !!saved.attempt}
-                  onPress={() =>
-                    update({
-                      skills: draft.skills.includes(skill.name)
-                        ? draft.skills.filter((s) => s !== skill.name)
-                        : [...draft.skills, skill.name],
-                    })
-                  }
-                />
-              ))}
+        <Notice text={error} error />
+        <>
+          {optionPane === "context" && state.session?.context_usage && (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.title}>
+                {Math.round(
+                  (state.session.context_usage.tokens /
+                    state.session.context_usage.window) *
+                    100,
+                )}
+                % used
+              </Text>
+              <Text style={styles.muted}>
+                {state.session.context_usage.tokens.toLocaleString()} /{" "}
+                {state.session.context_usage.window.toLocaleString()} tokens
+              </Text>
+            </View>
+          )}
+          {optionPane === "session" && (
+            <Section title="Session">
+              <Text selectable style={styles.muted}>
+                {id}
+                {"\n"}
+                {state.session?.working_directory}
+                {"\n"}
+                {state.session?.state} ·{" "}
+                {state.session?.context_usage
+                  ? `${state.session.context_usage.tokens} / ${state.session.context_usage.window} tokens`
+                  : ""}
+              </Text>
+              <TextField label="Title" value={title} onChangeText={setTitle} />
+              <Action
+                label="Rename"
+                disabled={busy || !title.trim()}
+                onPress={() =>
+                  void run(async () => {
+                    await client.renameSession(id, title.trim());
+                    if (alive.current) nav.setOptions({ title: title.trim() });
+                  })
+                }
+              />
+              <Action
+                label={pinned ? "Unpin session" : "Pin session"}
+                disabled={busy || pinned === null}
+                onPress={() =>
+                  void run(async () => {
+                    await client.pinSession(id, !pinned);
+                    if (alive.current) setPinned(!pinned);
+                  })
+                }
+              />
+              <Action
+                label="Files"
+                disabled={busy}
+                onPress={() => {
+                  setOptions(false);
+                  nav.navigate("Files", {
+                    path: state.session?.working_directory,
+                    sessionId: id,
+                  });
+                }}
+              />
+              <Action
+                label="Resume runtime"
+                disabled={busy || state.session?.live}
+                onPress={() => void run(() => client.start(id))}
+              />
+              <Action
+                label="Fork session"
+                disabled={busy || !!turn}
+                onPress={() =>
+                  void run(async () => {
+                    const session = await client.fork(id, randomUUID());
+                    if (focused.current && !client.signal.aborted) {
+                      setOptions(false);
+                      nav.push("Conversation", {
+                        id: session.id,
+                        title: "Fork · " + title,
+                      });
+                    }
+                  })
+                }
+              />
             </Section>
-          ) : (
-            <>
-              <Section title="Session">
-                <Text selectable style={styles.muted}>
-                  {id}
-                  {"\n"}
-                  {state.session?.working_directory}
-                  {"\n"}
-                  {state.session?.state} ·{" "}
-                  {state.session?.context_usage
-                    ? `${state.session.context_usage.tokens} / ${state.session.context_usage.window} tokens`
-                    : ""}
-                </Text>
-                <TextField
-                  label="Title"
-                  value={title}
-                  onChangeText={setTitle}
-                />
-                <Action
-                  label="Rename"
-                  disabled={busy || !title.trim()}
-                  onPress={() =>
-                    void run(async () => {
-                      await client.renameSession(id, title.trim());
-                      if (alive.current)
-                        nav.setOptions({ title: title.trim() });
-                    })
-                  }
-                />
-                <Action
-                  label="Pin session"
-                  disabled={busy}
-                  onPress={() => void run(() => client.pinSession(id, true))}
-                />
-                <Action
-                  label="Unpin session"
-                  secondary
-                  disabled={busy}
-                  onPress={() => void run(() => client.pinSession(id, false))}
-                />
-                <Action
-                  label="Files"
-                  disabled={busy}
-                  onPress={() => {
-                    setOptions(false);
-                    nav.navigate("Files", {
-                      path: state.session?.working_directory,
-                      sessionId: id,
-                    });
-                  }}
-                />
-                <Action
-                  label="Resume runtime"
-                  disabled={busy || state.session?.live}
-                  onPress={() => void run(() => client.start(id))}
-                />
-                <Action
-                  label="Fork conversation"
-                  disabled={busy || !!turn}
-                  onPress={() =>
-                    void run(async () => {
-                      const session = await client.fork(id, randomUUID());
-                      if (focused.current && !client.signal.aborted) {
-                        setOptions(false);
-                        nav.push("Conversation", {
-                          id: session.id,
-                          title: "Fork · " + title,
-                        });
-                      }
-                    })
-                  }
-                />
-              </Section>
-              {state.session?.agent === "codex" ? (
-                <Section title="Model and reasoning">
+          )}
+          {optionPane === "model" &&
+            (state.session?.agent === "codex" ? (
+              <View style={{ gap: 8 }}>
+                {!agents && !error && <Loading />}
+                {error && (
                   <Action
-                    label="Load available models"
-                    disabled={busy}
+                    label="Retry loading models"
                     onPress={() =>
-                      void run(async () => {
-                        const ready = await client.prepareCodex();
-                        if (alive.current)
-                          setAgents((a) => ({
-                            default_agent: a?.default_agent ?? "codex",
-                            agents: [
-                              ...(a?.agents.filter((x) => x.id !== "codex") ??
-                                []),
-                              ready,
-                            ],
-                          }));
-                      })
+                      void run(async () =>
+                        setAgents(await client.modelCatalog()),
+                      )
                     }
                   />
-                  {agents?.agents
-                    .find((a) => a.id === "codex")
-                    ?.models?.map((m) => (
-                      <View key={m.id}>
-                        <Text style={styles.text}>{m.display_name}</Text>
-                        {m.supported_reasoning_efforts.map((e) => (
-                          <Action
-                            key={e}
-                            label={`${state.session?.model === m.id && state.session?.reasoning_effort === e ? "Selected: " : ""}${e}`}
-                            disabled={busy || !!turn}
-                            onPress={() =>
-                              void run(() => client.changeModel(id, m.id, e))
-                            }
-                          />
-                        ))}
-                      </View>
-                    ))}
-                </Section>
-              ) : (
-                <Section title="Profile">
-                  {profiles?.profiles.map((p) => (
-                    <Action
-                      key={p.name}
-                      label={`${p.name === state.session?.profile ? "Selected: " : ""}${p.name} · ${p.model}`}
-                      disabled={busy || !!turn}
-                      onPress={() =>
-                        void run(() => client.changeProfile(id, p.name))
-                      }
-                    />
-                  ))}
-                </Section>
-              )}
-              <Section title="Permissions">
-                <Action
-                  label="Request approvals"
-                  disabled={busy}
-                  onPress={() =>
-                    void run(() => client.changePolicy(id, "auto"))
+                )}
+                <Notice
+                  text={
+                    turn
+                      ? "Stop the current response before changing models."
+                      : ""
                   }
                 />
-                <Action
-                  label="Bypass approvals"
-                  danger
-                  disabled={busy}
-                  onPress={() =>
-                    Alert.alert(
-                      "Bypass approvals?",
-                      "Tools may run without asking you.",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Enable",
-                          style: "destructive",
-                          onPress: () =>
-                            void run(() =>
-                              client.changePolicy(id, "bypass_permissions"),
-                            ),
-                        },
-                      ],
+                <ModelPicker
+                  models={
+                    agents?.agents.find((a) => a.id === "codex")?.models ?? []
+                  }
+                  model={state.session?.model ?? ""}
+                  effort={state.session?.reasoning_effort ?? ""}
+                  disabled={busy || !!turn}
+                  onConfirm={(model, effort) =>
+                    void run(
+                      () => client.changeModel(id, model, effort),
+                      () => setOptions(false),
                     )
                   }
                 />
+              </View>
+            ) : (
+              <Section title="Profile">
+                {profiles && (
+                  <ProfilePicker
+                    profiles={profiles.profiles}
+                    selected={state.session?.profile}
+                    disabled={busy || !!turn}
+                    onSelect={(name) =>
+                      void run(
+                        () => client.changeProfile(id, name),
+                        () => setOptions(false),
+                      )
+                    }
+                  />
+                )}
               </Section>
-              <Action
-                label="Archive session"
-                danger
+            ))}
+          {optionPane === "policy" && (
+            <View style={{ gap: 8 }}>
+              <ChoiceRow
+                title={approvalPolicyLabel("auto")}
+                subtitle={approvalPolicyDescription("auto")}
+                selected={state.session?.approval_policy === "auto"}
+                disabled={busy}
+                onPress={() =>
+                  void run(
+                    () => client.changePolicy(id, "auto"),
+                    () => setOptions(false),
+                  )
+                }
+              />
+              <ChoiceRow
+                title={approvalPolicyLabel("bypass_permissions")}
+                subtitle={approvalPolicyDescription("bypass_permissions")}
+                selected={
+                  state.session?.approval_policy === "bypass_permissions"
+                }
                 disabled={busy}
                 onPress={() =>
                   Alert.alert(
-                    "Archive session?",
-                    "This hides the session from active lists. History is retained.",
+                    "Bypass approvals?",
+                    "Tools may run without asking you.",
                     [
                       { text: "Cancel", style: "cancel" },
                       {
-                        text: "Archive",
+                        text: "Enable",
                         style: "destructive",
                         onPress: () =>
                           void run(
-                            () => client.archiveSession(id),
-                            () => {
-                              setOptions(false);
-                              nav.goBack();
-                            },
+                            () => client.changePolicy(id, "bypass_permissions"),
+                            () => setOptions(false),
                           ),
                       },
                     ],
                   )
                 }
               />
-            </>
+            </View>
           )}
-        </Screen>
-      </Modal>
+          {optionPane === "session" && (
+            <Action
+              label="Archive session"
+              danger
+              disabled={busy}
+              onPress={() =>
+                Alert.alert(
+                  "Archive session?",
+                  "This hides the session from active lists. History is retained.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Archive",
+                      style: "destructive",
+                      onPress: () =>
+                        void run(
+                          () => client.archiveSession(id),
+                          () => {
+                            setOptions(false);
+                            nav.goBack();
+                          },
+                        ),
+                    },
+                  ],
+                )
+              }
+            />
+          )}
+        </>
+      </BottomSheet>
     </KeyboardAvoidingView>
   );
 }

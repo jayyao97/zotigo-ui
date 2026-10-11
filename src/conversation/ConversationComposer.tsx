@@ -34,7 +34,7 @@ import {
 
 import type { AgentCatalogEntry, AgentKind, AgentModel, ApprovalPolicy, RuntimeProfile, SkillSummary } from "../../shared/zotigod";
 import type { DesktopProject, DesktopWorkspace } from "../../shared/clientTypes";
-import { approvalPolicyLabel } from "../../shared/approvalPolicy";
+import { approvalPolicyLabel, approvalPolicyDescription } from "../../shared/approvalPolicy";
 
 export type ComposerAttachment = {
   id: string;
@@ -472,9 +472,7 @@ export function codexModelLabel(models: AgentModel[], modelId: string): string {
   return models.find((model) => model.id === modelId)?.display_name || modelId || t("app.codex");
 }
 
-export function compatibleReasoningEffort(efforts: string[], current: string): string {
-  return efforts.includes(current) ? current : efforts.includes("medium") ? "medium" : efforts[0] ?? "";
-}
+export { compatibleReasoningEffort } from "../../shared/modelSelection";
 
 export function RuntimeSettingsPicker({
   favorites,

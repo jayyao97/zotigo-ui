@@ -1,3 +1,13 @@
+import { eventLabel } from "../core/eventLabel";
+import Check from "lucide-react-native/icons/check";
+import { useLayoutTransition } from "./useLayoutTransition";
+import {
+  contentLocation,
+  hasVisibleAssistantContent,
+  type ToolRenderProjection,
+} from "@zotigo/shared/sessionDisplay";
+import GitBranch from "lucide-react-native/icons/git-branch";
+import type { TurnAction } from "@zotigo/shared/sessionFork";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
 import Terminal from "lucide-react-native/icons/terminal";
@@ -59,6 +69,7 @@ function Attachment({ url }: { url: string }) {
   );
 }
 function Detail({ label, text }: { label: string; text: string }) {
+  const animateLayout = useLayoutTransition();
   const [open, setOpen] = useState(false);
   const [limit, setLimit] = useState(8000);
   return (
@@ -66,7 +77,10 @@ function Detail({ label, text }: { label: string; text: string }) {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        onPress={() => setOpen(!open)}
+        onPress={() => {
+          animateLayout();
+          setOpen(!open);
+        }}
         style={{
           minHeight: 44,
           flexDirection: "row",
@@ -123,11 +137,22 @@ export const MessageCard = memo(function MessageCard({
   item,
   openFile,
   live = false,
+  turnAction,
+  onFork,
+  forkDisabled,
+  projection,
+  revealReasoning = false,
 }: {
   item: DisplayItem;
   openFile: (path: string) => void;
   live?: boolean;
+  turnAction?: TurnAction;
+  onFork?: (turnId: string) => void;
+  forkDisabled?: boolean;
+  projection?: ToolRenderProjection;
+  revealReasoning?: boolean;
 }) {
+  const [copied, setCopied] = useState(false);
   function link(href: string) {
     if (/^https?:\/\//i.test(href)) {
       Alert.alert("Open external link?", href, [
@@ -149,8 +174,15 @@ export const MessageCard = memo(function MessageCard({
     }
     return false;
   }
-  const user = item.type === "user_message" || item.type === "steering_message";
+  const user =
+    item.type === "user_message" || item.type === "steering_message";
   const parts = item.content ?? [];
+  if (
+    item.type === "assistant_message" &&
+    projection &&
+    !hasVisibleAssistantContent(item, projection)
+  )
+    return null;
   return (
     <View
       style={{
@@ -186,12 +218,16 @@ export const MessageCard = memo(function MessageCard({
           {item.subagent.status ?? "working"}
         </Text>
       )}
-      {user && item.command?.text && !parts.some((p) => p.type === "text") && (
-        <Text selectable style={styles.text}>
-          {item.command.text}
-        </Text>
-      )}
+      {user &&
+        item.command?.text &&
+        !parts.some((p) => p.type === "text") && (
+          <Text selectable style={styles.text}>
+            {item.command.text}
+          </Text>
+        )}
       {parts.map((p, index) => {
+        const location = contentLocation(item.id, index);
+        if (projection?.consumedResults.has(location)) return null;
         if (p.type === "text" && p.text)
           return live || user ? (
             <Text key={index} selectable style={styles.text}>
@@ -240,15 +276,40 @@ export const MessageCard = memo(function MessageCard({
             </Markdown>
           );
         if (p.type === "reasoning")
-          return <Detail key={index} label="reasoning" text={p.text ?? ""} />;
-        if (p.tool_call)
-          return (
-            <Detail
-              key={index}
-              label={p.tool_call.name ?? "tool call"}
-              text={p.tool_call.arguments ?? ""}
-            />
+          return revealReasoning ? (
+            <Text key={index} selectable style={styles.muted}>
+              {p.text}
+            </Text>
+          ) : (
+            <Detail key={index} label="reasoning" text={p.text ?? ""} />
           );
+        if (p.tool_call) {
+          const result = projection?.resultsByCall.get(
+            contentLocation(item.id, index),
+          );
+          return (
+            <View key={index}>
+              <Detail
+                label={`${p.tool_call.name ?? "tool call"}${result?.is_error ? " · failed" : ""}`}
+                text={[
+                  p.tool_call.arguments ?? "",
+                  result
+                    ? (result.text ??
+                      JSON.stringify(result.json ?? result, null, 2))
+                    : (projection?.progressByCall.get(p.tool_call.id ?? "") ??
+                      ""),
+                ]
+                  .filter(Boolean)
+                  .join("\n\n")}
+              />
+              {result?.content?.map((c, i) =>
+                c.image?.url ? (
+                  <Attachment key={i} url={c.image.url} />
+                ) : null,
+              )}
+            </View>
+          );
+        }
         if (p.tool_result)
           return (
             <View key={index}>
@@ -260,7 +321,9 @@ export const MessageCard = memo(function MessageCard({
                 }
               />
               {p.tool_result.content?.map((c, i) =>
-                c.image?.url ? <Attachment key={i} url={c.image.url} /> : null,
+                c.image?.url ? (
+                  <Attachment key={i} url={c.image.url} />
+                ) : null,
               )}
             </View>
           );
@@ -279,28 +342,29 @@ export const MessageCard = memo(function MessageCard({
         ) : null,
       )}
       {item.error && <Notice text={item.error} error />}
-      {!user && !parts.length && (
+      {!user && !parts.length && !!eventLabel(item) && (
         <Text style={styles.muted}>
-          {item.type.replaceAll("_", " ")}
-          {item.turn?.reason ? ` · ${item.turn.reason}` : ""}
-          {item.turn?.duration_ms
-            ? ` · ${(item.turn.duration_ms / 1000).toFixed(1)}s`
-            : ""}
+          {eventLabel(item)}
         </Text>
       )}
-      {!user && !live && parts.some((p) => p.type === "text") && (
-        <IconButton
-          icon={Copy}
-          label="Copy message"
-          onPress={() =>
-            void Clipboard.setStringAsync(
-              parts
-                .filter((p) => p.type === "text")
-                .map((p) => p.text)
-                .join("\n"),
-            ).catch((e) => Alert.alert("Copy failed", errorText(e)))
-          }
-        />
+      {!live && turnAction && (
+        <View style={{ flexDirection: "row" }}>
+          <IconButton
+            icon={copied ? Check : Copy}
+            label={copied ? "Copied" : "Copy response"}
+            onPress={() =>
+              void Clipboard.setStringAsync(turnAction.text)
+                .then(() => setCopied(true))
+                .catch((e) => Alert.alert("Copy failed", errorText(e)))
+            }
+          />
+          <IconButton
+            icon={GitBranch}
+            label="Fork from this turn"
+            disabled={forkDisabled}
+            onPress={() => onFork?.(turnAction.turnId)}
+          />
+        </View>
       )}
     </View>
   );

@@ -12,6 +12,7 @@ export const fixtureHosts = [
   },
 ];
 const data = new Map<string, string>([
+  ["zotigo.mobile.lastHost", "preview-home"],
   ["zotigo.mobile.hosts.v1", JSON.stringify(fixtureHosts)],
 ]);
 const credentials = new Map<string, string>(

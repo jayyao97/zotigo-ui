@@ -1,5 +1,28 @@
+import { ComposerSkills } from "../components/ComposerSkills";
+import ArrowUp from "lucide-react-native/icons/arrow-up";
+import Shield from "lucide-react-native/icons/shield";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  TextInput,
+} from "react-native";
+import { randomUUID } from "expo-crypto";
+import { ComposerStore, emptyDraft, submissionAttempt } from "../core/composer";
+import { storage } from "../platform/storage";
+import { ProfilePicker } from "../components/ProfilePicker";
+import {
+  approvalPolicyLabel,
+  approvalPolicyDescription,
+} from "@zotigo/shared/approvalPolicy";
+import { compatibleReasoningEffort } from "@zotigo/shared/modelSelection";
 import { useEffect, useRef, useState } from "react";
-import { Alert, FlatList, Modal, SafeAreaView, Text, View } from "react-native";
+import Folder from "lucide-react-native/icons/folder";
+import { Alert, FlatList, Text, View } from "react-native";
+import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
+import { ModelPicker } from "../components/ModelPicker";
 import {
   useNavigation,
   useRoute,
@@ -23,7 +46,8 @@ import {
   errorText,
   Loading,
   Notice,
-  Screen,
+  colors,
+  IconButton,
   Section,
   styles,
   TextField,
@@ -37,7 +61,11 @@ export function NewSessionScreen() {
   const [workspaceLoading, setWorkspaceLoading] = useState(
     !!route.params.workspaceId,
   );
-  const [choosing, setChoosing] = useState(false);
+  const [panel, setPanel] = useState<
+    "workspace" | "agent" | "model" | "policy" | null
+  >(null);
+  const choosing = panel === "workspace";
+  const [search, setSearch] = useState("");
   const [projects, setProjects] = useState<CatalogProject[]>([]);
   const [projectId, setProjectId] = useState<string>();
   const [workspaces, setWorkspaces] = useState<CatalogWorkspace[]>([]);
@@ -45,7 +73,10 @@ export function NewSessionScreen() {
   const [pickerError, setPickerError] = useState("");
   const [profilesDirectory, setProfilesDirectory] = useState<string>();
   const [profileError, setProfileError] = useState("");
-  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [skillNames, setSkillNames] = useState<string[]>([]);
+  const insets = useSafeAreaInsets();
+  const header = useHeaderHeight();
   const [catalog, setCatalog] = useState<AgentCatalogResponse>();
   const [profiles, setProfiles] = useState<ProfilesResponse>();
   const [agent, setAgent] = useState<AgentKind>("zotigo");
@@ -55,18 +86,36 @@ export function NewSessionScreen() {
   const [policy, setPolicy] = useState<ApprovalPolicy>("auto");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const createdSession = useRef<string | undefined>(undefined);
+  const completed = useRef(false);
   const lock = useRef(false),
     mounted = useRef(true);
-  usePreventRemove(busy, ({ data }) => {
-    if (!lock.current) nav.dispatch(data.action);
-    else
-      Alert.alert("Please wait", "The session is being prepared or created.");
-  });
+  usePreventRemove(
+    busy || !!message.trim() || !!skillNames.length,
+    ({ data }) => {
+      if (completed.current) nav.dispatch(data.action);
+      else if (!lock.current)
+        Alert.alert(
+          "Discard message?",
+          "Your unsent message will be discarded.",
+          [
+            { text: "Keep editing", style: "cancel" },
+            {
+              text: "Discard",
+              style: "destructive",
+              onPress: () => nav.dispatch(data.action),
+            },
+          ],
+        );
+      else
+        Alert.alert("Please wait", "The session is being prepared or created.");
+    },
+  );
   useEffect(() => {
     mounted.current = true;
     let active = true;
     client
-      .agents()
+      .modelCatalog()
       .then((a) => {
         if (active) {
           setCatalog(a);
@@ -168,9 +217,13 @@ export function NewSessionScreen() {
   const selected = catalog?.agents.find((a) => a.id === agent);
   useEffect(() => {
     const m =
-      selected?.models?.find((m) => m.is_default) ?? selected?.models?.[0];
+      selected?.models?.find((m) => m.id === model) ??
+      selected?.models?.find((m) => m.is_default) ??
+      selected?.models?.[0];
     setModel(m?.id ?? "");
-    setEffort(m?.supported_reasoning_efforts[0] ?? "");
+    setEffort((current) =>
+      compatibleReasoningEffort(m?.supported_reasoning_efforts ?? [], current),
+    );
   }, [selected]);
   async function create() {
     if (
@@ -189,32 +242,52 @@ export function NewSessionScreen() {
     setBusy(true);
     setError("");
     try {
-      const session = await client.createSession({
-        workspaceId: workspace.id,
-        agent,
-        profile: agent === "zotigo" ? profile || undefined : undefined,
-        model: agent === "codex" ? model : undefined,
-        reasoningEffort: agent === "codex" ? effort : undefined,
-        approvalPolicy: policy,
-      });
+      const session = createdSession.current
+        ? { id: createdSession.current }
+        : await client.createSession({
+            workspaceId: workspace.id,
+            agent,
+            profile: agent === "zotigo" ? profile || undefined : undefined,
+            model: agent === "codex" ? model : undefined,
+            reasoningEffort: agent === "codex" ? effort : undefined,
+            approvalPolicy: policy,
+          });
+      createdSession.current = session.id;
       if (!mounted.current || client.signal.aborted) return;
-      // Creation is not retried after a later title failure: the session already exists.
-      if (title.trim()) {
-        try {
-          await client.renameSession(session.id, title.trim());
-        } catch (e) {
-          Alert.alert(
-            "Session created",
-            "The title could not be saved: " + errorText(e),
-          );
-        }
+      const composer = new ComposerStore(
+        storage,
+        client.connection.id,
+        session.id,
+      );
+      const draft = { ...emptyDraft(), text: message, skills: skillNames };
+      const attempt = submissionAttempt({ draft }, randomUUID(), false);
+      await composer.write({ draft, attempt });
+      try {
+        await client.send(
+          session.id,
+          {
+            text: attempt.text,
+            skills: attempt.skills,
+            images: [],
+            client_message_id: attempt.client_message_id,
+          },
+          false,
+        );
+        await composer.write({ draft: emptyDraft() });
+      } catch (e) {
+        Alert.alert(
+          "Session created",
+          "Your message needs attention. Open the conversation to retry with the same request ID. " +
+            errorText(e),
+        );
       }
+      completed.current = true;
       lock.current = false;
       setBusy(false);
       if (mounted.current && !client.signal.aborted)
         nav.replace("Conversation", {
           id: session.id,
-          title: title.trim() || "New conversation",
+          title: "New session",
         });
     } catch (e) {
       if (mounted.current) setError(errorText(e));
@@ -224,248 +297,345 @@ export function NewSessionScreen() {
     }
   }
   return (
-    <Screen>
-      <Notice text={`On ${client.connection.name}`} />
-      <TextField
-        label="Conversation title (optional)"
-        value={title}
-        onChangeText={setTitle}
-      />
-      <Section title="Workspace">
-        <Notice
-          text={
-            workspace
-              ? `${workspace.title} · ${workspace.root_path}`
-              : workspaceLoading
-                ? "Loading workspace…"
-                : "Select a ready workspace to create a conversation."
-          }
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={header}
+      style={{ flex: 1, backgroundColor: colors.background }}
+    >
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          gap: 8,
+        }}
+      >
+        <Text style={styles.title}>What are we working on?</Text>
+        <Text style={styles.muted}>{client.connection.name}</Text>
+      </View>
+      <View
+        style={{
+          padding: 12,
+          paddingBottom: Math.max(insets.bottom, 12),
+          gap: 8,
+        }}
+      >
+        <Notice text={error || profileError} error />
+        <ComposerSkills
+          text={message}
+          selected={skillNames}
+          disabled={busy}
+          onChange={(text, skills) => {
+            setMessage(text);
+            setSkillNames(skills);
+          }}
         />
-        <Action
-          label={workspace ? "Change workspace" : "Choose workspace"}
+        <ChoiceRow
+          icon={Folder}
+          title={workspace?.title ?? "Choose workspace"}
+          subtitle={workspace?.root_path ?? "Project → workspace"}
           disabled={busy || workspaceLoading}
           onPress={() => {
             setProjectId(undefined);
-            setChoosing(true);
+            setSearch("");
+            setPanel("workspace");
           }}
         />
-      </Section>
-      <Modal
-        visible={choosing}
-        animationType="slide"
-        onRequestClose={() => setChoosing(false)}
-      >
-        <SafeAreaView style={styles.screen}>
-          {projectId ? (
-            <FlatList
-              data={workspaces}
-              keyExtractor={(value) => value.id}
-              contentContainerStyle={styles.content}
-              ListHeaderComponent={
-                <>
-                  <Action
-                    label="All projects"
-                    secondary
-                    onPress={() => setProjectId(undefined)}
-                  />
-                  <Notice text={pickerError} error />
-                  {pickerLoading && <Loading />}
-                </>
-              }
-              ListEmptyComponent={
-                !pickerLoading ? (
-                  <Notice text="No ready workspaces. Create one from the project page first." />
-                ) : null
-              }
-              renderItem={({ item }) => (
-                <Action
-                  label={item.title}
-                  onPress={() => {
-                    setWorkspace(item);
-                    setChoosing(false);
-                  }}
-                />
-              )}
-            />
-          ) : (
-            <FlatList
-              data={projects}
-              keyExtractor={(value) => value.id}
-              contentContainerStyle={styles.content}
-              ListHeaderComponent={
-                <>
-                  <Notice text="Choose a project" />
-                  <Notice text={pickerError} error />
-                  {pickerLoading && <Loading />}
-                </>
-              }
-              ListEmptyComponent={
-                !pickerLoading ? (
-                  <Notice text="No projects. Create a project and workspace from Home first." />
-                ) : null
-              }
-              renderItem={({ item }) => (
-                <Action
-                  label={item.name}
-                  onPress={() => setProjectId(item.id)}
-                />
-              )}
-            />
-          )}
-          <Action label="Cancel" secondary onPress={() => setChoosing(false)} />
-        </SafeAreaView>
-      </Modal>
-      {!catalog && !error && <Loading />}
-      <Section title="Agent">
-        {catalog?.agents.map((a) => (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setPanel("agent")}
+          disabled={busy || !catalog}
+          style={{
+            minHeight: 44,
+            justifyContent: "center",
+            paddingHorizontal: 12,
+          }}
+        >
+          <Text style={styles.muted}>
+            {selected?.label ?? "Loading models…"} · Runtime
+          </Text>
+        </Pressable>
+        {!catalog && error && (
           <Action
-            key={a.id}
-            label={`${a.id === agent ? "Selected: " : ""}${a.label}`}
-            disabled={busy}
-            onPress={() => setAgent(a.id)}
+            label="Retry loading models"
+            onPress={() => {
+              setError("");
+              void client
+                .modelCatalog()
+                .then((a) => {
+                  setCatalog(a);
+                  setAgent(a.default_agent);
+                })
+                .catch((e) => setError(errorText(e)));
+            }}
           />
-        ))}
-      </Section>
-      {agent === "codex" && (
-        <Action
-          label="Load available Codex models"
-          disabled={busy}
-          onPress={() => {
-            if (lock.current) return;
-            lock.current = true;
-            setBusy(true);
-            setError("");
-            void client
-              .prepareCodex()
-              .then((ready) => {
-                if (mounted.current)
-                  setCatalog((c) => ({
-                    default_agent: c?.default_agent ?? "codex",
-                    agents: [
-                      ...(c?.agents.filter((a) => a.id !== "codex") ?? []),
-                      ready,
-                    ],
-                  }));
-              })
-              .catch((e) => {
-                if (mounted.current) setError(errorText(e));
-              })
-              .finally(() => {
-                lock.current = false;
-                if (mounted.current) setBusy(false);
-              });
+        )}
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 24,
+            padding: 8,
           }}
-        />
-      )}
-      {agent === "zotigo" ? (
-        <Section title="Profile">
-          <Notice text={profileError} error />
-          {profileError && (
-            <Action
-              label="Reload workspace profiles"
-              secondary
+        >
+          <TextInput
+            accessibilityLabel="Message"
+            multiline
+            editable={!busy}
+            value={message}
+            onChangeText={setMessage}
+            placeholder="Ask Zotigo…"
+            placeholderTextColor={colors.muted}
+            style={[
+              styles.input,
+              {
+                borderWidth: 0,
+                backgroundColor: "transparent",
+                minHeight: 72,
+                maxHeight: 160,
+              },
+            ]}
+          />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <IconButton
+              icon={Shield}
+              label={approvalPolicyLabel(policy)}
               disabled={busy}
-              onPress={() =>
-                setWorkspace((value) => (value ? { ...value } : value))
+              onPress={() => setPanel("policy")}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Model and reasoning"
+              disabled={busy || (agent === "zotigo" && !workspace)}
+              onPress={() => setPanel("model")}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                justifyContent: "center",
+                paddingHorizontal: 8,
+              }}
+            >
+              <Text numberOfLines={1} style={styles.muted}>
+                {agent === "codex"
+                  ? [model || "Loading models…", effort]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : profile || "Choose profile"}
+              </Text>
+            </Pressable>
+            <IconButton
+              icon={ArrowUp}
+              label={busy ? "Creating…" : "Create session and send"}
+              disabled={
+                busy ||
+                !message.trim() ||
+                !catalog ||
+                !sessionContextReady(
+                  workspace,
+                  agent,
+                  profiles,
+                  profilesDirectory,
+                  profile,
+                ) ||
+                selected?.availability !== "available" ||
+                (agent === "codex" && !model) ||
+                (selected?.capabilities.approvals === false &&
+                  policy !== "bypass_permissions")
               }
+              onPress={() => void create()}
             />
-          )}
-          {workspace && !profiles && !profileError && <Loading />}
-          {profiles?.profiles.map((p) => (
-            <Action
-              key={p.name}
-              label={`${p.name === profile ? "Selected: " : ""}${p.name} · ${p.model}`}
-              onPress={() => setProfile(p.name)}
-              disabled={busy}
-            />
-          ))}
-        </Section>
-      ) : (
-        <Section title="Model">
-          {selected?.models?.map((m) => (
-            <View key={m.id}>
+          </View>
+        </View>
+      </View>
+      <BottomSheet
+        visible={panel !== null}
+        scroll={panel !== "workspace"}
+        disabled={busy}
+        title={
+          panel === "workspace"
+            ? projectId
+              ? (projects.find((p) => p.id === projectId)?.name ?? "Workspaces")
+              : "Projects"
+            : panel === "agent"
+              ? "Runtime"
+              : panel === "policy"
+                ? "Permissions"
+                : agent === "codex"
+                  ? "Model and reasoning"
+                  : "Profile"
+        }
+        onClose={() => setPanel(null)}
+      >
+        <Notice text={error} error />
+        {panel === "workspace" && (
+          <>
+            {projectId && (
               <Action
-                label={`${m.id === model ? "Selected: " : ""}${m.display_name}`}
-                disabled={busy}
+                label="All projects"
+                secondary
                 onPress={() => {
-                  setModel(m.id);
-                  setEffort(m.supported_reasoning_efforts[0] ?? "");
+                  setProjectId(undefined);
+                  setSearch("");
                 }}
               />
-              {m.id === model &&
-                m.supported_reasoning_efforts.map((e) => (
-                  <Action
-                    key={e}
-                    label={`${e === effort ? "Selected: " : ""}${e}`}
-                    secondary
-                    disabled={busy}
-                    onPress={() => setEffort(e)}
+            )}
+            <TextField
+              label={projectId ? "Search workspaces" : "Search projects"}
+              value={search}
+              onChangeText={setSearch}
+            />
+            <Notice text={pickerError} error />
+            {pickerLoading ? (
+              <Loading />
+            ) : (
+              <FlatList
+                style={{ flexGrow: 0 }}
+                keyboardShouldPersistTaps="handled"
+                data={(projectId
+                  ? workspaces.map((w) => ({
+                      id: w.id,
+                      title: w.title,
+                      subtitle: w.root_path,
+                    }))
+                  : projects.map((p) => ({
+                      id: p.id,
+                      title: p.name,
+                      subtitle: "",
+                    }))
+                ).filter((row) =>
+                  row.title.toLowerCase().includes(search.toLowerCase()),
+                )}
+                keyExtractor={(row) => row.id}
+                ListEmptyComponent={
+                  <Notice
+                    text={
+                      search
+                        ? "No matches."
+                        : projectId
+                          ? "No ready workspaces in this project."
+                          : "No projects. Create a project and workspace from Home first."
+                    }
                   />
-                ))}
-            </View>
-          ))}
-        </Section>
-      )}
-      <Section title="Permissions">
-        {selected?.capabilities.approvals === false && (
-          <Notice text="This runtime does not support approval requests. Explicitly enable bypass approvals to create a session." />
+                }
+                renderItem={({ item }) => (
+                  <ChoiceRow
+                    icon={Folder}
+                    title={item.title}
+                    subtitle={item.subtitle}
+                    selected={projectId ? workspace?.id === item.id : undefined}
+                    onPress={() => {
+                      if (projectId) {
+                        setWorkspace(workspaces.find((w) => w.id === item.id));
+                        setPanel(null);
+                      } else {
+                        setProjectId(item.id);
+                        setSearch("");
+                      }
+                    }}
+                  />
+                )}
+              />
+            )}
+          </>
         )}
-        <Action
-          label={
-            policy === "auto"
-              ? "Selected: request approvals"
-              : "Request approvals"
-          }
-          disabled={busy || selected?.capabilities.approvals === false}
-          onPress={() => setPolicy("auto")}
-        />
-        <Action
-          label={
-            policy === "bypass_permissions"
-              ? "Selected: bypass approvals"
-              : "Bypass approvals"
-          }
-          disabled={busy}
-          danger
-          onPress={() =>
-            Alert.alert(
-              "Bypass approvals?",
-              "Tools can run without asking you for approval.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Enable",
-                  style: "destructive",
-                  onPress: () => setPolicy("bypass_permissions"),
-                },
-              ],
-            )
-          }
-        />
-      </Section>
-      <Notice text={error} error />
-      <Action
-        label={busy ? "Creating…" : "Create conversation"}
-        disabled={
-          busy ||
-          !catalog ||
-          !sessionContextReady(
-            workspace,
-            agent,
-            profiles,
-            profilesDirectory,
-            profile,
-          ) ||
-          selected?.availability !== "available" ||
-          (agent === "codex" && !model) ||
-          (selected?.capabilities.approvals === false &&
-            policy !== "bypass_permissions")
-        }
-        onPress={() => void create()}
-      />
-      <Text style={styles.muted}>
-        Your first message starts the session on this device.
-      </Text>
-    </Screen>
+        {panel === "agent" &&
+          catalog?.agents.map((a) => (
+            <ChoiceRow
+              key={a.id}
+              title={a.label}
+              subtitle={a.availability}
+              selected={a.id === agent}
+              onPress={() => {
+                setAgent(a.id);
+                setPanel(null);
+              }}
+            />
+          ))}
+        {panel === "model" && (
+          <>
+            {agent === "codex" ? (
+              <ModelPicker
+                models={selected?.models ?? []}
+                model={model}
+                effort={effort}
+                disabled={busy}
+                onConfirm={(m, e) => {
+                  setModel(m);
+                  setEffort(e);
+                  setPanel(null);
+                }}
+              />
+            ) : (
+              <>
+                <Notice text={profileError} error />
+                {profileError && (
+                  <Action
+                    label="Reload workspace profiles"
+                    disabled={busy}
+                    onPress={() => setWorkspace((w) => (w ? { ...w } : w))}
+                  />
+                )}
+                {workspace && !profiles && !profileError && <Loading />}
+                {profiles && (
+                  <ProfilePicker
+                    profiles={profiles.profiles}
+                    selected={profile}
+                    disabled={busy}
+                    onSelect={(name) => {
+                      setProfile(name);
+                      setPanel(null);
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </>
+        )}
+        {panel === "policy" && (
+          <>
+            <Section title="Permissions">
+              {selected?.capabilities.approvals === false && (
+                <Notice text="This runtime does not support approval requests. Explicitly enable bypass approvals to create a session." />
+              )}
+              <ChoiceRow
+                title={approvalPolicyLabel("auto")}
+                subtitle={approvalPolicyDescription("auto")}
+                selected={policy === "auto"}
+                disabled={busy || selected?.capabilities.approvals === false}
+                onPress={() => {
+                  setPolicy("auto");
+                  setPanel(null);
+                }}
+              />
+              <ChoiceRow
+                title={approvalPolicyLabel("bypass_permissions")}
+                subtitle={approvalPolicyDescription("bypass_permissions")}
+                selected={policy === "bypass_permissions"}
+                disabled={busy}
+                onPress={() =>
+                  Alert.alert(
+                    "Bypass approvals?",
+                    "Tools can run without asking you for approval.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Enable",
+                        style: "destructive",
+                        onPress: () => {
+                          setPolicy("bypass_permissions");
+                          setPanel(null);
+                        },
+                      },
+                    ],
+                  )
+                }
+              />
+            </Section>
+          </>
+        )}
+      </BottomSheet>
+    </KeyboardAvoidingView>
   );
 }

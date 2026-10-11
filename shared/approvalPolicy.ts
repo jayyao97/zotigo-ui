@@ -6,3 +6,7 @@ export function approvalPolicyLabel(policy: ApprovalPolicy | null): string {
   if (policy === "bypass_permissions") return t("channelsPage.fullAccess");
   return policy === "manual" ? t("approvalPolicy.manual") : t("channelsPage.auto");
 }
+
+export function approvalPolicyDescription(policy: ApprovalPolicy): string {
+  return policy === "auto" ? "Use safety checks and request approval when needed" : "Run tools without safety classification or approval";
+}
