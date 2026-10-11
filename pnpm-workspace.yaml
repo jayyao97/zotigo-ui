@@ -1,3 +1,6 @@
+packages:
+  - mobile
+  - shared
 allowBuilds:
   electron: true
   esbuild: true
