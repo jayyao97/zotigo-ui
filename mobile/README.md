@@ -1,0 +1,71 @@
+# Zotigo Mobile
+
+React Native and Expo client for Zotigo daemons. The app connects directly to the public HTTP/SSE API and shares types and display logic through `@zotigo/shared`. It does not depend on Electron or the Node backend.
+
+## Development
+
+Use Node.js compatible with the React Native version in `package.json` and the pnpm version pinned by the repository. Run installation from the repository root so workspace dependencies resolve correctly:
+
+```sh
+corepack pnpm install --frozen-lockfile
+corepack pnpm --filter @zotigo/mobile start
+```
+
+The mobile package requires the root workspace configuration, lockfile, and `shared/` package. Native dependencies and Expo configuration changes require rebuilding the native app; ordinary TypeScript changes use Metro updates.
+
+## iOS builds
+
+Local iOS builds require macOS, Xcode, and an installed iOS Simulator runtime. From `mobile/`:
+
+```sh
+# Generate the native project, install Pods, and run in the simulator.
+corepack pnpm exec expo run:ios
+
+# Build and install on a connected device.
+corepack pnpm exec expo run:ios --device
+
+# Include the JavaScript bundle for use without Metro.
+corepack pnpm exec expo run:ios --configuration Release --device
+```
+
+Device builds require Xcode signing configuration. Use a suitable bundle identifier in `app.config.ts`, select a signing team in the generated Xcode workspace, and enable Developer Mode on the device when required. Allow local network access when connecting to a LAN daemon. See [Expo local builds](https://docs.expo.dev/guides/local-app-development/) for environment setup.
+
+The generated `ios/` and `android/` directories are ignored. Keep native configuration in `app.config.ts` and config plugins.
+
+## Connecting to daemons
+
+Add each device with a name, daemon origin, and token. Test the connection, then select the device to open its projects and conversations. The phone must be able to reach the daemon over its configured network or VPN.
+
+Tokens use SecureStore; device metadata and drafts use AsyncStorage. Drafts are scoped by device and session. Editing a name or token preserves device identity; changing the origin adds a separate device. Only the selected device has an active navigation context, and conversation streams stop when the screen loses focus or the app enters the background.
+
+## Features and limits
+
+The app supports project and workspace management, source registration, session search, streaming conversations, image attachments, skills, approvals, interactive questions, session controls, and remote text-file editing. Settings expose daemon health, runtimes, profiles, and skills. Channels support browsing and navigation to associated sessions.
+
+Current limits:
+
+- No permanent project/workspace deletion, custom navigation ordering, or project/workspace pinning.
+- No archived-history browser, full Mermaid rendering, or desktop diff/editor parity.
+- Text editing is limited to 256 KiB. Revision conflicts preserve the draft; file content reload is manual, with a freshness reminder on foreground return.
+- Channel configuration editing, push notifications, and background streaming are not implemented.
+- Navigation does not restore the last open page after restarting the app.
+
+See [Mobile architecture](../docs/mobile-architecture.md) for module ownership and state invariants.
+
+## Checks
+
+From the repository root:
+
+```sh
+corepack pnpm --filter @zotigo/mobile typecheck
+corepack pnpm --filter @zotigo/mobile test
+corepack pnpm --filter @zotigo/mobile export:ios --max-workers 2
+```
+
+The default tests do not contact a running daemon. The optional integration test starts an isolated child daemon with temporary storage and credentials; it does not start a model worker:
+
+```sh
+ZOTIGO_MOBILE_TEST_DAEMON=/absolute/path/zotigod corepack pnpm --filter @zotigo/mobile exec tsx --test tests/daemon.integration.ts
+```
+
+Run the root tests, typecheck, and build after changing shared code or workspace configuration. JavaScript export checks bundle construction only; native compilation, signing, Keychain, network behavior, gestures, keyboard handling, and scrolling performance require iOS validation.
