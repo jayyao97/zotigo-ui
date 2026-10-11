@@ -1,3 +1,4 @@
+import Gauge from "lucide-react-native/icons/gauge";
 import { ComposerSkills } from "../components/ComposerSkills";
 import ArrowUp from "lucide-react-native/icons/arrow-up";
 import Shield from "lucide-react-native/icons/shield";
@@ -405,26 +406,13 @@ export function NewSessionScreen() {
               disabled={busy}
               onPress={() => setPanel("policy")}
             />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Model and reasoning"
+            <View style={{ flex: 1 }} />
+            <IconButton
+              icon={Gauge}
+              label="Model and reasoning"
               disabled={busy || (agent === "zotigo" && !workspace)}
               onPress={() => setPanel("model")}
-              style={{
-                flex: 1,
-                minHeight: 44,
-                justifyContent: "center",
-                paddingHorizontal: 8,
-              }}
-            >
-              <Text numberOfLines={1} style={styles.muted}>
-                {agent === "codex"
-                  ? [model || "Loading models…", effort]
-                      .filter(Boolean)
-                      .join(" · ")
-                  : profile || "Choose profile"}
-              </Text>
-            </Pressable>
+            />
             <IconButton
               icon={ArrowUp}
               label={busy ? "Creating…" : "Create session and send"}
@@ -555,6 +543,9 @@ export function NewSessionScreen() {
           ))}
         {panel === "model" && (
           <>
+            <Notice
+              text={`Current: ${agent === "codex" ? [model || "Loading…", effort].filter(Boolean).join(" · ") : profile || "Choose profile"}`}
+            />
             {agent === "codex" ? (
               <ModelPicker
                 models={selected?.models ?? []}
