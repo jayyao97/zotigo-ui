@@ -1,12 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Folder from "lucide-react-native/icons/folder";
+import Ellipsis from "lucide-react-native/icons/ellipsis";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Alert,
   FlatList,
   Modal,
   SafeAreaView,
+  ScrollView,
+  Pressable,
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import {
@@ -29,23 +42,50 @@ import type { Routes } from "../navigation";
 import {
   TextField,
   Action,
+  IconButton,
   Row,
   Notice,
   Section,
   errorText,
 } from "../components/ui";
-import { sessionId, sessionTitle, visibleSessions } from "../core/catalog";
+import {
+  sessionId,
+  sessionTitle,
+  visibleSessions,
+  pathLabel,
+} from "../core/catalog";
 
 type Nav = NativeStackNavigationProp<Routes>;
 const css = StyleSheet.create({
   page: { flex: 1, backgroundColor: "#181818" },
-  body: { padding: 16, gap: 12 },
+  body: { paddingHorizontal: 16, paddingBottom: 16, gap: 0 },
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#383838",
+  },
+  heading: {
+    color: "#898989",
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 22,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+  },
+  toolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+  },
   text: { color: "#ededed", fontSize: 16 },
   title: {
     color: "#ededed",
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "600",
-    marginVertical: 12,
+    marginVertical: 8,
   },
   line: {
     flexDirection: "row",
@@ -126,12 +166,24 @@ function useMutation() {
   };
   return { busy, error, run, isCurrent };
 }
+function Footer({ children }: { children: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[css.footer, { paddingBottom: Math.max(16, insets.bottom) }]}>
+      {children}
+    </View>
+  );
+}
 function SessionRow({ item }: { item: CatalogSessionProjection }) {
   const nav = useNavigation<Nav>();
   return (
     <Row
-      title={`${item.organization?.pinned_at ? "Pinned · " : ""}${sessionTitle(item)}`}
-      subtitle={`${item.runtime?.working ? "Working" : (item.runtime?.state ?? item.availability)} · ${item.runtime?.working_directory ?? ""}`}
+      title={sessionTitle(item)}
+      subtitle={
+        item.runtime?.working
+          ? `Working · ${pathLabel(item.runtime.working_directory ?? "")}`
+          : undefined
+      }
       onPress={() =>
         nav.navigate("Conversation", {
           id: sessionId(item),
@@ -146,8 +198,7 @@ export function HomeScreen() {
   const nav = useNavigation<Nav>();
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [tab, setTab] = useState<"sessions" | "projects">("sessions");
+  const [panel, setPanel] = useState<"menu" | "project" | null>(null);
   const action = useMutation();
   const load = useCatalogLoad(
     useCallback(async () => {
@@ -159,47 +210,64 @@ export function HomeScreen() {
     }, [daemon]),
   );
   type HomeItem =
+    | { kind: "heading"; value: string }
     | { kind: "project"; value: CatalogProject }
     | { kind: "session"; value: CatalogSessionProjection };
-  const rows = useMemo<HomeItem[]>(
-    () =>
-      tab === "sessions"
-        ? visibleSessions(load.data?.sessions ?? [], query).map((value) => ({
-            kind: "session",
-            value,
-          }))
-        : (load.data?.projects ?? [])
-            .filter((project) =>
-              project.name
-                .toLocaleLowerCase()
-                .includes(query.trim().toLocaleLowerCase()),
-            )
-            .map((value) => ({ kind: "project", value })),
-    [load.data, query, tab],
-  );
+  const rows = useMemo<HomeItem[]>(() => {
+    const sessions = visibleSessions(load.data?.sessions ?? [], query);
+    const pinned = sessions.filter((item) => item.organization?.pinned_at);
+    const recent = sessions.filter((item) => !item.organization?.pinned_at);
+    const projects = (load.data?.projects ?? []).filter((item) =>
+      item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+    );
+    return [
+      ...(pinned.length
+        ? [
+            { kind: "heading" as const, value: "Pinned" },
+            ...pinned.map((value) => ({ kind: "session" as const, value })),
+          ]
+        : []),
+      ...(projects.length
+        ? [
+            { kind: "heading" as const, value: "Projects" },
+            ...projects.map((value) => ({ kind: "project" as const, value })),
+          ]
+        : []),
+      ...(recent.length
+        ? [
+            { kind: "heading" as const, value: "Recent" },
+            ...recent.map((value) => ({ kind: "session" as const, value })),
+          ]
+        : []),
+    ];
+  }, [load.data, query]);
   return (
-    <>
+    <View style={css.page}>
       <FlatList
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
-        style={css.page}
         contentContainerStyle={css.body}
         data={rows}
         keyExtractor={(item) =>
-          item.kind === "project"
-            ? "project:" + item.value.id
-            : "session:" + sessionId(item.value)
+          item.kind === "heading"
+            ? "heading:" + item.value
+            : item.kind === "project"
+              ? "project:" + item.value.id
+              : "session:" + sessionId(item.value)
         }
-        initialNumToRender={12}
+        initialNumToRender={18}
         windowSize={7}
         refreshing={load.loading}
         onRefresh={() => void load.refresh()}
         renderItem={({ item }) =>
-          item.kind === "session" ? (
+          item.kind === "heading" ? (
+            <Text style={css.heading}>{item.value}</Text>
+          ) : item.kind === "session" ? (
             <SessionRow item={item.value} />
           ) : (
             <Row
               title={item.value.name}
+              leading={<Folder size={20} color="#afafaf" />}
               onPress={() =>
                 nav.navigate("Project", {
                   id: item.value.id,
@@ -210,121 +278,156 @@ export function HomeScreen() {
           )
         }
         ListHeaderComponent={
-          <View style={{ gap: 8 }}>
-            <Text style={css.title}>{daemon.connection.name}</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
-              <Action
-                label="Settings"
-                secondary
-                onPress={() => nav.navigate("Settings")}
-              />
-              <Action
-                label="Channels"
-                secondary
-                onPress={() => nav.navigate("Channels")}
-              />
-              <Action
-                label="Files"
-                secondary
-                onPress={() => nav.navigate("Files", {})}
-              />
-            </View>
-            <Action
-              label="New session"
-              onPress={() => nav.navigate("NewSession", {})}
-            />
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <Action
-                label={tab === "sessions" ? "✓ Sessions" : "Sessions"}
-                secondary={tab !== "sessions"}
-                onPress={() => setTab("sessions")}
-              />
-              <Action
-                label={tab === "projects" ? "✓ Projects" : "Projects"}
-                secondary={tab !== "projects"}
-                onPress={() => setTab("projects")}
-              />
-            </View>
-            <TextField
-              label={tab === "sessions" ? "Search sessions" : "Search projects"}
-              value={query}
-              onChangeText={setQuery}
-            />
-            {tab === "projects" ? (
-              <Action
-                label="New project"
-                secondary
-                onPress={() => setCreating(true)}
-              />
-            ) : (
-              <Action
-                label="Sync Codex sessions"
-                secondary
+          <>
+            <View style={[css.toolbar, { gap: 8 }]}>
+              <View style={{ flex: 1 }}>
+                <TextInput
+                  accessibilityLabel="Search sessions and projects"
+                  placeholder="Search sessions and projects"
+                  placeholderTextColor="#898989"
+                  value={query}
+                  onChangeText={setQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    height: 40,
+                    borderRadius: 12,
+                    backgroundColor: "#212121",
+                    paddingHorizontal: 12,
+                    color: "#ededed",
+                    fontSize: 14,
+                  }}
+                />
+              </View>
+              <IconButton
+                icon={Ellipsis}
+                label="More options"
                 disabled={action.busy}
-                onPress={() =>
-                  void action.run(async () => {
-                    await daemon.catalog(true);
-                    await load.refresh();
-                  })
-                }
+                onPress={() => setPanel("menu")}
               />
-            )}
-            {!!(load.error || action.error) && (
-              <Notice text={load.error || action.error} error />
-            )}
-          </View>
+            </View>
+            <Notice text={load.error || action.error} error />
+          </>
         }
         ListEmptyComponent={
           <Notice
-            text={
-              load.loading
-                ? "Loading…"
-                : tab === "sessions"
-                  ? "No matching sessions. Pull to refresh."
-                  : "No matching projects."
-            }
+            text={load.loading ? "Loading…" : "No sessions or projects."}
           />
         }
       />
+      <Footer>
+        <Action
+          label="New conversation"
+          disabled={action.busy}
+          onPress={() => nav.navigate("NewSession", {})}
+        />
+      </Footer>
       <Modal
-        visible={creating}
+        visible={panel !== null}
         animationType="slide"
         onRequestClose={() => {
-          if (!action.busy) setCreating(false);
+          if (!action.busy) setPanel(null);
         }}
       >
         <SafeAreaView style={css.page}>
-          <View style={css.body}>
-            <Text style={css.title}>New project</Text>
-            <TextField
-              label="Project name"
-              value={name}
-              onChangeText={setName}
-            />
-            <Notice text={action.error} error />
-            <Action
-              label="Create project"
-              disabled={action.busy || !name.trim()}
-              onPress={() =>
-                void action.run(async () => {
-                  const p = await daemon.createProject(name.trim());
-                  if (daemon.signal.aborted || !action.isCurrent()) return;
-                  setName("");
-                  setCreating(false);
-                  nav.navigate("Project", { id: p.id, title: p.name });
-                })
-              }
-            />
-            <Action
-              label="Cancel"
-              secondary
-              disabled={action.busy}
-              onPress={() => setCreating(false)}
-            />
-          </View>
+          <ScrollView
+            contentContainerStyle={{ padding: 20, gap: 12 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={css.toolbar}>
+              <Text style={css.title}>
+                {panel === "project" ? "New project" : "More"}
+              </Text>
+              <Action
+                label="Done"
+                secondary
+                disabled={action.busy}
+                onPress={() => setPanel(null)}
+              />
+            </View>
+            {panel === "project" ? (
+              <>
+                <TextField
+                  label="Project name"
+                  value={name}
+                  onChangeText={setName}
+                />
+                <Notice text={action.error} error />
+                <Action
+                  label="Create project"
+                  disabled={action.busy || !name.trim()}
+                  onPress={() =>
+                    void action.run(async () => {
+                      const project = await daemon.createProject(name.trim());
+                      if (!action.isCurrent() || daemon.signal.aborted) return;
+                      setPanel(null);
+                      setName("");
+                      nav.navigate("Project", {
+                        id: project.id,
+                        title: project.name,
+                      });
+                    })
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <Row
+                  title="New project"
+                  onPress={action.busy ? undefined : () => setPanel("project")}
+                />
+                <Row
+                  title="Files"
+                  onPress={
+                    action.busy
+                      ? undefined
+                      : () => {
+                          setPanel(null);
+                          nav.navigate("Files", {});
+                        }
+                  }
+                />
+                <Row
+                  title="Channels"
+                  onPress={
+                    action.busy
+                      ? undefined
+                      : () => {
+                          setPanel(null);
+                          nav.navigate("Channels");
+                        }
+                  }
+                />
+                <Row
+                  title="Settings"
+                  onPress={
+                    action.busy
+                      ? undefined
+                      : () => {
+                          setPanel(null);
+                          nav.navigate("Settings");
+                        }
+                  }
+                />
+                <Action
+                  label={action.busy ? "Syncing…" : "Sync Codex sessions"}
+                  secondary
+                  disabled={action.busy}
+                  onPress={() =>
+                    void action.run(async () => {
+                      await daemon.catalog(true);
+                      await load.refresh();
+                      if (action.isCurrent()) setPanel(null);
+                    })
+                  }
+                />
+                <Notice text={action.error} error />
+              </>
+            )}
+          </ScrollView>
         </SafeAreaView>
       </Modal>
-    </>
+    </View>
   );
 }
 function SourceOptions({
@@ -339,7 +442,16 @@ function SourceOptions({
   return (
     <View>
       <View style={css.line}>
-        <Text style={[css.text, { flex: 1 }]}>{source.canonical_path}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Source details: ${source.canonical_path}`}
+          onPress={() => Alert.alert("Source", source.canonical_path)}
+          style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
+        >
+          <Text style={css.text} numberOfLines={1}>
+            {pathLabel(source.canonical_path)}
+          </Text>
+        </Pressable>
         <Switch
           accessibilityLabel={`Include ${source.canonical_path}`}
           value={!!value}
@@ -487,32 +599,32 @@ export function ProjectScreen() {
   const daemon = useDaemon();
   const nav = useNavigation<Nav>();
   const [name, setName] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [panel, setPanel] = useState<"manage" | "create" | null>(null);
   const action = useMutation();
   const load = useCatalogLoad(
-    useCallback(
-      async () => ({
-        project: await daemon.project(params.id),
-        workspaces: await daemon.workspaces(params.id),
-      }),
-      [daemon, params.id],
-    ),
+    useCallback(async () => {
+      const [project, workspaces] = await Promise.all([
+        daemon.project(params.id),
+        daemon.workspaces(params.id),
+      ]);
+      return { project, workspaces };
+    }, [daemon, params.id]),
   );
   return (
-    <>
+    <View style={css.page}>
       <FlatList
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        style={css.page}
         contentContainerStyle={css.body}
-        data={load.data?.workspaces.filter((w) => w.status !== "deleted") ?? []}
-        keyExtractor={(w) => w.id}
+        data={
+          load.data?.workspaces.filter((item) => item.status !== "deleted") ??
+          []
+        }
+        keyExtractor={(item) => item.id}
         refreshing={load.loading}
         onRefresh={() => void load.refresh()}
         renderItem={({ item }) => (
           <Row
             title={item.title}
-            subtitle={item.status}
+            subtitle={item.status === "ready" ? undefined : item.status}
             onPress={() =>
               nav.navigate("Workspace", { id: item.id, title: item.title })
             }
@@ -520,64 +632,102 @@ export function ProjectScreen() {
         )}
         ListHeaderComponent={
           <>
-            <Text style={css.title}>
-              {load.data?.project.name ?? params.title}
-            </Text>
-            <Action
-              label="Project sources"
-              onPress={() =>
-                nav.navigate("Sources", {
-                  projectId: params.id,
-                  title: params.title,
-                })
-              }
-            />
-            <Action
-              label="New workspace"
-              disabled={!load.data}
-              onPress={() => setCreating(true)}
-            />
-            <TextField
-              label="Rename project"
-              value={name}
-              onChangeText={setName}
-            />
-            <Action
-              label="Save name"
-              secondary
-              disabled={action.busy || !name.trim()}
-              onPress={() =>
-                void action.run(async () => {
-                  await daemon.renameProject(params.id, name.trim());
-                  await load.refresh();
-                })
-              }
-            />
+            <View style={css.toolbar}>
+              <Text style={css.muted}>Workspaces</Text>
+              <Action
+                label="Manage"
+                secondary
+                onPress={() => {
+                  setName(load.data?.project.name ?? params.title);
+                  setPanel("manage");
+                }}
+              />
+            </View>
             <Notice text={load.error || action.error} error />
-            <Text style={css.title}>Workspaces</Text>
           </>
         }
         ListEmptyComponent={
           <Notice text={load.loading ? "Loading…" : "No workspaces yet."} />
         }
       />
+      <Footer>
+        <Action
+          label="New workspace"
+          disabled={!load.data || action.busy}
+          onPress={() => setPanel("create")}
+        />
+      </Footer>
       <Modal
-        visible={creating}
+        visible={panel !== null}
         animationType="slide"
-        onRequestClose={() => setCreating(false)}
+        onRequestClose={() => {
+          if (!action.busy) setPanel(null);
+        }}
       >
-        {creating && load.data && (
+        {panel === "create" && load.data ? (
           <WorkspaceForm
             project={load.data.project}
-            close={() => setCreating(false)}
+            close={() => setPanel(null)}
             created={(id, title) => {
-              setCreating(false);
+              setPanel(null);
               nav.navigate("Workspace", { id, title });
             }}
           />
+        ) : (
+          <SafeAreaView style={css.page}>
+            <ScrollView
+              contentContainerStyle={{ padding: 20, gap: 12 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={css.toolbar}>
+                <Text style={css.title}>Project</Text>
+                <Action
+                  label="Done"
+                  secondary
+                  disabled={action.busy}
+                  onPress={() => setPanel(null)}
+                />
+              </View>
+              <Row
+                title="Project sources"
+                onPress={
+                  action.busy
+                    ? undefined
+                    : () => {
+                        setPanel(null);
+                        nav.navigate("Sources", {
+                          projectId: params.id,
+                          title: params.title,
+                        });
+                      }
+                }
+              />
+              <TextField
+                label="Project name"
+                value={name}
+                onChangeText={setName}
+              />
+              <Notice text={action.error} error />
+              <Action
+                label="Save name"
+                secondary
+                disabled={action.busy || !name.trim()}
+                onPress={() =>
+                  void action.run(async () => {
+                    await daemon.renameProject(params.id, name.trim());
+                    await load.refresh();
+                    if (action.isCurrent()) {
+                      nav.setParams({ title: name.trim() });
+                      setPanel(null);
+                    }
+                  })
+                }
+              />
+            </ScrollView>
+          </SafeAreaView>
         )}
       </Modal>
-    </>
+    </View>
   );
 }
 function AttachSourceForm({
@@ -659,7 +809,7 @@ export function WorkspaceScreen() {
   const daemon = useDaemon();
   const nav = useNavigation<Nav>();
   const [title, setTitle] = useState("");
-  const [addingSource, setAddingSource] = useState(false);
+  const [panel, setPanel] = useState<"manage" | "add" | null>(null);
   const action = useMutation();
   const load = useCatalogLoad(
     useCallback(async () => {
@@ -703,11 +853,8 @@ export function WorkspaceScreen() {
     });
   const workspace = load.data?.workspace;
   return (
-    <>
+    <View style={css.page}>
       <FlatList
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        style={css.page}
         contentContainerStyle={css.body}
         data={sessions}
         keyExtractor={sessionId}
@@ -716,122 +863,172 @@ export function WorkspaceScreen() {
         renderItem={({ item }) => <SessionRow item={item} />}
         ListHeaderComponent={
           <>
-            <Text style={css.title}>{workspace?.title ?? params.title}</Text>
-            <Notice
-              text={
-                workspace
-                  ? `${workspace.status} · ${workspace.root_path}`
-                  : "Loading…"
-              }
-            />
+            <View style={css.toolbar}>
+              <Text style={css.muted}>
+                {workspace?.status === "ready"
+                  ? "Conversations"
+                  : (workspace?.status ?? "Loading…")}
+              </Text>
+              <View style={{ flexDirection: "row" }}>
+                <Action
+                  label="Files"
+                  secondary
+                  disabled={!workspace?.root_path || action.busy}
+                  onPress={() =>
+                    nav.navigate("Files", { path: workspace?.root_path })
+                  }
+                />
+                <Action
+                  label="Manage"
+                  secondary
+                  onPress={() => {
+                    setTitle(workspace?.title ?? params.title);
+                    setPanel("manage");
+                  }}
+                />
+              </View>
+            </View>
             <Notice
               text={load.error || action.error || workspace?.error || ""}
               error
             />
-            <Action
-              label="New session"
-              disabled={workspace?.status !== "ready"}
-              onPress={() =>
-                nav.navigate("NewSession", {
-                  workspaceId: params.id,
-                  directory: workspace?.root_path,
-                })
-              }
-            />
-            <Action
-              label="Workspace files"
-              disabled={!workspace?.root_path}
-              onPress={() =>
-                nav.navigate("Files", { path: workspace?.root_path })
-              }
-            />
-            <Section title="Sources">
-              {load.data?.sources.map((s) => (
-                <Row
-                  key={s.source.id}
-                  title={s.source.canonical_path}
-                  subtitle={[
-                    s.status,
-                    s.branch_name,
-                    s.base_ref,
-                    s.mode,
-                    s.error,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                  onPress={() => nav.navigate("Files", { path: s.target_path })}
-                />
-              ))}
-            </Section>
-            <Action
-              label="Add source to workspace"
-              disabled={workspace?.status !== "ready"}
-              onPress={() => setAddingSource(true)}
-            />
-            <TextField
-              label="Rename workspace"
-              value={title}
-              onChangeText={setTitle}
-            />
-            <Action
-              label="Save title"
-              secondary
-              disabled={action.busy || !title.trim()}
-              onPress={() =>
-                void action.run(async () => {
-                  await daemon.renameWorkspace(params.id, title.trim());
-                  await load.refresh();
-                })
-              }
-            />
-            {workspace?.status === "error" && (
-              <Action
-                label="Retry provisioning"
-                disabled={action.busy}
-                onPress={() =>
-                  void action.run(async () => {
-                    await daemon.retryWorkspace(params.id);
-                    await load.refresh();
-                  })
-                }
-              />
-            )}
-            <Action
-              label="Review archive"
-              danger
-              disabled={
-                action.busy ||
-                !workspace ||
-                !["ready", "error"].includes(workspace.status)
-              }
-              onPress={archive}
-            />
-            <Text style={css.title}>Sessions</Text>
           </>
         }
         ListEmptyComponent={
-          <Notice text="No active sessions in this workspace." />
+          <Notice
+            text={load.loading ? "Loading…" : "No active conversations."}
+          />
         }
       />
+      <Footer>
+        <Action
+          label="New conversation"
+          disabled={workspace?.status !== "ready" || action.busy}
+          onPress={() =>
+            nav.navigate("NewSession", {
+              workspaceId: params.id,
+              directory: workspace?.root_path,
+            })
+          }
+        />
+      </Footer>
       <Modal
-        visible={addingSource}
+        visible={panel !== null}
         animationType="slide"
-        onRequestClose={() => setAddingSource(false)}
+        onRequestClose={() => {
+          if (!action.busy) setPanel(null);
+        }}
       >
-        {addingSource && workspace && (
+        {panel === "add" && workspace ? (
           <AttachSourceForm
             projectId={workspace.project_id}
             workspaceId={params.id}
-            existing={load.data?.sources.map((s) => s.source.id) ?? []}
-            close={() => setAddingSource(false)}
+            existing={load.data?.sources.map((item) => item.source.id) ?? []}
+            close={() => setPanel("manage")}
             attached={() => {
-              setAddingSource(false);
+              setPanel("manage");
               void load.refresh();
             }}
           />
+        ) : (
+          <SafeAreaView style={css.page}>
+            <ScrollView
+              contentContainerStyle={{ padding: 20, gap: 12 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={css.toolbar}>
+                <Text style={css.title}>Workspace</Text>
+                <Action
+                  label="Done"
+                  secondary
+                  disabled={action.busy}
+                  onPress={() => setPanel(null)}
+                />
+              </View>
+              <Text selectable style={css.muted}>
+                {workspace?.root_path}
+              </Text>
+              <Section title="Sources">
+                {load.data?.sources.map((item) => (
+                  <Row
+                    key={item.source.id}
+                    title={pathLabel(item.source.canonical_path)}
+                    subtitle={[
+                      item.branch_name,
+                      item.base_ref,
+                      item.mode,
+                      item.status,
+                      item.error,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    onPress={
+                      action.busy
+                        ? undefined
+                        : () => {
+                            setPanel(null);
+                            nav.navigate("Files", { path: item.target_path });
+                          }
+                    }
+                  />
+                ))}
+              </Section>
+              <Action
+                label="Add source"
+                secondary
+                disabled={workspace?.status !== "ready" || action.busy}
+                onPress={() => setPanel("add")}
+              />
+              <TextField
+                label="Workspace name"
+                value={title}
+                onChangeText={setTitle}
+              />
+              <Action
+                label="Save name"
+                secondary
+                disabled={action.busy || !title.trim()}
+                onPress={() =>
+                  void action.run(async () => {
+                    await daemon.renameWorkspace(params.id, title.trim());
+                    await load.refresh();
+                    if (action.isCurrent()) {
+                      nav.setParams({ title: title.trim() });
+                      setPanel(null);
+                    }
+                  })
+                }
+              />
+              {workspace?.status === "error" && (
+                <Action
+                  label="Retry provisioning"
+                  secondary
+                  disabled={action.busy}
+                  onPress={() =>
+                    void action.run(async () => {
+                      await daemon.retryWorkspace(params.id);
+                      await load.refresh();
+                    })
+                  }
+                />
+              )}
+              <Action
+                label="Review archive"
+                danger
+                secondary
+                disabled={
+                  action.busy ||
+                  !workspace ||
+                  !["ready", "error"].includes(workspace.status)
+                }
+                onPress={archive}
+              />
+              <Notice text={action.error || workspace?.error || ""} error />
+            </ScrollView>
+          </SafeAreaView>
         )}
       </Modal>
-    </>
+    </View>
   );
 }
 export function SourcesScreen() {
@@ -859,6 +1056,7 @@ export function SourcesScreen() {
         <>
           <Action
             label="Add source"
+            disabled={action.busy}
             onPress={() =>
               nav.navigate("SourcePicker", { projectId: params.projectId })
             }
@@ -869,7 +1067,13 @@ export function SourcesScreen() {
       ListEmptyComponent={<Notice text="No project sources." />}
       renderItem={({ item }) => (
         <Section title={item.kind}>
-          <Row title={item.canonical_path} subtitle={item.folder_mode} />
+          <Row
+            title={pathLabel(item.canonical_path)}
+            subtitle={item.folder_mode}
+          />
+          <Text selectable style={css.muted}>
+            {item.canonical_path}
+          </Text>
           <Action
             label="Remove from project"
             danger

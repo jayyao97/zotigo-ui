@@ -1,3 +1,10 @@
+import ArrowUp from "lucide-react-native/icons/arrow-up";
+import ArrowDown from "lucide-react-native/icons/arrow-down";
+import Plus from "lucide-react-native/icons/plus";
+import Square from "lucide-react-native/icons/square";
+import X from "lucide-react-native/icons/x";
+import Ellipsis from "lucide-react-native/icons/ellipsis";
+import Sparkles from "lucide-react-native/icons/sparkles";
 import {
   useCallback,
   useEffect,
@@ -46,15 +53,19 @@ import type { Routes } from "../navigation";
 import { useDaemon } from "../platform/context";
 import { storage } from "../platform/storage";
 import { Timeline, activeTurn } from "../core/timeline";
+import { TimelineFollow } from "../core/timelineFollow";
 import {
   ComposerStore,
   emptyDraft,
+  submissionAttempt,
   type ComposerState,
   type Draft,
 } from "../core/composer";
 import { ApiError } from "../core/client";
+import { pickedImageInput } from "../core/imageInput";
 import {
   Action,
+  IconButton,
   colors,
   errorText,
   Notice,
@@ -107,7 +118,7 @@ export function ConversationScreen() {
   const [title, setTitle] = useState(route.params.title);
   const [steer, setSteer] = useState(false);
   const list = useRef<FlatList<DisplayItem>>(null);
-  const atBottom = useRef(true);
+  const follow = useRef(new TimelineFollow());
   const [following, setFollowing] = useState(true);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -203,11 +214,11 @@ export function ConversationScreen() {
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = undefined;
     const current = draftRef.current;
-    const attempt = current.attempt ?? {
-      ...current.draft,
-      client_message_id: randomUUID(),
-      steer: steer && !!activeTurn(timeline.snapshot().items),
-    };
+    const attempt = submissionAttempt(
+      current,
+      randomUUID(),
+      steer && !!activeTurn(timeline.snapshot().items),
+    );
     const pending = { draft: current.draft, attempt };
     draftRef.current = pending;
     setSaved(pending);
@@ -255,14 +266,7 @@ export function ConversationScreen() {
     if (result.canceled || !alive.current) return;
     const images = [...draftRef.current.draft.images];
     for (const asset of result.assets) {
-      if (!asset.base64) throw new Error("Image data was unavailable.");
-      if (
-        !["image/png", "image/jpeg", "image/webp"].includes(
-          asset.mimeType ?? "",
-        )
-      )
-        throw new Error("Choose a PNG, JPEG or WebP image.");
-      images.push({ mime_type: asset.mimeType!, data_base64: asset.base64 });
+      images.push(pickedImageInput(asset));
     }
     const sizeError = messageImageSizeError(
       images.map((image) => decodedBase64Size(image.data_base64)),
@@ -338,7 +342,7 @@ export function ConversationScreen() {
   }, [client, id, options, skillsOpen, state.session?.working_directory]);
   const canSend = loaded && !busy && !client.signal.aborted;
   function scrollToBottom() {
-    atBottom.current = true;
+    follow.current.jump();
     setFollowing(true);
     list.current?.scrollToEnd({ animated: true });
   }
@@ -360,20 +364,27 @@ export function ConversationScreen() {
           {client.connection.name} · {state.status}
           {state.session?.model ? " · " + state.session.model : ""}
         </Text>
-        <Action label="Details" secondary onPress={() => setOptions(true)} />
+        <IconButton
+          icon={Ellipsis}
+          label="Conversation details"
+          onPress={() => setOptions(true)}
+        />
       </View>
       {!!(state.error || error) && (
         <View style={{ paddingHorizontal: 16 }}>
-          <Notice text={error || state.error} error />
-          <Action
-            label="Reconnect"
-            secondary
-            disabled={busy}
-            onPress={() => {
-              setError("");
-              void timeline.start();
-            }}
-          />
+          <Notice text={error} error />
+          <Notice text={state.error} error />
+          {!!state.error && (
+            <Action
+              label="Reconnect"
+              secondary
+              disabled={busy}
+              onPress={() => {
+                setError("");
+                void timeline.start();
+              }}
+            />
+          )}
         </View>
       )}
       <FlatList
@@ -387,20 +398,50 @@ export function ConversationScreen() {
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        onScrollBeginDrag={() => {
+          follow.current.beginDrag();
+          setFollowing(false);
+        }}
+        onScrollEndDrag={(event) => {
+          const { contentOffset, contentSize, layoutMeasurement } =
+            event.nativeEvent;
+          setFollowing(
+            follow.current.observeDistance(
+              contentSize.height - contentOffset.y - layoutMeasurement.height,
+            ),
+          );
+          follow.current.endDrag();
+        }}
+        onMomentumScrollBegin={() => follow.current.beginMomentum()}
+        onMomentumScrollEnd={(event) => {
+          const { contentOffset, contentSize, layoutMeasurement } =
+            event.nativeEvent;
+          setFollowing(
+            follow.current.observeDistance(
+              contentSize.height - contentOffset.y - layoutMeasurement.height,
+            ),
+          );
+          follow.current.endMomentum();
+        }}
         onScroll={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } =
             event.nativeEvent;
-          atBottom.current =
-            contentSize.height - contentOffset.y - layoutMeasurement.height <
-            100;
-          setFollowing(atBottom.current);
+          setFollowing(
+            follow.current.observeDistance(
+              contentSize.height - contentOffset.y - layoutMeasurement.height,
+            ),
+          );
         }}
         scrollEventThrottle={32}
         onContentSizeChange={() => {
-          if (atBottom.current && !state.loadingOlder && !scrollTimer.current)
+          if (
+            follow.current.following &&
+            !state.loadingOlder &&
+            !scrollTimer.current
+          )
             scrollTimer.current = setTimeout(() => {
               scrollTimer.current = undefined;
-              if (focused.current && atBottom.current)
+              if (focused.current && follow.current.following)
                 list.current?.scrollToEnd({ animated: false });
             }, 80);
         }}
@@ -410,7 +451,7 @@ export function ConversationScreen() {
               label={state.loadingOlder ? "Loading…" : "Load earlier messages"}
               disabled={state.loadingOlder}
               onPress={() => {
-                atBottom.current = false;
+                follow.current.leaveLatest();
                 setFollowing(false);
                 void timeline.older();
               }}
@@ -454,15 +495,19 @@ export function ConversationScreen() {
         }
       />
       {!following && (
-        <Action label="Jump to latest" secondary onPress={scrollToBottom} />
+        <View style={{ alignItems: "center", height: 44 }}>
+          <IconButton
+            icon={ArrowDown}
+            label="Jump to latest"
+            onPress={scrollToBottom}
+          />
+        </View>
       )}
       <View
         style={{
           padding: 12,
           paddingBottom: Math.max(insets.bottom, 12),
           gap: 8,
-          borderTopWidth: 1,
-          borderColor: colors.border,
           backgroundColor: colors.background,
         }}
       >
@@ -479,9 +524,9 @@ export function ConversationScreen() {
                   }}
                   style={{ width: 48, height: 48, borderRadius: 8 }}
                 />
-                <Action
-                  label="Remove"
-                  secondary
+                <IconButton
+                  icon={X}
+                  label={`Remove image ${index + 1}`}
                   disabled={busy || !!saved.attempt}
                   onPress={() =>
                     update({
@@ -496,62 +541,87 @@ export function ConversationScreen() {
         {!!draft.skills.length && (
           <Text style={styles.muted}>Skills: {draft.skills.join(", ")}</Text>
         )}
-        <TextInput
-          accessibilityLabel="Message"
-          editable={canSend && !saved.attempt}
-          multiline
-          value={draft.text}
-          onChangeText={(text) => update({ text })}
-          placeholder="Ask Zotigo…"
-          placeholderTextColor={colors.muted}
-          style={[styles.input, { maxHeight: 160, borderRadius: 18 }]}
-        />
         <View
           style={{
-            flexDirection: "row",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 4,
+            backgroundColor: colors.surface,
+            borderRadius: 24,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 4,
           }}
         >
-          <Action
-            label="Photo"
-            secondary
-            disabled={
-              !canSend ||
-              !!saved.attempt ||
-              draft.images.length >= maxMessageImageCount
-            }
-            onPress={() => void run(attach)}
+          <TextInput
+            accessibilityLabel="Message"
+            editable={canSend && !saved.attempt}
+            multiline
+            value={draft.text}
+            onChangeText={(text) => update({ text })}
+            placeholder="Ask Zotigo…"
+            placeholderTextColor={colors.muted}
+            style={[
+              styles.input,
+              {
+                maxHeight: 160,
+                minHeight: 44,
+                borderWidth: 0,
+                backgroundColor: "transparent",
+                paddingHorizontal: 14,
+                paddingTop: 10,
+                paddingBottom: 6,
+              },
+            ]}
           />
-          <Action
-            label="Skills"
-            secondary
-            disabled={!canSend || !!saved.attempt}
-            onPress={() => setSkillsOpen(true)}
-          />
-          {turn && (
-            <Action
-              label={steer ? "Steer" : "Auto"}
-              secondary
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 4,
+            }}
+          >
+            <IconButton
+              icon={Plus}
+              label="Attach photo"
+              disabled={
+                !canSend ||
+                !!saved.attempt ||
+                draft.images.length >= maxMessageImageCount
+              }
+              onPress={() => void run(attach)}
+            />
+            <IconButton
+              icon={Sparkles}
+              label="Choose skills"
               disabled={!canSend || !!saved.attempt}
-              onPress={() => setSteer(!steer)}
+              onPress={() => setSkillsOpen(true)}
             />
-          )}
-          <View style={{ flex: 1 }} />
-          {turn && (
-            <Action
-              label="Stop"
-              danger
-              disabled={busy || !state.session?.live}
-              onPress={() => void run(() => client.pause(id, turn))}
+            {turn && (
+              <Action
+                label={steer ? "Steer" : "Auto"}
+                secondary
+                disabled={!canSend || !!saved.attempt}
+                onPress={() => setSteer(!steer)}
+              />
+            )}
+            <View style={{ flex: 1 }} />
+            {turn && (
+              <IconButton
+                icon={Square}
+                label="Stop response"
+                disabled={busy || !state.session?.live}
+                onPress={() => void run(() => client.pause(id, turn))}
+              />
+            )}
+            <IconButton
+              icon={ArrowUp}
+              filled
+              label={busy ? "Working…" : saved.attempt ? "Retry" : "Send"}
+              disabled={
+                !canSend || (!draft.text.trim() && !draft.images.length)
+              }
+              onPress={() => void run(send)}
             />
-          )}
-          <Action
-            label={busy ? "Working…" : saved.attempt ? "Retry" : "Send"}
-            disabled={!canSend || (!draft.text.trim() && !draft.images.length)}
-            onPress={() => void run(send)}
-          />
+          </View>
         </View>
         {saved.attempt && (
           <Action
