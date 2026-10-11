@@ -1,3 +1,4 @@
+import { conversationShouldLoadOlder } from "@zotigo/shared/conversationScroll";
 import Gauge from "lucide-react-native/icons/gauge";
 import { ComposerSkills } from "../components/ComposerSkills";
 import { ContextUsage } from "../components/ContextUsage";
@@ -479,6 +480,7 @@ export function ConversationScreen() {
         );
       return (
         <MessageCard
+          sessionId={id}
           item={item}
           openFile={openFile}
           live={previewIds.has(item.id)}
@@ -491,6 +493,7 @@ export function ConversationScreen() {
       );
     },
     [
+      id,
       openFile,
       previewIds,
       turnActions,
@@ -607,7 +610,15 @@ export function ConversationScreen() {
         windowSize={7}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+        {...(Platform.OS === "web" ? {
+          onWheel: (event: { deltaY: number }) => {
+            if (event.deltaY < 0) {
+              follow.current.leaveLatest();
+              setFollowing(false);
+            }
+          },
+        } : {})}
         onScrollBeginDrag={() => {
           follow.current.beginDrag();
           setFollowing(false);
@@ -641,6 +652,9 @@ export function ConversationScreen() {
               contentSize.height - contentOffset.y - layoutMeasurement.height,
             ),
           );
+          if (conversationShouldLoadOlder(follow.current.following, contentOffset.y)) {
+            void timeline.older();
+          }
         }}
         scrollEventThrottle={32}
         onContentSizeChange={() => {
@@ -656,17 +670,9 @@ export function ConversationScreen() {
             }, 80);
         }}
         ListHeaderComponent={
-          state.more ? (
-            <Action
-              label={state.loadingOlder ? "Loading…" : "Load earlier messages"}
-              disabled={state.loadingOlder}
-              onPress={() => {
-                follow.current.leaveLatest();
-                setFollowing(false);
-                void timeline.older();
-              }}
-            />
-          ) : null
+          <View style={{ height: 32, justifyContent: "center" }}>
+            {state.loadingOlder && <Loading />}
+          </View>
         }
         ListEmptyComponent={
           <View style={{ padding: 24 }}>

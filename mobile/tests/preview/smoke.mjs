@@ -87,17 +87,18 @@ try {
   await click('iOS client · feature/mobile'); await bodyIncludes('Home: Multi-host mobile architecture'); await shot('04-workspace'); checks.push('Project and workspace navigation retain scoped session list');
   await click('Home: Multi-host mobile architecture');
   await wait(`__ZOTIGO_PREVIEW__.snapshot('home').activeStreams === 1`);
-  await bodyIncludes('Approval needed'); await shot('05-conversation');
+  await bodyIncludes('Approval required'); await shot('05-conversation');
   // Pagination explicitly leaves follow mode on web and native. This does not emulate native drag callbacks.
-  await click('Load earlier messages'); await delay(400);
+  assert.equal(await evaluate(`${visibleButtons}.some(e => e.textContent.includes('Load earlier messages'))`), false);
+  await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 190, y: 350, deltaX: 0, deltaY: -100000 }); await delay(400);
   await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 190, y: 350, deltaX: 0, deltaY: 600 });
   const distance = `(() => { const lists=[...document.querySelectorAll('div')].filter(e=>e.getClientRects().length && e.clientHeight>100 && e.scrollHeight>e.clientHeight+100 && ['auto','scroll'].includes(getComputedStyle(e).overflowY)); const e=lists.sort((a,b)=>b.scrollHeight-a.scrollHeight)[0]; return e ? e.scrollHeight-e.clientHeight-e.scrollTop : Infinity; })()`;
   await click('Jump to latest'); await wait(`(${distance}) < 100`, 'jump reaches latest');
   await delay(700); assert.ok(await evaluate(`(${distance}) < 100`), 'Late layout retains latest position');
   await shot('05b-jump-latest'); checks.push('Pagination exits follow mode; Jump to latest reaches and retains bottom after delayed layout');
-  await click('exec_command result'); await bodyIncludes('Tests: 28 passed');
+  await click('exec_command'); await bodyIncludes('Tests: 28 passed');
   await shot('06-tool-result'); checks.push('Real conversation renders rich history and expandable tool result');
-  await click('View image'); await wait(`!!document.querySelector('img[alt="Conversation attachment"]') || [...document.querySelectorAll('[role="img"]')].some(e => e.getAttribute('aria-label') === 'Conversation attachment')`, 'fixture image rendered'); await shot('07-attachment');
+  await wait(`!!document.querySelector('img[alt="Conversation attachment"]') || [...document.querySelectorAll('[role="img"]')].some(e => e.getAttribute('aria-label') === 'Conversation attachment')`, 'fixture image rendered'); await shot('07-attachment');
   await click('Attach photo');
   await wait(`!!document.querySelector('input[type="file"]')`, 'photo-picker input');
   // A real browser-encoded JPEG intentionally bears a .png filename, reproducing picker metadata mismatch.
