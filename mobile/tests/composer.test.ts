@@ -3,10 +3,29 @@ import assert from "node:assert/strict";
 import {
   ComposerStore,
   emptyDraft,
+  submissionAttempt,
   type ComposerState,
 } from "../src/core/composer";
 import { DaemonClient } from "../src/core/client";
 import type { Storage } from "../src/core/hosts";
+test("new submission repairs legacy draft image MIME but uncertain retry stays byte-for-byte identical", () => {
+  const image = {
+    mime_type: "image/png",
+    data_base64: Buffer.from([255, 216, 255, 224, 0, 16]).toString("base64"),
+  };
+  const draft = { ...emptyDraft(), images: [image] };
+  assert.equal(
+    submissionAttempt({ draft }, "new-id", false).images[0].mime_type,
+    "image/jpeg",
+  );
+  const attempt = { ...draft, client_message_id: "original-id", steer: true };
+  const before = JSON.stringify(attempt);
+  assert.equal(
+    submissionAttempt({ draft, attempt }, "must-not-replace", false),
+    attempt,
+  );
+  assert.equal(JSON.stringify(attempt), before);
+});
 test("uncertain submission survives restart with identical payload/id and stays host-scoped", async () => {
   const values = new Map<string, string>();
   const storage: Storage = {

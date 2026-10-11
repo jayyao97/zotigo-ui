@@ -1,3 +1,4 @@
+import PanelsTopLeft from "lucide-react-native/icons/panels-top-left";
 import { useEffect, useState } from "react";
 import { DarkTheme, NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -6,7 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import type { DaemonClient } from "./core/client";
 import type { Routes } from "./navigation";
 import { DaemonContext } from "./platform/context";
-import { Action, colors } from "./components/ui";
+import { IconButton, colors } from "./components/ui";
 import { HostsScreen } from "./screens/HostsScreen";
 import {
   HomeScreen,
@@ -53,6 +54,7 @@ export default function App() {
                 headerTintColor: colors.text,
                 contentStyle: { backgroundColor: colors.background },
                 headerBackButtonDisplayMode: "minimal",
+                headerShadowVisible: false,
               }}
             >
               <Stack.Screen
@@ -61,7 +63,11 @@ export default function App() {
                 options={{
                   title: client.connection.name,
                   headerLeft: () => (
-                    <Action label="Devices" secondary onPress={devices} />
+                    <IconButton
+                      icon={PanelsTopLeft}
+                      label="Devices"
+                      onPress={devices}
+                    />
                   ),
                 }}
               />

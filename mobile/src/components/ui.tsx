@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react-native";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -22,15 +23,14 @@ export const colors = {
 };
 export const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, gap: 16, paddingBottom: 40 },
+  content: { padding: 16, gap: 10, paddingBottom: 32 },
   text: { color: colors.text, fontSize: 16, lineHeight: 24 },
   muted: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   row: {
-    minHeight: 56,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
+    minHeight: 52,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -47,16 +47,17 @@ export const styles = StyleSheet.create({
   },
   action: {
     minHeight: 44,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignSelf: "flex-start",
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 12,
     backgroundColor: colors.elevated,
   },
-  actionText: { color: colors.accent, fontSize: 15, fontWeight: "600" },
-  title: { color: colors.text, fontSize: 22, fontWeight: "600" },
-  section: { gap: 10 },
+  actionText: { color: colors.text, fontSize: 14, fontWeight: "500" },
+  title: { color: colors.text, fontSize: 18, fontWeight: "600" },
+  section: { gap: 4 },
 });
 export function Screen({ children }: { children: ReactNode }) {
   return (
@@ -128,11 +129,13 @@ export function Row({
   subtitle,
   onPress,
   right,
+  leading,
 }: {
   title: string;
   subtitle?: string;
   onPress?: () => void;
   right?: ReactNode;
+  leading?: ReactNode;
 }) {
   return (
     <Pressable
@@ -140,12 +143,13 @@ export function Row({
       accessibilityRole={onPress ? "button" : undefined}
       style={styles.row}
     >
+      {leading}
       <View style={{ flex: 1, gap: 4 }}>
-        <Text style={styles.text} numberOfLines={2}>
+        <Text style={styles.text} numberOfLines={1}>
           {title}
         </Text>
         {subtitle ? (
-          <Text style={styles.muted} numberOfLines={2}>
+          <Text style={styles.muted} numberOfLines={1}>
             {subtitle}
           </Text>
         ) : null}
@@ -189,4 +193,52 @@ export function Loading() {
 }
 export function errorText(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+export function IconButton({
+  icon: Icon,
+  label,
+  onPress,
+  disabled,
+  filled = false,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  filled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 44,
+        height: 44,
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: disabled ? 0.35 : pressed ? 0.65 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: filled ? 34 : 36,
+          height: filled ? 34 : 36,
+          borderRadius: 18,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: filled ? colors.text : "transparent",
+        }}
+      >
+        <Icon
+          size={20}
+          strokeWidth={1.8}
+          color={filled ? colors.background : colors.text}
+        />
+      </View>
+    </Pressable>
+  );
 }

@@ -26,7 +26,7 @@ Native FlatList for catalog/transcript, stable item identities and memoized mess
 
 ## Catalog loading
 
-Home uses one virtualized list for the selected Sessions or Projects tab. Project details, workspaces, and sources load on navigation rather than through an all-project fan-out. Reads reload on focus or explicit refresh; generation guards reject stale responses. Mutations use single-flight locks and do not retry automatically. Delayed mutation callbacks check route validity before navigating.
+Home uses one virtualized list grouped into pinned sessions, projects, and recent sessions. Project details, workspaces, and source management load on navigation rather than through an all-project fan-out. Reads reload on focus or explicit refresh; generation guards reject stale responses. Mutations use single-flight locks and do not retry automatically. Delayed mutation callbacks check route validity before navigating.
 
 ## Draft persistence
 
