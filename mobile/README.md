@@ -69,3 +69,5 @@ ZOTIGO_MOBILE_TEST_DAEMON=/absolute/path/zotigod corepack pnpm --filter @zotigo/
 ```
 
 Run the root tests, typecheck, and build after changing shared code or workspace configuration. JavaScript export checks bundle construction only; native compilation, signing, Keychain, network behavior, gestures, keyboard handling, and scrolling performance require iOS validation.
+
+For reproducible Linux layout and interaction checks with synthetic multi-host data, see the [fixture preview](tests/preview/README.md). It renders the production screens through a separate test entry and does not contact real daemons.

@@ -44,3 +44,13 @@ export function visibleSessions(
       );
     });
 }
+
+/** Compact display only; requests always retain the original daemon path. */
+export function pathLabel(path: string): string {
+  return (
+    path
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() || path
+  );
+}
