@@ -12,62 +12,17 @@ import ChevronRight from "lucide-react-native/icons/chevron-right";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
 import Terminal from "lucide-react-native/icons/terminal";
 import Copy from "lucide-react-native/icons/copy";
-import { memo, useEffect, useState } from "react";
-import {
-  Alert,
-  Image,
-  Linking,
-  Platform,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
-import Markdown from "react-native-markdown-display";
+import { memo, useState } from "react";
+import { Alert, Linking, Platform, Pressable, Text, View } from "react-native";
+import { MessageMarkdown } from "./MessageMarkdown";
+import { MessageImage } from "./MessageImage";
+import { userImages } from "../core/messageImages";
+import { codexUserText } from "@zotigo/shared/codexUserMessage";
 import * as Clipboard from "expo-clipboard";
 import type { DisplayItem } from "@zotigo/shared/zotigod";
 import { useDaemon } from "../platform/context";
 import { Action, IconButton, colors, errorText, Notice, styles } from "./ui";
 
-function Attachment({ url }: { url: string }) {
-  const client = useDaemon();
-  const [data, setData] = useState("");
-  const [error, setError] = useState("");
-  const [requested, setRequested] = useState(false);
-  useEffect(() => {
-    if (!requested) return;
-    let active = true;
-    client
-      .image(url)
-      .then((x) => {
-        if (active) setData(x);
-      })
-      .catch((e) => {
-        if (active) setError(errorText(e));
-      });
-    return () => {
-      active = false;
-    };
-  }, [client, url, requested]);
-  return (
-    <View>
-      {data ? (
-        <Image
-          source={{ uri: data }}
-          style={{ width: "100%", height: 240, borderRadius: 12 }}
-          resizeMode="contain"
-          accessibilityLabel="Conversation attachment"
-        />
-      ) : (
-        <Action
-          label={requested ? "Loading image…" : "View image"}
-          disabled={requested}
-          onPress={() => setRequested(true)}
-        />
-      )}
-      <Notice text={error} error />
-    </View>
-  );
-}
 function Detail({ label, text }: { label: string; text: string }) {
   const animateLayout = useLayoutTransition();
   const [open, setOpen] = useState(false);
@@ -135,6 +90,7 @@ function Detail({ label, text }: { label: string; text: string }) {
 }
 export const MessageCard = memo(function MessageCard({
   item,
+  sessionId,
   openFile,
   live = false,
   turnAction,
@@ -144,6 +100,7 @@ export const MessageCard = memo(function MessageCard({
   revealReasoning = false,
 }: {
   item: DisplayItem;
+  sessionId: string;
   openFile: (path: string) => void;
   live?: boolean;
   turnAction?: TurnAction;
@@ -152,6 +109,7 @@ export const MessageCard = memo(function MessageCard({
   projection?: ToolRenderProjection;
   revealReasoning?: boolean;
 }) {
+  const client = useDaemon();
   const [copied, setCopied] = useState(false);
   function link(href: string) {
     if (/^https?:\/\//i.test(href)) {
@@ -174,8 +132,7 @@ export const MessageCard = memo(function MessageCard({
     }
     return false;
   }
-  const user =
-    item.type === "user_message" || item.type === "steering_message";
+  const user = item.type === "user_message" || item.type === "steering_message";
   const parts = item.content ?? [];
   if (
     item.type === "assistant_message" &&
@@ -197,16 +154,6 @@ export const MessageCard = memo(function MessageCard({
         paddingHorizontal: 18,
         gap: 4,
         alignSelf: "stretch",
-        ...(user
-          ? {
-              backgroundColor: colors.surface,
-              borderRadius: 18,
-              marginLeft: 36,
-              marginRight: 16,
-              marginVertical: 10,
-              paddingHorizontal: 14,
-            }
-          : {}),
       }}
     >
       {item.type === "steering_message" && (
@@ -218,62 +165,69 @@ export const MessageCard = memo(function MessageCard({
           {item.subagent.status ?? "working"}
         </Text>
       )}
-      {user &&
-        item.command?.text &&
-        !parts.some((p) => p.type === "text") && (
-          <Text selectable style={styles.text}>
-            {item.command.text}
-          </Text>
-        )}
+      {user && (
+        <View style={{ alignItems: "flex-end", gap: 8, marginVertical: 4 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+              gap: 8,
+            }}
+          >
+            {userImages(item, client.connection.baseUrl, sessionId).map(
+              (url) => (
+                <MessageImage
+                  key={url}
+                  url={url}
+                  sessionId={sessionId}
+                  thumbnail
+                />
+              ),
+            )}
+          </View>
+          {!!(
+            parts.some((p) => p.type === "text" && p.text) || item.command?.text
+          ) && (
+            <View
+              style={{
+                maxWidth: "88%",
+                backgroundColor: "#173e76",
+                borderRadius: 22,
+                paddingHorizontal: 16,
+                paddingVertical: 6,
+              }}
+            >
+              <MessageMarkdown
+                text={codexUserText(
+                  parts
+                    .filter((p) => p.type === "text")
+                    .map((p) => p.text ?? "")
+                    .join("\n") ||
+                    item.command?.text ||
+                    "",
+                  item,
+                )}
+                sessionId={sessionId}
+                user
+                onLink={link}
+              />
+            </View>
+          )}
+        </View>
+      )}
       {parts.map((p, index) => {
+        if (user && (p.type === "text" || p.image)) return null;
         const location = contentLocation(item.id, index);
         if (projection?.consumedResults.has(location)) return null;
         if (p.type === "text" && p.text)
-          return live || user ? (
-            <Text key={index} selectable style={styles.text}>
-              {p.text}
-            </Text>
-          ) : (
-            <Markdown
+          return (
+            <MessageMarkdown
               key={index}
-              style={{
-                body: { color: colors.text, fontSize: 16, lineHeight: 24 },
-                code_inline: {
-                  backgroundColor: colors.elevated,
-                  color: colors.text,
-                },
-                fence: {
-                  backgroundColor: colors.surface,
-                  color: colors.text,
-                  borderColor: colors.border,
-                  fontSize: 12,
-                },
-                code_block: {
-                  backgroundColor: colors.surface,
-                  color: colors.text,
-                },
-                link: { color: colors.accent },
-                blockquote: {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                },
-                table: { borderColor: colors.border },
-                tr: { borderColor: colors.border },
-              }}
-              onLinkPress={link}
-              rules={{
-                image: (node) => (
-                  <Action
-                    key={node.key}
-                    label="Open image reference"
-                    secondary
-                    onPress={() => link(String(node.attributes.src))}
-                  />
-                ),
-              }}
-            >
-              {p.text}
-            </Markdown>
+              text={p.text}
+              sessionId={sessionId}
+              onLink={link}
+            />
           );
         if (p.type === "reasoning")
           return revealReasoning ? (
@@ -304,7 +258,11 @@ export const MessageCard = memo(function MessageCard({
               />
               {result?.content?.map((c, i) =>
                 c.image?.url ? (
-                  <Attachment key={i} url={c.image.url} />
+                  <MessageImage
+                    sessionId={sessionId}
+                    key={i}
+                    url={c.image.url}
+                  />
                 ) : null,
               )}
             </View>
@@ -322,12 +280,19 @@ export const MessageCard = memo(function MessageCard({
               />
               {p.tool_result.content?.map((c, i) =>
                 c.image?.url ? (
-                  <Attachment key={i} url={c.image.url} />
+                  <MessageImage
+                    sessionId={sessionId}
+                    key={i}
+                    url={c.image.url}
+                  />
                 ) : null,
               )}
             </View>
           );
-        if (p.image?.url) return <Attachment key={index} url={p.image.url} />;
+        if (p.image?.url)
+          return (
+            <MessageImage sessionId={sessionId} key={index} url={p.image.url} />
+          );
         if (p.text)
           return (
             <Text key={index} selectable style={styles.muted}>
@@ -336,16 +301,19 @@ export const MessageCard = memo(function MessageCard({
           );
         return null;
       })}
-      {item.command?.images?.map((image, index) =>
-        image.url ? (
-          <Attachment key={`image-${index}`} url={image.url} />
-        ) : null,
-      )}
+      {!user &&
+        item.command?.images?.map((image, index) =>
+          image.url ? (
+            <MessageImage
+              sessionId={sessionId}
+              key={`image-${index}`}
+              url={image.url}
+            />
+          ) : null,
+        )}
       {item.error && <Notice text={item.error} error />}
       {!user && !parts.length && !!eventLabel(item) && (
-        <Text style={styles.muted}>
-          {eventLabel(item)}
-        </Text>
+        <Text style={styles.muted}>{eventLabel(item)}</Text>
       )}
       {!live && turnAction && (
         <View style={{ flexDirection: "row" }}>
