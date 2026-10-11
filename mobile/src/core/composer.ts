@@ -1,5 +1,6 @@
 import type { MessageImageInput } from "@zotigo/shared/zotigod";
 import type { Storage } from "./hosts";
+import { pickedImageInput } from "./imageInput";
 export interface Draft {
   text: string;
   skills: string[];
@@ -17,6 +18,23 @@ export interface ComposerState {
   attempt?: Attempt;
 }
 export const emptyDraft = (): Draft => ({ text: "", skills: [], images: [] });
+export function submissionAttempt(
+  state: ComposerState,
+  id: string,
+  steer: boolean,
+): Attempt {
+  // Never change an uncertain attempt: its ID must keep exactly the same payload.
+  return (
+    state.attempt ?? {
+      ...state.draft,
+      images: state.draft.images.map((image) =>
+        pickedImageInput({ base64: image.data_base64 }),
+      ),
+      client_message_id: id,
+      steer,
+    }
+  );
+}
 export class ComposerStore {
   private queue = Promise.resolve();
   readonly key: string;

@@ -8,3 +8,4 @@
 - Native stack navigation, accessible controls (44 pt minimum), virtualized lists, bounded previews, and foreground-only subscriptions.
 - Run `corepack pnpm --filter @zotigo/mobile typecheck`, `test`, and `export:ios`; also run root tests/typecheck/build after workspace changes.
 - iOS export on Linux proves bundle construction, not native compilation or device behavior. Record that distinction.
+- For screen or composer changes, run the fixture preview and browser smoke in `tests/preview/README.md`, then inspect populated-page screenshots at a phone viewport. Export or empty-state screenshots alone are insufficient. Store screenshots and per-run reports outside the repository.

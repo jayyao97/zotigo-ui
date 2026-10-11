@@ -1,10 +1,22 @@
+import ChevronRight from "lucide-react-native/icons/chevron-right";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
+import Terminal from "lucide-react-native/icons/terminal";
+import Copy from "lucide-react-native/icons/copy";
 import { memo, useEffect, useState } from "react";
-import { Alert, Image, Linking, Pressable, Text, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Linking,
+  Platform,
+  Pressable,
+  Text,
+  View,
+} from "react-native";
 import Markdown from "react-native-markdown-display";
 import * as Clipboard from "expo-clipboard";
 import type { DisplayItem } from "@zotigo/shared/zotigod";
 import { useDaemon } from "../platform/context";
-import { Action, colors, errorText, Notice, styles } from "./ui";
+import { Action, IconButton, colors, errorText, Notice, styles } from "./ui";
 
 function Attachment({ url }: { url: string }) {
   const client = useDaemon();
@@ -50,26 +62,39 @@ function Detail({ label, text }: { label: string; text: string }) {
   const [open, setOpen] = useState(false);
   const [limit, setLimit] = useState(8000);
   return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderRadius: 12,
-        padding: 10,
-        gap: 6,
-      }}
-    >
-      <Action
-        label={`${open ? "Hide" : "Show"} ${label}`}
-        secondary
+    <View style={{ gap: 4 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
         onPress={() => setOpen(!open)}
-      />
+        style={{
+          minHeight: 44,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <Terminal size={15} color={colors.muted} />
+        <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+          {label}
+        </Text>
+        {open ? (
+          <ChevronDown size={15} color={colors.muted} />
+        ) : (
+          <ChevronRight size={15} color={colors.muted} />
+        )}
+      </Pressable>
       {open && (
         <>
           <Text
             selectable
             style={[
               styles.text,
-              { fontFamily: "Menlo", fontSize: 12, lineHeight: 18 },
+              {
+                fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                fontSize: 12,
+                lineHeight: 18,
+              },
             ]}
           >
             {text.slice(0, limit)}
@@ -129,16 +154,31 @@ export const MessageCard = memo(function MessageCard({
   return (
     <View
       style={{
-        paddingVertical: 10,
+        paddingVertical: user
+          ? 12
+          : parts.every(
+                (p) =>
+                  !!p.tool_call || !!p.tool_result || p.type === "reasoning",
+              )
+            ? 0
+            : 8,
         paddingHorizontal: 18,
-        gap: 8,
+        gap: 4,
         alignSelf: "stretch",
+        ...(user
+          ? {
+              backgroundColor: colors.surface,
+              borderRadius: 18,
+              marginLeft: 36,
+              marginRight: 16,
+              marginVertical: 10,
+              paddingHorizontal: 14,
+            }
+          : {}),
       }}
     >
-      {user && (
-        <Text style={styles.muted}>
-          {item.type === "steering_message" ? "You · steering" : "You"}
-        </Text>
+      {item.type === "steering_message" && (
+        <Text style={styles.muted}>Steering</Text>
       )}
       {item.subagent && (
         <Text style={[styles.muted, { color: colors.accent }]}>
@@ -153,7 +193,7 @@ export const MessageCard = memo(function MessageCard({
       )}
       {parts.map((p, index) => {
         if (p.type === "text" && p.text)
-          return live ? (
+          return live || user ? (
             <Text key={index} selectable style={styles.text}>
               {p.text}
             </Text>
@@ -248,15 +288,10 @@ export const MessageCard = memo(function MessageCard({
             : ""}
         </Text>
       )}
-      {!live && parts.some((p) => p.type === "text") && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Copy message"
-          style={{
-            minHeight: 44,
-            justifyContent: "center",
-            alignSelf: "flex-start",
-          }}
+      {!user && !live && parts.some((p) => p.type === "text") && (
+        <IconButton
+          icon={Copy}
+          label="Copy message"
           onPress={() =>
             void Clipboard.setStringAsync(
               parts
@@ -265,9 +300,7 @@ export const MessageCard = memo(function MessageCard({
                 .join("\n"),
             ).catch((e) => Alert.alert("Copy failed", errorText(e)))
           }
-        >
-          <Text style={styles.muted}>Copy</Text>
-        </Pressable>
+        />
       )}
     </View>
   );
