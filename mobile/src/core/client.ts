@@ -172,6 +172,27 @@ export class DaemonClient {
   agents = () => this.request<D.AgentCatalogResponse>("/agents");
   prepareCodex = () =>
     this.request<D.AgentCatalogEntry>("/agents/codex/prepare", "POST");
+  private modelCatalogPromise?: Promise<D.AgentCatalogResponse>;
+  modelCatalog = (refresh = false): Promise<D.AgentCatalogResponse> => {
+    if (refresh) this.modelCatalogPromise = undefined;
+    if (!this.modelCatalogPromise) {
+      const request = this.agents().then(async (catalog) => {
+        const codex = catalog.agents.find((a) => a.id === "codex");
+        if (!codex || (!refresh && codex.models?.length)) return catalog;
+        const ready = await this.prepareCodex();
+        return {
+          ...catalog,
+          agents: catalog.agents.map((a) => (a.id === "codex" ? ready : a)),
+        };
+      });
+      this.modelCatalogPromise = request;
+      void request.catch(() => {
+        if (this.modelCatalogPromise === request)
+          this.modelCatalogPromise = undefined;
+      });
+    }
+    return this.modelCatalogPromise;
+  };
   profiles = (directory?: string) =>
     this.request<D.ProfilesResponse>(
       `/config/profiles${directory ? "?working_directory=" + enc(directory) : ""}`,
@@ -242,6 +263,17 @@ export class DaemonClient {
     );
   archiveWorkspace = (id: string) =>
     this.request<D.CatalogWorkspace>(`/workspaces/${enc(id)}/archive`, "POST");
+  navigation = () =>
+    this.request<{
+      pinned: import("@zotigo/shared/clientTypes").NavigationItem[];
+      projects: import("@zotigo/shared/clientTypes").NavigationItem[];
+      workspaces: import("@zotigo/shared/clientTypes").NavigationItem[];
+    }>("/catalog/navigation");
+  pinWorkspace = (id: string, pinned: boolean) =>
+    this.request("/catalog/navigation/pin", "PUT", {
+      item: { kind: "workspace", id },
+      pinned,
+    });
   catalog = async (sync = false) =>
     (
       await this.request<{ sessions: D.CatalogSessionProjection[] }>(

@@ -14,6 +14,7 @@ export const colors = {
   background: "#181818",
   surface: "#212121",
   elevated: "#282828",
+  selected: "#303030",
   text: "#ededed",
   muted: "#afafaf",
   border: "#383838",
