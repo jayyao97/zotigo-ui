@@ -173,9 +173,9 @@ test("Timeline.start backfills beyond recent page to recover pending approval in
       before.push(cursor);
       return json(
         cursor === null
-          ? page([item(5), item(6)], "older")
+          ? page([item(5), item(6)], "5")
           : cursor === "5"
-            ? page([approval, item(3)], "earlier")
+            ? page([approval, item(3)], "2")
             : page([started]),
       );
     }
@@ -220,7 +220,7 @@ test("pending older-page response is ignored after stop", async () => {
         requestedOlder();
         return oldResponse;
       }
-      return json(page([started, item(6)], "older"));
+      return json(page([started, item(6)], "5"));
     }
     if (parsed.pathname.endsWith("/events")) return stream.response();
     return json(session);
@@ -309,4 +309,48 @@ test("late stream response from a stopped run cannot replace the current reader"
     true,
     "stop must cancel the new reader even after the stale response arrived",
   );
+});
+
+test("cached history fills a gap using the server cursor before resuming live events", async () => {
+  const stream = streamBody();
+  const requests: string[] = [];
+  const client = new DaemonClient(connection, async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/items")) {
+      const before = parsed.searchParams.get("before") || "latest";
+      requests.push(before);
+      if (before === "latest")
+        return json(page([item(8, "turn_completed"), item(9)], "8"));
+      if (before === "8") return json(page([item(5), item(6), item(7)], "5"));
+      if (before === "5") return json(page([item(3), item(4)], "3"));
+      return json(page([item(1), item(2)]));
+    }
+    if (parsed.pathname.endsWith("/events")) return stream.response();
+    return json(session);
+  });
+  const previous = new Timeline(client, "s");
+  previous.accept({ type: "item", item: item(1, "turn_completed") });
+  previous.accept({ type: "item", item: item(2) });
+  previous.stop();
+  const timeline = new Timeline(client, "s");
+  assert.deepEqual(
+    timeline.snapshot().items.map((i) => i.sequence),
+    [1, 2],
+  );
+  const running = timeline.start();
+  try {
+    await waitFor(timeline, (s) => s.status === "connected");
+    assert.deepEqual(requests, ["latest", "8", "5"]);
+    assert.deepEqual(
+      timeline.snapshot().items.map((i) => i.sequence),
+      [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    );
+    await Promise.all([timeline.older(), timeline.older()]);
+    assert.deepEqual(requests, ["latest", "8", "5", "3"]);
+    assert.equal(timeline.snapshot().more, false);
+    assert.equal(timeline.snapshot().items.length, 9);
+  } finally {
+    timeline.stop();
+    await running;
+  }
 });

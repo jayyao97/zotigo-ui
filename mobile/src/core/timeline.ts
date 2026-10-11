@@ -1,3 +1,4 @@
+import { cachedHistory, cacheHistory } from "./historyCache";
 import type {
   DisplayItem,
   SessionDisplayEvent,
@@ -5,6 +6,8 @@ import type {
 } from "@zotigo/shared/zotigod";
 import {
   appendDisplayDelta,
+  historyBackfillCursor,
+  hasUnresolvedTurnItems,
   ephemeralDisplayItems,
   mergeDisplayItems,
   pendingHumanRequestIDs,
@@ -44,14 +47,26 @@ export class Timeline {
   private previews: EphemeralDisplayBlock[] = [];
   private controller?: AbortController;
   private timer?: ReturnType<typeof setTimeout>;
-  private backfill = false;
+  private backfill?: AbortController;
+  private prevCursor: string | null = null;
   private reader?: ReadableStreamDefaultReader<Uint8Array>;
   private sequence = 0;
   private refreshing = false;
   constructor(
     readonly client: DaemonClient,
     readonly id: string,
-  ) {}
+  ) {
+    const cached = cachedHistory(client, id);
+    if (cached) {
+      this.prevCursor = cached.prevCursor;
+      this.state = {
+        ...this.state,
+        items: cached.items,
+        session: cached.session,
+        more: !!cached.prevCursor,
+      };
+    }
+  }
   snapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -64,6 +79,12 @@ export class Timeline {
     for (const listener of this.listeners) listener();
   }
   stop() {
+    cacheHistory(this.client, this.id, {
+      items: this.state.items,
+      session: this.state.session,
+      prevCursor: this.prevCursor,
+    });
+    this.backfill = undefined;
     this.controller?.abort();
     this.controller = undefined;
     const reader = this.reader;
@@ -86,31 +107,48 @@ export class Timeline {
     this.publish({ status: "loading", error: "" });
     try {
       const [page, session] = await Promise.all([
-        this.client.items(this.id, {}, controller.signal),
+        this.client.items(this.id, { limit: 200 }, controller.signal),
         this.client.session(this.id),
       ]);
       if (!alive()) return;
       this.sequence = page.items.at(-1)?.sequence ?? 0;
-      this.publish({ items: page.items, session, more: !!page.prev_cursor });
+      const cachedLastSequence = this.state.items.at(-1)?.sequence ?? 0;
+      this.prevCursor = historyBackfillCursor(
+        this.state.items,
+        this.prevCursor,
+        page.items,
+        page.prev_cursor || null,
+      );
+      this.publish({
+        items: mergeDisplayItems(this.state.items, page.items),
+        session,
+        more: !!this.prevCursor,
+      });
       // Recover the current turn's approvals even when they precede the recent page.
       while (
         this.state.more &&
-        !this.state.items.some(
+        (!this.state.items.some(
           (i) => i.type === "turn_started" || terminal.has(i.type),
-        )
+        ) ||
+          hasUnresolvedTurnItems(this.state.items) ||
+          (cachedLastSequence > 0 &&
+            Number(this.prevCursor) > cachedLastSequence + 1))
       ) {
-        const before = this.state.items[0]?.sequence;
+        const before = Number(this.prevCursor);
         if (!before) break;
         const older = await this.client.items(
           this.id,
-          { before, limit: 100 },
+          { before, limit: 200 },
           controller.signal,
         );
         if (!alive()) return;
-        if (!older.items.length) break;
+        this.prevCursor =
+          older.items.length && older.prev_cursor !== this.prevCursor
+            ? older.prev_cursor || null
+            : null;
         this.publish({
           items: mergeDisplayItems(older.items, this.state.items),
-          more: !!older.prev_cursor,
+          more: !!this.prevCursor,
         });
       }
       let delay = 500;
@@ -258,24 +296,31 @@ export class Timeline {
     const controller = this.controller;
     if (
       this.backfill ||
+      this.state.status === "loading" ||
       !this.state.more ||
       !controller ||
       controller.signal.aborted
     )
       return;
-    this.backfill = true;
+    this.backfill = controller;
     this.publish({ loadingOlder: true });
     try {
       const page = await this.client.items(
         this.id,
-        { before: this.state.items[0]?.sequence, limit: 50 },
+        { before: Number(this.prevCursor), limit: 200 },
         controller.signal,
       );
-      if (controller === this.controller && !controller.signal.aborted)
+      if (controller === this.controller && !controller.signal.aborted) {
+        this.prevCursor =
+          page.items.length && page.prev_cursor !== this.prevCursor
+            ? page.prev_cursor || null
+            : null;
         this.publish({
           items: mergeDisplayItems(page.items, this.state.items),
-          more: !!page.prev_cursor,
+          more: !!this.prevCursor,
+          error: "",
         });
+      }
     } catch (error) {
       if (!controller.signal.aborted)
         this.publish({
@@ -283,7 +328,7 @@ export class Timeline {
             error instanceof Error ? error.message : "Could not load history.",
         });
     } finally {
-      this.backfill = false;
+      if (this.backfill === controller) this.backfill = undefined;
       if (controller === this.controller) this.publish({ loadingOlder: false });
     }
   }
