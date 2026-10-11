@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { DisplayItem } from "@zotigo/shared/zotigod";
 import {
   buildInteractionAnswers,
@@ -7,7 +7,8 @@ import {
   type InteractionDrafts,
 } from "@zotigo/shared/interactionAnswers";
 import type { DaemonClient } from "../core/client";
-import { Action, Notice, styles, TextField } from "./ui";
+import { ChoiceRow } from "./BottomSheet";
+import { Action, colors, Notice, styles, TextField } from "./ui";
 export function HumanRequest({
   item,
   client,
@@ -22,17 +23,43 @@ export function HumanRequest({
   disabled: boolean;
 }) {
   const [answers, setAnswers] = useState<InteractionDrafts>({});
+  const [confirmUnanswered, setConfirmUnanswered] = useState(false);
+  const [denying, setDenying] = useState(false);
+  const [denyReason, setDenyReason] = useState("");
   const approval = item.approval,
     interaction = item.interaction;
+  function decide(approved: boolean) {
+    if (!approval?.id) return;
+    run(() =>
+      client.approval(
+        id,
+        approval.id!,
+        (approval.pending ?? []).map((p) => ({
+          tool_call_id: p.tool_call_id,
+          approved,
+          ...(!approved && denyReason.trim()
+            ? { reason: denyReason.trim() }
+            : {}),
+        })),
+      ),
+    );
+  }
   function submit() {
-    if (interaction)
-      run(() =>
-        client.interaction(
-          id,
-          interaction.id,
-          buildInteractionAnswers(interaction.questions ?? [], answers),
-        ),
-      );
+    if (!interaction) return;
+    if (
+      !interactionAnswersComplete(interaction.questions ?? [], answers) &&
+      !confirmUnanswered
+    ) {
+      setConfirmUnanswered(true);
+      return;
+    }
+    run(() =>
+      client.interaction(
+        id,
+        interaction.id,
+        buildInteractionAnswers(interaction.questions ?? [], answers),
+      ),
+    );
   }
   return (
     <View
@@ -40,12 +67,12 @@ export function HumanRequest({
         padding: 16,
         gap: 10,
         borderRadius: 16,
-        backgroundColor: "#282828",
+        backgroundColor: colors.elevated,
       }}
     >
       {approval?.id && (
         <>
-          <Text style={styles.text}>Approval needed</Text>
+          <Text style={styles.text}>Approval required</Text>
           {approval.pending?.map((p) => (
             <View key={p.tool_call_id}>
               <Text style={styles.text}>{p.description ?? p.tool_name}</Text>
@@ -57,47 +84,52 @@ export function HumanRequest({
               />
             </View>
           ))}
+          {denying && (
+            <TextField
+              label="Reason for denying (optional)"
+              value={denyReason}
+              onChangeText={setDenyReason}
+              editable={!disabled}
+            />
+          )}
           <View style={{ flexDirection: "row", gap: 12 }}>
-            {[true, false].map((approved) => (
-              <Action
-                key={String(approved)}
-                label={approved ? "Approve all" : "Deny all"}
-                disabled={disabled || !approval.pending?.length}
-                danger={!approved}
-                onPress={() =>
-                  run(() =>
-                    client.approval(
-                      id,
-                      approval.id!,
-                      approval.pending!.map((p) => ({
-                        tool_call_id: p.tool_call_id,
-                        approved,
-                      })),
-                    ),
-                  )
-                }
-              />
-            ))}
+            <Action
+              label={denying ? "Confirm deny" : "Deny"}
+              disabled={disabled || !approval.pending?.length}
+              danger
+              onPress={() => (denying ? decide(false) : setDenying(true))}
+            />
+            <Action
+              label="Approve"
+              disabled={disabled || !approval.pending?.length}
+              onPress={() => decide(true)}
+            />
           </View>
         </>
       )}
       {interaction && (
         <>
           <Text style={styles.text}>
-            {interaction.is_blocking === false
-              ? "Question"
-              : "Your answer is needed"}
+            {interaction.requester?.name
+              ? `${interaction.requester.name} asks`
+              : "Input required"}
           </Text>
           {interaction.questions?.map((q) => (
             <View key={q.id} style={{ gap: 8 }}>
+              {q.header && <Text style={styles.muted}>{q.header}</Text>}
               <Text style={styles.text}>{q.question}</Text>
               {q.options?.map((o) => (
-                <Action
+                <ChoiceRow
                   key={o.label}
-                  secondary
+                  title={o.label}
+                  subtitle={o.description}
                   disabled={disabled}
-                  label={`${answers[q.id]?.selected === o.label ? "Selected: " : ""}${o.label}${o.description ? " — " + o.description : ""}`}
-                  onPress={() =>
+                  selected={
+                    !answers[q.id]?.otherSelected &&
+                    answers[q.id]?.selected === o.label
+                  }
+                  onPress={() => {
+                    setConfirmUnanswered(false);
                     setAnswers((x) => ({
                       ...x,
                       [q.id]: {
@@ -105,16 +137,17 @@ export function HumanRequest({
                         selected: o.label,
                         otherSelected: false,
                       },
-                    }))
-                  }
+                    }));
+                  }}
                 />
               ))}
-              {!!q.options?.length && (
-                <Action
-                  label="None of the above"
+              {q.is_other && !!q.options?.length && (
+                <ChoiceRow
+                  title="None of the above"
                   disabled={disabled}
-                  secondary
-                  onPress={() =>
+                  selected={answers[q.id]?.otherSelected === true}
+                  onPress={() => {
+                    setConfirmUnanswered(false);
                     setAnswers((x) => ({
                       ...x,
                       [q.id]: {
@@ -122,45 +155,51 @@ export function HumanRequest({
                         selected: undefined,
                         otherSelected: true,
                       },
-                    }))
-                  }
+                    }));
+                  }}
                 />
               )}
-              <TextField
-                label={
-                  q.options?.length ? "Additional note" : (q.header ?? "Answer")
-                }
-                value={answers[q.id]?.value ?? ""}
-                secureTextEntry={q.is_secret}
-                onChangeText={(value) =>
-                  setAnswers((x) => ({ ...x, [q.id]: { ...x[q.id], value } }))
-                }
-              />
+              {(!q.options?.length ||
+                answers[q.id]?.selected ||
+                answers[q.id]?.otherSelected) && (
+                <TextField
+                  label={
+                    q.options?.length
+                      ? "Add an optional note"
+                      : "Type your answer"
+                  }
+                  value={answers[q.id]?.value ?? ""}
+                  secureTextEntry={q.is_secret}
+                  editable={!disabled}
+                  onChangeText={(value) => {
+                    setConfirmUnanswered(false);
+                    setAnswers((x) => ({
+                      ...x,
+                      [q.id]: { ...x[q.id], value },
+                    }));
+                  }}
+                />
+              )}
             </View>
           ))}
-          <Action
-            label="Submit answers"
-            disabled={
-              disabled ||
-              !interactionAnswersComplete(interaction.questions ?? [], answers)
-            }
-            onPress={submit}
-          />
-          <Action
-            label="Submit partial answers"
-            disabled={disabled}
-            secondary
-            onPress={() =>
-              Alert.alert(
-                "Submit with unanswered questions?",
-                "The agent will receive the answers provided so far.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Submit", onPress: submit },
-                ],
-              )
-            }
-          />
+          {confirmUnanswered && (
+            <Notice text="Some questions are unanswered. Submit anyway?" />
+          )}
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            {confirmUnanswered && (
+              <Action
+                label="Cancel"
+                secondary
+                disabled={disabled}
+                onPress={() => setConfirmUnanswered(false)}
+              />
+            )}
+            <Action
+              label={confirmUnanswered ? "Submit anyway" : "Submit answer"}
+              disabled={disabled}
+              onPress={submit}
+            />
+          </View>
         </>
       )}
     </View>
