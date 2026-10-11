@@ -83,7 +83,10 @@ function history(work: boolean): DisplayItem[] {
       content: [
         {
           type: "text",
-          text: `${prefix}: review the multi-host mobile architecture and improve reconnect reliability. Show the relevant changes before applying them.`,
+          text: `${prefix}: review the **multi-host mobile architecture** and improve reconnect reliability. Show the relevant changes before applying them.`,
+        },
+        {
+          type: "image", image: { url: "/tmp/codex-input.png", mime_type: "image/png" },
         },
       ],
     }),
@@ -91,7 +94,7 @@ function history(work: boolean): DisplayItem[] {
       content: [
         {
           type: "text",
-          text: "I’ll check the host boundary, then review stream recovery and draft persistence.\n\n### Implementation plan\n\n- Keep credentials scoped to an immutable connection.\n- Resume event streams from the last durable sequence.\n- Preserve unsent drafts when switching devices.\n\nThe relevant code is [client.ts](src/client.ts).\n\n```ts\nconst client = new DaemonClient(connection, fetch);\nawait client.health();\n```\n\n| Area | Result |\n| --- | --- |\n| Host isolation | Passed |\n| Stream reconnect | Needs one fix |",
+          text: "I’ll check the host boundary, then review stream recovery and draft persistence.\n\n### Implementation plan\n\n- Keep credentials scoped to an immutable connection.\n- Resume event streams from the last durable sequence.\n- Preserve unsent drafts when switching devices.\n\nThe relevant code is [client.ts](src/client.ts).\n\n![Architecture preview](/sessions/session-shared/images/preview)\n\n```ts\nconst client = new DaemonClient(connection, fetch);\nawait client.health();\n```\n\n| Area | Result |\n| --- | --- |\n| Host isolation | Passed |\n| Stream reconnect | Needs one fix |",
         },
         {
           type: "reasoning",
