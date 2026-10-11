@@ -647,3 +647,32 @@ function isFinalTurnItem(item: DisplayItem): boolean {
 function isTurnTerminalItem(item: DisplayItem): boolean {
   return isFinalTurnItem(item) || item.type === "turn_paused";
 }
+
+export function historicalToolSummary(items: DisplayItem[]): string {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    for (const part of item.content ?? []) {
+      const name = part.tool_call?.name?.toLowerCase();
+      if (!name) continue;
+      const category = ["read", "read_file"].includes(name) ? "read"
+        : ["grep", "glob", "search"].includes(name) ? "search"
+        : ["edit", "write", "write_file", "apply_patch"].includes(name) ? "edit"
+        : ["shell", "bash", "exec", "exec_command"].includes(name) ? "command"
+        : name === "spawn" ? "subagent"
+        : "tool";
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+  }
+  const labels: string[] = [];
+  const append = (category: string, singular: string, plural: string) => {
+    const count = counts.get(category) ?? 0;
+    if (count > 0) labels.push(`${singular} ${count} ${count === 1 ? plural.replace(/s$/, "") : plural}`);
+  };
+  append("read", "Read", "files");
+  append("search", "Searched", "times");
+  append("edit", "Edited", "files");
+  append("command", "Ran", "commands");
+  append("subagent", "Started", "subagents");
+  append("tool", "Used", "tools");
+  return labels.join(" · ") || "Tool activity";
+}

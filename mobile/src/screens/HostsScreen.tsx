@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
 import type { DaemonClient, Host } from "../core/client";
 import { normalizeAddress } from "../core/client";
-import { hosts } from "../platform/storage";
+import { hosts, storage } from "../platform/storage";
 import { createDaemon } from "../platform/client";
 import {
   Action,
@@ -20,21 +20,31 @@ import {
 
 export function HostsScreen({
   onConnect,
+  addOnly = false,
+  onClose,
+  onChanged,
 }: {
   onConnect: (client: DaemonClient) => void;
+  addOnly?: boolean;
+  onClose?: () => void;
+  onChanged?: (id: string) => void;
 }) {
   const [list, setList] = useState<Host[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
-  const [editing, setEditing] = useState<Host | null | undefined>(undefined);
+  const mounted = useRef(true);
+  const [editing, setEditing] = useState<Host | null | undefined>(
+    addOnly ? null : undefined,
+  );
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [token, setToken] = useState("");
   const pending = useRef<DaemonClient | null>(null);
   useEffect(() => {
     let alive = true;
+    mounted.current = true;
     hosts
       .list()
       .then((value) => {
@@ -51,6 +61,7 @@ export function HostsScreen({
       });
     return () => {
       alive = false;
+      mounted.current = false;
       pending.current?.dispose();
     };
   }, []);
@@ -78,10 +89,21 @@ export function HostsScreen({
   }
   function connect(host: Host) {
     void run(async () => {
-      const client = createDaemon(await hosts.connection(host));
+      const connection = await hosts.connection(host);
+      if (!mounted.current) return;
+      const client = createDaemon(connection);
       pending.current = client;
       try {
         await client.health();
+        if (!mounted.current) {
+          client.dispose();
+          return;
+        }
+        await storage.set("zotigo.mobile.lastHost", host.id);
+        if (!mounted.current) {
+          client.dispose();
+          return;
+        }
         pending.current = null;
         onConnect(client);
       } catch (e) {
@@ -92,71 +114,79 @@ export function HostsScreen({
     });
   }
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <Screen>
-        <Text style={styles.title}>Your devices</Text>
-        <Notice text="Choose where you want to work." />
-        {!ready && <Loading />}
-        <Notice text={error} error />
-        <Section title="DAEMONS">
-          {list.map((host) => (
-            <View key={host.id} style={{ gap: 4 }}>
-              <Row
-                title={host.name}
-                subtitle={host.baseUrl}
-                onPress={() => {
-                  if (!busy) connect(host);
-                }}
-              />
-              <View style={{ flexDirection: "row" }}>
-                <Action
-                  label="Edit"
-                  secondary
-                  disabled={busy}
-                  onPress={() => edit(host)}
-                />
-                <Action
-                  label="Remove"
-                  secondary
-                  danger
-                  disabled={busy}
-                  onPress={() =>
-                    Alert.alert(
-                      "Remove device?",
-                      "Projects and sessions on the daemon are kept.",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Remove",
-                          style: "destructive",
-                          onPress: () =>
-                            void run(async () => {
-                              await hosts.remove(host.id);
-                              setList(await hosts.list());
-                            }),
-                        },
-                      ],
-                    )
-                  }
-                />
-              </View>
-            </View>
-          ))}
-        </Section>
-        {ready && !list.length && (
-          <Notice text="Add your first device using its daemon address and token." />
+        {!addOnly && (
+          <>
+            <Text style={styles.title}>Devices</Text>
+            <Notice text="Choose where you want to work." />
+            {!ready && <Loading />}
+            <Notice text={error} error />
+            <Section title="DAEMONS">
+              {list.map((host) => (
+                <View key={host.id} style={{ gap: 4 }}>
+                  <Row
+                    title={host.name}
+                    subtitle={host.baseUrl}
+                    onPress={() => {
+                      if (!busy) connect(host);
+                    }}
+                  />
+                  <View style={{ flexDirection: "row" }}>
+                    <Action
+                      label="Edit"
+                      secondary
+                      disabled={busy}
+                      onPress={() => edit(host)}
+                    />
+                    <Action
+                      label="Remove"
+                      secondary
+                      danger
+                      disabled={busy}
+                      onPress={() =>
+                        Alert.alert(
+                          "Remove device?",
+                          "Projects and sessions on the daemon are kept.",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Remove",
+                              style: "destructive",
+                              onPress: () =>
+                                void run(async () => {
+                                  await hosts.remove(host.id);
+                                  setList(await hosts.list());
+                                  onChanged?.(host.id);
+                                }),
+                            },
+                          ],
+                        )
+                      }
+                    />
+                  </View>
+                </View>
+              ))}
+            </Section>
+            {ready && !list.length && (
+              <Notice text="Add your first device using its daemon address and token." />
+            )}
+            <Action
+              label={busy ? "Connecting…" : "Add device"}
+              disabled={busy}
+              onPress={() => edit(null)}
+            />
+          </>
         )}
-        <Action
-          label={busy ? "Connecting…" : "Add device"}
-          disabled={busy}
-          onPress={() => edit(null)}
-        />
         <Modal
           visible={editing !== undefined}
           animationType="slide"
           presentationStyle="pageSheet"
           onRequestClose={() => {
-            if (!busy) setEditing(undefined);
+            if (!busy) {
+              setEditing(undefined);
+              if (addOnly) onClose?.();
+            }
           }}
         >
           <SafeAreaView style={styles.screen}>
@@ -227,6 +257,8 @@ export function HostsScreen({
                     setList(await hosts.list());
                     setEditing(undefined);
                     setToken("");
+                    if (sameDevice) onChanged?.(editing.id);
+                    if (addOnly) onClose?.();
                   })
                 }
               />
@@ -237,6 +269,7 @@ export function HostsScreen({
                 onPress={() => {
                   setEditing(undefined);
                   setToken("");
+                  if (addOnly) onClose?.();
                 }}
               />
             </Screen>

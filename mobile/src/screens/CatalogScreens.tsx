@@ -1,5 +1,10 @@
+import SquarePen from "lucide-react-native/icons/square-pen";
+import { useLayoutTransition } from "../components/useLayoutTransition";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import FolderOpen from "lucide-react-native/icons/folder-open";
 import Folder from "lucide-react-native/icons/folder";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Ellipsis from "lucide-react-native/icons/ellipsis";
 import {
   useCallback,
@@ -8,6 +13,8 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type ComponentProps,
+  type ComponentType,
 } from "react";
 import {
   Alert,
@@ -31,6 +38,7 @@ import {
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type {
   CatalogProject,
+  CatalogWorkspace,
   CatalogSessionProjection,
   CatalogSource,
   CatalogWorkspaceSourceInput,
@@ -53,6 +61,10 @@ import {
   sessionTitle,
   visibleSessions,
   pathLabel,
+  catalogRows,
+  stickyCatalogRows,
+  type CatalogRow,
+  type CatalogLayout,
 } from "../core/catalog";
 
 type Nav = NativeStackNavigationProp<Routes>;
@@ -65,14 +77,6 @@ const css = StyleSheet.create({
     paddingBottom: 20,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "#383838",
-  },
-  heading: {
-    color: "#898989",
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 22,
-    marginBottom: 6,
-    paddingHorizontal: 10,
   },
   toolbar: {
     flexDirection: "row",
@@ -193,135 +197,307 @@ function SessionRow({ item }: { item: CatalogSessionProjection }) {
     />
   );
 }
-export function HomeScreen() {
+export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
+  const insets = useSafeAreaInsets();
   const daemon = useDaemon();
   const nav = useNavigation<Nav>();
   const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const animateLayout = useLayoutTransition();
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggle = (key: string) => {
+    animateLayout();
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const [name, setName] = useState("");
   const [panel, setPanel] = useState<"menu" | "project" | null>(null);
   const action = useMutation();
   const load = useCatalogLoad(
     useCallback(async () => {
-      const [projects, sessions] = await Promise.all([
+      const [projects, sessions, navigation] = await Promise.all([
         daemon.projects(),
         daemon.catalog(),
+        daemon.navigation(),
       ]);
-      return { projects, sessions };
+      const workspaces: CatalogWorkspace[] = [];
+      const workspaceErrors: Record<string, string> = {};
+      // Read projects in sequence rather than fan out requests to every workspace list.
+      for (const project of projects) {
+        if (daemon.signal.aborted) break;
+        try {
+          workspaces.push(...(await daemon.workspaces(project.id)));
+        } catch (error) {
+          workspaceErrors[project.id] = errorText(error);
+        }
+      }
+      return { projects, sessions, workspaces, workspaceErrors, navigation };
     }, [daemon]),
   );
-  type HomeItem =
-    | { kind: "heading"; value: string }
-    | { kind: "project"; value: CatalogProject }
-    | { kind: "session"; value: CatalogSessionProjection };
-  const rows = useMemo<HomeItem[]>(() => {
-    const sessions = visibleSessions(load.data?.sessions ?? [], query);
-    const pinned = sessions.filter((item) => item.organization?.pinned_at);
-    const recent = sessions.filter((item) => !item.organization?.pinned_at);
-    const projects = (load.data?.projects ?? []).filter((item) =>
-      item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  const rows = useMemo(
+    () =>
+      catalogRows(
+        load.data?.projects ?? [],
+        load.data?.workspaces ?? [],
+        load.data?.sessions ?? [],
+        query,
+        collapsed,
+        load.data?.workspaceErrors,
+        expanded,
+        load.data?.navigation.pinned,
+        load.data?.navigation,
+      ),
+    [load.data, query, collapsed, expanded],
+  );
+  const layouts = useRef(new Map<string, CatalogLayout>());
+  const offset = useRef(0);
+  const currentRows = useRef(rows);
+  currentRows.current = rows;
+  const [sticky, setSticky] = useState<ReturnType<typeof stickyCatalogRows>>(
+    [],
+  );
+  const refreshSticky = useCallback(() => {
+    const next = stickyCatalogRows(
+      currentRows.current,
+      layouts.current,
+      offset.current,
     );
-    return [
-      ...(pinned.length
-        ? [
-            { kind: "heading" as const, value: "Pinned" },
-            ...pinned.map((value) => ({ kind: "session" as const, value })),
-          ]
-        : []),
-      ...(projects.length
-        ? [
-            { kind: "heading" as const, value: "Projects" },
-            ...projects.map((value) => ({ kind: "project" as const, value })),
-          ]
-        : []),
-      ...(recent.length
-        ? [
-            { kind: "heading" as const, value: "Recent" },
-            ...recent.map((value) => ({ kind: "session" as const, value })),
-          ]
-        : []),
-    ];
-  }, [load.data, query]);
+    setSticky((previous) =>
+      previous.length === next.length &&
+      previous.every(
+        (entry, i) => entry.row === next[i].row && entry.top === next[i].top,
+      )
+        ? previous
+        : next,
+    );
+  }, []);
+  useEffect(() => {
+    refreshSticky();
+  }, [rows, refreshSticky]);
+  const Cell = useMemo(() => {
+    type Props = ComponentProps<
+      NonNullable<
+        ComponentProps<typeof FlatList<CatalogRow>>["CellRendererComponent"]
+      >
+    >;
+    const CellView: ComponentType<Props> = ({
+      children,
+      onLayout,
+      style,
+      item,
+    }) => (
+      <View
+        style={style}
+        onLayout={(event) => {
+          onLayout?.(event);
+          layouts.current.set(item.key, event.nativeEvent.layout);
+          refreshSticky();
+        }}
+      >
+        {children}
+      </View>
+    );
+    return CellView;
+  }, [refreshSticky]);
+  const renderRow = (item: CatalogRow, overlay = false) => {
+    if (item.kind === "session")
+      return (
+        <View style={{ paddingLeft: item.depth * 18 }}>
+          <SessionRow item={item.value} />
+        </View>
+      );
+    if (item.kind === "notice")
+      return (
+        <View style={{ paddingLeft: (item.depth ?? 2) * 18 }}>
+          <Notice text={item.title} />
+        </View>
+      );
+    if (item.kind === "more")
+      return (
+        <View style={{ paddingLeft: (item.depth ?? 2) * 18 }}>
+          <Action
+            secondary
+            label={item.expanded ? "Show less" : `Show ${item.remaining} more`}
+            onPress={() => {
+              animateLayout();
+              setExpanded((previous) => {
+                const next = new Set(previous);
+                if (next.has(item.workspaceKey)) next.delete(item.workspaceKey);
+                else next.add(item.workspaceKey);
+                return next;
+              });
+            }}
+          />
+        </View>
+      );
+    const Chevron = item.open ? ChevronDown : ChevronRight;
+    if (item.kind === "heading")
+      return (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${item.open ? "Collapse" : "Expand"} ${item.title}`}
+          accessibilityState={{ expanded: item.open }}
+          onPress={() => toggle(item.key)}
+          style={[
+            css.line,
+            {
+              justifyContent: "flex-start",
+              gap: 6,
+              paddingHorizontal: 10,
+              marginTop: 12,
+            },
+          ]}
+        >
+          <Text style={css.muted}>{item.title}</Text>
+          <Chevron size={16} color="#afafaf" />
+        </Pressable>
+      );
+    const FolderIcon = item.open ? FolderOpen : Folder;
+    const project = item.kind === "project";
+    const title = project ? item.value.name : item.value.title;
+    return (
+      <View
+        accessibilityElementsHidden={
+          !overlay && sticky.some((entry) => entry.row.key === item.key)
+        }
+        importantForAccessibility={
+          !overlay && sticky.some((entry) => entry.row.key === item.key)
+            ? "no-hide-descendants"
+            : "auto"
+        }
+        style={[css.line, { paddingLeft: project ? 0 : item.depth * 18 }]}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${item.open ? "Collapse" : "Expand"} ${title}`}
+          accessibilityState={{ expanded: item.open }}
+          onLongPress={() =>
+            nav.navigate(project ? "Project" : "Workspace", {
+              id: item.value.id,
+              title,
+            })
+          }
+          accessibilityHint="Long press to manage"
+          onPress={() => toggle(item.key)}
+          style={[
+            css.line,
+            {
+              flex: 1,
+              justifyContent: "flex-start",
+              gap: 8,
+              paddingHorizontal: 8,
+            },
+          ]}
+        >
+          <FolderIcon size={18} color="#afafaf" />
+          <Text
+            style={[css.text, { flex: 1, fontWeight: project ? "600" : "400" }]}
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
+        </Pressable>
+        <IconButton
+          icon={project ? Ellipsis : SquarePen}
+          label={project ? `Manage ${title}` : `New session in ${title}`}
+          onPress={() =>
+            project
+              ? nav.navigate("Project", { id: item.value.id, title })
+              : nav.navigate("NewSession", { workspaceId: item.value.id })
+          }
+        />
+      </View>
+    );
+  };
   return (
     <View style={css.page}>
-      <FlatList
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        contentContainerStyle={css.body}
-        data={rows}
-        keyExtractor={(item) =>
-          item.kind === "heading"
-            ? "heading:" + item.value
-            : item.kind === "project"
-              ? "project:" + item.value.id
-              : "session:" + sessionId(item.value)
-        }
-        initialNumToRender={18}
-        windowSize={7}
-        refreshing={load.loading}
-        onRefresh={() => void load.refresh()}
-        renderItem={({ item }) =>
-          item.kind === "heading" ? (
-            <Text style={css.heading}>{item.value}</Text>
-          ) : item.kind === "session" ? (
-            <SessionRow item={item.value} />
-          ) : (
-            <Row
-              title={item.value.name}
-              leading={<Folder size={20} color="#afafaf" />}
-              onPress={() =>
-                nav.navigate("Project", {
-                  id: item.value.id,
-                  title: item.value.name,
-                })
-              }
-            />
-          )
-        }
-        ListHeaderComponent={
-          <>
-            <View style={[css.toolbar, { gap: 8 }]}>
-              <View style={{ flex: 1 }}>
-                <TextInput
-                  accessibilityLabel="Search sessions and projects"
-                  placeholder="Search sessions and projects"
-                  placeholderTextColor="#898989"
-                  value={query}
-                  onChangeText={setQuery}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{
-                    height: 40,
-                    borderRadius: 12,
-                    backgroundColor: "#212121",
-                    paddingHorizontal: 12,
-                    color: "#ededed",
-                    fontSize: 14,
-                  }}
+      {hostPicker}
+      <View style={{ flex: 1, overflow: "hidden" }}>
+        <FlatList
+          CellRendererComponent={Cell}
+          onScroll={(event) => {
+            offset.current = event.nativeEvent.contentOffset.y;
+            refreshSticky();
+          }}
+          scrollEventThrottle={16}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          contentContainerStyle={[
+            css.body,
+            { paddingBottom: Math.max(16, insets.bottom) },
+          ]}
+          data={rows}
+          keyExtractor={(item) => item.key}
+          initialNumToRender={18}
+          windowSize={7}
+          refreshing={load.loading}
+          onRefresh={() => void load.refresh()}
+          renderItem={({ item }) => renderRow(item)}
+          ListHeaderComponent={
+            <>
+              <View style={[css.toolbar, { gap: 8 }]}>
+                <View style={{ flex: 1 }}>
+                  <TextInput
+                    accessibilityLabel="Search sessions and projects"
+                    placeholder="Search sessions and projects"
+                    placeholderTextColor="#898989"
+                    value={query}
+                    onChangeText={setQuery}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={{
+                      height: 40,
+                      borderRadius: 12,
+                      backgroundColor: "#212121",
+                      paddingHorizontal: 12,
+                      color: "#ededed",
+                      fontSize: 14,
+                    }}
+                  />
+                </View>
+                <IconButton
+                  icon={Ellipsis}
+                  label="More options"
+                  disabled={action.busy}
+                  onPress={() => setPanel("menu")}
                 />
               </View>
-              <IconButton
-                icon={Ellipsis}
-                label="More options"
-                disabled={action.busy}
-                onPress={() => setPanel("menu")}
-              />
-            </View>
-            <Notice text={load.error || action.error} error />
-          </>
-        }
-        ListEmptyComponent={
-          <Notice
-            text={load.loading ? "Loading…" : "No sessions or projects."}
-          />
-        }
-      />
-      <Footer>
-        <Action
-          label="New conversation"
-          disabled={action.busy}
-          onPress={() => nav.navigate("NewSession", {})}
+              <Notice text={load.error || action.error} error />
+            </>
+          }
+          ListEmptyComponent={
+            <Notice
+              text={load.loading ? "Loading…" : "No sessions or projects."}
+            />
+          }
         />
-      </Footer>
+        <View
+          pointerEvents="box-none"
+          style={{ position: "absolute", top: 0, left: 16, right: 16 }}
+        >
+          {sticky.map(({ row, top }, index) => (
+            <View
+              key={row.key}
+              style={{
+                position: "absolute",
+                top,
+                left: 0,
+                right: 0,
+                zIndex: 2 - index,
+                backgroundColor: "#181818",
+                borderBottomWidth: StyleSheet.hairlineWidth,
+                borderBottomColor: "#383838",
+              }}
+            >
+              {renderRow(row, true)}
+            </View>
+          ))}
+        </View>
+      </View>
       <Modal
         visible={panel !== null}
         animationType="slide"
@@ -813,12 +989,13 @@ export function WorkspaceScreen() {
   const action = useMutation();
   const load = useCatalogLoad(
     useCallback(async () => {
-      const [workspace, sources, sessions] = await Promise.all([
+      const [workspace, sources, sessions, navigation] = await Promise.all([
         daemon.workspace(params.id),
         daemon.workspaceSources(params.id),
         daemon.catalog(),
+        daemon.navigation(),
       ]);
-      return { workspace, sources, sessions };
+      return { workspace, sources, sessions, navigation };
     }, [daemon, params.id]),
   );
   const sessions = useMemo(
@@ -863,6 +1040,28 @@ export function WorkspaceScreen() {
         renderItem={({ item }) => <SessionRow item={item} />}
         ListHeaderComponent={
           <>
+            <Action
+              secondary
+              label={
+                load.data?.navigation.pinned.some(
+                  (p) => p.kind === "workspace" && p.id === params.id,
+                )
+                  ? "Unpin workspace"
+                  : "Pin workspace"
+              }
+              disabled={action.busy || !load.data}
+              onPress={() =>
+                void action.run(async () => {
+                  await daemon.pinWorkspace(
+                    params.id,
+                    !load.data?.navigation.pinned.some(
+                      (p) => p.kind === "workspace" && p.id === params.id,
+                    ),
+                  );
+                  await load.refresh();
+                })
+              }
+            />
             <View style={css.toolbar}>
               <Text style={css.muted}>
                 {workspace?.status === "ready"
@@ -902,7 +1101,7 @@ export function WorkspaceScreen() {
       />
       <Footer>
         <Action
-          label="New conversation"
+          label="New session"
           disabled={workspace?.status !== "ready" || action.busy}
           onPress={() =>
             nav.navigate("NewSession", {

@@ -44,7 +44,7 @@ The app supports project and workspace management, source registration, session 
 
 Current limits:
 
-- No permanent project/workspace deletion, custom navigation ordering, or project/workspace pinning.
+- No permanent project/workspace deletion, custom navigation ordering, or project pinning. Workspace and session pins use the daemon navigation catalog.
 - No archived-history browser, full Mermaid rendering, or desktop diff/editor parity.
 - Text editing is limited to 256 KiB. Revision conflicts preserve the draft; file content reload is manual, with a freshness reminder on foreground return.
 - Channel configuration editing, push notifications, and background streaming are not implemented.
@@ -71,3 +71,5 @@ ZOTIGO_MOBILE_TEST_DAEMON=/absolute/path/zotigod corepack pnpm --filter @zotigo/
 Run the root tests, typecheck, and build after changing shared code or workspace configuration. JavaScript export checks bundle construction only; native compilation, signing, Keychain, network behavior, gestures, keyboard handling, and scrolling performance require iOS validation.
 
 For reproducible Linux layout and interaction checks with synthetic multi-host data, see the [fixture preview](tests/preview/README.md). It renders the production screens through a separate test entry and does not contact real daemons.
+
+Home restores the last selected device (or connects the only saved device). Device configuration lives under Settings → Devices. Workspace lists initially show five conversations; search includes the full catalog. Models and runtimes have a separate Settings page; skills are selected with `/` in the conversation composer. While a response is active, an empty composer shows Stop; entering text or attaching an image switches it to Send.

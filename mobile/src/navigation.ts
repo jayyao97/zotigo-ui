@@ -6,6 +6,8 @@ export type Routes = {
   NewSession: { workspaceId?: string; directory?: string };
   Files: { path?: string; sessionId?: string; open?: boolean };
   Settings: undefined;
+  Models: undefined;
+  Devices: { add?: boolean } | undefined;
   Channels: undefined;
   Sources: { projectId: string; title: string };
   SourcePicker: { projectId: string };

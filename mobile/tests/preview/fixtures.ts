@@ -21,6 +21,7 @@ type Fault =
   | "send-rejected";
 type HostState = {
   fault: Fault;
+  pins: { kind: string; id: string }[];
   projects: CatalogProjectDetail[];
   workspaces: CatalogWorkspace[];
   sessions: Map<
@@ -169,6 +170,37 @@ function history(work: boolean): DisplayItem[] {
         ],
       },
     }),
+    display(39, "interaction_request", {
+      turn: { id: "active-turn" },
+      interaction: {
+        id: "question-preview",
+        kind: "user_input",
+        turn_id: "active-turn",
+        status: "pending",
+        questions: [
+          {
+            id: "scope",
+            header: "Scope",
+            question: "Which change should be reviewed?",
+            is_other: true,
+            options: [
+              {
+                label: "Reconnect",
+                description: "Review the stream cancellation change.",
+              },
+              { label: "Drafts", description: "Review draft persistence." },
+            ],
+          },
+          {
+            id: "checks",
+            header: "Validation",
+            question: "Which check should run?",
+            is_other: false,
+            options: [{ label: "Unit tests" }, { label: "Typecheck" }],
+          },
+        ],
+      },
+    }),
   ];
 }
 function makeHost(work: boolean): HostState {
@@ -225,7 +257,8 @@ function makeHost(work: boolean): HostState {
       title: "Experimental checkout",
       root_path: root + "-experiment",
       status: "error",
-      error: "Source branch is unavailable. Choose a valid base ref and retry.",
+      error:
+        "Source branch is unavailable. Choose a valid base ref and retry.",
       created_at: now,
       updated_at: now,
     },
@@ -258,7 +291,9 @@ function makeHost(work: boolean): HostState {
         : `${label}: Multi-host mobile architecture`,
       items: i
         ? [
+            display(0, "turn_started", { turn: { id: "complete" } }),
             display(1, "user_message", {
+              turn: { id: "complete" },
               content: [
                 {
                   type: "text",
@@ -269,12 +304,60 @@ function makeHost(work: boolean): HostState {
             display(2, "assistant_message", {
               content: [
                 {
+                  type: "tool_call",
+                  tool_call: {
+                    id: "read-source",
+                    name: "read_file",
+                    arguments: '{"path":"src/client.ts"}',
+                  },
+                },
+              ],
+            }),
+            display(3, "assistant_message", {
+              content: [
+                {
+                  type: "tool_result",
+                  tool_result: {
+                    tool_call_id: "read-source",
+                    tool_name: "read_file",
+                    text: "Connection lifetime is scoped to the selected device.",
+                  },
+                },
+              ],
+            }),
+            display(4, "assistant_message", {
+              content: [
+                {
+                  type: "tool_call",
+                  tool_call: {
+                    id: "check-tests",
+                    name: "exec_command",
+                    arguments: '{"cmd":"pnpm test"}',
+                  },
+                },
+              ],
+            }),
+            display(5, "assistant_message", {
+              content: [
+                {
+                  type: "tool_result",
+                  tool_result: {
+                    tool_call_id: "check-tests",
+                    tool_name: "exec_command",
+                    text: "52 tests passed.",
+                  },
+                },
+              ],
+            }),
+            display(6, "assistant_message", {
+              content: [
+                {
                   type: "text",
                   text: "The investigation is complete. The next step is to validate the behavior on a real iPhone.",
                 },
               ],
             }),
-            display(3, "turn_completed", { turn: { id: "complete" } }),
+            display(7, "turn_completed", { turn: { id: "complete" } }),
           ]
         : history(work),
       pinned: i === 0,
@@ -283,6 +366,7 @@ function makeHost(work: boolean): HostState {
   }
   return {
     fault: "none",
+    pins: [],
     projects,
     workspaces,
     sessions,
@@ -310,7 +394,9 @@ function publish(host: HostState, id: string, event: SessionDisplayEvent) {
 }
 function projection(host: HostState, id: string): CatalogSessionProjection {
   const session = host.sessions.get(id)!;
-  const workspace = host.workspaces.find((w) => w.id === session.workspaceId)!;
+  const workspace = host.workspaces.find(
+    (w) => w.id === session.workspaceId,
+  )!;
   return {
     runtime: session.runtime,
     availability: "available",
@@ -430,6 +516,24 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       ],
       diagnostics: [],
     });
+  if (path === "/catalog/navigation")
+    return envelope({
+      pinned: host.pins,
+      projects: host.projects
+        .map((p) => ({ kind: "project", id: p.id }))
+        .reverse(),
+      workspaces: host.workspaces
+        .map((w) => ({ kind: "workspace", id: w.id }))
+        .reverse(),
+    });
+  if (path === "/catalog/navigation/pin" && method === "PUT") {
+    const item = body.item as { kind: string; id: string };
+    host.pins = host.pins.filter(
+      (p) => p.kind !== item.kind || p.id !== item.id,
+    );
+    if (body.pinned) host.pins.push(item);
+    return envelope({});
+  }
   if (path === "/catalog/sessions") {
     if (host.fault === "catalog")
       return failure(
@@ -479,7 +583,9 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
         return envelope(workspace);
       }
       return envelope({
-        workspaces: host.workspaces.filter((w) => w.project_id === project.id),
+        workspaces: host.workspaces.filter(
+          (w) => w.project_id === project.id,
+        ),
       });
     }
     if (projectMatch[2] === "sources") {
@@ -511,7 +617,9 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     const workspace = host.workspaces.find((w) => w.id === workspaceMatch[1]);
     if (!workspace) return failure("Workspace missing.", 404);
     if (workspaceMatch[2] === "sources") {
-      const project = host.projects.find((p) => p.id === workspace.project_id)!;
+      const project = host.projects.find(
+        (p) => p.id === workspace.project_id,
+      )!;
       const ids = host.bindings.get(workspace.id) ?? [];
       const binding = (source: CatalogProjectDetail["sources"][number]) => ({
         source,
@@ -529,7 +637,9 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
         return envelope(binding(source));
       }
       return envelope({
-        sources: project.sources.filter((s) => ids.includes(s.id)).map(binding),
+        sources: project.sources
+          .filter((s) => ids.includes(s.id))
+          .map(binding),
       });
     }
     if (workspaceMatch[2] === "archive-preview")
@@ -575,7 +685,11 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
               ]
             : [
                 { name: "src", path: root + "/src", kind: "directory" },
-                { name: "README.md", path: root + "/README.md", kind: "file" },
+                {
+                  name: "README.md",
+                  path: root + "/README.md",
+                  kind: "file",
+                },
                 {
                   name: "preview.png",
                   path: root + "/preview.png",
@@ -704,7 +818,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     host.sessions.set(id, {
       runtime,
       workspaceId: workspace.id,
-      title: "New conversation",
+      title: "New session",
       items: [],
       pinned: false,
       archived: false,
@@ -718,9 +832,32 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       session = host.sessions.get(id);
     if (!session) return failure("Session missing.", 404);
     if (!action) return envelope(session.runtime);
+    if (action === "fork" && method === "POST") {
+      const forkId = "fork-" + String(body.request_id);
+      if (!host.sessions.has(forkId))
+        host.sessions.set(forkId, {
+          ...session,
+          runtime: {
+            ...session.runtime,
+            id: forkId,
+            working: false,
+            forked_from: {
+              session_id: id,
+              through_turn_id: String(body.through_turn_id),
+            },
+          },
+          title: "Fork · " + session.title,
+          items: [...session.items],
+          pinned: false,
+        });
+      return envelope(host.sessions.get(forkId)!.runtime);
+    }
     if (action === "items") {
       const before = Number(url.searchParams.get("before") ?? Infinity),
-        limit = Math.min(Number(url.searchParams.get("limit") ?? 50), before === Infinity ? 20 : Infinity);
+        limit = Math.min(
+          Number(url.searchParams.get("limit") ?? 50),
+          before === Infinity ? 20 : Infinity,
+        );
       const selected = session.items.filter((i) => i.sequence < before);
       const slice = selected.slice(-limit);
       return envelope({
@@ -780,14 +917,34 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     if (action === "profile") session.runtime.profile = String(body.profile);
     if (action === "approval-policy")
       session.runtime.approval_policy = body.approval_policy as
-        "auto" | "bypass_permissions";
+        | "auto"
+        | "bypass_permissions";
     if (action.startsWith("approvals/"))
       publish(host, id, {
         type: "item",
         item: display(session.items.length + 1, "approval_decision", {
-          approval: { id: "approval-preview", decisions: body.decisions as [] },
+          approval: {
+            id: "approval-preview",
+            decisions: body.decisions as [],
+          },
         }),
       });
+    if (action.startsWith("interactions/")) {
+      const response = {
+        id: "question-preview",
+        kind: "user_input" as const,
+        turn_id: "active-turn",
+        status: "resolved" as const,
+        answers: body.answers as Record<string, string[]>,
+      };
+      publish(host, id, {
+        type: "item",
+        item: display(session.items.length + 1, "interaction_response", {
+          interaction: response,
+        }),
+      });
+      return envelope(response);
+    }
     if (action === "pause")
       publish(host, id, {
         type: "item",
@@ -814,7 +971,9 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
             pickedImageInput({ base64: image.data_base64 }).mime_type !==
             image.mime_type
           )
-            throw new Error("Declared image MIME does not match actual bytes.");
+            throw new Error(
+              "Declared image MIME does not match actual bytes.",
+            );
         }
       } catch (error) {
         return failure(
@@ -889,7 +1048,10 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       return envelope(session.runtime);
     return failure("Unimplemented fixture session action: " + action, 404);
   }
-  return failure("Unimplemented fixture endpoint: " + method + " " + path, 404);
+  return failure(
+    "Unimplemented fixture endpoint: " + method + " " + path,
+    404,
+  );
 };
 export const preview = {
   hosts: ["home", "work"],

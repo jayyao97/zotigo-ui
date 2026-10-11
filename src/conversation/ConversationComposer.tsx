@@ -31,7 +31,7 @@ import {
 
 import type { AgentCatalogEntry, AgentKind, AgentModel, ApprovalPolicy, RuntimeProfile, SkillSummary } from "../../shared/zotigod";
 import type { DesktopProject, DesktopWorkspace } from "../../shared/clientTypes";
-import { approvalPolicyLabel } from "../../shared/approvalPolicy";
+import { approvalPolicyLabel, approvalPolicyDescription } from "../../shared/approvalPolicy";
 
 export type ComposerAttachment = {
   id: string;
@@ -464,9 +464,7 @@ export function codexModelLabel(models: AgentModel[], modelId: string): string {
   return models.find((model) => model.id === modelId)?.display_name || modelId || "Codex";
 }
 
-export function compatibleReasoningEffort(efforts: string[], current: string): string {
-  return efforts.includes(current) ? current : efforts.includes("medium") ? "medium" : efforts[0] ?? "";
-}
+export { compatibleReasoningEffort } from "../../shared/modelSelection";
 
 export function RuntimeSettingsPicker({
   favorites,
@@ -868,7 +866,7 @@ export function ApprovalPolicyPicker({
             <ShieldCheck size={16} strokeWidth={1.8} />
             <span>
               <strong>Auto</strong>
-              <small>Use safety checks and request approval when needed</small>
+              <small>{approvalPolicyDescription("auto")}</small>
             </span>
             {value === "auto" && <Check size={15} strokeWidth={2} />}
           </button>
@@ -882,7 +880,7 @@ export function ApprovalPolicyPicker({
             <ShieldAlert size={16} strokeWidth={1.8} />
             <span>
               <strong>Full access</strong>
-              <small>Run tools without safety classification or approval</small>
+              <small>{approvalPolicyDescription("bypass_permissions")}</small>
             </span>
             {value === "bypass_permissions" && <Check size={15} strokeWidth={2} />}
           </button>
