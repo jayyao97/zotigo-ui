@@ -1,3 +1,4 @@
+import Gauge from "lucide-react-native/icons/gauge";
 import { ComposerSkills } from "../components/ComposerSkills";
 import { ContextUsage } from "../components/ContextUsage";
 import { ProfilePicker } from "../components/ProfilePicker";
@@ -843,39 +844,15 @@ export function ConversationScreen() {
                 }
               />
             </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Model and reasoning"
-              accessibilityHint={[
-                state.session?.model || state.session?.profile,
-                state.session?.reasoning_effort,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-              style={{
-                flex: 1,
-                minWidth: 44,
-                minHeight: 44,
-                justifyContent: "center",
-                alignItems: "center",
-                backgroundColor: colors.elevated,
-                borderRadius: 12,
-                paddingHorizontal: 8,
-              }}
+            <View style={{ flex: 1 }} />
+            <IconButton
+              icon={Gauge}
+              label="Model and reasoning"
               onPress={() => {
                 setOptionPane("model");
                 setOptions(true);
               }}
-            >
-              <Text numberOfLines={1} style={[styles.muted, { maxWidth: 130 }]}>
-                {[
-                  state.session?.model || state.session?.profile || "Model",
-                  state.session?.reasoning_effort,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </Text>
-            </Pressable>
+            />
             {state.session?.context_usage && (
               <ContextUsage
                 tokens={state.session.context_usage.tokens}
@@ -957,6 +934,11 @@ export function ConversationScreen() {
         }}
       >
         <Notice text={error} error />
+        {optionPane === "model" && (
+          <Notice
+            text={`Current: ${[state.session?.model || state.session?.profile || "Unavailable", state.session?.reasoning_effort].filter(Boolean).join(" · ")}`}
+          />
+        )}
         <>
           {optionPane === "context" && state.session?.context_usage && (
             <View style={{ gap: 8 }}>
