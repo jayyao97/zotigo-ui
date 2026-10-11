@@ -10,17 +10,3 @@ export function ProjectDisclosureIcon({ open }: { open: boolean }) {
     </svg>
   );
 }
-
-export function WorkspaceDisclosureIcon({ open }: { open: boolean }) {
-  return open ? (
-    <svg className="workspace-disclosure-icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="2.5" y="3" width="13" height="12" rx="2" />
-      <path d="M2.8 7h12.4M7 7v7.6" />
-    </svg>
-  ) : (
-    <svg className="workspace-disclosure-icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="3" y="4.5" width="11" height="9.5" rx="1.8" />
-      <path d="M5 2.75h8.2c1.1 0 2 .9 2 2v6.5" />
-    </svg>
-  );
-}

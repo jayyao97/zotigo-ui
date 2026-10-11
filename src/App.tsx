@@ -164,7 +164,7 @@ import {
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 import { shouldSmoothStreaming } from "./streamingText";
 import { ChannelsPage } from "./channels/ChannelsPage";
-import { ProjectDisclosureIcon, WorkspaceDisclosureIcon } from "./SidebarDisclosureIcons";
+import { ProjectDisclosureIcon } from "./SidebarDisclosureIcons";
 import {
   composerDraftKey as draftKeyForSelection,
   emptyComposerDraft,
@@ -3350,9 +3350,10 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
             className="workspace-collapse-button"
             onClick={() => toggleWorkspaceCollapsed(workspace.id)}
             aria-label={`${workspaceOpen ? "Collapse" : "Expand"} ${workspace.title}`}
+            title={`${workspaceOpen ? "Collapse" : "Expand"} ${workspace.title}`}
             aria-expanded={workspaceOpen}
           >
-            <WorkspaceDisclosureIcon open={workspaceOpen} />
+            <ProjectDisclosureIcon open={workspaceOpen} />
           </button>
           <button
             type="button"

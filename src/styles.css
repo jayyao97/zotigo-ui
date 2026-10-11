@@ -717,8 +717,7 @@ p {
   background: transparent;
 }
 
-.project-disclosure-icon,
-.workspace-disclosure-icon {
+.project-disclosure-icon {
   overflow: visible;
   stroke: currentColor;
   stroke-linecap: round;
@@ -729,12 +728,6 @@ p {
   width: 16px;
   height: 16px;
   stroke-width: 1.45;
-}
-
-.workspace-disclosure-icon {
-  width: 15px;
-  height: 15px;
-  stroke-width: 1.4;
 }
 
 .project-row-actions {
