@@ -7,6 +7,7 @@ import type {
   ZotigoSession,
   CatalogSessionProjection,
   SessionDisplayEvent,
+  QueuedInput,
 } from "@zotigo/shared/zotigod";
 import type { Fetch } from "../../src/core/client";
 
@@ -33,6 +34,7 @@ type HostState = {
       items: DisplayItem[];
       pinned: boolean;
       archived: boolean;
+      queue?: QueuedInput[];
     }
   >;
   file: { content: string; revision: number };
@@ -475,9 +477,10 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
   const host = hosts[key],
     path = decodeURIComponent(url.pathname),
     method = init.method ?? "GET";
-  const body = init.body
-    ? (JSON.parse(String(init.body)) as Record<string, unknown>)
-    : {};
+  const body =
+    typeof init.body === "string" && init.body
+      ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+      : {};
   if (host.fault === "offline")
     throw new Error(
       "Fixture: device is offline. Reconnect your VPN and try again.",
@@ -699,6 +702,13 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       truncated: false,
     });
   }
+  if (path === "/files/upload" && method === "POST") {
+    if (!host.sessions.has(url.searchParams.get("sessionId") ?? ""))
+      return failure("Session missing", 404);
+    return envelope({
+      path: `/workspace/.attachments/${url.searchParams.get("name")}`,
+    });
+  }
   if (path === "/files/open") {
     const target = String(body.path).startsWith("/")
       ? String(body.path)
@@ -832,6 +842,74 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       session = host.sessions.get(id);
     if (!session) return failure("Session missing.", 404);
     if (!action) return envelope(session.runtime);
+    if (action === "title-suggestion")
+      return envelope({ title: "Review mobile host isolation" });
+    if (action === "search") {
+      const q = (url.searchParams.get("q") ?? "").toLowerCase();
+      return envelope({
+        hits: session.items
+          .filter((item) =>
+            item.content?.some((part) => part.text?.toLowerCase().includes(q)),
+          )
+          .map(({ id, sequence }) => ({ id, sequence })),
+        truncated: false,
+      });
+    }
+    if (action === "items/window") {
+      const index = session.items.findIndex(
+        (item) => item.id === url.searchParams.get("message_id"),
+      );
+      if (index < 0) return failure("Message missing", 404);
+      return envelope({
+        items: session.items.slice(Math.max(0, index - 10), index + 11),
+        has_more: index > 10,
+        prev_cursor: "",
+        next_cursor: "",
+      });
+    }
+    if (action === "queue" && method === "GET")
+      return envelope({ items: session.queue ?? [] });
+    if (action === "queue/resume") {
+      for (const item of session.queue ?? []) {
+        item.state = "queued";
+        item.revision++;
+      }
+      return envelope({});
+    }
+    if (action.startsWith("queue/") && ["PATCH", "DELETE"].includes(method)) {
+      const item = session.queue?.find((item) => item.id === action.slice(6));
+      if (!item) return failure("Queued message missing", 404);
+      if (item.revision !== body.revision)
+        return failure(
+          "Queue changed. Reopen the message to edit the latest version.",
+          409,
+          "conflict",
+        );
+      if (method === "DELETE")
+        session.queue = session.queue?.filter((value) => value !== item);
+      else {
+        item.text = String(body.text);
+        item.revision++;
+      }
+      return envelope({});
+    }
+    if (action === "queue" && method === "POST") {
+      const request = String(body.client_message_id);
+      if (!host.sends.has(request)) {
+        host.sends.add(request);
+        (session.queue ??= []).push({
+          id: request,
+          sequence: session.items.length + 1,
+          type: "message",
+          text: String(body.text),
+          created_at: now,
+          state: "queued",
+          revision: 1,
+          editable: true,
+        });
+      }
+      return envelope({ status: "accepted", id: request });
+    }
     if (action === "translate" && method === "POST") {
       if (
         typeof body.text !== "string" ||
@@ -937,7 +1015,8 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     if (action === "profile") session.runtime.profile = String(body.profile);
     if (action === "approval-policy")
       session.runtime.approval_policy = body.approval_policy as
-        "auto" | "bypass_permissions";
+        | "auto"
+        | "bypass_permissions";
     if (action.startsWith("approvals/"))
       publish(host, id, {
         type: "item",

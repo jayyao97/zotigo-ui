@@ -1,3 +1,5 @@
+import { VideoPreview } from "../components/VideoPreview";
+import type { VideoFileSnapshot } from "@zotigo/shared/clientTypes";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -40,6 +42,7 @@ export function FilesScreen({ route, navigation }: Props) {
   const [directory, setDirectory] = useState<DirectoryListing>();
   const [file, setFile] = useState<TextFileSnapshot>();
   const [image, setImage] = useState<string>();
+  const [video, setVideo] = useState<VideoFileSnapshot>();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -108,6 +111,7 @@ export function FilesScreen({ route, navigation }: Props) {
     setPath(result.path);
     setFile(undefined);
     setImage(undefined);
+    setVideo(undefined);
     setDraft("");
     setConflict(false);
     setNotice("");
@@ -140,7 +144,14 @@ export function FilesScreen({ route, navigation }: Props) {
       );
     if (result.kind === "requires_confirmation")
       throw new Error("This file requires an explicit open action.");
-    if (result.kind === "image") {
+    setVideo(undefined);
+    if (result.kind === "video") {
+      setVideo(result.file);
+      setImage(undefined);
+      setFile(undefined);
+      setDraft("");
+      setPath(result.file.path);
+    } else if (result.kind === "image") {
       if (!caps.image)
         throw new Error("Image previews are unavailable on this daemon.");
       const uri = imagePreviewUri(result.file);
@@ -289,6 +300,8 @@ export function FilesScreen({ route, navigation }: Props) {
             />
           </View>
         </View>
+      ) : video ? (
+        <VideoPreview data={video.dataBase64} mediaType={video.mediaType} />
       ) : image ? (
         <View style={s.editor}>
           <Image

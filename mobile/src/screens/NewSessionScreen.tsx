@@ -1,17 +1,24 @@
+import { DraftImages } from "../components/DraftImages";
+import { SkillInput } from "../components/SkillInput";
+import Plus from "lucide-react-native/icons/plus";
+import { AttachmentFiles } from "../components/AttachmentFiles";
+import { pickAttachments } from "../platform/pickAttachments";
+import type { DraftFile } from "../core/attachments";
+import type { MessageImageInput } from "@zotigo/shared/zotigod";
 import Gauge from "lucide-react-native/icons/gauge";
 import { ComposerSkills } from "../components/ComposerSkills";
 import ArrowUp from "lucide-react-native/icons/arrow-up";
 import Shield from "lucide-react-native/icons/shield";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  TextInput,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable } from "react-native";
 import { randomUUID } from "expo-crypto";
-import { ComposerStore, emptyDraft, submissionAttempt } from "../core/composer";
+import {
+  ComposerStore,
+  emptyDraft,
+  submissionAttempt,
+  prepareAttachments,
+} from "../core/composer";
 import { storage } from "../platform/storage";
 import { ProfilePicker } from "../components/ProfilePicker";
 import {
@@ -74,7 +81,10 @@ export function NewSessionScreen() {
   const [pickerError, setPickerError] = useState("");
   const [profilesDirectory, setProfilesDirectory] = useState<string>();
   const [profileError, setProfileError] = useState("");
+  const [caret, setCaret] = useState(0);
   const [message, setMessage] = useState("");
+  const [files, setFiles] = useState<DraftFile[]>([]);
+  const [images, setImages] = useState<MessageImageInput[]>([]);
   const [skillNames, setSkillNames] = useState<string[]>([]);
   const insets = useSafeAreaInsets();
   const header = useHeaderHeight();
@@ -92,7 +102,7 @@ export function NewSessionScreen() {
   const lock = useRef(false),
     mounted = useRef(true);
   usePreventRemove(
-    busy || !!message.trim() || !!skillNames.length,
+    busy || !!message.trim() || !!files.length || !!images.length,
     ({ data }) => {
       if (completed.current) nav.dispatch(data.action);
       else if (!lock.current)
@@ -260,7 +270,27 @@ export function NewSessionScreen() {
         client.connection.id,
         session.id,
       );
-      const draft = { ...emptyDraft(), text: message, skills: skillNames };
+      let draft = {
+        ...emptyDraft(),
+        text: message,
+        skills: skillNames,
+        files,
+        images,
+      };
+      const pending = { current: { draft } };
+      await prepareAttachments(
+        client,
+        session.id,
+        pending,
+        composer,
+        (state) => {
+          if (mounted.current) setFiles(state.draft.files ?? []);
+        },
+      );
+      draft = {
+        ...pending.current.draft,
+        files: pending.current.draft.files ?? [],
+      };
       const attempt = submissionAttempt({ draft }, randomUUID(), false);
       await composer.write({ draft, attempt });
       try {
@@ -269,7 +299,7 @@ export function NewSessionScreen() {
           {
             text: attempt.text,
             skills: attempt.skills,
-            images: [],
+            images: attempt.images,
             client_message_id: attempt.client_message_id,
           },
           false,
@@ -323,11 +353,27 @@ export function NewSessionScreen() {
         }}
       >
         <Notice text={error || profileError} error />
+        <AttachmentFiles
+          files={files}
+          disabled={busy}
+          onRemove={(index) => setFiles(files.filter((_, i) => i !== index))}
+        />
+        {!!images.length && (
+          <DraftImages
+            images={images}
+            disabled={busy}
+            onRemove={(index) =>
+              setImages(images.filter((_, i) => i !== index))
+            }
+          />
+        )}
         <ComposerSkills
           text={message}
+          caret={caret}
           selected={skillNames}
           disabled={busy}
           onChange={(text, skills) => {
+            setCaret(caret + text.length - message.length);
             setMessage(text);
             setSkillNames(skills);
           }}
@@ -381,25 +427,39 @@ export function NewSessionScreen() {
             padding: 8,
           }}
         >
-          <TextInput
-            accessibilityLabel="Message"
-            multiline
-            editable={!busy}
+          <SkillInput
             value={message}
-            onChangeText={setMessage}
-            placeholder="Ask Zotigo…"
-            placeholderTextColor={colors.muted}
-            style={[
-              styles.input,
-              {
-                borderWidth: 0,
-                backgroundColor: "transparent",
-                minHeight: 72,
-                maxHeight: 160,
-              },
-            ]}
+            skills={skillNames}
+            editable={!busy}
+            caret={caret}
+            onCaret={setCaret}
+            onChange={setMessage}
           />
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <IconButton
+              icon={Plus}
+              label="Add attachment"
+              disabled={busy || files.length + images.length >= 5}
+              onPress={() => {
+                if (lock.current) return;
+                lock.current = true;
+                setBusy(true);
+                void pickAttachments(images, files)
+                  .then((result) => {
+                    if (result && mounted.current) {
+                      setFiles(result.files);
+                      setImages(result.images);
+                    }
+                  })
+                  .catch((e) => {
+                    if (mounted.current) setError(errorText(e));
+                  })
+                  .finally(() => {
+                    lock.current = false;
+                    if (mounted.current) setBusy(false);
+                  });
+              }}
+            />
             <IconButton
               icon={Shield}
               label={approvalPolicyLabel(policy)}
@@ -418,7 +478,7 @@ export function NewSessionScreen() {
               label={busy ? "Creating…" : "Create session and send"}
               disabled={
                 busy ||
-                !message.trim() ||
+                (!message.trim() && !files.length && !images.length) ||
                 !catalog ||
                 !sessionContextReady(
                   workspace,

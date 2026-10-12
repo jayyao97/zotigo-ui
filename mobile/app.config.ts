@@ -22,6 +22,10 @@ const config: ExpoConfig = {
   plugins: [
     "expo-secure-store",
     [
+      "expo-video",
+      { supportsBackgroundPlayback: false, supportsPictureInPicture: false },
+    ],
+    [
       "expo-image-picker",
       {
         photosPermission:

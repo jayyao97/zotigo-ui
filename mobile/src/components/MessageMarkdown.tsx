@@ -141,6 +141,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   text,
   sessionId,
   user = false,
+  highlight,
   onLink,
   onSelection,
   onSelecting,
@@ -148,6 +149,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   text: string;
   sessionId: string;
   user?: boolean;
+  highlight?: string;
   onLink: (url: string) => boolean;
   onSelection?: (action: SelectionAction) => void;
   onSelecting?: () => void;
@@ -235,6 +237,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           ) : (
             <SelectableText
               key={node.key}
+              highlight={highlight}
               runs={selectionRuns(node, {
                 bold: parents.some((p) => /^heading/.test(p.type)),
               })}
