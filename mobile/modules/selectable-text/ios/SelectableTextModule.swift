@@ -15,6 +15,7 @@ public class SelectableTextModule: Module {
     Name("ZotigoSelectableText")
     View(SelectableTextView.self) {
       Events("onMeasure", "onAction", "onLink", "onSelecting")
+      Prop("highlight") { (view, text: String?) in view.highlight = text ?? "" }
       Prop("runs") { (view, runs: [TextRun]) in view.runs = runs }
       Prop("fontSize") { (view, size: Double) in view.fontSize = size }
       Prop("lineHeight") { (view, height: Double) in view.lineHeight = height }
@@ -30,6 +31,7 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
   let onAction = EventDispatcher()
   let onLink = EventDispatcher()
   let onSelecting = EventDispatcher()
+  var highlight = ""
   var runs: [TextRun] = []
   var fontSize = 16.0
   var lineHeight = 26.0
@@ -68,6 +70,16 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
       if run.strike { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
       if !run.link.isEmpty { attrs[.link] = run.link }
       result.append(NSAttributedString(string: run.text, attributes: attrs))
+    }
+    if !highlight.isEmpty {
+      let source = result.string as NSString
+      var remaining = NSRange(location: 0, length: source.length)
+      while remaining.length > 0 {
+        let match = source.range(of: highlight, options: [.caseInsensitive], range: remaining)
+        if match.location == NSNotFound { break }
+        result.addAttribute(.backgroundColor, value: UIColor.systemOrange.withAlphaComponent(0.4), range: match)
+        remaining = NSRange(location: NSMaxRange(match), length: source.length - NSMaxRange(match))
+      }
     }
     textView.linkTextAttributes = [.foregroundColor: linkColor, .underlineStyle: NSUnderlineStyle.single.rawValue]
     // Do not replace the attributed buffer under a user's active selection.

@@ -1,3 +1,14 @@
+import { DraftImages } from "../components/DraftImages";
+import { SkillInput } from "../components/SkillInput";
+import { AttachmentFiles } from "../components/AttachmentFiles";
+import { pickAttachments } from "../platform/pickAttachments";
+import { validateAttachments } from "../core/attachments";
+import Search from "lucide-react-native/icons/search";
+import { ConversationHistory } from "../components/ConversationHistory";
+import { ReferenceEditor } from "../components/ReferenceEditor";
+import { useConversationTitle } from "../platform/useConversationTitle";
+import { InputQueue } from "../components/InputQueue";
+import { useSendMode } from "../platform/preferences";
 import Gauge from "lucide-react-native/icons/gauge";
 import { ComposerSkills } from "../components/ComposerSkills";
 import { SelectionSheet } from "../components/SelectionSheet";
@@ -49,12 +60,10 @@ import {
   Alert,
   AppState,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -94,6 +103,7 @@ import {
   ComposerStore,
   emptyDraft,
   submissionAttempt,
+  prepareAttachments,
   type ComposerState,
   type Draft,
 } from "../core/composer";
@@ -145,6 +155,7 @@ function ConversationContent() {
     () => new ComposerStore(storage, client.connection.id, id),
     [client, id],
   );
+  const [caret, setCaret] = useState(0);
   const [saved, setSaved] = useState<ComposerState>({ draft: emptyDraft() });
   const draftRef = useRef(saved);
   const [loaded, setLoaded] = useState(false);
@@ -166,6 +177,7 @@ function ConversationContent() {
       );
   });
   const [options, setOptions] = useState(false);
+  const [attachmentMenu, setAttachmentMenu] = useState(false);
   const [optionPane, setOptionPane] = useState<
     "session" | "model" | "policy" | "context"
   >("session");
@@ -173,13 +185,25 @@ function ConversationContent() {
   const [agents, setAgents] = useState<AgentCatalogResponse>();
   const [profiles, setProfiles] = useState<ProfilesResponse>();
   const [title, setTitle] = useState(route.params.title);
-  const [steer, setSteer] = useState(false);
+  useConversationTitle(id, state.items, (value) => {
+    setTitle(value);
+    nav.setOptions({ title: value });
+  });
+  const defaultSendMode = useSendMode(client.connection.id);
+  const [modeOverride, setModeOverride] = useState<"queue" | "steering">();
+  const sendMode = modeOverride ?? defaultSendMode.mode;
+  const [queueRevision, setQueueRevision] = useState(0);
   const list = useRef<FlatList<TimelineRow>>(null);
   const follow = useRef(new TimelineFollow());
   const historyGesture = useRef(new HistoryPaginationGesture());
   const inverted = Platform.OS !== "web";
   const scrollMetrics = useRef(new TimelineScrollMetrics(inverted));
   const [following, setFollowing] = useState(true);
+  const [history, setHistory] = useState<{
+    target?: string;
+    excerpt?: string;
+  }>();
+  const [editingReference, setEditingReference] = useState<string>();
   const [selection, setSelection] = useState<{
     text: string;
     messageId: string;
@@ -272,11 +296,23 @@ function ConversationContent() {
     },
     [update],
   );
-  const selectText = useCallback((value: { action: "reference" | "translate"; text: string; messageId: string }) => {
-    selectingText();
-    if (value.action === "reference") addReference({ messageId: value.messageId, text: value.text, comment: "" });
-    else setSelection(value);
-  }, [addReference, selectingText]);
+  const selectText = useCallback(
+    (value: {
+      action: "reference" | "translate";
+      text: string;
+      messageId: string;
+    }) => {
+      selectingText();
+      if (value.action === "reference")
+        addReference({
+          messageId: value.messageId,
+          text: value.text,
+          comment: "",
+        });
+      else setSelection(value);
+    },
+    [addReference, selectingText],
+  );
   async function run(action: () => Promise<unknown>, onSuccess?: () => void) {
     if (lock.current) return;
     lock.current = true;
@@ -301,11 +337,15 @@ function ConversationContent() {
   async function send() {
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = undefined;
+    await prepareAttachments(client, id, draftRef, composer, (value) => {
+      if (alive.current) setSaved(value);
+    });
     const current = draftRef.current;
     const attempt = submissionAttempt(
       current,
       randomUUID(),
-      steer && !!activeTurn(timeline.snapshot().items),
+      sendMode === "steering" && !!activeTurn(timeline.snapshot().items),
+      sendMode === "queue" ? "queue" : undefined,
     );
     const pending = { draft: current.draft, attempt };
     draftRef.current = pending;
@@ -321,8 +361,9 @@ function ConversationContent() {
           images: attempt.images,
           client_message_id: attempt.client_message_id,
         },
-        attempt.steer,
+        attempt.mode ?? attempt.steer,
       );
+      if (alive.current) setQueueRevision((value) => value + 1);
       const empty = { draft: emptyDraft() };
       const persisted = composer.transition(draftRef, empty);
       if (alive.current) setSaved(empty);
@@ -340,6 +381,14 @@ function ConversationContent() {
         if (alive.current) setSaved(restored);
         await persisted;
       }
+      if (
+        attempt.mode === "queue" &&
+        e instanceof ApiError &&
+        [404, 405].includes(e.status)
+      )
+        throw new Error(
+          "This daemon does not support queued messages yet. Update the daemon or switch to Steer.",
+        );
       throw e;
     }
   }
@@ -349,7 +398,10 @@ function ConversationContent() {
       base64: true,
       quality: 0.8,
       allowsMultipleSelection: true,
-      selectionLimit: Math.max(1, maxMessageImageCount - draft.images.length),
+      selectionLimit: Math.max(
+        1,
+        maxMessageImageCount - draft.images.length - (draft.files?.length ?? 0),
+      ),
     });
     if (result.canceled || !alive.current) return;
     const images = [...draftRef.current.draft.images];
@@ -360,11 +412,9 @@ function ConversationContent() {
       images.map((image) => decodedBase64Size(image.data_base64)),
     );
     if (sizeError) throw new Error(sizeError);
+    validateAttachments(images, draftRef.current.draft.files ?? []);
     update({ images });
   }
-  useEffect(() => {
-    if (!activeTurn(state.items)) setSteer(false);
-  }, [state.items]);
   const pending = useMemo(
     () => pendingHumanRequestIDs(state.items),
     [state.items],
@@ -542,6 +592,7 @@ function ConversationContent() {
           projection={projection}
           revealReasoning={row.revealReasoning}
           onSelectText={selectText}
+          onLocateMessage={(target) => setHistory({ target })}
           onSelecting={selectingText}
         />
       );
@@ -606,7 +657,8 @@ function ConversationContent() {
     state.session?.approval_policy === "bypass_permissions"
       ? ShieldAlert
       : ShieldCheck;
-  const canSend = loaded && !busy && !client.signal.aborted;
+  const canSend =
+    loaded && defaultSendMode.ready && !busy && !client.signal.aborted;
   function scheduleFollowCorrection() {
     if (follow.current.following && !state.loadingOlder && !scrollTimer.current)
       scrollTimer.current = setTimeout(() => {
@@ -673,6 +725,11 @@ function ConversationContent() {
           {client.connection.name} · {state.status}
           {state.session?.model ? " · " + state.session.model : ""}
         </Text>
+        <IconButton
+          icon={Search}
+          label="Search conversation"
+          onPress={() => setHistory({})}
+        />
         <IconButton
           icon={Ellipsis}
           label="Conversation details"
@@ -832,6 +889,8 @@ function ConversationContent() {
           backgroundColor: colors.background,
         }}
       >
+        <InputQueue sessionId={id} refresh={queueRevision} />
+        <Notice text={defaultSendMode.error} error />
         {!!saved.attempt && (
           <Notice text="Delivery is unconfirmed. Retry sends the exact same message safely; discard only after checking the conversation." />
         )}
@@ -853,9 +912,22 @@ function ConversationContent() {
                     marginBottom: 4,
                   }}
                 >
-                  <Text numberOfLines={2} style={[styles.muted, { flex: 1 }]}>
-                    {reference.text}
-                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit reference ${index + 1}`}
+                    disabled={busy || !!saved.attempt}
+                    style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
+                    onPress={() => setEditingReference(reference.id)}
+                  >
+                    <Text numberOfLines={2} style={styles.muted}>
+                      {reference.text}
+                    </Text>
+                    {!!reference.comment && (
+                      <Text numberOfLines={1} style={styles.text}>
+                        {reference.comment}
+                      </Text>
+                    )}
+                  </Pressable>
                   <IconButton
                     icon={X}
                     label={`Remove reference ${index + 1}`}
@@ -873,36 +945,32 @@ function ConversationContent() {
             />
           </View>
         )}
-        {draft.images.length > 0 && (
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {draft.images.map((image, index) => (
-              <View key={index}>
-                <Image
-                  source={{
-                    uri: `data:${image.mime_type};base64,${image.data_base64}`,
-                  }}
-                  style={{ width: 48, height: 48, borderRadius: 8 }}
-                />
-                <IconButton
-                  icon={X}
-                  label={`Remove image ${index + 1}`}
-                  disabled={busy || !!saved.attempt}
-                  onPress={() =>
-                    update({
-                      images: draft.images.filter((_, i) => i !== index),
-                    })
-                  }
-                />
-              </View>
-            ))}
-          </View>
+        {!!draft.images.length && (
+          <DraftImages
+            images={draft.images}
+            disabled={busy || !!saved.attempt}
+            onRemove={(index) =>
+              update({ images: draft.images.filter((_, i) => i !== index) })
+            }
+          />
         )}
+        <AttachmentFiles
+          files={draft.files ?? []}
+          disabled={busy || !!saved.attempt}
+          onRemove={(index) =>
+            update({ files: draft.files?.filter((_, i) => i !== index) })
+          }
+        />
         <ComposerSkills
           text={draft.text}
+          caret={caret}
           selected={draft.skills}
           sessionId={id}
           disabled={!canSend || !!saved.attempt}
-          onChange={(text, skills) => update({ text, skills })}
+          onChange={(text, skills) => {
+            setCaret(caret + text.length - draft.text.length);
+            update({ text, skills });
+          }}
         />
         <View
           style={{
@@ -914,36 +982,22 @@ function ConversationContent() {
           }}
         >
           <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <TextInput
-              accessibilityLabel="Message"
-              editable={canSend && !saved.attempt}
-              multiline
+            <SkillInput
               value={draft.text}
-              onChangeText={(text) => update({ text })}
-              placeholder="Ask Zotigo…"
-              placeholderTextColor={colors.muted}
-              style={[
-                styles.input,
-                {
-                  flex: 1,
-                  maxHeight: 160,
-                  minHeight: 44,
-                  borderWidth: 0,
-                  backgroundColor: "transparent",
-                  paddingHorizontal: 14,
-                  paddingTop: 10,
-                  paddingBottom: 6,
-                },
-              ]}
+              skills={draft.skills}
+              editable={canSend && !saved.attempt}
+              caret={caret}
+              onCaret={setCaret}
+              onChange={(text) => update({ text })}
             />
-            {turn && (
-              <Action
-                label={steer ? "Steer" : "Auto"}
-                secondary
-                disabled={!canSend || !!saved.attempt}
-                onPress={() => setSteer(!steer)}
-              />
-            )}
+            <Action
+              label={sendMode === "queue" ? "Queue" : "Steer"}
+              secondary
+              disabled={!canSend || !!saved.attempt}
+              onPress={() =>
+                setModeOverride(sendMode === "queue" ? "steering" : "queue")
+              }
+            />
           </View>
           <View
             style={{
@@ -955,13 +1009,14 @@ function ConversationContent() {
           >
             <IconButton
               icon={Plus}
-              label="Attach photo"
+              label="Add attachment"
               disabled={
                 !canSend ||
                 !!saved.attempt ||
-                draft.images.length >= maxMessageImageCount
+                draft.images.length + (draft.files?.length ?? 0) >=
+                  maxMessageImageCount
               }
-              onPress={() => void run(attach)}
+              onPress={() => setAttachmentMenu(true)}
             />
             <Pressable
               accessibilityRole="button"
@@ -1016,6 +1071,7 @@ function ConversationContent() {
             {turn &&
             !draft.text.trim() &&
             !draft.images.length &&
+            !draft.files?.length &&
             !draft.references?.length &&
             !saved.attempt ? (
               <IconButton
@@ -1034,6 +1090,7 @@ function ConversationContent() {
                   !canSend ||
                   (!draft.text.trim() &&
                     !draft.images.length &&
+                    !draft.files?.length &&
                     !draft.references?.length)
                 }
                 onPress={() => void run(send)}
@@ -1301,6 +1358,74 @@ function ConversationContent() {
           )}
         </>
       </BottomSheet>
+      <BottomSheet
+        visible={attachmentMenu}
+        title="Add attachment"
+        onClose={() => setAttachmentMenu(false)}
+      >
+        <ChoiceRow
+          title="Photo library"
+          onPress={() => {
+            setAttachmentMenu(false);
+            void run(attach);
+          }}
+        />
+        <ChoiceRow
+          title="Choose file"
+          onPress={() => {
+            setAttachmentMenu(false);
+            void run(async () => {
+              const picked = await pickAttachments(
+                draftRef.current.draft.images,
+                draftRef.current.draft.files ?? [],
+              );
+              if (picked && alive.current) update(picked);
+            });
+          }}
+        />
+      </BottomSheet>
+      {history && (
+        <ConversationHistory
+          sessionId={id}
+          items={state.items}
+          target={history.target}
+          excerpt={history.excerpt}
+          onClose={() => setHistory(undefined)}
+          openFile={(path) => {
+            setHistory(undefined);
+            nav.navigate("Files", { sessionId: id, path });
+          }}
+          onSelection={(value) => {
+            setHistory(undefined);
+            selectText(value);
+          }}
+        />
+      )}
+      {editingReference &&
+        draft.references?.find((ref) => ref.id === editingReference) && (
+          <ReferenceEditor
+            key={editingReference}
+            reference={
+              draft.references.find((ref) => ref.id === editingReference)!
+            }
+            onClose={() => setEditingReference(undefined)}
+            onSave={(comment) => {
+              update({
+                references: draft.references?.map((ref) =>
+                  ref.id === editingReference ? { ...ref, comment } : ref,
+                ),
+              });
+              setEditingReference(undefined);
+            }}
+            onLocate={() => {
+              const ref = draft.references!.find(
+                (ref) => ref.id === editingReference,
+              )!;
+              setEditingReference(undefined);
+              setHistory({ target: ref.messageId, excerpt: ref.text });
+            }}
+          />
+        )}
       {selection && (
         <SelectionSheet
           text={selection.text}

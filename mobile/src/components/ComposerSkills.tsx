@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import {
   matchingSkills,
+  editorSkillTokens,
+  insertSkillCommand,
   skillCommandQuery,
 } from "@zotigo/shared/skillCommands";
 import type { SkillSummary } from "@zotigo/shared/zotigod";
@@ -10,19 +12,21 @@ import { Action, colors, errorText, Notice, styles } from "./ui";
 
 export function ComposerSkills({
   text,
+  caret = text.length,
   selected,
   sessionId,
   disabled,
   onChange,
 }: {
   text: string;
+  caret?: number;
   selected: string[];
   sessionId?: string;
   disabled: boolean;
   onChange: (text: string, skills: string[]) => void;
 }) {
   const client = useDaemon();
-  const command = skillCommandQuery(text);
+  const command = skillCommandQuery(text.slice(0, caret));
   const [skills, setSkills] = useState<SkillSummary[]>();
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -47,27 +51,14 @@ export function ComposerSkills({
     };
   }, [client, sessionId, open, retry]);
   const matches = matchingSkills(skills ?? [], command?.query ?? "").filter(
-    (skill) => skill.enabled && !selected.includes(skill.name),
+    (skill) =>
+      skill.enabled &&
+      !editorSkillTokens(text, selected).some(
+        (token) => token.name === skill.name,
+      ),
   );
   return (
     <View style={{ gap: 4 }}>
-      {!!selected.length && (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
-          {selected.map((name) => (
-            <Action
-              key={name}
-              label={`${name} ×`}
-              disabled={disabled}
-              onPress={() =>
-                onChange(
-                  text,
-                  selected.filter((item) => item !== name),
-                )
-              }
-            />
-          ))}
-        </View>
-      )}
       {open && (
         <View
           style={{
@@ -113,10 +104,10 @@ export function ComposerSkills({
                   accessibilityLabel={`Select skill ${item.name}`}
                   onPress={() => {
                     if (command)
-                      onChange(text.slice(0, command.start), [
-                        ...selected,
-                        item.name,
-                      ]);
+                      onChange(
+                        insertSkillCommand(text, command, caret, item.name),
+                        [...new Set([...selected, item.name])],
+                      );
                   }}
                   style={{ minHeight: 52, padding: 8 }}
                 >

@@ -1,8 +1,13 @@
+import {
+  parseMessageFiles,
+  type MessageFileInput,
+} from "@zotigo/shared/messageFiles";
 import type * as D from "@zotigo/shared/zotigod";
 import type {
   DirectoryListing,
   TextFileSnapshot,
   ImageFileSnapshot,
+  VideoFileSnapshot,
   SaveTextFileInput,
 } from "@zotigo/shared/clientTypes";
 import type {
@@ -23,6 +28,7 @@ export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 export type OpenFile =
   | { kind: "text"; file: TextFileSnapshot }
   | { kind: "image"; file: ImageFileSnapshot }
+  | { kind: "video"; file: VideoFileSnapshot }
   | { kind: "directory" | "system"; path: string }
   | { kind: "requires_confirmation" };
 export class ApiError extends Error {
@@ -143,6 +149,96 @@ export class DaemonClient {
       timeout,
     );
   }
+  async uploadAttachment(id: string, file: MessageFileInput): Promise<string> {
+    parseMessageFiles([file]);
+    const bytes = Uint8Array.from(atob(file.data_base64), (char) =>
+      char.charCodeAt(0),
+    );
+    return this.response(
+      `/files/upload?${new URLSearchParams({ sessionId: id, name: file.name })}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: bytes.buffer,
+      },
+      async (response) => {
+        const envelope = record(await response.json());
+        const data = record(envelope.data);
+        if (
+          envelope.code !== "ok" ||
+          typeof data.path !== "string" ||
+          !data.path
+        )
+          throw new Error("Invalid uploaded attachment response.");
+        return data.path;
+      },
+      120000,
+    );
+  }
+  async queuedInputs(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<D.QueuedInput[] | null> {
+    try {
+      const data = await this.request<{ items: D.QueuedInput[] }>(
+        `/sessions/${enc(id)}/queue`,
+        "GET",
+        undefined,
+        signal,
+      );
+      if (
+        !Array.isArray(data.items) ||
+        data.items.some(
+          (item) =>
+            !item ||
+            typeof item.id !== "string" ||
+            (item.text !== undefined && typeof item.text !== "string") ||
+            !["queued", "paused", "sending"].includes(item.state) ||
+            !Number.isInteger(item.revision) ||
+            typeof item.editable !== "boolean",
+        )
+      )
+        throw new Error("Invalid input queue.");
+      return data.items;
+    } catch (e) {
+      if (e instanceof ApiError && [404, 405].includes(e.status)) return null;
+      throw e;
+    }
+  }
+  changeQueuedInput = (
+    id: string,
+    item: string,
+    revision: number,
+    text?: string,
+  ) =>
+    this.request(
+      `/sessions/${enc(id)}/queue/${enc(item)}`,
+      text === undefined ? "DELETE" : "PATCH",
+      { revision, text },
+    );
+  resumeQueue = (id: string) =>
+    this.request(`/sessions/${enc(id)}/queue/resume`, "POST");
+  search = (id: string, query: string, signal?: AbortSignal) =>
+    this.request<D.SessionSearchResponse>(
+      `/sessions/${enc(id)}/search?q=${enc(query)}`,
+      "GET",
+      undefined,
+      signal,
+      5000,
+    );
+  itemWindow = (id: string, target: string, signal?: AbortSignal) =>
+    this.request<D.SessionItemsResponse>(
+      `/sessions/${enc(id)}/items/window?message_id=${enc(target)}`,
+      "GET",
+      undefined,
+      signal,
+      5000,
+    );
+  suggestTitle = (id: string) =>
+    this.request<D.TitleSuggestionResponse>(
+      `/sessions/${enc(id)}/title-suggestion`,
+      "POST",
+    );
   async translateSelection(
     id: string,
     text: string,
@@ -344,10 +440,10 @@ export class DaemonClient {
       skills?: string[];
       client_message_id: string;
     },
-    steer = false,
+    steer: boolean | "queue" = false,
   ) =>
     this.request<D.SessionCommandResponse>(
-      `/sessions/${enc(id)}/${steer ? "steering" : "messages"}`,
+      `/sessions/${enc(id)}/${steer === "queue" ? "queue" : steer ? "steering" : "messages"}`,
       "POST",
       input,
     );

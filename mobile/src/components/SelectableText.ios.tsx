@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import type { SelectionRun, SelectionAction } from "../core/selectionRuns";
 export type SelectableTextProps = {
+  highlight?: string;
   runs: SelectionRun[];
   fontSize?: number;
   lineHeight?: number;
@@ -14,6 +15,7 @@ export type SelectableTextProps = {
 };
 const NativeText = requireNativeView<
   ViewProps & {
+    highlight?: string;
     runs: SelectionRun[];
     fontSize: number;
     lineHeight: number;
