@@ -178,6 +178,16 @@ function ConversationContent() {
   });
   const [options, setOptions] = useState(false);
   const [attachmentMenu, setAttachmentMenu] = useState(false);
+  const pendingAttachmentPicker = useRef<(() => void) | undefined>(undefined);
+  function openAttachmentPicker(action: () => Promise<void>) {
+    const open = () => {
+      if (focused.current && alive.current) void run(action);
+    };
+    setAttachmentMenu(false);
+    // UIKit must finish dismissing our sheet before presenting the system picker.
+    if (Platform.OS === "ios") pendingAttachmentPicker.current = open;
+    else open();
+  }
   const [optionPane, setOptionPane] = useState<
     "session" | "model" | "policy" | "context"
   >("session");
@@ -190,8 +200,6 @@ function ConversationContent() {
     nav.setOptions({ title: value });
   });
   const defaultSendMode = useSendMode(client.connection.id);
-  const [modeOverride, setModeOverride] = useState<"queue" | "steering">();
-  const sendMode = modeOverride ?? defaultSendMode.mode;
   const [queueRevision, setQueueRevision] = useState(0);
   const list = useRef<FlatList<TimelineRow>>(null);
   const follow = useRef(new TimelineFollow());
@@ -334,7 +342,7 @@ function ConversationContent() {
     }
     if (succeeded && focused.current && !client.signal.aborted) onSuccess?.();
   }
-  async function send() {
+  async function send(mode = defaultSendMode.mode) {
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = undefined;
     await prepareAttachments(client, id, draftRef, composer, (value) => {
@@ -344,8 +352,8 @@ function ConversationContent() {
     const attempt = submissionAttempt(
       current,
       randomUUID(),
-      sendMode === "steering" && !!activeTurn(timeline.snapshot().items),
-      sendMode === "queue" ? "queue" : undefined,
+      mode === "steering" && !!activeTurn(timeline.snapshot().items),
+      mode === "queue" ? "queue" : undefined,
     );
     const pending = { draft: current.draft, attempt };
     draftRef.current = pending;
@@ -990,14 +998,6 @@ function ConversationContent() {
               onCaret={setCaret}
               onChange={(text) => update({ text })}
             />
-            <Action
-              label={sendMode === "queue" ? "Queue" : "Steer"}
-              secondary
-              disabled={!canSend || !!saved.attempt}
-              onPress={() =>
-                setModeOverride(sendMode === "queue" ? "steering" : "queue")
-              }
-            />
           </View>
           <View
             style={{
@@ -1009,13 +1009,8 @@ function ConversationContent() {
           >
             <IconButton
               icon={Plus}
-              label="Add attachment"
-              disabled={
-                !canSend ||
-                !!saved.attempt ||
-                draft.images.length + (draft.files?.length ?? 0) >=
-                  maxMessageImageCount
-              }
+              label="More composer actions"
+              disabled={!canSend || !!saved.attempt}
               onPress={() => setAttachmentMenu(true)}
             />
             <Pressable
@@ -1360,27 +1355,61 @@ function ConversationContent() {
       </BottomSheet>
       <BottomSheet
         visible={attachmentMenu}
-        title="Add attachment"
+        title="Composer actions"
         onClose={() => setAttachmentMenu(false)}
+        onDismiss={() => {
+          const open = pendingAttachmentPicker.current;
+          pendingAttachmentPicker.current = undefined;
+          open?.();
+        }}
       >
         <ChoiceRow
           title="Photo library"
+          disabled={
+            !canSend ||
+            draft.images.length + (draft.files?.length ?? 0) >=
+              maxMessageImageCount
+          }
           onPress={() => {
-            setAttachmentMenu(false);
-            void run(attach);
+            openAttachmentPicker(attach);
           }}
         />
         <ChoiceRow
           title="Choose file"
+          disabled={
+            !canSend ||
+            draft.images.length + (draft.files?.length ?? 0) >=
+              maxMessageImageCount
+          }
           onPress={() => {
-            setAttachmentMenu(false);
-            void run(async () => {
+            openAttachmentPicker(async () => {
               const picked = await pickAttachments(
                 draftRef.current.draft.images,
                 draftRef.current.draft.files ?? [],
               );
               if (picked && alive.current) update(picked);
             });
+          }}
+        />
+        <ChoiceRow
+          title={
+            defaultSendMode.mode === "steering"
+              ? "Queue for next turn"
+              : "Send as steering"
+          }
+          disabled={
+            !canSend ||
+            !!saved.attempt ||
+            (!draft.text.trim() &&
+              !draft.images.length &&
+              !draft.files?.length &&
+              !draft.references?.length)
+          }
+          onPress={() => {
+            setAttachmentMenu(false);
+            void run(() =>
+              send(defaultSendMode.mode === "steering" ? "queue" : "steering"),
+            );
           }}
         />
       </BottomSheet>

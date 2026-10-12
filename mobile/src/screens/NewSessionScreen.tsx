@@ -97,7 +97,8 @@ export function NewSessionScreen() {
   const [policy, setPolicy] = useState<ApprovalPolicy>("auto");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const createdSession = useRef<string | undefined>(undefined);
+  const [createdSession, setCreatedSession] = useState<string>();
+  const contextLocked = busy || !!createdSession;
   const completed = useRef(false);
   const lock = useRef(false),
     mounted = useRef(true);
@@ -253,8 +254,8 @@ export function NewSessionScreen() {
     setBusy(true);
     setError("");
     try {
-      const session = createdSession.current
-        ? { id: createdSession.current }
+      const session = createdSession
+        ? { id: createdSession }
         : await client.createSession({
             workspaceId: workspace.id,
             agent,
@@ -263,7 +264,7 @@ export function NewSessionScreen() {
             reasoningEffort: agent === "codex" ? effort : undefined,
             approvalPolicy: policy,
           });
-      createdSession.current = session.id;
+      setCreatedSession(session.id);
       if (!mounted.current || client.signal.aborted) return;
       const composer = new ComposerStore(
         storage,
@@ -353,6 +354,9 @@ export function NewSessionScreen() {
         }}
       >
         <Notice text={error || profileError} error />
+        {createdSession && !busy && (
+          <Notice text="Session created. Retry to finish uploading and send to this workspace. Session settings can be changed after opening the conversation." />
+        )}
         <AttachmentFiles
           files={files}
           disabled={busy}
@@ -382,7 +386,7 @@ export function NewSessionScreen() {
           icon={Folder}
           title={workspace?.title ?? "Choose workspace"}
           subtitle={workspace?.root_path ?? "Project → workspace"}
-          disabled={busy || workspaceLoading}
+          disabled={contextLocked || workspaceLoading}
           onPress={() => {
             setProjectId(undefined);
             setSearch("");
@@ -392,7 +396,7 @@ export function NewSessionScreen() {
         <Pressable
           accessibilityRole="button"
           onPress={() => setPanel("agent")}
-          disabled={busy || !catalog}
+          disabled={contextLocked || !catalog}
           style={{
             minHeight: 44,
             justifyContent: "center",
@@ -463,14 +467,14 @@ export function NewSessionScreen() {
             <IconButton
               icon={Shield}
               label={approvalPolicyLabel(policy)}
-              disabled={busy}
+              disabled={contextLocked}
               onPress={() => setPanel("policy")}
             />
             <View style={{ flex: 1 }} />
             <IconButton
               icon={Gauge}
               label="Model and reasoning"
-              disabled={busy || (agent === "zotigo" && !workspace)}
+              disabled={contextLocked || (agent === "zotigo" && !workspace)}
               onPress={() => setPanel("model")}
             />
             <IconButton
