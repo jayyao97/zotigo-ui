@@ -1,6 +1,8 @@
-import { conversationShouldLoadOlder } from "@zotigo/shared/conversationScroll";
 import Gauge from "lucide-react-native/icons/gauge";
 import { ComposerSkills } from "../components/ComposerSkills";
+import { SelectionSheet } from "../components/SelectionSheet";
+import { DiagramProvider } from "../components/DiagramProvider";
+import { ImagePreviewProvider } from "../components/ImagePreviewProvider";
 import { ContextUsage } from "../components/ContextUsage";
 import { ProfilePicker } from "../components/ProfilePicker";
 import { TurnStatus } from "../components/TurnStatus";
@@ -83,6 +85,11 @@ import { useDaemon } from "../platform/context";
 import { storage } from "../platform/storage";
 import { Timeline, activeTurn } from "../core/timeline";
 import { TimelineFollow } from "../core/timelineFollow";
+import type { ConversationReference } from "../core/conversationReferences";
+import {
+  HistoryPaginationGesture,
+  TimelineScrollMetrics,
+} from "../core/timelineScroll";
 import {
   ComposerStore,
   emptyDraft,
@@ -115,6 +122,16 @@ type TimelineRow =
     }
   | { kind: "activity"; key: string; label: string; open: boolean };
 export function ConversationScreen() {
+  return (
+    <DiagramProvider>
+      <ImagePreviewProvider>
+        <ConversationContent />
+      </ImagePreviewProvider>
+    </DiagramProvider>
+  );
+}
+
+function ConversationContent() {
   const animateLayout = useLayoutTransition();
   const client = useDaemon(),
     route = useRoute<RouteProp<Routes, "Conversation">>(),
@@ -159,7 +176,21 @@ export function ConversationScreen() {
   const [steer, setSteer] = useState(false);
   const list = useRef<FlatList<TimelineRow>>(null);
   const follow = useRef(new TimelineFollow());
+  const historyGesture = useRef(new HistoryPaginationGesture());
+  const scrollMetrics = useRef(new TimelineScrollMetrics());
   const [following, setFollowing] = useState(true);
+  const [selection, setSelection] = useState<{
+    text: string;
+    messageId: string;
+  }>();
+  const selectText = useCallback(
+    (value: { text: string; messageId: string }) => {
+      follow.current.leaveLatest();
+      setFollowing(false);
+      setSelection(value);
+    },
+    [],
+  );
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -212,23 +243,38 @@ export function ConversationScreen() {
     [composer],
   );
   const draft = saved.draft;
-  function update(patch: Partial<Draft>) {
-    const next = {
-      ...draftRef.current,
-      draft: { ...draftRef.current.draft, ...patch },
-    };
-    revision.current++;
-    draftRef.current = next;
-    setSaved(next);
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    draftTimer.current = setTimeout(() => {
-      draftTimer.current = undefined;
-      void composer.write(draftRef.current).catch((e) => {
-        if (alive.current)
-          setError("Draft could not be saved: " + errorText(e));
+  const update = useCallback(
+    (patch: Partial<Draft>) => {
+      const next = {
+        ...draftRef.current,
+        draft: { ...draftRef.current.draft, ...patch },
+      };
+      revision.current++;
+      draftRef.current = next;
+      setSaved(next);
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      draftTimer.current = setTimeout(() => {
+        draftTimer.current = undefined;
+        void composer.write(draftRef.current).catch((e) => {
+          if (alive.current)
+            setError("Draft could not be saved: " + errorText(e));
+        });
+      }, 300);
+    },
+    [composer],
+  );
+  const addReference = useCallback(
+    (reference: Omit<ConversationReference, "id">) => {
+      if (lock.current || draftRef.current.attempt) return;
+      update({
+        references: [
+          ...(draftRef.current.draft.references ?? []),
+          { ...reference, id: randomUUID() },
+        ],
       });
-    }, 300);
-  }
+    },
+    [update],
+  );
   async function run(action: () => Promise<unknown>, onSuccess?: () => void) {
     if (lock.current) return;
     lock.current = true;
@@ -457,7 +503,7 @@ export function ConversationScreen() {
             }}
           >
             <Terminal size={16} color={colors.muted} />
-            <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+            <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
               {row.label}
             </Text>
             {row.open ? (
@@ -489,6 +535,7 @@ export function ConversationScreen() {
           forkDisabled={busy || !!turn}
           projection={projection}
           revealReasoning={row.revealReasoning}
+          onSelectText={selectText}
         />
       );
     },
@@ -504,6 +551,7 @@ export function ConversationScreen() {
       ordered,
       state.session?.state,
       state.session?.ended_at,
+      selectText,
     ],
   );
 
@@ -551,7 +599,20 @@ export function ConversationScreen() {
       ? ShieldAlert
       : ShieldCheck;
   const canSend = loaded && !busy && !client.signal.aborted;
+  function scheduleFollowCorrection() {
+    if (follow.current.following && !state.loadingOlder && !scrollTimer.current)
+      scrollTimer.current = setTimeout(() => {
+        scrollTimer.current = undefined;
+        if (focused.current && follow.current.following) {
+          const offset = scrollMetrics.current.correction();
+          if (offset !== undefined)
+            list.current?.scrollToOffset({ offset, animated: false });
+        }
+      }, 80);
+  }
   function scrollToBottom() {
+    historyGesture.current.cancel();
+    scrollMetrics.current.resetCorrection();
     follow.current.jump();
     setFollowing(true);
     list.current?.scrollToEnd({ animated: true });
@@ -610,16 +671,26 @@ export function ConversationScreen() {
         windowSize={7}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
-        {...(Platform.OS === "web" ? {
-          onWheel: (event: { deltaY: number }) => {
-            if (event.deltaY < 0) {
-              follow.current.leaveLatest();
-              setFollowing(false);
+        maintainVisibleContentPosition={
+          following ? undefined : { minIndexForVisible: 1 }
+        }
+        {...(Platform.OS === "web"
+          ? {
+              onWheel: (event: { deltaY: number }) => {
+                if (event.deltaY < 0) {
+                  if (!state.loadingOlder && state.status !== "loading")
+                    historyGesture.current.arm();
+                  scrollMetrics.current.resetCorrection();
+                  follow.current.leaveLatest();
+                  setFollowing(false);
+                }
+              },
             }
-          },
-        } : {})}
+          : {})}
         onScrollBeginDrag={() => {
+          if (!state.loadingOlder && state.status !== "loading")
+            historyGesture.current.arm();
+          scrollMetrics.current.resetCorrection();
           follow.current.beginDrag();
           setFollowing(false);
         }}
@@ -647,27 +718,33 @@ export function ConversationScreen() {
         onScroll={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } =
             event.nativeEvent;
+          scrollMetrics.current.offset = contentOffset.y;
+          scrollMetrics.current.contentHeight = contentSize.height;
+          scrollMetrics.current.viewportHeight = layoutMeasurement.height;
           setFollowing(
             follow.current.observeDistance(
               contentSize.height - contentOffset.y - layoutMeasurement.height,
             ),
           );
-          if (conversationShouldLoadOlder(follow.current.following, contentOffset.y)) {
+          if (
+            historyGesture.current.consume(
+              follow.current.following,
+              contentOffset.y,
+              state.more && !state.loadingOlder && state.status !== "loading",
+            )
+          ) {
             void timeline.older();
           }
         }}
         scrollEventThrottle={32}
-        onContentSizeChange={() => {
-          if (
-            follow.current.following &&
-            !state.loadingOlder &&
-            !scrollTimer.current
-          )
-            scrollTimer.current = setTimeout(() => {
-              scrollTimer.current = undefined;
-              if (focused.current && follow.current.following)
-                list.current?.scrollToEnd({ animated: false });
-            }, 80);
+        onLayout={(event) => {
+          scrollMetrics.current.viewportHeight =
+            event.nativeEvent.layout.height;
+          scheduleFollowCorrection();
+        }}
+        onContentSizeChange={(_, height) => {
+          scrollMetrics.current.contentHeight = height;
+          scheduleFollowCorrection();
         }}
         ListHeaderComponent={
           <View style={{ height: 32, justifyContent: "center" }}>
@@ -729,6 +806,44 @@ export function ConversationScreen() {
       >
         {!!saved.attempt && (
           <Notice text="Delivery is unconfirmed. Retry sends the exact same message safely; discard only after checking the conversation." />
+        )}
+        {!!draft.references?.length && (
+          <View style={{ maxHeight: 136 }}>
+            <FlatList
+              data={draft.references}
+              keyExtractor={(reference) => reference.id}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item: reference, index }) => (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    paddingLeft: 12,
+                    backgroundColor: colors.surface,
+                    borderRadius: 10,
+                    marginBottom: 4,
+                  }}
+                >
+                  <Text numberOfLines={2} style={[styles.muted, { flex: 1 }]}>
+                    {reference.text}
+                  </Text>
+                  <IconButton
+                    icon={X}
+                    label={`Remove reference ${index + 1}`}
+                    disabled={busy || !!saved.attempt}
+                    onPress={() =>
+                      update({
+                        references: draft.references?.filter(
+                          (item) => item.id !== reference.id,
+                        ),
+                      })
+                    }
+                  />
+                </View>
+              )}
+            />
+          </View>
         )}
         {draft.images.length > 0 && (
           <View style={{ flexDirection: "row", gap: 8 }}>
@@ -873,6 +988,7 @@ export function ConversationScreen() {
             {turn &&
             !draft.text.trim() &&
             !draft.images.length &&
+            !draft.references?.length &&
             !saved.attempt ? (
               <IconButton
                 filled
@@ -887,7 +1003,10 @@ export function ConversationScreen() {
                 filled
                 label={busy ? "Working…" : saved.attempt ? "Retry" : "Send"}
                 disabled={
-                  !canSend || (!draft.text.trim() && !draft.images.length)
+                  !canSend ||
+                  (!draft.text.trim() &&
+                    !draft.images.length &&
+                    !draft.references?.length)
                 }
                 onPress={() => void run(send)}
               />
@@ -1154,6 +1273,17 @@ export function ConversationScreen() {
           )}
         </>
       </BottomSheet>
+      {selection && (
+        <SelectionSheet
+          text={selection.text}
+          messageId={selection.messageId}
+          sessionId={id}
+          onReference={
+            loaded && !busy && !saved.attempt ? addReference : undefined
+          }
+          onClose={() => setSelection(undefined)}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }

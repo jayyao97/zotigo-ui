@@ -8,6 +8,53 @@ import {
 } from "../src/core/composer";
 import { DaemonClient } from "../src/core/client";
 import type { Storage } from "../src/core/hosts";
+test("references preserve the draft and serialize once into an immutable submission", async () => {
+  const reference = {
+    id: "ref-1",
+    messageId: "message/1",
+    startOffset: 3,
+    text: "first line\nsecond line",
+    comment: "Explain this",
+  };
+  const draft = {
+    ...emptyDraft(),
+    text: "My question",
+    references: [reference],
+  };
+  const attempt = submissionAttempt({ draft }, "attempt-1", false);
+  assert.equal(draft.text, "My question");
+  assert.equal(
+    attempt.text,
+    "[Reference 1](#message-message%2F1):\n\n> first line\n> second line\n\nComment: Explain this\n\nMy question",
+  );
+  assert.equal("references" in attempt, false);
+  assert.equal(
+    submissionAttempt(
+      { draft: { ...draft, text: "changed" }, attempt },
+      "other",
+      true,
+    ),
+    attempt,
+  );
+  let raw: string | null = null;
+  const store = new ComposerStore(
+    {
+      get: async () => raw,
+      set: async (_, value) => {
+        raw = value;
+      },
+      remove: async () => {
+        raw = null;
+      },
+    },
+    "h",
+    "s",
+  );
+  await store.write({ draft });
+  assert.deepEqual((await store.read()).draft.references, [reference]);
+  await store.write({ draft: emptyDraft() });
+  assert.equal((await store.read()).draft.references, undefined);
+});
 test("new submission repairs legacy draft image MIME but uncertain retry stays byte-for-byte identical", () => {
   const image = {
     mime_type: "image/png",

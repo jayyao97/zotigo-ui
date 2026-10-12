@@ -1,0 +1,64 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  HistoryPaginationGesture,
+  TimelineScrollMetrics,
+} from "../src/core/timelineScroll";
+
+test("a prepend's synthetic scroll events cannot cascade through every older page", () => {
+  const pagination = new HistoryPaginationGesture();
+  assert.equal(pagination.consume(false, 0, true), false);
+  pagination.arm();
+  assert.equal(pagination.consume(false, 200, true), false);
+  assert.equal(pagination.consume(false, 40, true), true);
+  for (const offset of [0, 20, 60, 0])
+    assert.equal(pagination.consume(false, offset, true), false);
+  pagination.arm();
+  assert.equal(pagination.consume(false, 30, true), true);
+});
+test("gestures while history is loading do not queue another page after layout settles", () => {
+  const pagination = new HistoryPaginationGesture();
+  pagination.arm();
+  assert.equal(pagination.consume(false, 0, false), false);
+  assert.equal(pagination.consume(false, 0, true), false);
+  pagination.arm();
+  pagination.cancel();
+  assert.equal(pagination.consume(false, 0, true), false);
+});
+test("bottom corrections use measured height and do not repeat at an unchanged target", () => {
+  const metrics = new TimelineScrollMetrics();
+  metrics.contentHeight = 1200;
+  assert.equal(metrics.correction(), undefined);
+  metrics.viewportHeight = 600;
+  assert.equal(metrics.correction(), 600);
+  assert.equal(metrics.correction(), undefined);
+  metrics.offset = 600;
+  assert.equal(metrics.correction(), undefined);
+  metrics.contentHeight = 1300;
+  assert.equal(metrics.correction(), 700);
+  metrics.offset = 699.5;
+  assert.equal(metrics.correction(), undefined);
+});
+test("a new explicit jump may target the same bottom after a user scrolls away", () => {
+  const metrics = new TimelineScrollMetrics();
+  metrics.contentHeight = 1200;
+  metrics.viewportHeight = 600;
+  assert.equal(metrics.correction(), 600);
+  metrics.offset = 200;
+  metrics.resetCorrection();
+  assert.equal(metrics.correction(), 600);
+});
+
+test("viewport changes keep the tail visible without needing new content", () => {
+  const metrics = new TimelineScrollMetrics();
+  metrics.contentHeight = 1200;
+  metrics.viewportHeight = 600;
+  metrics.offset = 600;
+  assert.equal(metrics.correction(), undefined);
+  metrics.viewportHeight = 400;
+  assert.equal(metrics.correction(), 800);
+  assert.equal(metrics.correction(), undefined);
+  metrics.offset = 800;
+  metrics.viewportHeight = 600;
+  assert.equal(metrics.correction(), 600);
+});

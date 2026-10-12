@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import {
   Alert,
   Platform,
@@ -7,14 +7,74 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import Markdown from "react-native-markdown-display";
+import Markdown, {
+  parser,
+  MarkdownIt,
+  type ASTNode,
+  renderRules,
+  type RenderRules,
+} from "react-native-markdown-display";
 import * as Clipboard from "expo-clipboard";
 import Copy from "lucide-react-native/icons/copy";
 import { MessageImage } from "./MessageImage";
-import { IconButton, colors, errorText, styles } from "./ui";
+import { Action, IconButton, colors, errorText, styles } from "./ui";
 
+import {
+  stableMarkdownKeys,
+  containsMarkdownImage,
+} from "../core/markdownKeys";
+import { highlightCode } from "../core/codeHighlight";
+const imageSafeRules: RenderRules = Object.fromEntries(
+  ["strong", "em", "s"].map((type) => [
+    type,
+    (
+      node: ASTNode,
+      children: ReactNode[],
+      parents: ASTNode[],
+      mdStyles: Record<string, unknown>,
+    ) =>
+      containsMarkdownImage(node) ? (
+        <View key={node.key}>{children}</View>
+      ) : (
+        renderRules[type]?.(node, children, parents, mdStyles)
+      ),
+  ]),
+);
+const markdownParser = MarkdownIt({ typographer: false });
 const mono = Platform.OS === "ios" ? "Menlo" : "monospace";
-function Code({ text, language }: { text: string; language?: string }) {
+import { useDiagram } from "./DiagramProvider";
+const Code = memo(function Code({
+  text,
+  language,
+}: {
+  text: string;
+  language?: string;
+}) {
+  const [wrap, setWrap] = useState(false);
+  const openDiagram = useDiagram();
+  const preview = text.slice(0, 20000);
+  const spans = useMemo(
+    () => highlightCode(preview, language),
+    [preview, language],
+  );
+  const mermaid = language?.trim().split(/\s+/)[0].toLowerCase() === "mermaid";
+  const code = (
+    <Text
+      selectable
+      style={{
+        color: colors.text,
+        fontFamily: mono,
+        fontSize: 13,
+        lineHeight: 20,
+      }}
+    >
+      {spans.map((span, i) => (
+        <Text key={i} style={{ color: span.color }}>
+          {span.text}
+        </Text>
+      ))}
+    </Text>
+  );
   return (
     <View
       style={{
@@ -33,35 +93,48 @@ function Code({ text, language }: { text: string; language?: string }) {
         }}
       >
         <Text style={styles.muted}>{language || "Code"}</Text>
-        <IconButton
-          icon={Copy}
-          label="Copy code"
-          onPress={() =>
-            void Clipboard.setStringAsync(text).catch((e) =>
-              Alert.alert("Copy failed", errorText(e)),
-            )
-          }
-        />
+        <View style={{ flexDirection: "row" }}>
+          <Action
+            label={wrap ? "Unwrap" : "Wrap"}
+            secondary
+            onPress={() => setWrap(!wrap)}
+          />
+          <IconButton
+            icon={Copy}
+            label="Copy code"
+            onPress={() =>
+              void Clipboard.setStringAsync(text).catch((e) =>
+                Alert.alert("Copy failed", errorText(e)),
+              )
+            }
+          />
+        </View>
       </View>
-      <ScrollView
-        horizontal
-        contentContainerStyle={{ padding: 12, paddingTop: 0 }}
-      >
-        <Text
-          selectable
-          style={{
-            color: colors.text,
-            fontFamily: mono,
-            fontSize: 13,
-            lineHeight: 20,
-          }}
+      {mermaid && (
+        <Action
+          label="View diagram"
+          disabled={text.length > 50000 || !openDiagram}
+          onPress={() => openDiagram?.(text)}
+        />
+      )}
+      {wrap ? (
+        <View style={{ padding: 12, paddingTop: 0 }}>{code}</View>
+      ) : (
+        <ScrollView
+          horizontal
+          contentContainerStyle={{ padding: 12, paddingTop: 0 }}
         >
-          {text.replace(/\n$/, "")}
+          {code}
+        </ScrollView>
+      )}
+      {text.length > preview.length && (
+        <Text style={{ ...styles.muted, padding: 12 }}>
+          Preview limited to 20,000 characters. Copy includes the complete code.
         </Text>
-      </ScrollView>
+      )}
     </View>
   );
-}
+});
 export const MessageMarkdown = memo(function MessageMarkdown({
   text,
   sessionId,
@@ -74,6 +147,18 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   onLink: (url: string) => boolean;
 }) {
   const { width } = useWindowDimensions();
+  const ast = useMemo(() => {
+    let nodes: ASTNode[] = [];
+    parser(
+      text,
+      ((tree: ASTNode[]) => {
+        nodes = tree;
+        return null;
+      }) as never,
+      markdownParser,
+    );
+    return stableMarkdownKeys(nodes);
+  }, [text]);
   return (
     <Markdown
       onLinkPress={onLink}
@@ -129,11 +214,22 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         hr: { backgroundColor: colors.border, marginVertical: 12 },
       }}
       rules={{
-        textgroup: (node, children, _parents, markdownStyles) => (
-          <Text key={node.key} selectable style={markdownStyles.textgroup}>
+        // AstRenderer creates a random body key even when callers provide a
+        // stable AST. Keep the root mounted as well as its streaming children.
+        body: (_node, children, _parents, markdownStyles) => (
+          <View key="markdown-body" style={markdownStyles._VIEW_SAFE_body}>
             {children}
-          </Text>
+          </View>
         ),
+        ...imageSafeRules,
+        textgroup: (node, children, _parents, markdownStyles) =>
+          containsMarkdownImage(node) ? (
+            <View key={node.key}>{children}</View>
+          ) : (
+            <Text key={node.key} selectable style={markdownStyles.textgroup}>
+              {children}
+            </Text>
+          ),
         image: (node) => (
           <MessageImage
             key={node.key}
@@ -171,7 +267,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         ),
       }}
     >
-      {text}
+      {ast as unknown as ReactNode}
     </Markdown>
   );
 });
