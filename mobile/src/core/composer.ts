@@ -1,10 +1,15 @@
 import type { MessageImageInput } from "@zotigo/shared/zotigod";
 import type { Storage } from "./hosts";
 import { pickedImageInput } from "./imageInput";
+import {
+  referencePrompt,
+  type ConversationReference,
+} from "./conversationReferences";
 export interface Draft {
   text: string;
   skills: string[];
   images: MessageImageInput[];
+  references?: ConversationReference[];
 }
 export interface Attempt {
   client_message_id: string;
@@ -26,7 +31,8 @@ export function submissionAttempt(
   // Never change an uncertain attempt: its ID must keep exactly the same payload.
   return (
     state.attempt ?? {
-      ...state.draft,
+      text: referencePrompt(state.draft.text, state.draft.references),
+      skills: state.draft.skills,
       images: state.draft.images.map((image) =>
         pickedImageInput({ base64: image.data_base64 }),
       ),
@@ -54,7 +60,19 @@ export class ComposerStore {
       !value.draft ||
       typeof value.draft.text !== "string" ||
       !Array.isArray(value.draft.skills) ||
-      !Array.isArray(value.draft.images)
+      !Array.isArray(value.draft.images) ||
+      (value.draft.references !== undefined &&
+        (!Array.isArray(value.draft.references) ||
+          value.draft.references.some(
+            (ref) =>
+              !ref ||
+              typeof ref.id !== "string" ||
+              typeof ref.messageId !== "string" ||
+              typeof ref.text !== "string" ||
+              typeof ref.comment !== "string" ||
+              (ref.startOffset !== undefined &&
+                (!Number.isInteger(ref.startOffset) || ref.startOffset < 0)),
+          )))
     )
       throw new Error("Saved draft is invalid.");
     return value;

@@ -3,5 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "main": "index.ts",
-  "scripts": { "start": "expo start --web", "export": "expo export --platform web" }
+  "scripts": {
+    "start": "node ../../scripts/build-mermaid.mjs && ../../node_modules/.bin/expo start --web",
+    "export": "node ../../scripts/build-mermaid.mjs && ../../node_modules/.bin/expo export --platform web"
+  }
 }

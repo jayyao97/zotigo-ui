@@ -32,6 +32,8 @@ Home uses one virtualized list grouped into pinned sessions, projects, and recen
 
 Composer state is scoped by logical host and session. A send attempt persists its payload and client message ID before submission. Retrying an uncertain result reuses both. State transitions update the cleanup reference before awaiting storage, and navigation removal is blocked while a mutation and its persistence are pending. This prevents an old screen from overwriting a newer draft for the same session.
 
+Selected excerpts belong to that same draft and are serialized into quoted prompt text when creating an attempt. A translation is a separate, cancellable daemon request and never submits a conversation turn. Selection, image and diagram viewers retain snapshots at screen scope so virtualized message rows can unmount safely. Markdown node keys remain stable across appended deltas; native code highlighting and image frames do not remount on each stream update. History pagination requires a user gesture, while following the latest message uses one deduplicated scroll correction for content and viewport changes.
+
 ## Validation boundaries
 
 Behavior tests cover origin and credential isolation, cancellation, SSE fragmentation and replay, message retry identity, workspace-scoped profiles, and file conflict rules. Run mobile typecheck, tests, and iOS bundle export alongside root checks when shared code or workspace configuration changes. Native compilation and device behavior require separate iOS validation; a JavaScript export does not exercise UIKit, Keychain, or the native transport.

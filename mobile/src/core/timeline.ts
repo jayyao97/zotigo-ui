@@ -124,17 +124,19 @@ export class Timeline {
         session,
         more: !!this.prevCursor,
       });
+      let recoveredItems = this.state.items;
+      let recoveredCursor = this.prevCursor;
       // Recover the current turn's approvals even when they precede the recent page.
       while (
-        this.state.more &&
-        (!this.state.items.some(
+        recoveredCursor &&
+        (!recoveredItems.some(
           (i) => i.type === "turn_started" || terminal.has(i.type),
         ) ||
-          hasUnresolvedTurnItems(this.state.items) ||
+          hasUnresolvedTurnItems(recoveredItems) ||
           (cachedLastSequence > 0 &&
-            Number(this.prevCursor) > cachedLastSequence + 1))
+            Number(recoveredCursor) > cachedLastSequence + 1))
       ) {
-        const before = Number(this.prevCursor);
+        const before = Number(recoveredCursor);
         if (!before) break;
         const older = await this.client.items(
           this.id,
@@ -142,14 +144,17 @@ export class Timeline {
           controller.signal,
         );
         if (!alive()) return;
-        this.prevCursor =
-          older.items.length && older.prev_cursor !== this.prevCursor
+        recoveredCursor =
+          older.items.length && older.prev_cursor !== recoveredCursor
             ? older.prev_cursor || null
             : null;
-        this.publish({
-          items: mergeDisplayItems(older.items, this.state.items),
-          more: !!this.prevCursor,
-        });
+        recoveredItems = mergeDisplayItems(older.items, recoveredItems);
+      }
+      // Publish recovery as one prepend instead of moving visible rows once per
+      // page while the list is still measuring its initial viewport.
+      if (recoveredItems !== this.state.items) {
+        this.prevCursor = recoveredCursor;
+        this.publish({ items: recoveredItems, more: !!recoveredCursor });
       }
       let delay = 500;
       while (alive()) {

@@ -4,12 +4,13 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
-    "ios": "expo run:ios",
-    "android": "expo run:android",
-    "typecheck": "tsc --noEmit",
+    "start": "node scripts/build-mermaid.mjs && expo start",
+    "ios": "node scripts/build-mermaid.mjs && expo run:ios",
+    "android": "node scripts/build-mermaid.mjs && expo run:android",
+    "typecheck": "node scripts/build-mermaid.mjs && tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "export:ios": "expo export --platform ios"
+    "export:ios": "node scripts/build-mermaid.mjs && expo export --platform ios",
+    "prepare:renderers": "node scripts/build-mermaid.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -31,7 +32,12 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.2",
     "react-native-svg": "15.15.4",
-    "react-native-web": "^0.21.4"
+    "react-native-web": "^0.21.4",
+    "highlight.js": "^11.12.0",
+    "mermaid": "^12.0.0",
+    "react-native-webview": "13.16.1",
+    "expo-asset": "~57.0.19",
+    "expo-file-system": "~57.0.7"
   },
   "devDependencies": {
     "@types/node": "^25.9.4",
