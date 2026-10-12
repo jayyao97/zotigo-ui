@@ -28,3 +28,11 @@ export function mergeHits(
     ...new Map([...remote, ...local].map((hit) => [hit.id, hit])).values(),
   ].sort((a, b) => b.sequence - a.sequence);
 }
+
+export function highlightParts(text: string, query?: string) {
+  if (!query) return [{ text, matched: false }];
+  const pattern = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text
+    .split(new RegExp(`(${pattern})`, "gi"))
+    .map((text, index) => ({ text, matched: index % 2 === 1 }));
+}

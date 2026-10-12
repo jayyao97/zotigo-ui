@@ -238,3 +238,20 @@ test("automatic titles protect a manual rename while suggestion is in flight", a
   );
   assert.equal(renamed, 1);
 });
+
+test("history highlighting treats code punctuation literally and matches across syntax tokens", async () => {
+  const { highlightParts } = await import("../src/core/conversationSearch");
+  assert.deepEqual(
+    highlightParts("const x = fn(a + b); // fn(A + B)", "fn(a + b)"),
+    [
+      { text: "const x = ", matched: false },
+      { text: "fn(a + b)", matched: true },
+      { text: "; // ", matched: false },
+      { text: "fn(A + B)", matched: true },
+      { text: "", matched: false },
+    ],
+  );
+  assert.deepEqual(highlightParts("const x = 1"), [
+    { text: "const x = 1", matched: false },
+  ]);
+});

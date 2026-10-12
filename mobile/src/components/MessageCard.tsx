@@ -1,3 +1,4 @@
+import { highlightParts } from "../core/conversationSearch";
 import { parseMarkdownLink } from "@zotigo/shared/markdownLinks";
 import { SelectableText } from "./SelectableText";
 import { eventLabel } from "../core/eventLabel";
@@ -35,17 +36,19 @@ function Detail({
   status,
   onSelection,
   onSelecting,
+  highlight,
 }: {
   label: string;
   text: string;
   language?: string;
   title?: string;
   status?: "Success" | "Failed" | "Running";
+  highlight?: string;
   onSelection?: (action: SelectionAction) => void;
   onSelecting?: () => void;
 }) {
   const animateLayout = useLayoutTransition();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!highlight);
   const [limit, setLimit] = useState(8000);
   return (
     <View style={{ gap: 4 }}>
@@ -121,6 +124,7 @@ function Detail({
           {onSelection ? (
             <SelectableText
               runs={[{ text: text.slice(0, limit) }]}
+              highlight={highlight}
               textColor={colors.muted}
               linkColor={colors.accent}
               onLink={() => false}
@@ -139,7 +143,18 @@ function Detail({
                 },
               ]}
             >
-              {text.slice(0, limit)}
+              {highlightParts(text.slice(0, limit), highlight).map(
+                (part, i) => (
+                  <Text
+                    key={i}
+                    style={
+                      part.matched ? { backgroundColor: "#865719" } : undefined
+                    }
+                  >
+                    {part.text}
+                  </Text>
+                ),
+              )}
             </Text>
           )}
           {text.length > limit && (
@@ -387,7 +402,7 @@ export const MessageCard = memo(function MessageCard({
           );
           return (
             <View key={index}>
-              <Detail {...detail} />
+              <Detail {...detail} highlight={highlight} />
               {result?.content?.map((c, i) =>
                 c.image?.url ? (
                   <MessageImage
@@ -403,7 +418,10 @@ export const MessageCard = memo(function MessageCard({
         if (p.tool_result)
           return (
             <View key={index}>
-              <Detail {...toolDetail(undefined, p.tool_result)} />
+              <Detail
+                {...toolDetail(undefined, p.tool_result)}
+                highlight={highlight}
+              />
               {p.tool_result.content?.map((c, i) =>
                 c.image?.url ? (
                   <MessageImage
