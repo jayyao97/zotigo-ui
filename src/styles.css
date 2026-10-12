@@ -5680,6 +5680,5 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .queue-editor > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .input-queue button { font-size: 12px; }
 .input-queue p { color: var(--text-muted); font-size: 12px; }
-.composer-send-mode { max-width: 90px; background: transparent; color: var(--text-muted); border: 0; font: inherit; font-size: 12px; }
 @media (max-width: 600px) { .queue-editor textarea { font-size: 16px; } }
 @media (pointer: coarse) { .input-queue .icon-button { min-width: 40px; min-height: 40px; } }

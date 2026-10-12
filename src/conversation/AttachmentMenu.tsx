@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Film, Image, Paperclip, Plus } from "lucide-react";
+import { ArrowUp, Film, Image, Paperclip, Plus } from "lucide-react";
 
-export function AttachmentMenu({ onPick, disabled = false }: { onPick(accept?: string): void; disabled?: boolean }) {
+export function AttachmentMenu({ onPick, disabled = false, alternateSend }: { onPick(accept?: string): void; disabled?: boolean; alternateSend?: { label: string; disabled: boolean; onSend(form: HTMLFormElement): void } }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -32,11 +32,18 @@ export function AttachmentMenu({ onPick, disabled = false }: { onPick(accept?: s
     onPick(accept);
   };
   return <div ref={root} className="composer-add-wrap">
-    <button ref={trigger} type="button" className="composer-icon-button" aria-label="Add attachment" aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen(value => !value)}><Plus size={20} strokeWidth={1.8} /></button>
-    {open && <div className="attachment-menu" role="menu" aria-label="Upload attachment">
+    <button ref={trigger} type="button" className="composer-icon-button" aria-label={alternateSend ? "More composer actions" : "Add attachment"} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen(value => !value)}><Plus size={20} strokeWidth={1.8} /></button>
+    {open && <div className="attachment-menu" role="menu" aria-label={alternateSend ? "Composer actions" : "Upload attachment"}>
       <button type="button" role="menuitem" onClick={() => pick("image/*")}><Image size={16} strokeWidth={1.8} />Upload images</button>
       <button type="button" role="menuitem" onClick={() => pick()}><Paperclip size={16} strokeWidth={1.8} />Upload file</button>
       <button type="button" role="menuitem" onClick={() => pick("video/*")}><Film size={16} strokeWidth={1.8} />Upload video</button>
+      {alternateSend && <button type="button" role="menuitem" disabled={alternateSend.disabled} onClick={event => {
+        const form = event.currentTarget.form;
+        if (!form) return;
+        setOpen(false);
+        trigger.current?.focus();
+        alternateSend.onSend(form);
+      }}><ArrowUp size={16} strokeWidth={1.8} />{alternateSend.label}</button>}
     </div>}
   </div>;
 }

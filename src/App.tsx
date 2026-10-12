@@ -338,9 +338,7 @@ function readFileAsBase64(file: File): Promise<string> {
 
 export default function App({ defaultSendMode = "steering", surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { defaultSendMode?: SendMode; surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   const [queueRefresh, setQueueRefresh] = useState(0);
-  const [sendModeOverride, setSendModeOverride] = useState<SendMode | null>(null);
   const submitModeRef = useRef<SendMode | null>(null);
-  const sendMode = sendModeOverride ?? defaultSendMode;
   const toast = useToast();
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
@@ -2432,7 +2430,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
 
   async function submitSelectedPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const mode = submitModeRef.current ?? sendMode;
+    const mode = submitModeRef.current ?? defaultSendMode;
     submitModeRef.current = null;
     const text = referencePrompt(skillPromptText(activePrompt, activeComposerDraft.selectedSkillNames).trim(), activeComposerDraft.references);
     if (!selectedConversation || runtimeOccupied || isBusy || attachmentsBlocked || (!text && composerAttachments.length === 0)) {
@@ -2600,7 +2598,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      submitModeRef.current = event.metaKey || event.ctrlKey ? alternateSendMode(defaultSendMode) : sendMode;
+      submitModeRef.current = event.metaKey || event.ctrlKey ? alternateSendMode(defaultSendMode) : defaultSendMode;
       (event.target as HTMLElement).closest("form")?.requestSubmit();
     }
   }
@@ -4164,10 +4162,16 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               />
               <div className="composer-actions">
                 <div className="composer-actions-left">
-                  <select className="composer-send-mode" aria-label="Send mode" title="Enter sends in this mode; ⌘Enter / Ctrl+Enter uses the non-default mode" value={sendMode} onChange={event => setSendModeOverride(event.target.value as SendMode)}>
-                    <option value="steering">Steering</option><option value="queue">Queue</option>
-                  </select>
-                  <AttachmentMenu key={composerDraftKey} onPick={openAttachmentPicker} disabled={isBusy} />
+                  <AttachmentMenu key={composerDraftKey} onPick={openAttachmentPicker} disabled={isBusy}
+                    alternateSend={{
+                      label: defaultSendMode === "steering" ? "Queue for next turn" : "Send as steering",
+                      disabled: !canSubmitSelectedPrompt,
+                      onSend: (form) => {
+                        submitModeRef.current = alternateSendMode(defaultSendMode);
+                        form.requestSubmit();
+                      },
+                    }}
+                  />
                   <ApprovalPolicyPicker
                     value={selectedApprovalPolicy}
                     onChange={(approvalPolicy) => void selectApprovalPolicy(approvalPolicy)}
@@ -4238,6 +4242,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                       className="send-button"
                       disabled={!canSubmitSelectedPrompt}
                       aria-label="Send message"
+                      title={defaultSendMode === "steering" ? "Send as steering · ⌘Enter / Ctrl+Enter to queue" : "Queue for next turn · ⌘Enter / Ctrl+Enter to steer"}
                     >
                       <ArrowUp size={16} strokeWidth={2.2} />
                     </button>
