@@ -1,6 +1,10 @@
 import { ModelPicker } from "../components/ModelPicker";
 import { ProfilePicker } from "../components/ProfilePicker";
-import { useThinkingDisplay, useModelFavorites } from "../platform/preferences";
+import {
+  useThinkingDisplay,
+  useModelFavorites,
+  useTranslationSettings,
+} from "../platform/preferences";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
 import { favoriteKey } from "@zotigo/shared/modelFavorites";
 import { useNavigation } from "@react-navigation/native";
@@ -52,6 +56,7 @@ export function SettingsScreen({ connected = true }: { connected?: boolean }) {
         <Notice text="Controls Gemini and custom API sessions. Codex reasoning follows Codex events." />
         <Notice text={thinking.error} error />
       </Section>
+      {connected && <TranslationSettings />}
       {devices}
       <BottomSheet
         visible={showThinking}
@@ -304,6 +309,107 @@ function SessionSync() {
       />
       <Notice text={status} />
       <Notice text={error} error />
+    </Section>
+  );
+}
+
+function TranslationSettings() {
+  const client = useDaemon();
+  const settings = useTranslationSettings(client.connection.id);
+  const [pane, setPane] = useState<"language" | "profile">();
+  const [profiles, setProfiles] = useState<ProfilesResponse>();
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setProfiles(undefined);
+    setError("");
+    void client
+      .profiles(undefined, "global")
+      .then((value) => {
+        if (active) setProfiles(value);
+      })
+      .catch((cause) => {
+        if (active) setError(errorText(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, retry]);
+  return (
+    <Section title="Translation">
+      <Row
+        title="Translation language"
+        subtitle={settings.language === "zh-CN" ? "Chinese" : "English"}
+        onPress={() => setPane("language")}
+      />
+      <Row
+        title="Translation profile"
+        subtitle={settings.profile || "Use session profile"}
+        onPress={() => setPane("profile")}
+      />
+      <Notice text="Use a custom API profile for translation. A fast model with thinking disabled is usually best." />
+      <Notice text={settings.error} error />
+      <BottomSheet
+        visible={!!pane}
+        title={
+          pane === "language" ? "Translation language" : "Translation profile"
+        }
+        onClose={() => setPane(undefined)}
+      >
+        {pane === "language" ? (
+          (["zh-CN", "en"] as const).map((language) => (
+            <ChoiceRow
+              key={language}
+              title={language === "zh-CN" ? "Chinese" : "English"}
+              selected={settings.language === language}
+              disabled={!settings.ready}
+              onPress={() => {
+                void settings.setLanguage(language);
+                setPane(undefined);
+              }}
+            />
+          ))
+        ) : (
+          <>
+            <ChoiceRow
+              title="Use session profile"
+              selected={!settings.profile}
+              disabled={!settings.ready}
+              onPress={() => {
+                void settings.setProfile("");
+                setPane(undefined);
+              }}
+            />
+            {!profiles && !error && <Loading />}
+            <Notice text={error} error />
+            {!!error && (
+              <Action
+                label="Retry"
+                onPress={() => setRetry((value) => value + 1)}
+              />
+            )}
+            {!!settings.profile &&
+              profiles &&
+              !profiles.profiles.some(
+                (profile) => profile.name === settings.profile,
+              ) && <Notice text={`${settings.profile} (unavailable)`} />}
+            {profiles?.profiles.map((profile) => (
+              <ChoiceRow
+                key={profile.name}
+                title={profile.name}
+                subtitle={profile.model}
+                selected={settings.profile === profile.name}
+                disabled={!settings.ready}
+                onPress={() => {
+                  void settings.setProfile(profile.name);
+                  setPane(undefined);
+                }}
+              />
+            ))}
+          </>
+        )}
+      </BottomSheet>
     </Section>
   );
 }

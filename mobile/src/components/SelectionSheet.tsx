@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import { validExcerpt } from "../core/textSelection";
 import { useDaemon } from "../platform/context";
+import { useTranslationSettings } from "../platform/preferences";
 import { BottomSheet } from "./BottomSheet";
 import { Action, Notice, errorText, styles } from "./ui";
 
@@ -16,69 +16,65 @@ export function SelectionSheet({
   onClose: () => void;
 }) {
   const client = useDaemon();
-  const [language, setLanguage] = useState<"zh-CN" | "en">("zh-CN");
+  const {
+    language,
+    profile,
+    ready,
+    error: preferenceError,
+  } = useTranslationSettings(client.connection.id);
   const [result, setResult] = useState<{
     text: string;
     profile?: string;
     model?: string;
   }>();
   const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
-  const request = useRef<AbortController | null>(null);
-  useEffect(
-    () => () => {
-      request.current?.abort();
-      request.current = null;
-    },
-    [],
-  );
-  async function translate() {
-    if (!validExcerpt(text) || request.current) return;
+  const [pending, setPending] = useState(true);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!ready) return;
     const controller = new AbortController();
-    request.current = controller;
     setPending(true);
     setError("");
     setResult(undefined);
-    try {
-      const translated = await client.translateSelection(
+    void client
+      .translateSelection(
         sessionId,
         text,
         language,
         controller.signal,
-      );
-      if (request.current === controller) setResult(translated);
-    } catch (e) {
-      if (request.current === controller) setError(errorText(e));
-    } finally {
-      if (request.current === controller) {
-        request.current = null;
-        setPending(false);
-      }
-    }
-  }
+        profile || undefined,
+      )
+      .then((value) => {
+        if (!controller.signal.aborted) setResult(value);
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) setError(errorText(cause));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPending(false);
+      });
+    return () => controller.abort();
+  }, [client, sessionId, text, language, profile, ready, retry]);
   return (
-    <BottomSheet visible title="Translate selection" onClose={onClose}>
-      <Text selectable style={styles.text}>
+    <BottomSheet
+      visible
+      title={
+        language === "zh-CN" ? "Chinese translation" : "English translation"
+      }
+      onClose={onClose}
+    >
+      <Text selectable style={styles.muted}>
         {text}
       </Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
+      <Notice text={preferenceError || error} error />
+      {pending && !preferenceError && <Notice text="Translating…" />}
+      {!!error && (
         <Action
-          label={language === "zh-CN" ? "To Chinese" : "To English"}
-          disabled={pending}
           secondary
-          onPress={() => {
-            setLanguage(language === "zh-CN" ? "en" : "zh-CN");
-            setResult(undefined);
-            setError("");
-          }}
+          label="Retry translation"
+          onPress={() => setRetry((value) => value + 1)}
         />
-        <Action
-          label={pending ? "Translating…" : "Translate"}
-          disabled={pending || !validExcerpt(text)}
-          onPress={() => void translate()}
-        />
-      </View>
-      <Notice text={error} error />
+      )}
       {result && (
         <View>
           <Text selectable style={styles.text}>
