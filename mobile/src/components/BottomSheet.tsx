@@ -20,6 +20,7 @@ export function BottomSheet({
   visible,
   title,
   onClose,
+  onDismiss,
   children,
   disabled = false,
   scroll = true,
@@ -27,6 +28,7 @@ export function BottomSheet({
   visible: boolean;
   title: string;
   onClose: () => void;
+  onDismiss?: () => void;
   children: ReactNode;
   disabled?: boolean;
   scroll?: boolean;
@@ -37,6 +39,7 @@ export function BottomSheet({
       visible={visible}
       transparent
       animationType="slide"
+      onDismiss={onDismiss}
       onRequestClose={() => {
         if (!disabled) onClose();
       }}
@@ -146,8 +149,7 @@ export function ChoiceRow({
         flexDirection: "row",
         alignItems: "center",
         gap: 12,
-        backgroundColor:
-          selected || pressed ? colors.selected : "transparent",
+        backgroundColor: selected || pressed ? colors.selected : "transparent",
         opacity: disabled ? 0.4 : 1,
       })}
     >

@@ -1,3 +1,4 @@
+import { highlightParts } from "../core/conversationSearch";
 import { SelectableText } from "./SelectableText";
 import { selectionRuns, type SelectionAction } from "../core/selectionRuns";
 import { memo, useMemo, useState, type ReactNode } from "react";
@@ -48,9 +49,11 @@ import { useDiagram } from "./DiagramProvider";
 const Code = memo(function Code({
   text,
   language,
+  highlight,
 }: {
   text: string;
   language?: string;
+  highlight?: string;
 }) {
   const [wrap, setWrap] = useState(false);
   const openDiagram = useDiagram();
@@ -70,11 +73,20 @@ const Code = memo(function Code({
         lineHeight: 20,
       }}
     >
-      {spans.map((span, i) => (
-        <Text key={i} style={{ color: span.color }}>
-          {span.text}
-        </Text>
-      ))}
+      {highlight
+        ? highlightParts(preview, highlight).map((part, i) => (
+            <Text
+              key={i}
+              style={part.matched ? { backgroundColor: "#865719" } : undefined}
+            >
+              {part.text}
+            </Text>
+          ))
+        : spans.map((span, i) => (
+            <Text key={i} style={{ color: span.color }}>
+              {span.text}
+            </Text>
+          ))}
     </Text>
   );
   return (
@@ -269,6 +281,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         ),
         fence: (node) => (
           <Code
+            highlight={highlight}
             key={node.key}
             text={node.content}
             language={
@@ -278,7 +291,9 @@ export const MessageMarkdown = memo(function MessageMarkdown({
             }
           />
         ),
-        code_block: (node) => <Code key={node.key} text={node.content} />,
+        code_block: (node) => (
+          <Code key={node.key} text={node.content} highlight={highlight} />
+        ),
         table: (node, children) => (
           <ScrollView key={node.key} horizontal style={{ marginVertical: 8 }}>
             <View
