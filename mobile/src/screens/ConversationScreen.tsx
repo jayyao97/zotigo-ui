@@ -183,14 +183,10 @@ function ConversationContent() {
     text: string;
     messageId: string;
   }>();
-  const selectText = useCallback(
-    (value: { text: string; messageId: string }) => {
-      follow.current.leaveLatest();
-      setFollowing(false);
-      setSelection(value);
-    },
-    [],
-  );
+  const selectingText = useCallback(() => {
+    follow.current.leaveLatest();
+    setFollowing(false);
+  }, []);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -275,6 +271,11 @@ function ConversationContent() {
     },
     [update],
   );
+  const selectText = useCallback((value: { action: "reference" | "translate"; text: string; messageId: string }) => {
+    selectingText();
+    if (value.action === "reference") addReference({ messageId: value.messageId, text: value.text, comment: "" });
+    else setSelection(value);
+  }, [addReference, selectingText]);
   async function run(action: () => Promise<unknown>, onSuccess?: () => void) {
     if (lock.current) return;
     lock.current = true;
@@ -536,6 +537,7 @@ function ConversationContent() {
           projection={projection}
           revealReasoning={row.revealReasoning}
           onSelectText={selectText}
+          onSelecting={selectingText}
         />
       );
     },
@@ -552,6 +554,7 @@ function ConversationContent() {
       state.session?.state,
       state.session?.ended_at,
       selectText,
+      selectingText,
     ],
   );
 
@@ -1276,11 +1279,7 @@ function ConversationContent() {
       {selection && (
         <SelectionSheet
           text={selection.text}
-          messageId={selection.messageId}
           sessionId={id}
-          onReference={
-            loaded && !busy && !saved.attempt ? addReference : undefined
-          }
           onClose={() => setSelection(undefined)}
         />
       )}

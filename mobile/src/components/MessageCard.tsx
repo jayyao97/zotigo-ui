@@ -1,5 +1,6 @@
 import { eventLabel } from "../core/eventLabel";
-import TextSelect from "lucide-react-native/icons/text-cursor-input";
+import { toolDetail } from "../core/toolDetail";
+import type { SelectionAction } from "../core/selectionRuns";
 import Check from "lucide-react-native/icons/check";
 import { useLayoutTransition } from "./useLayoutTransition";
 import {
@@ -24,7 +25,19 @@ import type { DisplayItem } from "@zotigo/shared/zotigod";
 import { useDaemon } from "../platform/context";
 import { Action, IconButton, colors, errorText, Notice, styles } from "./ui";
 
-function Detail({ label, text }: { label: string; text: string }) {
+function Detail({
+  label,
+  text,
+  language = "plaintext",
+  title,
+  status,
+}: {
+  label: string;
+  text: string;
+  language?: string;
+  title?: string;
+  status?: "Success" | "Failed" | "Running";
+}) {
   const animateLayout = useLayoutTransition();
   const [open, setOpen] = useState(false);
   const [limit, setLimit] = useState(8000);
@@ -57,7 +70,48 @@ function Detail({ label, text }: { label: string; text: string }) {
         )}
       </Pressable>
       {open && (
-        <>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 12,
+            padding: 12,
+            gap: 8,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <Text style={styles.muted}>{language}</Text>
+            <IconButton
+              icon={Copy}
+              label="Copy tool result"
+              onPress={() =>
+                void Clipboard.setStringAsync(text).catch((e) =>
+                  Alert.alert("Copy failed", errorText(e)),
+                )
+              }
+            />
+          </View>
+          {!!title && (
+            <Text
+              selectable
+              style={[
+                styles.text,
+                {
+                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                  fontSize: 13,
+                },
+              ]}
+            >
+              {title}
+            </Text>
+          )}
           <Text
             selectable
             style={[
@@ -77,16 +131,27 @@ function Detail({ label, text }: { label: string; text: string }) {
               onPress={() => setLimit((x) => x + 16000)}
             />
           )}
-          <Action
-            label="Copy"
-            secondary
-            onPress={() =>
-              void Clipboard.setStringAsync(text).catch((e) =>
-                Alert.alert("Copy failed", errorText(e)),
-              )
-            }
-          />
-        </>
+          {!!status && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                gap: 6,
+              }}
+            >
+              {status === "Success" && <Check size={14} color={colors.muted} />}
+              <Text
+                style={[
+                  styles.muted,
+                  status === "Failed" && { color: colors.danger },
+                ]}
+              >
+                {status}
+              </Text>
+            </View>
+          )}
+        </View>
       )}
     </View>
   );
@@ -102,6 +167,7 @@ export const MessageCard = memo(function MessageCard({
   projection,
   revealReasoning = false,
   onSelectText,
+  onSelecting,
 }: {
   item: DisplayItem;
   sessionId: string;
@@ -112,7 +178,8 @@ export const MessageCard = memo(function MessageCard({
   forkDisabled?: boolean;
   projection?: ToolRenderProjection;
   revealReasoning?: boolean;
-  onSelectText?: (selection: { text: string; messageId: string }) => void;
+  onSelectText?: (selection: SelectionAction & { messageId: string }) => void;
+  onSelecting?: () => void;
 }) {
   const client = useDaemon();
   const [copied, setCopied] = useState(false);
@@ -216,6 +283,10 @@ export const MessageCard = memo(function MessageCard({
                 sessionId={sessionId}
                 user
                 onLink={link}
+                onSelection={(selection) =>
+                  onSelectText?.({ ...selection, messageId: item.id })
+                }
+                onSelecting={onSelecting}
               />
             </View>
           )}
@@ -232,6 +303,10 @@ export const MessageCard = memo(function MessageCard({
               text={p.text}
               sessionId={sessionId}
               onLink={link}
+              onSelection={(selection) =>
+                onSelectText?.({ ...selection, messageId: item.id })
+              }
+              onSelecting={onSelecting}
             />
           );
         if (p.type === "reasoning")
@@ -246,21 +321,15 @@ export const MessageCard = memo(function MessageCard({
           const result = projection?.resultsByCall.get(
             contentLocation(item.id, index),
           );
+          const detail = toolDetail(
+            p.tool_call,
+            result,
+            projection?.progressByCall.get(p.tool_call.id ?? ""),
+            live,
+          );
           return (
             <View key={index}>
-              <Detail
-                label={`${p.tool_call.name ?? "tool call"}${result?.is_error ? " · failed" : ""}`}
-                text={[
-                  p.tool_call.arguments ?? "",
-                  result
-                    ? (result.text ??
-                      JSON.stringify(result.json ?? result, null, 2))
-                    : (projection?.progressByCall.get(p.tool_call.id ?? "") ??
-                      ""),
-                ]
-                  .filter(Boolean)
-                  .join("\n\n")}
-              />
+              <Detail {...detail} />
               {result?.content?.map((c, i) =>
                 c.image?.url ? (
                   <MessageImage
@@ -276,13 +345,7 @@ export const MessageCard = memo(function MessageCard({
         if (p.tool_result)
           return (
             <View key={index}>
-              <Detail
-                label={`${p.tool_result.tool_name ?? "Tool"} result${p.tool_result.is_error ? " · failed" : ""}`}
-                text={
-                  p.tool_result.text ??
-                  JSON.stringify(p.tool_result.json ?? p.tool_result, null, 2)
-                }
-              />
+              <Detail {...toolDetail(undefined, p.tool_result)} />
               {p.tool_result.content?.map((c, i) =>
                 c.image?.url ? (
                   <MessageImage
@@ -321,36 +384,6 @@ export const MessageCard = memo(function MessageCard({
         <Text style={styles.muted}>{eventLabel(item)}</Text>
       )}
       <View style={{ flexDirection: "row" }}>
-        {!live &&
-          onSelectText &&
-          (parts.some((p) => !!p.text) || !!item.command?.text) && (
-            <IconButton
-              icon={TextSelect}
-              label="Select message text"
-              onPress={() => {
-                const source =
-                  parts
-                    .map(
-                      (p) =>
-                        p.text ??
-                        p.tool_call?.arguments ??
-                        p.tool_result?.text ??
-                        (p.tool_result?.json
-                          ? JSON.stringify(p.tool_result.json, null, 2)
-                          : ""),
-                    )
-                    .filter(Boolean)
-                    .join("\n\n") ||
-                  item.command?.text ||
-                  "";
-                onSelectText({
-                  text: user ? codexUserText(source, item) : source,
-                  messageId: item.id,
-                });
-              }}
-            />
-          )}
-
         {!live && turnAction && (
           <View style={{ flexDirection: "row" }}>
             <IconButton
