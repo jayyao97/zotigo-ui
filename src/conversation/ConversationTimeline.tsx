@@ -1079,6 +1079,7 @@ function MarkdownContent({ text, smoothStreaming = false }: { text: string; smoo
 const userMessageCollapsedLines = 20;
 
 export function UserMessage({ messageId, text, skills = [], kicker, children, attachments }: { messageId?: string; text: string; skills?: string[]; kicker?: string; children?: ReactNode; attachments?: ReactNode }) {
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const mentioned = new Set(skillTokens(text, skills).map(token => token.name));
   const legacySkills = skills.filter(name => !mentioned.has(name));
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -1118,6 +1119,13 @@ export function UserMessage({ messageId, text, skills = [], kicker, children, at
           {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}
           {legacySkills.length > 0 && <div className="message-skills" aria-label="Selected skills">{legacySkills.map(name => <span key={name}><Sparkles size={11} />{name}</span>)}</div>}
           {children}
+        </div>}
+        {text && <div className="turn-actions user-message-actions">
+          {copyStatus && <span role="status">{copyStatus}</span>}
+          <button type="button" aria-label="Copy message" title={copyStatus ?? "Copy message"} onClick={() => {
+            if (!navigator.clipboard) { setCopyStatus("Clipboard unavailable"); return; }
+            void navigator.clipboard.writeText(text).then(() => setCopyStatus("Copied"), () => setCopyStatus("Could not copy message"));
+          }}><Copy size={16} strokeWidth={1.8} /></button>
         </div>}
         {collapsible && (
           <button

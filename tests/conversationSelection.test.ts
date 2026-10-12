@@ -104,3 +104,24 @@ test("message search excludes tool/reasoning payloads and merges live and persis
   assert.equal(searchLoadedMessages(items, "100%").length, 1);
   assert.deepEqual(mergeSearchHits(searchLoadedMessages(items, "中文"), [{ id: "live", sequence: 3 }, { id: "old", sequence: 1 }]), [{ id: "live", sequence: 3 }, { id: "old", sequence: 1 }]);
 });
+
+
+test("thinking selection is translatable without becoming a message reference", () => {
+  const dom = new JSDOM('<main><div data-message-id="assistant"><div class="reasoning-block"><p>Let me think.</p></div><p>Answer.</p></div><div class="reasoning-block">Standalone thinking.</div><button>Control</button></main>');
+  try {
+    const root = dom.window.document.querySelector('main')!;
+    const range = dom.window.document.createRange();
+    for (const reasoning of root.querySelectorAll<HTMLElement>('.reasoning-block')) {
+      range.selectNodeContents(reasoning);
+      const match = selectedMessageRange(range, root)!;
+      assert.equal(match.message, reasoning);
+      assert.equal(match.message.dataset.messageId, undefined);
+      assert.equal(match.range.toString(), reasoning.textContent);
+    }
+    range.setStart(root.querySelector('.reasoning-block p')!.firstChild!, 0);
+    range.setEnd(root.querySelector('[data-message-id] > p')!.firstChild!, 2);
+    assert.equal(selectedMessageRange(range, root), null);
+    range.selectNodeContents(root.querySelector('button')!);
+    assert.equal(selectedMessageRange(range, root), null);
+  } finally { dom.window.close(); }
+});

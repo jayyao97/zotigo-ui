@@ -5371,6 +5371,9 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .turn-actions button:hover { background: var(--surface-row); }
 .turn-actions button:disabled { opacity: .4; cursor: not-allowed; }
 .turn-actions span { font-size: 12px; }
+.user-message-actions { padding: 0; }
+.message-row.user:hover .user-message-actions,
+.message-row.user:focus-within .user-message-actions { opacity: 1; }
 .fork-lineage { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .fork-lineage > svg { flex-shrink: 0; }
 .fork-lineage button { min-width: 0; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; }
