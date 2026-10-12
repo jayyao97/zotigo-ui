@@ -3,6 +3,7 @@ import { minimalSetup } from "codemirror";
 import { Annotation, Compartment, EditorState, Prec } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, ViewPlugin, type ViewUpdate, placeholder } from "@codemirror/view";
 import { editorSkillTokens } from "../shared/skillCommands";
+import { composerWordPosition } from "./composerWordMovement";
 
 const externalChange = Annotation.define<boolean>();
 
@@ -61,7 +62,20 @@ export function SkillPromptEditor(props: {
       compartment.current.of(skillDecorations([...knownSkills.current])),
       EditorView.contentAttributes.of({ "aria-label": p.placeholder, "aria-multiline": "true", role: "textbox", spellcheck: "true" }),
       Prec.highest(EditorView.domEventHandlers({
-        keydown(event) { if (!event.isComposing) current.current.onKeyDown(event); return event.defaultPrevented; },
+        keydown(event, view) {
+          if (event.isComposing) return false;
+          const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+          const wordModifier = mac ? event.altKey && !event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey && !event.altKey;
+          if (wordModifier && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+            const forward = event.key === "ArrowRight";
+            const range = view.state.selection.main;
+            const head = !event.shiftKey && !range.empty ? (forward ? range.to : range.from) : composerWordPosition(view.state.doc.toString(), range.head, forward, [...knownSkills.current]);
+            view.dispatch({ selection: { anchor: event.shiftKey ? range.anchor : head, head }, scrollIntoView: true, userEvent: "select" });
+            event.preventDefault();
+            return true;
+          }
+          current.current.onKeyDown(event); return event.defaultPrevented;
+        },
         paste(event) { current.current.onPaste(event); return event.defaultPrevented; },
       })),
       EditorView.updateListener.of(update => {

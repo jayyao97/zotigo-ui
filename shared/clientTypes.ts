@@ -183,6 +183,7 @@ export interface CreateConversationInput {
 }
 
 export interface SendConversationMessageInput {
+  mode?: "steering" | "queue";
   conversationId: string;
   clientMessageId?: string;
   text: string;
@@ -344,6 +345,10 @@ export interface ClientApi {
   createConversationWithSession(input: CreateConversationInput): Promise<DesktopActionResult>;
   startConversationSession(conversationId: string): Promise<DesktopActionResult>;
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
+  listQueuedInputs(id: string): Promise<import("./zotigod").QueuedInput[] | null>;
+  editQueuedInput(id: string, itemId: string, revision: number, text: string): Promise<void>;
+  deleteQueuedInput(id: string, itemId: string, revision: number): Promise<void>;
+  resumeInputQueue(id: string): Promise<void>;
   translateSelection(sessionId: string, text: string, targetLanguage: "zh-CN" | "en", profile?: string): Promise<TranslationResult>;
   suggestConversationTitle(conversationId: string): Promise<DesktopState>;
   renameConversation(conversationId: string, title: string): Promise<DesktopState>;

@@ -526,5 +526,11 @@ export interface SessionCommandResponse {
   created_at: string;
 }
 
+export interface QueuedInput extends SessionCommandResponse {
+  state: "queued" | "paused" | "sending";
+  revision: number;
+  editable: boolean;
+}
+
 export interface SessionSearchHit { id: string; sequence: number }
 export interface SessionSearchResponse { hits: SessionSearchHit[]; truncated: boolean }

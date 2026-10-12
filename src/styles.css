@@ -5666,3 +5666,20 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 }
 .search-history-notice { position: sticky; top: 0; z-index: 0; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px; background: var(--surface); color: var(--text-muted); font-size: 12px; }
 .search-history-notice button { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 5px 8px; }
+.input-queue { width: min(var(--thread-content-width), 100%); margin: 0 auto 8px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); max-height: min(240px, 30dvh); overflow-y: auto; pointer-events: auto; }
+.input-queue header, .input-queue header > span, .input-queue li { display: flex; align-items: center; gap: 8px; }
+.input-queue header { justify-content: space-between; color: var(--text-muted); font-size: 12px; }
+.input-queue ol { margin: 6px 0 0; padding: 0; counter-reset: queued; }
+.input-queue li { padding: 6px 0; counter-increment: queued; }
+.input-queue li::before { content: counter(queued) "."; color: var(--text-muted); font-size: 12px; }
+.queue-message { flex: 1; min-width: 0; font-size: 13px; }
+.queue-message > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap; }
+.queue-message small { color: var(--text-muted); margin-right: 8px; }
+.queue-editor { flex: 1; min-width: 0; }
+.queue-editor textarea { width: 100%; min-height: 64px; max-height: 140px; padding: 8px; resize: none; border: 1px solid var(--border-heavy); border-radius: var(--radius-md); background: var(--app-bg); color: var(--text); font: inherit; line-height: 1.5; }
+.queue-editor > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.input-queue button { font-size: 12px; }
+.input-queue p { color: var(--text-muted); font-size: 12px; }
+.composer-send-mode { max-width: 90px; background: transparent; color: var(--text-muted); border: 0; font: inherit; font-size: 12px; }
+@media (max-width: 600px) { .queue-editor textarea { font-size: 16px; } }
+@media (pointer: coarse) { .input-queue .icon-button { min-width: 40px; min-height: 40px; } }

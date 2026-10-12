@@ -1,4 +1,5 @@
 import type { TranslationLanguage } from "./translationLanguage";
+import type { SendMode } from "./sendMode";
 import { TranslationProfileSettings } from "./TranslationProfileSettings";
 import type { AgentCatalogEntry } from "../shared/zotigod";
 import { FavoriteModelSettings } from "./FavoriteModelSettings";
@@ -7,6 +8,8 @@ import type { ThinkingDisplayMode } from "./thinkingDisplay";
 
 export function SettingsPage({
   hostName,
+  defaultSendMode = "steering",
+  onDefaultSendModeChange,
   onSync,
   syncing,
   syncStatus,
@@ -22,6 +25,8 @@ export function SettingsPage({
   onBack,
 }: {
   hostName: string;
+  defaultSendMode?: SendMode;
+  onDefaultSendModeChange?: (mode: SendMode) => void;
   onSync: () => void;
   syncing: boolean;
   syncStatus: string;
@@ -59,6 +64,12 @@ export function SettingsPage({
           <section className="settings-section" aria-labelledby="conversation-settings-heading">
             <h2 id="conversation-settings-heading">Conversation</h2>
             <div className="settings-card">
+              <label className="settings-row">
+                <span><strong>Default send mode</strong><small>⌘Enter / Ctrl+Enter uses the other mode.</small></span>
+                <select aria-label="Default send mode" value={defaultSendMode} onChange={event => onDefaultSendModeChange?.(event.target.value as SendMode)}>
+                  <option value="steering">Steering</option><option value="queue">Queue for next turn</option>
+                </select>
+              </label>
               <label className="settings-row">
                 <span><strong>Translation language</strong><small>Translate selected conversation text into this language.</small></span>
                 <select aria-label="Translation language" value={translationLanguage} onChange={event => onTranslationLanguageChange(event.target.value as TranslationLanguage)}>

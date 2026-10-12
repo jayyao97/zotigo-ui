@@ -25,6 +25,10 @@ import {
   getSessionItemWindow,
   listSessions,
   sendSessionMessage,
+  queueSessionMessage,
+  listQueuedInputs,
+  changeQueuedInput,
+  resumeInputQueue,
   sendSessionSteering,
   suggestSessionTitle,
   translateSelection,
@@ -365,6 +369,7 @@ addWorkspaceSourceToCatalog,
         messageInput.approvalPolicy,
         messageInput.clientMessageId,
         messageInput.files,
+        messageInput.mode,
       );
       return { state: await getCatalogDesktopState(), ...result };
     } catch (error) {
@@ -377,6 +382,14 @@ addWorkspaceSourceToCatalog,
     if (!["zh-CN", "en"].includes(target) || [...source].length > 8000) throw new Error("Invalid translation input");
     return translateSelection(assertNonEmptyString(id, "sessionId"), source, target, profile == null ? undefined : assertString(profile, "profile"));
   });
+  handle("sessions:queue-list", id => listQueuedInputs(assertNonEmptyString(id, "sessionId")));
+  handle("sessions:queue-resume", id => resumeInputQueue(assertNonEmptyString(id, "sessionId")));
+  for (const operation of ["edit", "delete"] as const) {
+    handle(`sessions:queue-${operation}`, (id, itemId, revision, text) => {
+      if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1) throw new Error("Invalid queue revision");
+      return changeQueuedInput(assertNonEmptyString(id, "sessionId"), assertNonEmptyString(itemId, "itemId"), revision, operation === "edit" ? assertString(text, "text") : undefined);
+    });
+  }
   handle("desktop:suggest-conversation-title", async (conversationId) => {
     const id = assertString(conversationId, "conversationId");
     const suggestion = await suggestSessionTitle(id);
@@ -504,10 +517,11 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     approvalPolicy?: ApprovalPolicy,
     clientMessageId?: string,
     files: MessageFileInput[] = [],
+    mode: "steering" | "queue" = "steering",
   ): Promise<{ session: ZotigoSession; command: SessionCommandResponse }> {
     text = await uploadMessageFiles(conversationId, text, files);
     let session = await getOrCreateStartedSession(conversationId, approvalPolicy);
-    const command = await sendMessageOrSteering(session.id, text, images, skills, clientMessageId);
+    const command = mode === "queue" ? await queueSessionMessage(session.id, text, images, skills, clientMessageId) : await sendMessageOrSteering(session.id, text, images, skills, clientMessageId);
     if (command.type === "steering") {
       return { session, command };
     }
@@ -757,6 +771,7 @@ function assertApprovalPolicy(value: unknown, name: string): ApprovalPolicy {
 }
 
 function assertSendConversationMessageInput(value: unknown): {
+  mode: "steering" | "queue";
   conversationId: string;
   clientMessageId?: string;
   text: string;
@@ -766,6 +781,7 @@ function assertSendConversationMessageInput(value: unknown): {
   approvalPolicy?: ApprovalPolicy;
 } {
   const record = assertRecord(value, "send conversation message input");
+  if (record.mode !== undefined && record.mode !== "steering" && record.mode !== "queue") throw new Error("Invalid send mode");
   const { images, files } = assertAttachments(record);
   const text = assertString(record.text, "text").trim();
   if (!text && images.length === 0 && files.length === 0) {
@@ -773,6 +789,7 @@ function assertSendConversationMessageInput(value: unknown): {
   }
   return {
     conversationId: assertString(record.conversationId, "conversationId"),
+    mode: record.mode === "queue" ? "queue" : "steering",
     clientMessageId: record.clientMessageId === undefined ? undefined : assertString(record.clientMessageId, "clientMessageId"),
     text,
     images,

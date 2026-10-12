@@ -442,7 +442,8 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     return <UserInputItem item={item} pending={interactionPending} submitting={interactionSubmitting} onSubmit={onSubmitInteraction} />;
   }
 
-  if (item.type === "session_command") {
+  const pendingSteering = item.type === "session_command" && item.command?.type === "steering";
+  if (item.type === "session_command" && !pendingSteering) {
     return (
       <div className="timeline-divider">
         <span>{formatSessionCommand(item)}</span>
@@ -450,15 +451,15 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     );
   }
 
-  if (item.type === "user_message" || item.type === "steering_message") {
-    const text = codexUserText(displayContentText(item.content), item);
+  if (item.type === "user_message" || item.type === "steering_message" || pendingSteering) {
+    const text = codexUserText(displayContentText(item.content) || (pendingSteering ? item.command?.text ?? "" : ""), item);
     const images = displayItemImages(item, daemonUrl, sessionId);
     const skills = item.command?.skills ?? [];
     const hiddenImageCount = Math.max(0, (item.command?.images?.length ?? 0) - images.length);
     const imageSummary = formatImageAttachmentSummary(hiddenImageCount);
     const originKicker = formatChannelOrigin(item.command?.request_context);
     return (
-      <UserMessage messageId={item.id} skills={skills} text={text || (images.length === 0 ? "(No content)" : "")} kicker={item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
+      <UserMessage messageId={item.id} skills={skills} text={text || (images.length === 0 ? "(No content)" : "")} kicker={pendingSteering ? "Steering · Pending" : item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
         <div className="message-image-grid" aria-label="Attached images">
           {images.map((image) => <PreviewImage key={image.id} src={image.url} alt={image.name} />)}
         </div>

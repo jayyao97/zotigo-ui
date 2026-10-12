@@ -477,6 +477,44 @@ export function sendSessionMessage(
   return postSessionTextCommand(id, "messages", text, "send session message response", images, skills, clientMessageId);
 }
 
+export async function queueSessionMessage(id: string, text: string, images: MessageImageInput[], skills: string[], clientMessageId?: string) {
+  try {
+    return await postSessionTextCommand(id, "queue", text, "queue message response", images, skills, clientMessageId);
+  } catch (error) {
+    if (error instanceof ZotigodRequestError && (error.status === 404 || error.status === 405)) {
+      throw new Error("Queue is unavailable for this session. Update the connected daemon to use queued messages.");
+    }
+    throw error;
+  }
+}
+
+export async function listQueuedInputs(id: string): Promise<import("../shared/zotigod").QueuedInput[] | null> {
+  let data: unknown;
+  try { data = await requestJSON(`/sessions/${encodeURIComponent(id)}/queue`); }
+  catch (error) {
+    if (error instanceof ZotigodRequestError && (error.status === 404 || error.status === 405)) return null;
+    throw error;
+  }
+  const response = expectRecord(data, "input queue");
+  if (!Array.isArray(response.items)) throw new Error("Invalid input queue");
+  return response.items.map(value => {
+    const row = expectRecord(value, "queued input");
+    if (row.state !== "queued" && row.state !== "paused" && row.state !== "sending") throw new Error("Invalid queue state");
+    if (typeof row.editable !== "boolean") throw new Error("Invalid queue editable flag");
+    return { ...parseSessionCommandResponse(value, "queued input"), state: row.state, revision: expectNumber(row.revision, "revision"), editable: row.editable };
+  });
+}
+
+export async function changeQueuedInput(id: string, itemId: string, revision: number, text?: string): Promise<void> {
+  await requestJSON(`/sessions/${encodeURIComponent(id)}/queue/${encodeURIComponent(itemId)}`, {
+    method: text === undefined ? "DELETE" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision, text }),
+  });
+}
+
+export async function resumeInputQueue(id: string): Promise<void> {
+  await requestJSON(`/sessions/${encodeURIComponent(id)}/queue/resume`, { method: "POST" });
+}
+
 export function sendSessionSteering(
   id: string,
   text: string,
@@ -646,7 +684,7 @@ export function suggestSessionTitle(id: string): Promise<TitleSuggestionResponse
 
 function postSessionTextCommand(
   id: string,
-  action: "messages" | "steering",
+  action: "messages" | "steering" | "queue",
   text: string,
   context: string,
   images: MessageImageInput[] = [],

@@ -1,4 +1,6 @@
 import { referencePrompt } from "../shared/conversationReferences";
+import { InputQueue } from "./conversation/InputQueue";
+import { alternateSendMode, type SendMode } from "./sendMode";
 import { ConversationTools, ComposerReferences } from "./conversation/ConversationTools";
 import { AttachmentMenu } from "./conversation/AttachmentMenu";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -334,7 +336,11 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
+export default function App({ defaultSendMode = "steering", surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { defaultSendMode?: SendMode; surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
+  const [queueRefresh, setQueueRefresh] = useState(0);
+  const [sendModeOverride, setSendModeOverride] = useState<SendMode | null>(null);
+  const submitModeRef = useRef<SendMode | null>(null);
+  const sendMode = sendModeOverride ?? defaultSendMode;
   const toast = useToast();
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
@@ -2426,6 +2432,8 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
 
   async function submitSelectedPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const mode = submitModeRef.current ?? sendMode;
+    submitModeRef.current = null;
     const text = referencePrompt(skillPromptText(activePrompt, activeComposerDraft.selectedSkillNames).trim(), activeComposerDraft.references);
     if (!selectedConversation || runtimeOccupied || isBusy || attachmentsBlocked || (!text && composerAttachments.length === 0)) {
       return;
@@ -2438,7 +2446,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     const submittedAttachments = submittedDraft.attachments;
     const submittedSkills = submittedDraft.selectedSkillNames;
     const optimisticId = createOptimisticPromptId();
-    const isSteering = Boolean(selectedSession?.working && sessionAllowsActiveTurn(selectedSession.state));
+    const isSteering = mode === "steering" && Boolean(selectedSession?.working && sessionAllowsActiveTurn(selectedSession.state));
     const optimisticItem = optimisticPromptDisplayItem({
       id: optimisticId,
       text: [text, ...submittedAttachments.filter((attachment) => attachment.kind !== "image").map((attachment) => attachment.name)].filter(Boolean).join("\n\n"),
@@ -2459,10 +2467,10 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     setStickToBottom(true);
     setIsBusy(true);
     setMessage(null);
-    setOptimisticPromptItems((current) => [...current, optimisticItem]);
+    if (mode !== "queue") setOptimisticPromptItems((current) => [...current, optimisticItem]);
     updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
     setPreviewAttachmentId(null);
-    if (selectedSession) {
+    if (selectedSession && mode !== "queue") {
       setSessions((current) => upsertSession(current, {
         ...selectedSession,
         state: isSteering ? selectedSession.state : "starting",
@@ -2473,6 +2481,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
       const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
       const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
       const result = await client.sendConversationMessage({
+        mode,
         conversationId,
         clientMessageId: optimisticId,
         text: appendUploadedReferences(text, submittedAttachments),
@@ -2490,6 +2499,9 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
         } else {
           setMessage(result.error);
         }
+      } else if (result.command?.type === "queued") {
+        setQueueRefresh(value => value + 1);
+        requestAnimationFrame(revokeSubmittedAttachments);
       } else {
         const command = result.command;
         if (!command) {
@@ -2588,6 +2600,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      submitModeRef.current = event.metaKey || event.ctrlKey ? alternateSendMode(defaultSendMode) : sendMode;
       (event.target as HTMLElement).closest("form")?.requestSubmit();
     }
   }
@@ -4107,6 +4120,7 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
 
         {selectedConversation && (
           <div className="composer-shell">
+            {selectedBinding && <InputQueue key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} refresh={queueRefresh} active={surfaceActive} />}
             {runtimeOccupied && (
               <div className="runtime-occupied-notice" role="status">
                 <ShieldAlert size={18} strokeWidth={1.9} />
@@ -4150,6 +4164,9 @@ export default function App({ surfaceActive = true, clientScope, hostName, think
               />
               <div className="composer-actions">
                 <div className="composer-actions-left">
+                  <select className="composer-send-mode" aria-label="Send mode" title="Enter sends in this mode; ⌘Enter / Ctrl+Enter uses the non-default mode" value={sendMode} onChange={event => setSendModeOverride(event.target.value as SendMode)}>
+                    <option value="steering">Steering</option><option value="queue">Queue</option>
+                  </select>
                   <AttachmentMenu key={composerDraftKey} onPick={openAttachmentPicker} disabled={isBusy} />
                   <ApprovalPolicyPicker
                     value={selectedApprovalPolicy}
