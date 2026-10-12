@@ -92,7 +92,7 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
   }
 
   func textViewDidChangeSelection(_ textView: UITextView) {
-    if textView.selectedRange.length > 0 { onSelecting([:]) }
+    if textView.isFirstResponder && textView.selectedRange.length > 0 { onSelecting([:]) }
     else if let pending = pendingText {
       pendingText = nil
       textView.attributedText = pending

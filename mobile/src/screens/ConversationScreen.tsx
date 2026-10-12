@@ -177,7 +177,8 @@ function ConversationContent() {
   const list = useRef<FlatList<TimelineRow>>(null);
   const follow = useRef(new TimelineFollow());
   const historyGesture = useRef(new HistoryPaginationGesture());
-  const scrollMetrics = useRef(new TimelineScrollMetrics());
+  const inverted = Platform.OS !== "web";
+  const scrollMetrics = useRef(new TimelineScrollMetrics(inverted));
   const [following, setFollowing] = useState(true);
   const [selection, setSelection] = useState<{
     text: string;
@@ -449,6 +450,10 @@ function ConversationContent() {
     disclosures,
     thinking.mode,
   ]);
+  const listData = useMemo(
+    () => (inverted ? [...data].reverse() : data),
+    [data, inverted],
+  );
   const turnActions = useMemo(
     () => sessionTurnActions(state.items),
     [state.items],
@@ -618,8 +623,38 @@ function ConversationContent() {
     scrollMetrics.current.resetCorrection();
     follow.current.jump();
     setFollowing(true);
-    list.current?.scrollToEnd({ animated: true });
+    if (inverted) list.current?.scrollToOffset({ offset: 0, animated: true });
+    else list.current?.scrollToEnd({ animated: true });
   }
+  const historyLoader = (
+    <View style={{ height: 32, justifyContent: "center" }}>
+      {state.loadingOlder && <Loading />}
+    </View>
+  );
+  const requestsView = (
+    <View style={{ gap: 12, padding: 16 }}>
+      {requests.map((item) => (
+        <HumanRequest
+          key={item.id}
+          item={item}
+          client={client}
+          id={id}
+          run={(action) =>
+            void run(async () => {
+              try {
+                return await action();
+              } finally {
+                if (focused.current) void timeline.start();
+              }
+            })
+          }
+          disabled={
+            busy || !state.session?.live || state.status !== "connected"
+          }
+        />
+      ))}
+    </View>
+  );
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -666,7 +701,8 @@ function ConversationContent() {
       )}
       <FlatList
         ref={list}
-        data={data}
+        data={listData}
+        inverted={inverted}
         renderItem={renderItem}
         keyExtractor={(item) => item.key}
         initialNumToRender={12}
@@ -675,7 +711,7 @@ function ConversationContent() {
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         maintainVisibleContentPosition={
-          following ? undefined : { minIndexForVisible: 1 }
+          following ? undefined : { minIndexForVisible: 0 }
         }
         {...(Platform.OS === "web"
           ? {
@@ -702,7 +738,11 @@ function ConversationContent() {
             event.nativeEvent;
           setFollowing(
             follow.current.observeDistance(
-              contentSize.height - contentOffset.y - layoutMeasurement.height,
+              inverted
+                ? contentOffset.y
+                : contentSize.height -
+                    contentOffset.y -
+                    layoutMeasurement.height,
             ),
           );
           follow.current.endDrag();
@@ -713,7 +753,11 @@ function ConversationContent() {
             event.nativeEvent;
           setFollowing(
             follow.current.observeDistance(
-              contentSize.height - contentOffset.y - layoutMeasurement.height,
+              inverted
+                ? contentOffset.y
+                : contentSize.height -
+                    contentOffset.y -
+                    layoutMeasurement.height,
             ),
           );
           follow.current.endMomentum();
@@ -726,13 +770,21 @@ function ConversationContent() {
           scrollMetrics.current.viewportHeight = layoutMeasurement.height;
           setFollowing(
             follow.current.observeDistance(
-              contentSize.height - contentOffset.y - layoutMeasurement.height,
+              inverted
+                ? contentOffset.y
+                : contentSize.height -
+                    contentOffset.y -
+                    layoutMeasurement.height,
             ),
           );
           if (
             historyGesture.current.consume(
               follow.current.following,
-              contentOffset.y,
+              inverted
+                ? contentSize.height -
+                    contentOffset.y -
+                    layoutMeasurement.height
+                : contentOffset.y,
               state.more && !state.loadingOlder && state.status !== "loading",
             )
           ) {
@@ -749,11 +801,6 @@ function ConversationContent() {
           scrollMetrics.current.contentHeight = height;
           scheduleFollowCorrection();
         }}
-        ListHeaderComponent={
-          <View style={{ height: 32, justifyContent: "center" }}>
-            {state.loadingOlder && <Loading />}
-          </View>
-        }
         ListEmptyComponent={
           <View style={{ padding: 24 }}>
             <Notice
@@ -765,30 +812,8 @@ function ConversationContent() {
             />
           </View>
         }
-        ListFooterComponent={
-          <View style={{ gap: 12, padding: 16 }}>
-            {requests.map((item) => (
-              <HumanRequest
-                key={item.id}
-                item={item}
-                client={client}
-                id={id}
-                run={(action) =>
-                  void run(async () => {
-                    try {
-                      return await action();
-                    } finally {
-                      if (focused.current) void timeline.start();
-                    }
-                  })
-                }
-                disabled={
-                  busy || !state.session?.live || state.status !== "connected"
-                }
-              />
-            ))}
-          </View>
-        }
+        ListHeaderComponent={inverted ? requestsView : historyLoader}
+        ListFooterComponent={inverted ? historyLoader : requestsView}
       />
       {!following && (
         <View style={{ alignItems: "center", height: 44 }}>
