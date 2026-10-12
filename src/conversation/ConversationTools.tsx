@@ -26,7 +26,7 @@ type Props = {
   onCloseSearch: () => void;
   onSearch: () => void;
 };
-type SelectionText = { text: string; messageId: string; startOffset: number; rect: DOMRect };
+type SelectionText = { text: string; messageId?: string; startOffset: number; rect: DOMRect };
 
 export function ConversationTools({ root, onReference, translate, translationProfile, items, search, showHit, onCloseSearch, onSearch, language, references, editingId, onEdit, onReferencesChange }: Props) {
   const [selection, setSelection] = useState<SelectionText | null>(null);
@@ -52,7 +52,7 @@ export function ConversationTools({ root, onReference, translate, translationPro
         if (!text) return;
         const rect = range.getBoundingClientRect();
         request.current++; setTranslation(null);
-        setSelection({ text, messageId: message.dataset.messageId!, rect, startOffset: selectionOffset(message, range) + rawText.indexOf(text) });
+        setSelection({ text, messageId: message.dataset.messageId, rect, startOffset: selectionOffset(message, range) + rawText.indexOf(text) });
       }, 150);
     };
     const dismiss = (event: PointerEvent) => { if (!popup.current?.contains(event.target as Node)) { request.current++; setTranslation(null); setSelection(null); } };
@@ -82,11 +82,12 @@ export function ConversationTools({ root, onReference, translate, translationPro
     <ConversationFind root={root} items={items} search={search} showHit={showHit} onClose={onCloseSearch} onOpen={() => { request.current++; setSelection(null); setTranslation(null); onSearch(); }} />
     {selection && createPortal(<div ref={popup} className={`selection-tools ${translation ? "has-translation" : ""}`} style={position} onPointerDown={event => event.stopPropagation()}>
       <div className="selection-actions">
-        <button type="button" disabled={[...selection.text].length > 8000} onClick={() => {
+        {selection.messageId && <button type="button" disabled={[...selection.text].length > 8000} onClick={() => {
+          if (!selection.messageId) return;
           window.getSelection()?.removeAllRanges();
           onReference({ id: crypto.randomUUID(), messageId: selection.messageId, startOffset: selection.startOffset, text: selection.text, comment: "" });
           setSelection(null);
-        }}><MessageSquareQuote size={15} />Add to conversation</button>
+        }}><MessageSquareQuote size={15} />Add to conversation</button>}
         <button type="button" disabled={translation?.pending || [...selection.text].length > 8000} onClick={() => void runTranslation()}><Languages size={15} />Translate</button>
       </div>
       {[...selection.text].length > 8000 && <small>Select up to 8,000 characters.</small>}

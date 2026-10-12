@@ -2,7 +2,7 @@
 // Keep the selected message when only trailing whitespace crosses its boundary.
 export function selectedMessageRange(selected: Range, root: HTMLElement): { message: HTMLElement; range: Range } | null {
   const start = selected.startContainer.nodeType === 1 ? selected.startContainer as Element : selected.startContainer.parentElement;
-  const message = start?.closest<HTMLElement>('[data-message-id]');
+  const message = start?.closest<HTMLElement>('[data-message-id], .reasoning-block');
   if (!message || !root.contains(message) || start?.closest('button, input, textarea')) return null;
   const range = selected.cloneRange();
   if (!message.contains(range.endContainer)) {
