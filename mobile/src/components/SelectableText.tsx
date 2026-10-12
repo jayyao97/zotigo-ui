@@ -8,6 +8,7 @@ export function SelectableText({
   textColor,
   linkColor,
   onLink,
+  highlight,
 }: SelectableTextProps) {
   return (
     <Text selectable style={{ fontSize, lineHeight, color: textColor }}>
@@ -28,7 +29,27 @@ export function SelectableText({
                 : "none",
           }}
         >
-          {run.text}
+          {highlight
+            ? run.text
+                .split(
+                  new RegExp(
+                    `(${highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+                    "gi",
+                  ),
+                )
+                .map((part, i) => (
+                  <Text
+                    key={i}
+                    style={
+                      part.toLocaleLowerCase() === highlight.toLocaleLowerCase()
+                        ? { backgroundColor: "#865719" }
+                        : undefined
+                    }
+                  >
+                    {part}
+                  </Text>
+                ))
+            : run.text}
         </Text>
       ))}
     </Text>

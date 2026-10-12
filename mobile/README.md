@@ -40,7 +40,13 @@ Tokens use SecureStore; device metadata and drafts use AsyncStorage. Drafts are 
 
 ## Features and limits
 
-The app supports project and workspace management, source registration, session search, streaming conversations, image attachments, skills, approvals, interactive questions, session controls, and remote text-file editing. Settings expose daemon health, runtimes, profiles, and skills. Channels support browsing and navigation to associated sessions.
+The app supports project and workspace management, source registration, session search, streaming conversations, image/file attachments, inline skills, approvals, interactive questions, session controls, and remote text-file editing. Settings expose daemon health, runtimes, model favorites, translation language/profile, and the default Queue/Steer send mode. Channels support browsing and navigation to associated sessions.
+
+Conversation search queries the daemon's full history and opens an isolated message window, without changing the live SSE cursor. Selected text (including reasoning) supports translation and quoted references with editable comments and original-message highlighting. Placeholder session titles are suggested after a completed turn, with a fresh catalog check before replacing them.
+
+Queue mode submits the next input through the daemon queue API. Queue rows support revision-checked editing/deletion and resuming a paused queue; polling stops when the screen loses focus or the app enters the background. Unknown send results retain the original request ID, payload, and send mode.
+
+Image and file attachments share a five-item, 20 MiB total limit (5 MiB per model image). Uploaded paths persist with the draft so retrying a partial upload keeps completed files. Text/image/video draft previews are bounded; video playback pauses in the background. iOS skill tokens use the local UIKit editor for atomic selection/deletion; Web previews use plain text editing.
 
 Current limits:
 

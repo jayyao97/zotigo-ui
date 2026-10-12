@@ -1,1 +1,11 @@
-{"platforms":["apple"],"apple":{"modules":["SelectableTextModule"]}}
+{
+  "platforms": [
+    "apple"
+  ],
+  "apple": {
+    "modules": [
+      "SelectableTextModule",
+      "SkillInputModule"
+    ]
+  }
+}
