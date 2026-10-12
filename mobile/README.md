@@ -19,13 +19,13 @@ Local iOS builds require macOS, Xcode, and an installed iOS Simulator runtime. F
 
 ```sh
 # Generate the native project, install Pods, and run in the simulator.
-corepack pnpm exec expo run:ios
+corepack pnpm ios
 
 # Build and install on a connected device.
-corepack pnpm exec expo run:ios --device
+corepack pnpm ios --device
 
 # Include the JavaScript bundle for use without Metro.
-corepack pnpm exec expo run:ios --configuration Release --device
+corepack pnpm ios --configuration Release --device
 ```
 
 Device builds require Xcode signing configuration. Use a suitable bundle identifier in `app.config.ts`, select a signing team in the generated Xcode workspace, and enable Developer Mode on the device when required. Allow local network access when connecting to a LAN daemon. See [Expo local builds](https://docs.expo.dev/guides/local-app-development/) for environment setup.
@@ -45,7 +45,7 @@ The app supports project and workspace management, source registration, session 
 Current limits:
 
 - No permanent project/workspace deletion, custom navigation ordering, or project pinning. Workspace and session pins use the daemon navigation catalog.
-- No archived-history browser, full Mermaid rendering, or desktop diff/editor parity.
+- No archived-history browser or desktop diff/editor parity.
 - Text editing is limited to 256 KiB. Revision conflicts preserve the draft; file content reload is manual, with a freshness reminder on foreground return.
 - Channel configuration editing, push notifications, and background streaming are not implemented.
 - Navigation does not restore the last open page after restarting the app.
@@ -73,3 +73,7 @@ Run the root tests, typecheck, and build after changing shared code or workspace
 For reproducible Linux layout and interaction checks with synthetic multi-host data, see the [fixture preview](tests/preview/README.md). It renders the production screens through a separate test entry and does not contact real daemons.
 
 Home restores the last selected device (or connects the only saved device). Device configuration lives under Settings → Devices. Workspace lists initially show five conversations; search includes the full catalog. Models and runtimes have a separate Settings page; skills are selected with `/` in the conversation composer. While a response is active, an empty composer shows Stop; entering text or attaching an image switches it to Send.
+
+The text-selection action below a message opens a selectable source view. Selected passages can be translated to Chinese or English, or added as removable references in the current draft without sending. References persist with the host/session draft and become quoted prompt text on submission. Translation uses the daemon's public `POST /sessions/{id}/translate` endpoint and displays results separately; older daemons without this endpoint require an update.
+
+Code fences use native syntax colors, wrap and copy controls. Previews cap at 20,000 characters; copying preserves the complete source. Mermaid diagrams open on demand in one isolated, offline viewer (50,000 characters / 300 edges), with source still readable in the message. The bundled Mermaid runtime is generated automatically by start, ios, android, typecheck and export:ios scripts; direct Expo commands require `corepack pnpm prepare:renderers` first. Browser fixtures use a sandboxed iframe; iOS uses react-native-webview and needs a native rebuild after this dependency change.

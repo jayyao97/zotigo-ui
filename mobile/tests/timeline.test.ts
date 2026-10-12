@@ -183,16 +183,25 @@ test("Timeline.start backfills beyond recent page to recover pending approval in
     return json(session);
   });
   const timeline = new Timeline(client, "s");
+  const publishedPages: number[][] = [];
+  let lastItems = timeline.snapshot().items;
+  const unsubscribe = timeline.subscribe(() => {
+    const items = timeline.snapshot().items;
+    if (items !== lastItems) publishedPages.push(items.map(i => i.sequence));
+    lastItems = items;
+  });
   const running = timeline.start();
   try {
     await waitFor(timeline, (s) => s.status === "connected");
     assert.deepEqual(before, [null, "5", "2"]);
+    assert.deepEqual(publishedPages, [[5, 6], [1, 2, 3, 5, 6]], "recovery pages prepend once, avoiding intermediate layout jumps");
     assert.deepEqual([...timeline.pending().approvals], ["approval-a"]);
     assert.deepEqual(
       timeline.snapshot().items.map((i) => i.sequence),
       [1, 2, 3, 5, 6],
     );
   } finally {
+    unsubscribe();
     timeline.stop();
     stream.close();
     await running;

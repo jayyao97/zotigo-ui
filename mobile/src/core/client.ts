@@ -123,6 +123,7 @@ export class DaemonClient {
     method = "GET",
     body?: unknown,
     signal?: AbortSignal,
+    timeout = 30000,
   ): Promise<T> {
     return this.response(
       path,
@@ -139,7 +140,42 @@ export class DaemonClient {
           throw new Error("Unsupported daemon response envelope.");
         return envelope.data as T;
       },
+      timeout,
     );
+  }
+  async translateSelection(
+    id: string,
+    text: string,
+    language: "zh-CN" | "en",
+    signal?: AbortSignal,
+  ) {
+    if (!text.trim() || [...text].length > 8000)
+      throw new Error("Select between 1 and 8,000 characters.");
+    try {
+      const result = record(
+        await this.request(
+          `/sessions/${enc(id)}/translate`,
+          "POST",
+          { text, target_language: language },
+          signal,
+          35000,
+        ),
+      );
+      if (typeof result.text !== "string")
+        throw new Error("Invalid translation response.");
+      return {
+        text: result.text,
+        profile:
+          typeof result.profile === "string" ? result.profile : undefined,
+        model: typeof result.model === "string" ? result.model : undefined,
+      };
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404)
+        throw new Error(
+          "Translation is unavailable. Update this daemon to a version with selection translation support.",
+        );
+      throw error;
+    }
   }
   async image(url: string): Promise<string> {
     const parsed = new URL(url, this.connection.baseUrl);

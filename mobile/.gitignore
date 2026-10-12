@@ -5,3 +5,4 @@ ios/
 android/
 *.tsbuildinfo
 dist-web/
+src/generated/

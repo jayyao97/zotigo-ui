@@ -39,6 +39,9 @@ type HostState = {
   streams: Map<string, Set<ReadableStreamDefaultController<Uint8Array>>>;
   bindings: Map<string, string[]>;
   sends: Set<string>;
+  historyRequests: number;
+  translationRequests: number;
+  lastTranslationText?: string;
   lastSubmission?: {
     sessionId: string;
     body: Record<string, unknown>;
@@ -86,7 +89,8 @@ function history(work: boolean): DisplayItem[] {
           text: `${prefix}: review the **multi-host mobile architecture** and improve reconnect reliability. Show the relevant changes before applying them.`,
         },
         {
-          type: "image", image: { url: "/tmp/codex-input.png", mime_type: "image/png" },
+          type: "image",
+          image: { url: "/tmp/codex-input.png", mime_type: "image/png" },
         },
       ],
     }),
@@ -94,7 +98,7 @@ function history(work: boolean): DisplayItem[] {
       content: [
         {
           type: "text",
-          text: "I’ll check the host boundary, then review stream recovery and draft persistence.\n\n### Implementation plan\n\n- Keep credentials scoped to an immutable connection.\n- Resume event streams from the last durable sequence.\n- Preserve unsent drafts when switching devices.\n\nThe relevant code is [client.ts](src/client.ts).\n\n![Architecture preview](/sessions/session-shared/images/preview)\n\n```ts\nconst client = new DaemonClient(connection, fetch);\nawait client.health();\n```\n\n| Area | Result |\n| --- | --- |\n| Host isolation | Passed |\n| Stream reconnect | Needs one fix |",
+          text: "I’ll check the host boundary, then review stream recovery and draft persistence.\n\n### Implementation plan\n\n- Keep credentials scoped to an immutable connection.\n- Resume event streams from the last durable sequence.\n- Preserve unsent drafts when switching devices.\n\nThe relevant code is [client.ts](src/client.ts).\n\n![Architecture preview](/sessions/session-shared/images/preview)\n\n```ts\nconst client = new DaemonClient(connection, fetch);\nawait client.health();\n```\n\n```mermaid\nflowchart LR\n Phone[Mobile app] --> VPN[Tailscale / VPN]\n VPN --> Home[Home daemon]\n VPN --> Work[Work daemon]\n```\n\n| Area | Result |\n| --- | --- |\n| Host isolation | Passed |\n| Stream reconnect | Needs one fix |",
         },
         {
           type: "reasoning",
@@ -260,8 +264,7 @@ function makeHost(work: boolean): HostState {
       title: "Experimental checkout",
       root_path: root + "-experiment",
       status: "error",
-      error:
-        "Source branch is unavailable. Choose a valid base ref and retry.",
+      error: "Source branch is unavailable. Choose a valid base ref and retry.",
       created_at: now,
       updated_at: now,
     },
@@ -381,6 +384,8 @@ function makeHost(work: boolean): HostState {
     streams: new Map(),
     bindings: new Map(workspaces.map((w) => [w.id, ["source-ui"]])),
     sends: new Set(),
+    historyRequests: 0,
+    translationRequests: 0,
   };
 }
 const hosts = { home: makeHost(false), work: makeHost(true) };
@@ -397,9 +402,7 @@ function publish(host: HostState, id: string, event: SessionDisplayEvent) {
 }
 function projection(host: HostState, id: string): CatalogSessionProjection {
   const session = host.sessions.get(id)!;
-  const workspace = host.workspaces.find(
-    (w) => w.id === session.workspaceId,
-  )!;
+  const workspace = host.workspaces.find((w) => w.id === session.workspaceId)!;
   return {
     runtime: session.runtime,
     availability: "available",
@@ -586,9 +589,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
         return envelope(workspace);
       }
       return envelope({
-        workspaces: host.workspaces.filter(
-          (w) => w.project_id === project.id,
-        ),
+        workspaces: host.workspaces.filter((w) => w.project_id === project.id),
       });
     }
     if (projectMatch[2] === "sources") {
@@ -620,9 +621,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     const workspace = host.workspaces.find((w) => w.id === workspaceMatch[1]);
     if (!workspace) return failure("Workspace missing.", 404);
     if (workspaceMatch[2] === "sources") {
-      const project = host.projects.find(
-        (p) => p.id === workspace.project_id,
-      )!;
+      const project = host.projects.find((p) => p.id === workspace.project_id)!;
       const ids = host.bindings.get(workspace.id) ?? [];
       const binding = (source: CatalogProjectDetail["sources"][number]) => ({
         source,
@@ -640,9 +639,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
         return envelope(binding(source));
       }
       return envelope({
-        sources: project.sources
-          .filter((s) => ids.includes(s.id))
-          .map(binding),
+        sources: project.sources.filter((s) => ids.includes(s.id)).map(binding),
       });
     }
     if (workspaceMatch[2] === "archive-preview")
@@ -835,6 +832,25 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       session = host.sessions.get(id);
     if (!session) return failure("Session missing.", 404);
     if (!action) return envelope(session.runtime);
+    if (action === "translate" && method === "POST") {
+      if (
+        typeof body.text !== "string" ||
+        !body.text.trim() ||
+        [...body.text].length > 8000 ||
+        !["zh-CN", "en"].includes(String(body.target_language))
+      )
+        return failure("Invalid selection translation.", 400);
+      host.translationRequests++;
+      host.lastTranslationText = body.text;
+      return envelope({
+        text:
+          body.target_language === "zh-CN"
+            ? "预览翻译：连接始终限定在所选设备。"
+            : "Preview translation: the connection stays scoped to the selected device.",
+        profile: "fixture-translation",
+        model: "fixture-model",
+      });
+    }
     if (action === "fork" && method === "POST") {
       const forkId = "fork-" + String(body.request_id);
       if (!host.sessions.has(forkId))
@@ -856,6 +872,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       return envelope(host.sessions.get(forkId)!.runtime);
     }
     if (action === "items") {
+      host.historyRequests++;
       const before = Number(url.searchParams.get("before") ?? Infinity),
         limit = Math.min(
           Number(url.searchParams.get("limit") ?? 50),
@@ -920,8 +937,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     if (action === "profile") session.runtime.profile = String(body.profile);
     if (action === "approval-policy")
       session.runtime.approval_policy = body.approval_policy as
-        | "auto"
-        | "bypass_permissions";
+        "auto" | "bypass_permissions";
     if (action.startsWith("approvals/"))
       publish(host, id, {
         type: "item",
@@ -974,9 +990,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
             pickedImageInput({ base64: image.data_base64 }).mime_type !==
             image.mime_type
           )
-            throw new Error(
-              "Declared image MIME does not match actual bytes.",
-            );
+            throw new Error("Declared image MIME does not match actual bytes.");
         }
       } catch (error) {
         return failure(
@@ -1051,13 +1065,21 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       return envelope(session.runtime);
     return failure("Unimplemented fixture session action: " + action, 404);
   }
-  return failure(
-    "Unimplemented fixture endpoint: " + method + " " + path,
-    404,
-  );
+  return failure("Unimplemented fixture endpoint: " + method + " " + path, 404);
 };
 export const preview = {
   hosts: ["home", "work"],
+  appendMarkdown(host: "home" | "work", text: string) {
+    publish(hosts[host], "session-shared", {
+      type: "delta",
+      delta: {
+        item_id: "stream-render-regression",
+        role: "assistant",
+        part_type: "text",
+        delta: text,
+      },
+    });
+  },
   fault(host: "home" | "work", fault: Fault) {
     hosts[host].fault = fault;
   },
@@ -1076,6 +1098,9 @@ export const preview = {
   snapshot(host: "home" | "work") {
     return {
       fault: hosts[host].fault,
+      historyRequests: hosts[host].historyRequests,
+      translationRequests: hosts[host].translationRequests,
+      lastTranslationText: hosts[host].lastTranslationText,
       lastSubmission: hosts[host].lastSubmission,
       sessions: [...hosts[host].sessions.values()].map((s) => ({
         id: s.runtime.id,
