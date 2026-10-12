@@ -173,8 +173,9 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           color: user ? "#f6fafe" : colors.text,
           fontSize: 16,
           lineHeight: 26,
+          ...(user ? { gap: 8 } : {}),
         },
-        paragraph: { marginTop: 4, marginBottom: 4 },
+        paragraph: { marginTop: user ? 0 : 4, marginBottom: user ? 0 : 4 },
         heading1: {
           fontSize: 24,
           lineHeight: 32,

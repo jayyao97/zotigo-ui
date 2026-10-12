@@ -206,6 +206,21 @@ export const MessageCard = memo(function MessageCard({
   }
   const user = item.type === "user_message" || item.type === "steering_message";
   const parts = item.content ?? [];
+  const userText = user
+    ? codexUserText(
+        parts
+          .filter((p) => p.type === "text")
+          .map((p) => p.text ?? "")
+          .join("\n") ||
+          item.command?.text ||
+          "",
+        item,
+      )
+    : "";
+  const images = user
+    ? userImages(item, client.connection.baseUrl, sessionId)
+    : [];
+
   if (
     item.type === "assistant_message" &&
     projection &&
@@ -238,48 +253,38 @@ export const MessageCard = memo(function MessageCard({
         </Text>
       )}
       {user && (
-        <View style={{ alignItems: "flex-end", gap: 8, marginVertical: 4 }}>
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              justifyContent: "flex-end",
-              gap: 8,
-            }}
-          >
-            {userImages(item, client.connection.baseUrl, sessionId).map(
-              (url) => (
+        <View style={{ alignItems: "flex-end", gap: 8 }}>
+          {images.length > 0 && (
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                justifyContent: "flex-end",
+                gap: 8,
+              }}
+            >
+              {images.map((url) => (
                 <MessageImage
                   key={url}
                   url={url}
                   sessionId={sessionId}
                   thumbnail
                 />
-              ),
-            )}
-          </View>
-          {!!(
-            parts.some((p) => p.type === "text" && p.text) || item.command?.text
-          ) && (
+              ))}
+            </View>
+          )}
+          {!!userText && (
             <View
               style={{
                 maxWidth: "88%",
                 backgroundColor: "#173e76",
                 borderRadius: 22,
                 paddingHorizontal: 16,
-                paddingVertical: 6,
+                paddingVertical: 10,
               }}
             >
               <MessageMarkdown
-                text={codexUserText(
-                  parts
-                    .filter((p) => p.type === "text")
-                    .map((p) => p.text ?? "")
-                    .join("\n") ||
-                    item.command?.text ||
-                    "",
-                  item,
-                )}
+                text={userText}
                 sessionId={sessionId}
                 user
                 onLink={link}
@@ -289,6 +294,17 @@ export const MessageCard = memo(function MessageCard({
                 onSelecting={onSelecting}
               />
             </View>
+          )}
+          {!!userText && (
+            <IconButton
+              icon={copied ? Check : Copy}
+              label={copied ? "Copied message" : "Copy message"}
+              onPress={() =>
+                void Clipboard.setStringAsync(userText)
+                  .then(() => setCopied(true))
+                  .catch((e) => Alert.alert("Copy failed", errorText(e)))
+              }
+            />
           )}
         </View>
       )}
@@ -383,27 +399,25 @@ export const MessageCard = memo(function MessageCard({
       {!user && !parts.length && !!eventLabel(item) && (
         <Text style={styles.muted}>{eventLabel(item)}</Text>
       )}
-      <View style={{ flexDirection: "row" }}>
-        {!live && turnAction && (
-          <View style={{ flexDirection: "row" }}>
-            <IconButton
-              icon={copied ? Check : Copy}
-              label={copied ? "Copied" : "Copy response"}
-              onPress={() =>
-                void Clipboard.setStringAsync(turnAction.text)
-                  .then(() => setCopied(true))
-                  .catch((e) => Alert.alert("Copy failed", errorText(e)))
-              }
-            />
-            <IconButton
-              icon={GitBranch}
-              label="Fork from this turn"
-              disabled={forkDisabled}
-              onPress={() => onFork?.(turnAction.turnId)}
-            />
-          </View>
-        )}
-      </View>
+      {!live && turnAction && (
+        <View style={{ flexDirection: "row" }}>
+          <IconButton
+            icon={copied ? Check : Copy}
+            label={copied ? "Copied" : "Copy response"}
+            onPress={() =>
+              void Clipboard.setStringAsync(turnAction.text)
+                .then(() => setCopied(true))
+                .catch((e) => Alert.alert("Copy failed", errorText(e)))
+            }
+          />
+          <IconButton
+            icon={GitBranch}
+            label="Fork from this turn"
+            disabled={forkDisabled}
+            onPress={() => onFork?.(turnAction.turnId)}
+          />
+        </View>
+      )}
     </View>
   );
 });
