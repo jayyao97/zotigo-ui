@@ -98,3 +98,12 @@ export function useTranslationSettings(host: string) {
     setProfile: (value: string) => profile.save(value),
   };
 }
+
+export function useSendMode(host: string) {
+  const pref = usePreference(`zotigo.send-mode:${host}`);
+  return {
+    ...pref,
+    mode: pref.value === "queue" ? ("queue" as const) : ("steering" as const),
+    setMode: (mode: "queue" | "steering") => pref.save(mode),
+  };
+}

@@ -1,3 +1,5 @@
+import { parseMarkdownLink } from "@zotigo/shared/markdownLinks";
+import { SelectableText } from "./SelectableText";
 import { eventLabel } from "../core/eventLabel";
 import { toolDetail } from "../core/toolDetail";
 import type { SelectionAction } from "../core/selectionRuns";
@@ -31,12 +33,16 @@ function Detail({
   language = "plaintext",
   title,
   status,
+  onSelection,
+  onSelecting,
 }: {
   label: string;
   text: string;
   language?: string;
   title?: string;
   status?: "Success" | "Failed" | "Running";
+  onSelection?: (action: SelectionAction) => void;
+  onSelecting?: () => void;
 }) {
   const animateLayout = useLayoutTransition();
   const [open, setOpen] = useState(false);
@@ -112,19 +118,30 @@ function Detail({
               {title}
             </Text>
           )}
-          <Text
-            selectable
-            style={[
-              styles.text,
-              {
-                fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-                fontSize: 12,
-                lineHeight: 18,
-              },
-            ]}
-          >
-            {text.slice(0, limit)}
-          </Text>
+          {onSelection ? (
+            <SelectableText
+              runs={[{ text: text.slice(0, limit) }]}
+              textColor={colors.muted}
+              linkColor={colors.accent}
+              onLink={() => false}
+              onAction={onSelection}
+              onSelecting={onSelecting}
+            />
+          ) : (
+            <Text
+              selectable
+              style={[
+                styles.text,
+                {
+                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                  fontSize: 12,
+                  lineHeight: 18,
+                },
+              ]}
+            >
+              {text.slice(0, limit)}
+            </Text>
+          )}
           {text.length > limit && (
             <Action
               label="Show more"
@@ -168,8 +185,12 @@ export const MessageCard = memo(function MessageCard({
   revealReasoning = false,
   onSelectText,
   onSelecting,
+  highlight,
+  onLocateMessage,
 }: {
   item: DisplayItem;
+  highlight?: string;
+  onLocateMessage?: (id: string) => void;
   sessionId: string;
   openFile: (path: string) => void;
   live?: boolean;
@@ -184,26 +205,28 @@ export const MessageCard = memo(function MessageCard({
   const client = useDaemon();
   const [copied, setCopied] = useState(false);
   function link(href: string) {
-    if (/^https?:\/\//i.test(href)) {
-      Alert.alert("Open external link?", href, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Open",
-          onPress: () =>
-            void Linking.openURL(href).catch((e) =>
-              Alert.alert("Cannot open link", errorText(e)),
-            ),
-        },
-      ]);
-    } else if (
-      href &&
-      !href.startsWith("#") &&
-      !/^[a-z][a-z0-9+.-]*:/i.test(href)
-    ) {
-      openFile(href);
+    try {
+      const target = parseMarkdownLink(href);
+      if (target.kind === "anchor" && target.anchor.startsWith("message-")) {
+        onLocateMessage?.(decodeURIComponent(target.anchor.slice(8)));
+      } else if (target.kind === "external") {
+        Alert.alert("Open external link?", target.url, [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Open",
+            onPress: () =>
+              void Linking.openURL(target.url).catch((e) =>
+                Alert.alert("Cannot open link", errorText(e)),
+              ),
+          },
+        ]);
+      } else if (target.kind === "local") openFile(target.path);
+    } catch (e) {
+      Alert.alert("Cannot open link", errorText(e));
     }
     return false;
   }
+
   const user = item.type === "user_message" || item.type === "steering_message";
   const parts = item.content ?? [];
   const userText = user
@@ -287,6 +310,7 @@ export const MessageCard = memo(function MessageCard({
                 text={userText}
                 sessionId={sessionId}
                 user
+                highlight={highlight}
                 onLink={link}
                 onSelection={(selection) =>
                   onSelectText?.({ ...selection, messageId: item.id })
@@ -317,6 +341,7 @@ export const MessageCard = memo(function MessageCard({
             <MessageMarkdown
               key={index}
               text={p.text}
+              highlight={highlight}
               sessionId={sessionId}
               onLink={link}
               onSelection={(selection) =>
@@ -327,11 +352,28 @@ export const MessageCard = memo(function MessageCard({
           );
         if (p.type === "reasoning")
           return revealReasoning ? (
-            <Text key={index} selectable style={styles.muted}>
-              {p.text}
-            </Text>
+            <SelectableText
+              key={index}
+              highlight={highlight}
+              runs={[{ text: p.text ?? "" }]}
+              textColor={colors.muted}
+              linkColor={colors.accent}
+              onLink={link}
+              onAction={(selection) =>
+                onSelectText?.({ ...selection, messageId: item.id })
+              }
+              onSelecting={onSelecting}
+            />
           ) : (
-            <Detail key={index} label="reasoning" text={p.text ?? ""} />
+            <Detail
+              key={index}
+              label="reasoning"
+              text={p.text ?? ""}
+              onSelection={(selection) =>
+                onSelectText?.({ ...selection, messageId: item.id })
+              }
+              onSelecting={onSelecting}
+            />
           );
         if (p.tool_call) {
           const result = projection?.resultsByCall.get(
@@ -379,9 +421,18 @@ export const MessageCard = memo(function MessageCard({
           );
         if (p.text)
           return (
-            <Text key={index} selectable style={styles.muted}>
-              {p.text}
-            </Text>
+            <SelectableText
+              key={index}
+              highlight={highlight}
+              runs={[{ text: p.text ?? "" }]}
+              textColor={colors.muted}
+              linkColor={colors.accent}
+              onLink={link}
+              onAction={(selection) =>
+                onSelectText?.({ ...selection, messageId: item.id })
+              }
+              onSelecting={onSelecting}
+            />
           );
         return null;
       })}

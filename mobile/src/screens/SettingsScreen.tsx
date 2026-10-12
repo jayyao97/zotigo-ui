@@ -1,3 +1,4 @@
+import { useSendMode } from "../platform/preferences";
 import { ModelPicker } from "../components/ModelPicker";
 import { ProfilePicker } from "../components/ProfilePicker";
 import {
@@ -56,6 +57,7 @@ export function SettingsScreen({ connected = true }: { connected?: boolean }) {
         <Notice text="Controls Gemini and custom API sessions. Codex reasoning follows Codex events." />
         <Notice text={thinking.error} error />
       </Section>
+      {connected && <SendModeSettings />}
       {connected && <TranslationSettings />}
       {devices}
       <BottomSheet
@@ -409,6 +411,49 @@ function TranslationSettings() {
             ))}
           </>
         )}
+      </BottomSheet>
+    </Section>
+  );
+}
+
+function SendModeSettings() {
+  const client = useDaemon();
+  const pref = useSendMode(client.connection.id);
+  const [open, setOpen] = useState(false);
+  return (
+    <Section title="Sending">
+      <Row
+        title="Default send mode"
+        subtitle={
+          pref.mode === "queue"
+            ? "Queue for next turn"
+            : "Steer the current turn"
+        }
+        onPress={() => setOpen(true)}
+      />
+      <Notice text={pref.error} error />
+      <BottomSheet
+        visible={open}
+        title="Default send mode"
+        onClose={() => setOpen(false)}
+      >
+        {(["steering", "queue"] as const).map((mode) => (
+          <ChoiceRow
+            key={mode}
+            title={mode === "queue" ? "Queue" : "Steering"}
+            subtitle={
+              mode === "queue"
+                ? "Wait until the current turn finishes"
+                : "Send guidance during the current turn"
+            }
+            selected={pref.mode === mode}
+            disabled={!pref.ready}
+            onPress={() => {
+              void pref.setMode(mode);
+              setOpen(false);
+            }}
+          />
+        ))}
       </BottomSheet>
     </Section>
   );
