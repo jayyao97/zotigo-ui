@@ -6,7 +6,7 @@ Run from the repository root after installing normal workspace dependencies:
 
 ```sh
 cd mobile/tests/preview
-../../node_modules/.bin/expo export --platform web --max-workers 2
+corepack pnpm run export --max-workers 2
 python3 -m http.server 8091 --bind 127.0.0.1 --directory dist
 ```
 

@@ -67,6 +67,7 @@ try {
   await call('Runtime.enable'); await call('Page.enable');
   await call('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 2, mobile: true });
   await call('Page.navigate', { url: address });
+  await call('Page.bringToFront');
   await wait(`typeof __ZOTIGO_PREVIEW__ !== 'undefined'`);
   await bodyIncludes('Home Mac Studio'); await shot('01-home-device-picker');
   await click('Add device'); await bodyIncludes('Daemon address'); await click('Cancel');
@@ -88,6 +89,9 @@ try {
   await click('Home: Multi-host mobile architecture');
   await wait(`__ZOTIGO_PREVIEW__.snapshot('home').activeStreams === 1`);
   await bodyIncludes('Approval required'); await shot('05-conversation');
+  const idleHistoryRequests = await evaluate(`__ZOTIGO_PREVIEW__.snapshot('home').historyRequests`);
+  await delay(700);
+  assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.snapshot('home').historyRequests`), idleHistoryRequests, 'Idle layout does not repeatedly paginate');
   // Pagination explicitly leaves follow mode on web and native. This does not emulate native drag callbacks.
   assert.equal(await evaluate(`${visibleButtons}.some(e => e.textContent.includes('Load earlier messages'))`), false);
   await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 190, y: 350, deltaX: 0, deltaY: -100000 }); await delay(400);
@@ -97,7 +101,30 @@ try {
   await delay(700); assert.ok(await evaluate(`(${distance}) < 100`), 'Late layout retains latest position');
   await shot('05b-jump-latest'); checks.push('Pagination exits follow mode; Jump to latest reaches and retains bottom after delayed layout');
   await click('exec_command'); await bodyIncludes('Tests: 28 passed');
+  assert.ok(await evaluate(`(() => { const e = ${visibleButtons}.find(e => e.textContent.trim() === 'exec_command'); const label = [...e.children].find(c => c.textContent === 'exec_command'); const arrow = [...e.querySelectorAll('svg')].at(-1); return arrow.getBoundingClientRect().left - label.getBoundingClientRect().right < 12; })()`), 'Tool disclosure stays beside its title');
+  await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 190, y: 350, deltaX: 0, deltaY: -250 });
+  await evaluate(`${visibleButtons}.find(e => e.textContent.trim() === 'exec_command').scrollIntoView({block:'center'})`);
   await shot('06-tool-result'); checks.push('Real conversation renders rich history and expandable tool result');
+  await click('Wrap');
+  await bodyIncludes('const client = new DaemonClient(connection, fetch);');
+  await shot('06b-code-block');
+  await click('View diagram'); await delay(2500); await shot('06c-mermaid');
+  await click('Close diagram');
+  checks.push('Fenced code has a native block with wrap/copy; Mermaid opens its offline diagram viewer');
+  await input('Message', 'Keep my draft.');
+  await click('Select message text');
+  await wait(`!!document.querySelector('[aria-label="Message text selection"]')`);
+  const selectedPassage = await evaluate(`(() => { const e=document.querySelector('[aria-label="Message text selection"]'); e.focus(); e.setSelectionRange(0,12); document.dispatchEvent(new Event('selectionchange')); e.dispatchEvent(new MouseEvent('mouseup',{bubbles:true})); return e.value.slice(0,12).trim(); })()`);
+  await click('Translate'); await bodyIncludes('预览翻译'); await shot('06d-translation');
+  assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.snapshot('home').lastSubmission ?? null`), null, 'Translate never sends a conversation message');
+  assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.snapshot('home').lastTranslationText`), selectedPassage, 'Only the selected passage is translated');
+  await click('Add to conversation');
+  await wait(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'Remove reference 1')`);
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Message"]').value`), 'Keep my draft.');
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Remove reference 1"]').parentElement.textContent.trim()`), selectedPassage, 'Only the selected passage becomes a reference');
+  await shot('06e-reference'); await click('Remove reference 1');
+  checks.push('Selected passage translates separately and adds a removable reference without overwriting or sending the draft');
+  await click('Jump to latest');
   await wait(`!!document.querySelector('img[alt="Conversation attachment"]') || [...document.querySelectorAll('[role="img"]')].some(e => e.getAttribute('aria-label') === 'Conversation attachment')`, 'fixture image rendered'); await shot('07-attachment');
   await click('Attach photo');
   await wait(`!!document.querySelector('input[type="file"]')`, 'photo-picker input');
@@ -125,6 +152,20 @@ try {
   assert.equal(await evaluate(`document.querySelector('[aria-label="Message"]').value`), '');
   assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.snapshot('home').activeStreams`), 0);
   await shot('11-work-conversation'); checks.push('Same session ID on Work has no Home submission/draft and Home stream remains closed');
+  const streamedMarkdown = '![Streaming image](/sessions/session-shared/images/preview)\n\n```ts\nconst stable = true;\n```\n\nStreaming stability check: ';
+  await evaluate('__ZOTIGO_PREVIEW__.appendMarkdown("work", ' + JSON.stringify(streamedMarkdown) + ')');
+  await delay(900);
+  await evaluate('globalThis.__streamCode = [...document.querySelectorAll(\'[aria-label="Copy code"]\')].at(-1); globalThis.__streamImage = [...document.querySelectorAll(\'img[alt="Conversation attachment"]\')].at(-1); true');
+  assert.ok(await evaluate('!!__streamCode && !!__streamImage'), 'Streaming rich blocks are rendered');
+  for (let i = 0; i < 8; i++) {
+    await evaluate('__ZOTIGO_PREVIEW__.appendMarkdown("work", ' + JSON.stringify('chunk ' + i + '. ') + ')');
+    await delay(120);
+    assert.ok(await evaluate('__streamCode.isConnected && __streamImage.isConnected'), 'Appending stream text preserves mounted code/image nodes');
+  }
+  await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 190, y: 350, deltaX: 0, deltaY: -200 });
+  await evaluate('__streamCode.scrollIntoView({block:"center"})');
+  await shot('12-streaming-rich-content');
+  checks.push('Repeated SSE text updates preserve existing code and image nodes instead of remounting them');
   assert.deepEqual(runtimeErrors, [], 'No uncaught browser runtime exceptions');
   await fs.writeFile(path.join(output, 'smoke.json'), JSON.stringify({ passed: true, viewport: '393x852 @2', preview: address, checks, screenshots, runtimeErrors, limits: 'React Native Web fixture validation; not native iOS validation.' }, null, 2));
   console.log(JSON.stringify({ passed: true, checks: checks.length, output }));

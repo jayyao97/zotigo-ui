@@ -1,4 +1,5 @@
 import { eventLabel } from "../core/eventLabel";
+import TextSelect from "lucide-react-native/icons/text-cursor-input";
 import Check from "lucide-react-native/icons/check";
 import { useLayoutTransition } from "./useLayoutTransition";
 import {
@@ -40,11 +41,13 @@ function Detail({ label, text }: { label: string; text: string }) {
           minHeight: 44,
           flexDirection: "row",
           alignItems: "center",
+          alignSelf: "flex-start",
+          maxWidth: "100%",
           gap: 8,
         }}
       >
         <Terminal size={15} color={colors.muted} />
-        <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+        <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
           {label}
         </Text>
         {open ? (
@@ -98,6 +101,7 @@ export const MessageCard = memo(function MessageCard({
   forkDisabled,
   projection,
   revealReasoning = false,
+  onSelectText,
 }: {
   item: DisplayItem;
   sessionId: string;
@@ -108,6 +112,7 @@ export const MessageCard = memo(function MessageCard({
   forkDisabled?: boolean;
   projection?: ToolRenderProjection;
   revealReasoning?: boolean;
+  onSelectText?: (selection: { text: string; messageId: string }) => void;
 }) {
   const client = useDaemon();
   const [copied, setCopied] = useState(false);
@@ -315,25 +320,57 @@ export const MessageCard = memo(function MessageCard({
       {!user && !parts.length && !!eventLabel(item) && (
         <Text style={styles.muted}>{eventLabel(item)}</Text>
       )}
-      {!live && turnAction && (
-        <View style={{ flexDirection: "row" }}>
-          <IconButton
-            icon={copied ? Check : Copy}
-            label={copied ? "Copied" : "Copy response"}
-            onPress={() =>
-              void Clipboard.setStringAsync(turnAction.text)
-                .then(() => setCopied(true))
-                .catch((e) => Alert.alert("Copy failed", errorText(e)))
-            }
-          />
-          <IconButton
-            icon={GitBranch}
-            label="Fork from this turn"
-            disabled={forkDisabled}
-            onPress={() => onFork?.(turnAction.turnId)}
-          />
-        </View>
-      )}
+      <View style={{ flexDirection: "row" }}>
+        {!live &&
+          onSelectText &&
+          (parts.some((p) => !!p.text) || !!item.command?.text) && (
+            <IconButton
+              icon={TextSelect}
+              label="Select message text"
+              onPress={() => {
+                const source =
+                  parts
+                    .map(
+                      (p) =>
+                        p.text ??
+                        p.tool_call?.arguments ??
+                        p.tool_result?.text ??
+                        (p.tool_result?.json
+                          ? JSON.stringify(p.tool_result.json, null, 2)
+                          : ""),
+                    )
+                    .filter(Boolean)
+                    .join("\n\n") ||
+                  item.command?.text ||
+                  "";
+                onSelectText({
+                  text: user ? codexUserText(source, item) : source,
+                  messageId: item.id,
+                });
+              }}
+            />
+          )}
+
+        {!live && turnAction && (
+          <View style={{ flexDirection: "row" }}>
+            <IconButton
+              icon={copied ? Check : Copy}
+              label={copied ? "Copied" : "Copy response"}
+              onPress={() =>
+                void Clipboard.setStringAsync(turnAction.text)
+                  .then(() => setCopied(true))
+                  .catch((e) => Alert.alert("Copy failed", errorText(e)))
+              }
+            />
+            <IconButton
+              icon={GitBranch}
+              label="Fork from this turn"
+              disabled={forkDisabled}
+              onPress={() => onFork?.(turnAction.turnId)}
+            />
+          </View>
+        )}
+      </View>
     </View>
   );
 });

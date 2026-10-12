@@ -2,18 +2,15 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Modal,
   Pressable,
-  ScrollView,
   Text,
   View,
   useWindowDimensions,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import X from "lucide-react-native/icons/x";
+import { useImagePreview } from "./ImagePreviewProvider";
 import { useDaemon } from "../platform/context";
 import { messageImage } from "../core/messageImages";
-import { Action, IconButton, colors, errorText, styles } from "./ui";
+import { Action, colors, errorText, styles } from "./ui";
 
 export function MessageImage({
   url,
@@ -30,13 +27,13 @@ export function MessageImage({
   const [confirm, setConfirm] = useState(false);
   const [approved, setApproved] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const [open, setOpen] = useState(false);
+  const openImage = useImagePreview();
   const [ratio, setRatio] = useState(1.5);
-  const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   useEffect(() => {
     let active = true;
     setUri("");
+    setRatio(1.5);
     setError("");
     setConfirm(false);
     void messageImage(client, url, sessionId, approved === url)
@@ -45,9 +42,15 @@ export function MessageImage({
         if (value === null) setConfirm(true);
         else {
           setUri(value);
-          Image.getSize(value, (w, h) => {
-            if (active && w && h) setRatio(w / h);
-          }, () => { /* The rendered image owns load errors and retry. */ });
+          Image.getSize(
+            value,
+            (w, h) => {
+              if (active && w && h) setRatio(w / h);
+            },
+            () => {
+              /* The rendered image owns load errors and retry. */
+            },
+          );
         }
       })
       .catch((e) => {
@@ -63,7 +66,8 @@ export function MessageImage({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Preview image"
-          onPress={() => setOpen(true)}
+          disabled={!openImage}
+          onPress={() => openImage?.(uri)}
         >
           <Image
             source={{ uri }}
@@ -101,45 +105,6 @@ export function MessageImage({
           />
         </View>
       )}
-      <Modal
-        visible={open}
-        transparent={false}
-        animationType="fade"
-        onRequestClose={() => setOpen(false)}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: colors.background,
-            paddingTop: insets.top,
-            paddingBottom: insets.bottom,
-          }}
-        >
-          <View style={{ alignItems: "flex-end", paddingHorizontal: 12 }}>
-            <IconButton
-              icon={X}
-              label="Close image preview"
-              onPress={() => setOpen(false)}
-            />
-          </View>
-          <ScrollView
-            maximumZoomScale={4}
-            minimumZoomScale={1}
-            centerContent
-            contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
-          >
-            <Image
-              source={{ uri }}
-              resizeMode="contain"
-              style={{
-                width,
-                height: height - insets.top - insets.bottom - 60,
-              }}
-              accessibilityLabel="Expanded conversation attachment"
-            />
-          </ScrollView>
-        </View>
-      </Modal>
     </View>
   );
 }
