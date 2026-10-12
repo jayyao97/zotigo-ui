@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import {
   matchingSkills,
-  removeSkillCommand,
   skillCommandQuery,
 } from "@zotigo/shared/skillCommands";
 import type { SkillSummary } from "@zotigo/shared/zotigod";
@@ -114,7 +113,7 @@ export function ComposerSkills({
                   accessibilityLabel={`Select skill ${item.name}`}
                   onPress={() => {
                     if (command)
-                      onChange(removeSkillCommand(text, command), [
+                      onChange(text.slice(0, command.start), [
                         ...selected,
                         item.name,
                       ]);
