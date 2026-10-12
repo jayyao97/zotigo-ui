@@ -1,4 +1,5 @@
 import { useTranslationLanguage, useTranslationProfile } from "./translationLanguage";
+import { useDefaultSendMode } from "./sendMode";
 import { ModelFavoritesProvider } from "./modelFavorites";
 import { ToastProvider } from "./Toast";
 import { bindClientGeneration } from "../shared/bindClientGeneration";
@@ -58,6 +59,7 @@ export function HostShell() {
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const [translationLanguage, setTranslationLanguage] = useTranslationLanguage(selected);
   const [translationProfile, setTranslationProfile] = useTranslationProfile(selected);
+  const [defaultSendMode, setDefaultSendMode] = useDefaultSendMode(selected);
   const [thinkingDisplay, setThinkingDisplay] = useState<ThinkingDisplayMode>(() => {
     try { return parseThinkingDisplayMode(localStorage.getItem(thinkingDisplayStorageKey)); }
     catch { return "expanded"; }
@@ -147,7 +149,7 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ToastProvider key={selected}><ModelFavoritesProvider host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} />
+          <App defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
         {surface === "settings" && <SettingsPage
           key={selected}
@@ -159,6 +161,8 @@ export function HostShell() {
           hostName={profiles.find((host) => host.id === selected)?.name ?? selected}
           thinkingDisplay={thinkingDisplay}
           translationLanguage={translationLanguage}
+          defaultSendMode={defaultSendMode}
+          onDefaultSendModeChange={setDefaultSendMode}
           onTranslationLanguageChange={setTranslationLanguage}
           translationProfile={translationProfile}
           onTranslationProfileChange={setTranslationProfile}
