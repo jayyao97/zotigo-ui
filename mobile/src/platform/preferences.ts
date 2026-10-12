@@ -85,3 +85,16 @@ export function useModelFavorites(host: string) {
       ),
   };
 }
+
+export function useTranslationSettings(host: string) {
+  const language = usePreference(`zotigo.translation-language:${host}`);
+  const profile = usePreference(`zotigo.translation-profile:${host}`);
+  return {
+    language: language.value === "en" ? ("en" as const) : ("zh-CN" as const),
+    profile: profile.value ?? "",
+    ready: language.ready && profile.ready,
+    error: language.error || profile.error,
+    setLanguage: (value: "zh-CN" | "en") => language.save(value),
+    setProfile: (value: string) => profile.save(value),
+  };
+}

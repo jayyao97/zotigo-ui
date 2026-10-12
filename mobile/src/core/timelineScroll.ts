@@ -25,6 +25,7 @@ export class HistoryPaginationGesture {
 // Deduplicate corrections caused by repeated measurement notifications. Offset
 // comes from the measured content size, not scrollToEnd's estimated final row.
 export class TimelineScrollMetrics {
+  constructor(private readonly inverted = false) {}
   offset = 0;
   contentHeight = 0;
   viewportHeight = 0;
@@ -34,7 +35,9 @@ export class TimelineScrollMetrics {
   }
   correction() {
     if (!this.viewportHeight) return undefined;
-    const target = Math.max(0, this.contentHeight - this.viewportHeight);
+    const target = this.inverted
+      ? 0
+      : Math.max(0, this.contentHeight - this.viewportHeight);
     if (Math.abs(target - this.offset) < 1 || target === this.requestedOffset)
       return undefined;
     this.requestedOffset = target;
