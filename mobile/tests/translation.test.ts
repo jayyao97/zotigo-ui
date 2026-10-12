@@ -86,3 +86,17 @@ test("closing selection aborts its translation request", async () => {
   controller.abort();
   await assert.rejects(request, /aborted/);
 });
+
+test("translation sends the settings profile only when explicitly configured", async () => {
+  const bodies: unknown[] = [];
+  const client = new DaemonClient(connection, async (_, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return Response.json({ code: "ok", data: { text: "Translated" } });
+  });
+  await client.translateSelection("s", "Excerpt", "en", undefined, "fast");
+  await client.translateSelection("s", "Excerpt", "zh-CN");
+  assert.deepEqual(bodies, [
+    { text: "Excerpt", target_language: "en", profile: "fast" },
+    { text: "Excerpt", target_language: "zh-CN" },
+  ]);
+});

@@ -148,6 +148,7 @@ export class DaemonClient {
     text: string,
     language: "zh-CN" | "en",
     signal?: AbortSignal,
+    profile?: string,
   ) {
     if (!text.trim() || [...text].length > 8000)
       throw new Error("Select between 1 and 8,000 characters.");
@@ -156,7 +157,7 @@ export class DaemonClient {
         await this.request(
           `/sessions/${enc(id)}/translate`,
           "POST",
-          { text, target_language: language },
+          { text, target_language: language, ...(profile ? { profile } : {}) },
           signal,
           35000,
         ),
@@ -229,9 +230,9 @@ export class DaemonClient {
     }
     return this.modelCatalogPromise;
   };
-  profiles = (directory?: string) =>
+  profiles = (directory?: string, scope?: "global") =>
     this.request<D.ProfilesResponse>(
-      `/config/profiles${directory ? "?working_directory=" + enc(directory) : ""}`,
+      `/config/profiles${scope === "global" ? "?scope=global" : directory ? "?working_directory=" + enc(directory) : ""}`,
     );
   skills = (id?: string) =>
     this.request<D.SkillsResponse>(

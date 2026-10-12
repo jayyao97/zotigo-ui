@@ -62,3 +62,17 @@ test("viewport changes keep the tail visible without needing new content", () =>
   metrics.viewportHeight = 600;
   assert.equal(metrics.correction(), 600);
 });
+
+test("native bottom anchoring does not chase estimated heights as rows mount", () => {
+  const metrics = new TimelineScrollMetrics(true);
+  metrics.viewportHeight = 600;
+  for (const height of [900, 8000, 7200, 14000, 11000]) {
+    metrics.contentHeight = height;
+    assert.equal(metrics.correction(), undefined);
+  }
+  metrics.offset = 200;
+  assert.equal(metrics.correction(), 0);
+  metrics.offset = 0;
+  metrics.viewportHeight = 300;
+  assert.equal(metrics.correction(), undefined);
+});
