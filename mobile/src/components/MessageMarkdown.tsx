@@ -1,3 +1,5 @@
+import { SelectableText } from "./SelectableText";
+import { selectionRuns, type SelectionAction } from "../core/selectionRuns";
 import { memo, useMemo, useState, type ReactNode } from "react";
 import {
   Alert,
@@ -140,11 +142,15 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   sessionId,
   user = false,
   onLink,
+  onSelection,
+  onSelecting,
 }: {
   text: string;
   sessionId: string;
   user?: boolean;
   onLink: (url: string) => boolean;
+  onSelection?: (action: SelectionAction) => void;
+  onSelecting?: () => void;
 }) {
   const { width } = useWindowDimensions();
   const ast = useMemo(() => {
@@ -222,13 +228,33 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           </View>
         ),
         ...imageSafeRules,
-        textgroup: (node, children, _parents, markdownStyles) =>
+        textgroup: (node, children, parents) =>
           containsMarkdownImage(node) ? (
             <View key={node.key}>{children}</View>
           ) : (
-            <Text key={node.key} selectable style={markdownStyles.textgroup}>
-              {children}
-            </Text>
+            <SelectableText
+              key={node.key}
+              runs={selectionRuns(node, {
+                bold: parents.some((p) => /^heading/.test(p.type)),
+              })}
+              fontSize={
+                parents.some((p) => p.type === "heading1")
+                  ? 24
+                  : parents.some((p) => p.type === "heading2")
+                    ? 21
+                    : parents.some((p) => p.type === "heading3")
+                      ? 18
+                      : 16
+              }
+              lineHeight={
+                parents.some((p) => /^heading/.test(p.type)) ? 30 : 26
+              }
+              textColor={user ? "#f6fafe" : colors.text}
+              linkColor={user ? "#f6fafe" : colors.accent}
+              onLink={onLink}
+              onAction={onSelection}
+              onSelecting={onSelecting}
+            />
           ),
         image: (node) => (
           <MessageImage
