@@ -4054,9 +4054,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 favorites={modelFavorites}
                 selectedProject={selectedProject}
                 selectedWorkspace={selectedWorkspace}
-                requiresWorkspace={selectedAgent === "codex"
-                  ? selectedWorkspace?.status !== "ready"
-                  : Boolean(selectedProject && selectedWorkspace?.status !== "ready")}
+                requiresWorkspace={Boolean((selectedProject || selectedWorkspace) && selectedWorkspace?.status !== "ready")}
                 message={message}
                 isBusy={isBusy || attachmentsBlocked}
                 prompt={activePrompt}
