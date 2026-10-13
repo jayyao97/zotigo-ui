@@ -2564,7 +2564,6 @@ p {
   grid-template-rows: auto minmax(0, 1fr) auto;
   box-sizing: border-box;
   width: 100%;
-  max-height: min(320px, 42vh);
   min-height: 0;
   margin: 0;
   overflow: hidden;
@@ -2584,6 +2583,7 @@ p {
 
 .tool-detail-header > div {
   display: grid;
+  width: 100%;
   min-width: 0;
   gap: 8px;
 }
@@ -2597,10 +2597,25 @@ p {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.55;
+  white-space: pre-wrap;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow-wrap: anywhere;
 }
+
+.shell-command-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.shell-command-actions { display: flex; align-items: center; gap: 4px; }
+.shell-command-toggle { border: 0; padding: 0; background: none; text-align: left; cursor: pointer; width: 100%; }
+.shell-command-full { overflow-wrap: anywhere; }
+.shell-command-disclosure[aria-expanded="true"] svg { transform: rotate(180deg); }
+.tool-output-region { position: relative; min-width: 0; min-height: 0; border-top: 1px solid var(--border); padding-top: 8px; }
+.tool-output-region > .tool-copy-button { position: absolute; top: 8px; right: 12px; z-index: 1; }
 
 .tool-copy-button {
   display: grid;
@@ -2612,16 +2627,21 @@ p {
   border-radius: var(--radius-md);
   padding: 0;
   opacity: 0;
-  background: color-mix(in srgb, var(--text) 7%, transparent);
+  background: transparent;
   color: color-mix(in srgb, var(--text) 62%, transparent);
   cursor: pointer;
   line-height: 1;
   transition: opacity 120ms ease, background 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
-.tool-detail-card:hover .tool-copy-button,
+.shell-command-preview:hover .tool-copy-button,
+.tool-output-region:hover > .tool-copy-button,
 .tool-copy-button:focus-visible {
   opacity: 0.85;
+}
+
+@media (hover: none) {
+  .tool-copy-button { opacity: 0.85; }
 }
 
 .tool-copy-button:hover {
@@ -2637,9 +2657,10 @@ p {
 }
 
 .tool-detail-body {
+  max-height: min(260px, 34vh);
   min-height: 0;
   overflow: auto;
-  padding: 0 12px;
+  padding: 0 48px 0 12px;
   scrollbar-color: color-mix(in srgb, var(--text-muted) 55%, transparent) transparent;
   scrollbar-width: thin;
 }

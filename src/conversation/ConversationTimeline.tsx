@@ -1053,6 +1053,7 @@ function ToolProcess({ call, result, progress, active = false }: { call: Display
       detail={detail || "Waiting for output…"}
       language={language}
       title={toolDetailTitle(call, language, summary)}
+      command={toolResultCommand(call, language)}
       showStatus={language === "Shell" || isFailure}
       isError={isFailure}
       running={running}
@@ -1186,6 +1187,7 @@ function ToolDisclosure({
   detail,
   language = "plaintext",
   title,
+  command,
   showStatus = false,
   isError = false,
   running = false,
@@ -1194,6 +1196,7 @@ function ToolDisclosure({
   detail: string;
   language?: string;
   title: string;
+  command?: string;
   showStatus?: boolean;
   isError?: boolean;
   running?: boolean;
@@ -1236,10 +1239,12 @@ function ToolDisclosure({
       <DisclosureMotion open={open} className="tool-detail-motion">
         <div className="tool-detail-card">
           <div className="tool-detail-header">
-            <div>
+            {command ? <ShellCommandPreview command={command} /> : <div>
               <span className="tool-detail-language">{language}</span>
               <p className="tool-detail-title">{title}</p>
-            </div>
+            </div>}
+          </div>
+          <div className="tool-output-region">
             <button
               type="button"
               className="tool-copy-button"
@@ -1249,9 +1254,9 @@ function ToolDisclosure({
             >
               <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
             </button>
-          </div>
-          <div className="tool-detail-body" ref={detailRef}>
-            <pre>{detail}</pre>
+            <div className="tool-detail-body" ref={detailRef}>
+              <pre>{detail}</pre>
+            </div>
           </div>
           {showStatus && (
             <div className={`tool-detail-status ${isError ? "failed" : running ? "running" : ""}`}>
@@ -1263,6 +1268,37 @@ function ToolDisclosure({
       </DisclosureMotion>
     </div>
   );
+}
+
+function ShellCommandPreview({ command }: { command: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  return <div className="shell-command-preview">
+    <div className="shell-command-heading">
+      <span className="tool-detail-language">Shell</span>
+      <div className="shell-command-actions">
+        <button
+          ref={toggle}
+          type="button"
+          className="tool-copy-button shell-command-disclosure"
+          aria-label={expanded ? "Collapse command" : "Expand command"}
+          title={expanded ? "Collapse command" : "Expand command"}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        ><ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" /></button>
+        <button type="button" className="tool-copy-button" aria-label="Copy command" title="Copy command" onClick={() => void navigator.clipboard.writeText(command)}>
+          <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+    {expanded ? <pre className="shell-command-full">{`$ ${command}`}</pre> : <button
+      type="button"
+      className="tool-detail-title shell-command-toggle"
+      aria-label="Expand full command"
+      aria-expanded={false}
+      onClick={() => { toggle.current?.focus({ preventScroll: true }); setExpanded(true); }}
+    >{`$ ${command}`}</button>}
+  </div>;
 }
 
 export function displayContentText(content: DisplayContentPart[] | undefined): string {
