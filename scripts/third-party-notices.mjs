@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
+// Desktop/Web notices cover the root app, not other workspace applications.
 // Emit to stdout so dependency upgrades can regenerate a reviewable notice file.
-const report = JSON.parse(execFileSync("pnpm", ["licenses", "list", "--prod", "--json"], { encoding: "utf8" }));
+const report = JSON.parse(execFileSync("pnpm", ["--filter", "zotigo-desktop", "licenses", "list", "--prod", "--json"], { encoding: "utf8" }));
 const groups = new Map();
 for (const packages of Object.values(report)) {
   for (const dependency of packages) {
