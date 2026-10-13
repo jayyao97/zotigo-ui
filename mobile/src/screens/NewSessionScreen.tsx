@@ -66,6 +66,8 @@ export function NewSessionScreen() {
     nav = useNavigation<NativeStackNavigationProp<Routes>>(),
     route = useRoute<RouteProp<Routes, "NewSession">>();
   const [workspace, setWorkspace] = useState<CatalogWorkspace>();
+  const [scratch, setScratch] = useState(!route.params.workspaceId);
+  const [profileRevision, setProfileRevision] = useState(0);
   const [workspaceLoading, setWorkspaceLoading] = useState(
     !!route.params.workspaceId,
   );
@@ -210,22 +212,21 @@ export function NewSessionScreen() {
     setProfilesDirectory(undefined);
     setProfile("");
     setProfileError("");
-    if (workspace)
-      void client
-        .profiles(workspace.root_path)
-        .then((value) => {
-          if (!active) return;
-          setProfiles(value);
-          setProfilesDirectory(workspace.root_path);
-          setProfile(value.default_profile);
-        })
-        .catch((e) => {
-          if (active) setProfileError(errorText(e));
-        });
+    void client
+      .profiles(workspace?.root_path)
+      .then((value) => {
+        if (!active) return;
+        setProfiles(value);
+        setProfilesDirectory(workspace?.root_path);
+        setProfile(value.default_profile);
+      })
+      .catch((e) => {
+        if (active) setProfileError(errorText(e));
+      });
     return () => {
       active = false;
     };
-  }, [client, workspace]);
+  }, [client, workspace, profileRevision]);
   const selected = catalog?.agents.find((a) => a.id === agent);
   useEffect(() => {
     const m =
@@ -240,7 +241,8 @@ export function NewSessionScreen() {
   async function create() {
     if (
       lock.current ||
-      !workspace ||
+      workspaceLoading ||
+      (!scratch && !workspace) ||
       !sessionContextReady(
         workspace,
         agent,
@@ -257,7 +259,7 @@ export function NewSessionScreen() {
       const session = createdSession
         ? { id: createdSession }
         : await client.createSession({
-            workspaceId: workspace.id,
+            workspaceId: workspace?.id,
             agent,
             profile: agent === "zotigo" ? profile || undefined : undefined,
             model: agent === "codex" ? model : undefined,
@@ -355,7 +357,7 @@ export function NewSessionScreen() {
       >
         <Notice text={error || profileError} error />
         {createdSession && !busy && (
-          <Notice text="Session created. Retry to finish uploading and send to this workspace. Session settings can be changed after opening the conversation." />
+          <Notice text="Session created. Retry to finish uploading and send to this session. Session settings can be changed after opening the conversation." />
         )}
         <AttachmentFiles
           files={files}
@@ -384,8 +386,8 @@ export function NewSessionScreen() {
         />
         <ChoiceRow
           icon={Folder}
-          title={workspace?.title ?? "Choose workspace"}
-          subtitle={workspace?.root_path ?? "Project → workspace"}
+          title={workspace?.title ?? (scratch ? "Scratch" : "Choose workspace")}
+          subtitle={workspace?.root_path ?? "No project or workspace"}
           disabled={contextLocked || workspaceLoading}
           onPress={() => {
             setProjectId(undefined);
@@ -474,7 +476,7 @@ export function NewSessionScreen() {
             <IconButton
               icon={Gauge}
               label="Model and reasoning"
-              disabled={contextLocked || (agent === "zotigo" && !workspace)}
+              disabled={contextLocked}
               onPress={() => setPanel("model")}
             />
             <IconButton
@@ -484,6 +486,8 @@ export function NewSessionScreen() {
                 busy ||
                 (!message.trim() && !files.length && !images.length) ||
                 !catalog ||
+                workspaceLoading ||
+                (!scratch && !workspace) ||
                 !sessionContextReady(
                   workspace,
                   agent,
@@ -523,6 +527,18 @@ export function NewSessionScreen() {
         <Notice text={error} error />
         {panel === "workspace" && (
           <>
+            {!projectId && (
+              <ChoiceRow
+                title="Scratch"
+                subtitle="Work without a project or workspace"
+                selected={scratch}
+                onPress={() => {
+                  setWorkspace(undefined);
+                  setScratch(true);
+                  setPanel(null);
+                }}
+              />
+            )}
             {projectId && (
               <Action
                 label="All projects"
@@ -567,7 +583,7 @@ export function NewSessionScreen() {
                         ? "No matches."
                         : projectId
                           ? "No ready workspaces in this project."
-                          : "No projects. Create a project and workspace from Home first."
+                          : "No projects. Use Scratch or create a project from Home."
                     }
                   />
                 }
@@ -580,6 +596,7 @@ export function NewSessionScreen() {
                     onPress={() => {
                       if (projectId) {
                         setWorkspace(workspaces.find((w) => w.id === item.id));
+                        setScratch(false);
                         setPanel(null);
                       } else {
                         setProjectId(item.id);
@@ -627,12 +644,12 @@ export function NewSessionScreen() {
                 <Notice text={profileError} error />
                 {profileError && (
                   <Action
-                    label="Reload workspace profiles"
+                    label="Reload profiles"
                     disabled={busy}
-                    onPress={() => setWorkspace((w) => (w ? { ...w } : w))}
+                    onPress={() => setProfileRevision((value) => value + 1)}
                   />
                 )}
-                {workspace && !profiles && !profileError && <Loading />}
+                {!profiles && !profileError && <Loading />}
                 {profiles && (
                   <ProfilePicker
                     profiles={profiles.profiles}

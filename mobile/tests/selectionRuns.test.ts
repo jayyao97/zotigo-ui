@@ -33,6 +33,7 @@ test("tool cards show the actual command and output, not serialized call argumen
   );
   assert.equal(detail.language, "Shell");
   assert.equal(detail.title, "$ pnpm test");
+  assert.equal(detail.command, "pnpm test");
   assert.equal(detail.text, "82 tests passed");
   assert.equal(detail.status, "Success");
 });
@@ -71,5 +72,22 @@ test("structured exit codes and error result types follow Desktop status rules",
     toolDetail(undefined, { result_type: "error-text", text: "No permission" })
       .status,
     "Failed",
+  );
+});
+
+test("shell command copy retains multiline text separately from output", () => {
+  const command = "printf hello\npwd";
+  const detail = toolDetail(
+    { name: "shell", arguments: JSON.stringify({ command }) },
+    { text: "hello\n/tmp" },
+  );
+  assert.equal(detail.command, command);
+  assert.equal(detail.text, "hello\n/tmp");
+  assert.equal(
+    toolDetail(
+      { name: "read_file", arguments: "file.txt" },
+      { text: "contents" },
+    ).command,
+    undefined,
   );
 });
