@@ -18,7 +18,16 @@ import ChevronDown from "lucide-react-native/icons/chevron-down";
 import Terminal from "lucide-react-native/icons/terminal";
 import Copy from "lucide-react-native/icons/copy";
 import { memo, useState } from "react";
-import { Alert, Linking, Platform, Pressable, Text, View } from "react-native";
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { MessageImage } from "./MessageImage";
 import { userImages } from "../core/messageImages";
@@ -33,6 +42,7 @@ function Detail({
   text,
   language = "plaintext",
   title,
+  command,
   status,
   onSelection,
   onSelecting,
@@ -42,6 +52,7 @@ function Detail({
   text: string;
   language?: string;
   title?: string;
+  command?: string;
   status?: "Success" | "Failed" | "Running";
   highlight?: string;
   onSelection?: (action: SelectionAction) => void;
@@ -50,6 +61,9 @@ function Detail({
   const animateLayout = useLayoutTransition();
   const [open, setOpen] = useState(!!highlight);
   const [limit, setLimit] = useState(8000);
+  const [commandExpanded, setCommandExpanded] = useState(false);
+  const { height } = useWindowDimensions();
+  const OutputContainer = onSelection ? View : ScrollView;
   return (
     <View style={{ gap: 4 }}>
       <Pressable
@@ -96,67 +110,124 @@ function Detail({
               alignItems: "center",
             }}
           >
-            <Text style={styles.muted}>{language}</Text>
+            <Text style={[styles.muted, { flex: 1 }]}>{language}</Text>
+            {command && (
+              <IconButton
+                icon={commandExpanded ? ChevronDown : ChevronRight}
+                label={commandExpanded ? "Collapse command" : "Expand command"}
+                onPress={() => {
+                  animateLayout();
+                  setCommandExpanded(!commandExpanded);
+                }}
+              />
+            )}
             <IconButton
               icon={Copy}
-              label="Copy tool result"
+              label={command ? "Copy command" : "Copy tool result"}
               onPress={() =>
-                void Clipboard.setStringAsync(text).catch((e) =>
+                void Clipboard.setStringAsync(command ?? text).catch((e) =>
                   Alert.alert("Copy failed", errorText(e)),
                 )
               }
             />
           </View>
           {!!title && (
-            <Text
-              selectable
-              style={[
-                styles.text,
-                {
-                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-                  fontSize: 13,
-                },
-              ]}
+            <Pressable
+              disabled={!command}
+              accessibilityRole={command ? "button" : undefined}
+              accessibilityLabel={
+                command
+                  ? commandExpanded
+                    ? "Collapse full command"
+                    : "Expand full command"
+                  : undefined
+              }
+              onPress={() => {
+                animateLayout();
+                setCommandExpanded(!commandExpanded);
+              }}
             >
-              {title}
-            </Text>
+              <Text
+                numberOfLines={command && !commandExpanded ? 2 : undefined}
+                selectable
+                style={[
+                  styles.text,
+                  {
+                    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                    fontSize: 13,
+                  },
+                ]}
+              >
+                {title}
+              </Text>
+            </Pressable>
           )}
-          {onSelection ? (
-            <SelectableText
-              runs={[{ text: text.slice(0, limit) }]}
-              highlight={highlight}
-              textColor={colors.muted}
-              linkColor={colors.accent}
-              onLink={() => false}
-              onAction={onSelection}
-              onSelecting={onSelecting}
-            />
-          ) : (
-            <Text
-              selectable
-              style={[
-                styles.text,
-                {
-                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-                  fontSize: 12,
-                  lineHeight: 18,
-                },
-              ]}
+          {command && (
+            <View
+              style={{
+                alignItems: "flex-end",
+                borderTopWidth: 1,
+                borderColor: colors.border,
+              }}
             >
-              {highlightParts(text.slice(0, limit), highlight).map(
-                (part, i) => (
-                  <Text
-                    key={i}
-                    style={
-                      part.matched ? { backgroundColor: "#865719" } : undefined
-                    }
-                  >
-                    {part.text}
-                  </Text>
-                ),
-              )}
-            </Text>
+              <IconButton
+                icon={Copy}
+                label="Copy tool result"
+                onPress={() =>
+                  void Clipboard.setStringAsync(text).catch((e) =>
+                    Alert.alert("Copy failed", errorText(e)),
+                  )
+                }
+              />
+            </View>
           )}
+          <OutputContainer
+            nestedScrollEnabled
+            style={
+              onSelection
+                ? undefined
+                : { maxHeight: Math.min(260, height * 0.34) }
+            }
+          >
+            {onSelection ? (
+              <SelectableText
+                runs={[{ text: text.slice(0, limit) }]}
+                highlight={highlight}
+                textColor={colors.muted}
+                linkColor={colors.accent}
+                onLink={() => false}
+                onAction={onSelection}
+                onSelecting={onSelecting}
+              />
+            ) : (
+              <Text
+                selectable
+                style={[
+                  styles.text,
+                  {
+                    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                    fontSize: 12,
+                    lineHeight: 18,
+                  },
+                ]}
+              >
+                {highlightParts(text.slice(0, limit), highlight).map(
+                  (part, i) => (
+                    <Text
+                      key={i}
+                      style={
+                        part.matched
+                          ? { backgroundColor: "#865719" }
+                          : undefined
+                      }
+                    >
+                      {part.text}
+                    </Text>
+                  ),
+                )}
+              </Text>
+            )}
+          </OutputContainer>
           {text.length > limit && (
             <Action
               label="Show more"

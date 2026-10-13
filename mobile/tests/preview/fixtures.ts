@@ -30,7 +30,7 @@ type HostState = {
     {
       runtime: ZotigoSession;
       title: string;
-      workspaceId: string;
+      workspaceId?: string;
       items: DisplayItem[];
       pinned: boolean;
       archived: boolean;
@@ -404,20 +404,20 @@ function publish(host: HostState, id: string, event: SessionDisplayEvent) {
 }
 function projection(host: HostState, id: string): CatalogSessionProjection {
   const session = host.sessions.get(id)!;
-  const workspace = host.workspaces.find((w) => w.id === session.workspaceId)!;
+  const workspace = host.workspaces.find((w) => w.id === session.workspaceId);
   return {
     runtime: session.runtime,
     availability: "available",
     organization: {
       session_id: id,
-      project_id: workspace.project_id,
-      workspace_id: workspace.id,
+      project_id: workspace?.project_id ?? null,
+      workspace_id: workspace?.id ?? null,
       title: session.title,
       pinned_at: session.pinned ? now : null,
       pinned_position: session.pinned ? 0 : null,
       workspace_position: null,
       self_archived_at: session.archived ? now : null,
-      workspace_archived_at: workspace.status === "archived" ? now : null,
+      workspace_archived_at: workspace?.status === "archived" ? now : null,
       revision: 1,
       created_at: now,
       updated_at: now,
@@ -812,7 +812,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     });
   if (path === "/sessions" && method === "POST") {
     const id = "created-" + host.sessions.size,
-      workspace = host.workspaces.find((w) => w.id === body.workspace_id)!;
+      workspace = host.workspaces.find((w) => w.id === body.workspace_id);
     const runtime: ZotigoSession = {
       id,
       state: "created",
@@ -822,12 +822,12 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       model: String(body.model ?? ""),
       profile: String(body.profile ?? ""),
       reasoning_effort: String(body.reasoning_effort ?? ""),
-      working_directory: workspace.root_path,
+      working_directory: workspace?.root_path ?? "/scratch/" + id,
       created_at: now,
     };
     host.sessions.set(id, {
       runtime,
-      workspaceId: workspace.id,
+      workspaceId: workspace?.id,
       title: "New session",
       items: [],
       pinned: false,
