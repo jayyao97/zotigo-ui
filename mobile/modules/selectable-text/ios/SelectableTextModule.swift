@@ -39,6 +39,7 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
   var linkColor = UIColor.systemBlue
   private let textView = UITextView()
   private var measuredHeight: CGFloat = 0
+  private var measuredWidth: CGFloat = 0
   private var pendingText: NSAttributedString?
 
   required init(appContext: AppContext? = nil) {
@@ -59,18 +60,23 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
     let paragraph = NSMutableParagraphStyle()
     let scaledFontSize = UIFontMetrics.default.scaledValue(for: CGFloat(fontSize))
     paragraph.minimumLineHeight = UIFontMetrics.default.scaledValue(for: CGFloat(lineHeight))
+    var maximumFontLineHeight: CGFloat = 0
     for run in runs {
       let base = run.code ? UIFont.monospacedSystemFont(ofSize: scaledFontSize * 0.875, weight: .regular) : UIFont.systemFont(ofSize: scaledFontSize)
       var traits: UIFontDescriptor.SymbolicTraits = []
       if run.bold { traits.insert(.traitBold) }
       if run.italic { traits.insert(.traitItalic) }
       let font = base.fontDescriptor.withSymbolicTraits(traits).map { UIFont(descriptor: $0, size: base.pointSize) } ?? base
+      maximumFontLineHeight = max(maximumFontLineHeight, font.lineHeight)
       var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor, .paragraphStyle: paragraph]
       if run.code { attrs[.backgroundColor] = UIColor(white: 0.18, alpha: 1) }
       if run.strike { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
       if !run.link.isEmpty { attrs[.link] = run.link }
       result.append(NSAttributedString(string: run.text, attributes: attrs))
     }
+    // Match React Native: split extra line leading above and below the shared baseline.
+    let baselineOffset = max(0, (paragraph.minimumLineHeight - maximumFontLineHeight) / 2)
+    result.addAttribute(.baselineOffset, value: baselineOffset, range: NSRange(location: 0, length: result.length))
     if !highlight.isEmpty {
       let source = result.string as NSString
       var remaining = NSRange(location: 0, length: source.length)
@@ -97,9 +103,15 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
     guard bounds.width > 0 else { return }
     let height = ceil(textView.sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude)).height)
     textView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
-    if abs(height - measuredHeight) > 0.5 {
+    // Measure natural width independently of the current frame so edited text can grow again.
+    let width = ceil(textView.attributedText.boundingRect(
+      with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+      options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
+    ).width)
+    if abs(height - measuredHeight) > 0.5 || abs(width - measuredWidth) > 0.5 {
       measuredHeight = height
-      onMeasure(["height": height])
+      measuredWidth = width
+      onMeasure(["height": height, "width": width])
     }
   }
 

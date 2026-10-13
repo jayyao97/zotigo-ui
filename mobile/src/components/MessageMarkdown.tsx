@@ -248,6 +248,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
             <View key={node.key}>{children}</View>
           ) : (
             <SelectableText
+              fitContent={user}
               key={node.key}
               highlight={highlight}
               runs={selectionRuns(node, {
