@@ -11,11 +11,11 @@ export function sessionContextReady(
   profilesDirectory: string | undefined,
   profile: string,
 ): boolean {
-  if (!workspace || workspace.status !== "ready") return false;
+  if (workspace && workspace.status !== "ready") return false;
   return (
     agent === "codex" ||
     (!!profiles &&
-      profilesDirectory === workspace.root_path &&
+      profilesDirectory === workspace?.root_path &&
       profiles.profiles.some((value) => value.name === profile))
   );
 }

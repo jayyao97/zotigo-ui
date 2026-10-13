@@ -59,6 +59,7 @@ export function toolDetail(
     label,
     text,
     language: shell ? "Shell" : "plaintext",
+    command: shell && command ? command : undefined,
     title: shell && command ? `$ ${command}` : label,
     status: failed
       ? ("Failed" as const)

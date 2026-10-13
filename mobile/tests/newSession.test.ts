@@ -18,10 +18,10 @@ const profiles: ProfilesResponse = {
   default_profile: "default",
   profiles: [{ name: "default", provider: "openai", model: "model" }],
 };
-test("Home creation requires a ready workspace even for Codex without runtime profiles", () => {
+test("Scratch supports Codex while selected workspaces must be ready", () => {
   assert.equal(
     sessionContextReady(undefined, "codex", undefined, undefined, ""),
-    false,
+    true,
   );
   assert.equal(
     sessionContextReady(
@@ -78,5 +78,26 @@ test("native runtime creation rejects stale-directory, missing and unavailable p
       "default",
     ),
     true,
+  );
+});
+
+test("Scratch profiles must not come from a previous workspace", () => {
+  assert.equal(
+    sessionContextReady(undefined, "zotigo", profiles, undefined, "default"),
+    true,
+  );
+  assert.equal(
+    sessionContextReady(
+      undefined,
+      "zotigo",
+      profiles,
+      workspace.root_path,
+      "default",
+    ),
+    false,
+  );
+  assert.equal(
+    sessionContextReady(undefined, "zotigo", undefined, undefined, "default"),
+    false,
   );
 });
