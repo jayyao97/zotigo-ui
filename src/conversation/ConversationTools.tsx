@@ -34,6 +34,7 @@ export function ConversationTools({ root, onReference, translate, translationPro
   const popup = useRef<HTMLDivElement>(null);
   const position = useAnchoredPopup(popup, selection?.rect ?? null);
   const request = useRef(0);
+  const translationOpen = translation !== null;
   useEffect(() => () => { request.current++; }, []);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -42,10 +43,10 @@ export function ConversationTools({ root, onReference, translate, translationPro
       timer = setTimeout(() => {
         if (popup.current?.contains(document.activeElement)) return;
         const selected = window.getSelection();
-        if (!selected || selected.isCollapsed || !selected.rangeCount) { setSelection(null); return; }
+        if (!selected || selected.isCollapsed || !selected.rangeCount) { if (!translationOpen) setSelection(null); return; }
         if (popup.current?.contains(selected.getRangeAt(0).startContainer)) return;
         const match = root.current && selectedMessageRange(selected.getRangeAt(0), root.current);
-        if (!match) { setSelection(null); return; }
+        if (!match) { if (!translationOpen) setSelection(null); return; }
         const { message, range } = match;
         const rawText = range.toString();
         const text = rawText.trim();
@@ -56,16 +57,21 @@ export function ConversationTools({ root, onReference, translate, translationPro
       }, 150);
     };
     const dismiss = (event: PointerEvent) => { if (!popup.current?.contains(event.target as Node)) { request.current++; setTranslation(null); setSelection(null); } };
+    // A touch scroll starts with pointerdown too; only an outside click should
+    // dismiss a translation the user is reading (or waiting for).
+    const outsideClick = (event: MouseEvent) => { if (translationOpen && !popup.current?.contains(event.target as Node)) { request.current++; setTranslation(null); setSelection(null); } };
+    const outsidePointer = (event: PointerEvent) => { if (!translationOpen) dismiss(event); };
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { request.current++; setSelection(null); setTranslation(null); } };
-    const scrolled = () => { request.current++; setSelection(null); setTranslation(null); };
+    const scrolled = () => { if (!translationOpen) { request.current++; setSelection(null); } };
     const element = root.current;
     element?.addEventListener("scroll", scrolled, { passive: true });
     window.addEventListener("resize", scrolled);
     document.addEventListener("selectionchange", changed);
-    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("pointerdown", outsidePointer);
+    document.addEventListener("click", outsideClick);
     document.addEventListener("keydown", escape);
-    return () => { element?.removeEventListener("scroll", scrolled); window.removeEventListener("resize", scrolled); clearTimeout(timer); document.removeEventListener("selectionchange", changed); document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
-  }, [root]);
+    return () => { element?.removeEventListener("scroll", scrolled); window.removeEventListener("resize", scrolled); clearTimeout(timer); document.removeEventListener("selectionchange", changed); document.removeEventListener("pointerdown", outsidePointer); document.removeEventListener("click", outsideClick); document.removeEventListener("keydown", escape); };
+  }, [root, translationOpen]);
   async function runTranslation(target = language) {
     if (!selection) return;
     const id = ++request.current;
