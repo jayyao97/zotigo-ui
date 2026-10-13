@@ -380,9 +380,7 @@ export function NewSessionPrompt({
 
         {requiresWorkspace && (
           <p className="new-chat-workspace-hint">
-            {selectedAgent === "codex"
-              ? "Codex sessions require a ready Workspace."
-              : "Choose an existing Workspace or switch to Scratch."}
+            Choose an existing Workspace or switch to Scratch.
           </p>
         )}
 
