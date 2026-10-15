@@ -1,42 +1,26 @@
-const storagePrefix = "zotigo.unread-sessions";
+import type { SessionReadState, ZotigoSession } from "../shared/zotigod";
 
-export function unreadSessionsStorageKey(clientScope: string): string {
-  return `${storagePrefix}.${clientScope}`;
+// Polling and mutations can finish out of order. Never restore an older unread
+// flag after another client has acknowledged that version.
+export function mergeReadState(current: SessionReadState | undefined, incoming: SessionReadState | undefined): SessionReadState | undefined {
+  if (!current) return incoming;
+  if (!incoming || incoming.version < current.version) return current;
+  if (incoming.version === current.version && incoming.read_version < current.read_version) return current;
+  return incoming;
 }
 
-export function workingSessionsStorageKey(clientScope: string): string {
-  return `${storagePrefix}.working.${clientScope}`;
+export function mergeSessionReadStates(current: ZotigoSession[], incoming: ZotigoSession[]): ZotigoSession[] {
+  const previous = new Map(current.map(session => [session.id, session.read_state]));
+  return incoming.map(session => ({ ...session, read_state: mergeReadState(previous.get(session.id), session.read_state) }));
 }
 
-export function parseUnreadSessionIds(value: string | null): Set<string> {
-  if (!value) return new Set();
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((item): item is string => typeof item === "string" && item.length > 0));
-  } catch {
-    return new Set();
-  }
+export function canAcknowledgeSession(state: SessionReadState | undefined, visibleSequence: number, foreground: boolean): boolean {
+  return !!state?.unread && foreground && state.completed_sequence <= visibleSequence;
 }
 
-export function completedUnreadSessionIds(
-  previousWorking: ReadonlySet<string>,
-  currentWorking: ReadonlySet<string>,
-  selectedConversationId: string | null,
-  knownConversationIds?: ReadonlySet<string>,
-): string[] {
-  return [...previousWorking].filter(
-    (conversationId) => !currentWorking.has(conversationId)
-      && conversationId !== selectedConversationId
-      && (!knownConversationIds || knownConversationIds.has(conversationId)),
-  );
-}
-
-export function selectedSessionToMarkRead(
-  previousConversationId: string | null,
-  selectedConversationId: string | null,
-): string | null {
-  return selectedConversationId && selectedConversationId !== previousConversationId
-    ? selectedConversationId
-    : null;
+// Measure the actual conversation surface, including inherited visibility and
+// responsive display:none rules, rather than duplicating CSS breakpoints.
+export function conversationIsVisible(element: HTMLElement | null): boolean {
+  return !!element && element.getClientRects().length > 0
+    && element.ownerDocument.defaultView?.getComputedStyle(element).visibility === "visible";
 }

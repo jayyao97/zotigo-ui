@@ -1,47 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  completedUnreadSessionIds,
-  parseUnreadSessionIds,
-  selectedSessionToMarkRead,
-  unreadSessionsStorageKey,
-  workingSessionsStorageKey,
-} from "../src/unreadSessions";
+import { canAcknowledgeSession, conversationIsVisible, mergeReadState } from "../src/unreadSessions";
+import { JSDOM } from "jsdom";
 
-test("marks only background sessions that transition out of working", () => {
-  assert.deepEqual(
-    completedUnreadSessionIds(
-      new Set(["selected", "background", "still-working"]),
-      new Set(["still-working"]),
-      "selected",
-    ),
-    ["background"],
-  );
+const unread = { version: 2, read_version: 1, completed_sequence: 100, unread: true };
+test("only acknowledges a visible, loaded completion", () => {
+  assert.equal(canAcknowledgeSession(unread, 99, true), false);
+  assert.equal(canAcknowledgeSession(unread, 100, false), false);
+  assert.equal(canAcknowledgeSession(unread, 100, true), true);
+  assert.equal(canAcknowledgeSession(undefined, 100, true), false);
+});
+test("stale polls cannot undo read acknowledgements or manual unread", () => {
+  const read = { ...unread, read_version: 2, unread: false };
+  assert.deepEqual(mergeReadState(read, unread), read);
+  const manual = { ...read, version: 3, unread: true };
+  assert.deepEqual(mergeReadState(manual, read), manual);
+  assert.deepEqual(mergeReadState(read, manual), manual);
+  assert.deepEqual(mergeReadState(manual, undefined), manual);
 });
 
-test("detects completion from a persisted working snapshot after restart", () => {
-  const previousWorking = parseUnreadSessionIds('["completed-while-closed","deleted"]');
-  assert.deepEqual(
-    completedUnreadSessionIds(previousWorking, new Set(), null, new Set(["completed-while-closed"])),
-    ["completed-while-closed"],
-  );
-});
-
-test("marks a restored or newly selected session read only once per selection", () => {
-  assert.equal(selectedSessionToMarkRead(null, "restored"), "restored");
-  assert.equal(selectedSessionToMarkRead("restored", "restored"), null);
-  assert.equal(selectedSessionToMarkRead("restored", "next"), "next");
-  assert.equal(selectedSessionToMarkRead("restored", null), null);
-});
-
-test("parses persisted unread session ids defensively", () => {
-  assert.deepEqual([...parseUnreadSessionIds('["one",1,"", "two"]')], ["one", "two"]);
-  assert.deepEqual([...parseUnreadSessionIds("not-json")], []);
-  assert.deepEqual([...parseUnreadSessionIds('{"one":true}')], []);
-});
-
-test("isolates persisted unread state by client scope", () => {
-  assert.equal(unreadSessionsStorageKey("local"), "zotigo.unread-sessions.local");
-  assert.notEqual(unreadSessionsStorageKey("local"), unreadSessionsStorageKey("dev"));
-  assert.equal(workingSessionsStorageKey("local"), "zotigo.unread-sessions.working.local");
+test("covered conversation is not read, and becomes readable after returning", () => {
+  const dom = new JSDOM('<section><div id="conversation"></div></section>');
+  try {
+    const conversation = dom.window.document.getElementById('conversation')!;
+    let hasLayout = true;
+    conversation.getClientRects = () => (hasLayout ? [new dom.window.DOMRect(0, 0, 400, 600)] : []) as unknown as DOMRectList;
+    const readable = () => canAcknowledgeSession(unread, 100, conversationIsVisible(conversation));
+    assert.equal(readable(), true);
+    conversation.parentElement!.style.visibility = 'hidden';
+    assert.equal(readable(), false, 'expanded desktop panel hides the conversation');
+    conversation.parentElement!.style.visibility = 'visible';
+    hasLayout = false;
+    assert.equal(readable(), false, 'mobile fullscreen panel removes conversation layout');
+    hasLayout = true;
+    assert.equal(readable(), true, 'returning to conversation permits acknowledgement');
+  } finally { dom.window.close(); }
 });

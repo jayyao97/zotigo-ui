@@ -5703,3 +5703,7 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .input-queue p { color: var(--text-muted); font-size: 12px; }
 @media (max-width: 600px) { .queue-editor textarea { font-size: 16px; } }
 @media (pointer: coarse) { .input-queue .icon-button { min-width: 40px; min-height: 40px; } }
+
+.user-message-time { font-size: 12px; margin-inline-end: 8px; white-space: nowrap; opacity: 0; }
+.message-row.user:hover .user-message-time,
+.message-row.user:focus-within .user-message-time { opacity: 1; }

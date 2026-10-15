@@ -174,13 +174,7 @@ import {
   updateComposerDrafts,
   type ComposerDraftState,
 } from "./composerDrafts";
-import {
-  completedUnreadSessionIds,
-  parseUnreadSessionIds,
-  selectedSessionToMarkRead,
-  unreadSessionsStorageKey,
-  workingSessionsStorageKey,
-} from "./unreadSessions";
+import { conversationIsVisible, canAcknowledgeSession, mergeReadState, mergeSessionReadStates } from "./unreadSessions";
 
 const FileEditorTab = lazy(() => import("./FileEditorTab").then((module) => ({ default: module.FileEditorTab })));
 const FileVideoTab = lazy(() => import("./FileVideoTab").then((module) => ({ default: module.FileVideoTab })));
@@ -419,7 +413,6 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   const [daemonUrl, setDaemonUrl] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [sessions, setSessions] = useState<ZotigoSession[]>([]);
-  const [sessionsInitialized, setSessionsInitialized] = useState(false);
   const [desktopState, setDesktopState] = useState<DesktopState>(emptyDesktopState);
   const [message, setMessage] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<DesktopConversation | null>(null);
@@ -477,20 +470,11 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   const [skillMenuDismissed, setSkillMenuDismissed] = useState(false);
   const composerDraftsRef = useRef(composerDrafts);
   composerDraftsRef.current = composerDrafts;
-  const [unreadConversationIds, setUnreadConversationIds] = useState<Set<string>>(() => {
-    try { return parseUnreadSessionIds(localStorage.getItem(unreadSessionsStorageKey(clientScope))); }
-    catch { return new Set(); }
-  });
-  const previousWorkingConversationIdsRef = useRef<Set<string> | null>(null);
-  const previousWorkingConversationIdsLoadedRef = useRef(false);
-  if (!previousWorkingConversationIdsLoadedRef.current) {
-    previousWorkingConversationIdsLoadedRef.current = true;
-    try {
-      const persisted = localStorage.getItem(workingSessionsStorageKey(clientScope));
-      previousWorkingConversationIdsRef.current = persisted === null ? null : parseUnreadSessionIds(persisted);
-    } catch { /* Start without a prior working snapshot when storage is unavailable. */ }
-  }
-  const previousSelectedConversationIdRef = useRef<string | null>(null);
+  const unreadConversationIds = useMemo(() => new Set(sessions.filter(session => session.read_state?.unread).map(session => session.id)), [sessions]);
+  const readRequests = useRef(new Map<string, Promise<void>>());
+  const manualUnread = useRef<{ id: string; version: number } | null>(null);
+  const [conversationVisible, setConversationVisible] = useState(false);
+  const [foreground, setForeground] = useState(() => !document.hidden && document.hasFocus());
   const [conversationContextMenu, setConversationContextMenu] = useState<ConversationContextMenu | null>(null);
   const [previewAttachmentId, setPreviewAttachmentId] = useState<string | null>(null);
   const [isConversationAtBottom, setIsConversationAtBottom] = useState(true);
@@ -878,12 +862,6 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   const selectedSkillNames = activeComposerDraft.selectedSkillNames;
 
   useEffect(() => {
-    try {
-      localStorage.setItem(unreadSessionsStorageKey(clientScope), JSON.stringify([...unreadConversationIds]));
-    } catch { /* In-memory unread state still works. */ }
-  }, [clientScope, unreadConversationIds]);
-
-  useEffect(() => {
     if (!sidebarDisclosureLoadedRef.current) return;
     try {
       localStorage.setItem(
@@ -898,30 +876,24 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   }, [clientScope, collapsedProjectIds, collapsedWorkspaceIds, desktopState.projects, desktopState.workspaces]);
 
   useEffect(() => {
-    if (!sessionsInitialized) return;
-    const previous = previousWorkingConversationIdsRef.current;
-    previousWorkingConversationIdsRef.current = new Set(workingConversationIds);
-    try {
-      localStorage.setItem(workingSessionsStorageKey(clientScope), JSON.stringify([...workingConversationIds]));
-    } catch { /* Current-process completion tracking still works. */ }
-    if (!previous) return;
-    const conversationIds = new Set(desktopState.conversations.map((conversation) => conversation.id));
-    const completed = completedUnreadSessionIds(
-      previous,
-      workingConversationIds,
-      selectedConversation?.id ?? null,
-      conversationIds,
-    );
-    if (completed.length === 0) return;
-    setUnreadConversationIds((current) => new Set([...current, ...completed]));
-  }, [clientScope, desktopState.conversations, selectedConversation?.id, sessionsInitialized, workingConversationIds]);
+    const updateVisibility = () => setConversationVisible(conversationIsVisible(conversationScrollRef.current));
+    updateVisibility();
+    window.addEventListener("resize", updateVisibility);
+    return () => window.removeEventListener("resize", updateVisibility);
+  }, [sidePanelOpen, sidePanelExpanded, channelsOpen, channelsSessionVisible, webNavigationOpen, selectedConversation?.id]);
+
+  useEffect(() => { manualUnread.current = null; }, [selectedConversation?.id]);
 
   useEffect(() => {
-    const selectedId = selectedConversation?.id ?? null;
-    const conversationId = selectedSessionToMarkRead(previousSelectedConversationIdRef.current, selectedId);
-    previousSelectedConversationIdRef.current = selectedId;
-    if (conversationId) markConversationRead(conversationId);
-  }, [selectedConversation?.id]);
+    const session = selectedSession;
+    if (!session || readRequests.current.has(session.id)) return;
+    if (manualUnread.current?.id === session.id && manualUnread.current.version === session.read_state?.version) return;
+    const visibleSequence = sessionItems.reduce((latest, item) => Math.max(latest, item.sequence), 0);
+    if (canAcknowledgeSession(session.read_state, visibleSequence,
+      foreground && surfaceActive && conversationIsVisible(conversationScrollRef.current)
+      && isConversationAtBottom && !searchWindow && !sessionItemsError
+      && sessionItemsLoadedForSessionId === session.id)) markConversationRead(session.id);
+  }, [selectedSession, sessionItems, sessionItemsLoadedForSessionId, foreground, surfaceActive, conversationVisible, isConversationAtBottom, searchWindow, sessionItemsError]);
 
   function sidebarSortProps(item: SidebarDragItem, orderedIds: string[], fixedPosition?: DropPosition): SidebarSortProps {
     const isCurrentTarget = sidebarDropTarget?.kind === item.kind
@@ -1335,6 +1307,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
 
   useEffect(() => {
     const updateAnimationState = () => {
+      setForeground(!document.hidden && document.hasFocus());
       document.documentElement.classList.toggle(
         "animations-paused",
         document.hidden || !document.hasFocus(),
@@ -1477,8 +1450,10 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       if (nextDesktopState && catalogSnapshotIsCurrent(desktopStateGeneration, desktopStateGenerationRef.current)) {
         setDesktopState((current) => sameJsonValue(current, nextDesktopState) ? current : nextDesktopState);
       }
-      setSessions((current) => sameJsonValue(current, nextSessions) ? current : nextSessions);
-      setSessionsInitialized(true);
+      setSessions((current) => {
+        const merged = mergeSessionReadStates(current, nextSessions);
+        return sameJsonValue(current, merged) ? current : merged;
+      });
       setApprovalPolicyOverrides((current) => clearResolvedApprovalPolicyOverrides(current, nextSessions));
       if (catalogError && !options.quiet) setMessage(errorMessage(catalogError));
       if (selectedBinding && selectedSessionItemsNeedRefresh(
@@ -1934,18 +1909,29 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   }
 
   function markConversationRead(conversationId: string) {
-    setUnreadConversationIds((current) => {
-      if (!current.has(conversationId)) return current;
-      const next = new Set(current);
-      next.delete(conversationId);
-      return next;
-    });
+    const state = sessions.find(session => session.id === conversationId)?.read_state;
+    if (state?.unread) void updateConversationReadState(conversationId, state.version);
   }
 
   function markConversationUnread(conversationId: string) {
-    setUnreadConversationIds((current) => current.has(conversationId)
-      ? current
-      : new Set(current).add(conversationId));
+    void updateConversationReadState(conversationId, null);
+  }
+
+  function updateConversationReadState(id: string, version: number | null) {
+    // Serialize explicit actions behind an in-flight auto-ack instead of losing
+    // a user's "mark unread" click while a request is pending.
+    const pending = (readRequests.current.get(id) ?? Promise.resolve()).then(async () => {
+      try {
+        const state = await client.setSessionReadState(id, version);
+        if (version === null) manualUnread.current = { id, version: state.version };
+        if (readRequests.current.get(id) === pending) readRequests.current.delete(id);
+        setSessions(current => current.map(session => session.id === id ? { ...session, read_state: mergeReadState(session.read_state, state) } : session));
+      } catch (error) { setMessage(errorMessage(error)); }
+    }).finally(() => {
+      if (readRequests.current.get(id) === pending) readRequests.current.delete(id);
+    });
+    readRequests.current.set(id, pending);
+    return pending;
   }
 
   function openConversationContextMenu(event: ReactMouseEvent, conversationId: string) {
@@ -1963,7 +1949,6 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     if (!preserveChannels) leaveChannelsImmediately();
     setWebNavigationOpen(false);
     setConversationContextMenu(null);
-    markConversationRead(id);
     const conversation = sourceState.conversations.find((candidate) => candidate.id === id);
     if (!conversation || sourceState.selectedConversationId === id) {
       return;
@@ -5284,7 +5269,7 @@ function clearResolvedApprovalPolicyOverrides(
 
 function upsertSession(sessions: ZotigoSession[], session: ZotigoSession): ZotigoSession[] {
   if (sessions.some((current) => current.id === session.id)) {
-    return sessions.map((current) => (current.id === session.id ? session : current));
+    return sessions.map((current) => (current.id === session.id ? { ...session, read_state: mergeReadState(current.read_state, session.read_state) } : current));
   }
   return [session, ...sessions];
 }

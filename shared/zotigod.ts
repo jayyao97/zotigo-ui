@@ -9,7 +9,15 @@ export interface HealthResponse {
   protocol_version: string;
 }
 
+export interface SessionReadState {
+  version: number;
+  read_version: number;
+  completed_sequence: number;
+  unread: boolean;
+}
+
 export interface ZotigoSession {
+  read_state?: SessionReadState;
   id: string;
   state: SessionState;
   live: boolean;
