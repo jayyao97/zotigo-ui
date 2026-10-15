@@ -60,9 +60,11 @@ test("Channels responses are parsed at runtime", async () => {
   mode = "valid";
   const connections = await listChannelConnections();
   assert.equal(connections[0]?.provider, "feishu");
+  assert.equal(connections[0]?.approval_policy, "bypass_permissions");
   assert.deepEqual(connections[0]?.owner_sender_ids, []);
   const conversations = await listChannelConversations("connection-1");
   assert.equal(conversations[0]?.chat_type, "group");
+  assert.equal(conversations[0]?.approval_policy, "auto");
   assert.equal(conversations[0]?.chat_mode, "topic");
   assert.deepEqual(conversations[0]?.observed_senders, []);
   assert.equal(conversations[0]?.sender_policy, "selected");
@@ -120,7 +122,7 @@ function connection() {
   return {
     id: "connection-1", provider: "feishu", name: "Shadow Yao", app_id: "app", has_secret: true,
     enabled: true, status: "running", allow_chat_ids: null, owner_sender_ids: null,
-    agent_instructions: "", approval_instructions: "", review_all_tools: true,
+    approval_policy: "bypass_permissions", agent_instructions: "", approval_instructions: "", review_all_tools: true,
     progress_mode: "cot", cot_available: true, created_at: timestamp, updated_at: timestamp,
   };
 }
@@ -130,7 +132,7 @@ function conversation(): Record<string, unknown> {
     id: "conversation-1", connection_id: "connection-1", chat_id: "chat-1", chat_type: "group", chat_mode: "topic",
     display_name: "Topic", ...conversationRuntime(), enabled: true, allowed_sender_ids: ["owner-1"], observed_senders: null,
     agent_instructions_mode: "replace", agent_instructions: "", approval_instructions_mode: "replace",
-    approval_instructions: "", review_all_tools: true, last_activity_at: timestamp, created_at: timestamp, updated_at: timestamp,
+    approval_policy: "auto", approval_instructions: "", review_all_tools: true, last_activity_at: timestamp, created_at: timestamp, updated_at: timestamp,
   };
 }
 

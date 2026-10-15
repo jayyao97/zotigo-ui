@@ -881,6 +881,11 @@ function assertInteractionAnswers(value: unknown): Record<string, string[]> {
   return answers;
 }
 
+function assertChannelApprovalPolicy(value: unknown): "auto" | "bypass_permissions" | "" | undefined {
+  if (value === undefined || value === "" || value === "auto" || value === "bypass_permissions") return value;
+  throw new Error("approval_policy must be auto or bypass_permissions");
+}
+
 function assertChannelConnectionInput(value: unknown): ChannelConnectionInput {
 	const input = assertRecord(value, "channel connection");
 	if (input.provider !== "feishu") throw new Error("provider must be feishu");
@@ -895,6 +900,7 @@ function assertChannelConnectionInput(value: unknown): ChannelConnectionInput {
 		owner_sender_ids: input.owner_sender_ids === undefined ? undefined : assertStringArray(input.owner_sender_ids, "owner_sender_ids"),
 		agent_instructions: assertString(input.agent_instructions, "agent_instructions"),
 		approval_instructions: assertString(input.approval_instructions, "approval_instructions"),
+		approval_policy: assertChannelApprovalPolicy(input.approval_policy),
 		review_all_tools: assertBoolean(input.review_all_tools, "review_all_tools"),
 		progress_mode: assertChannelProgressMode(input.progress_mode, "progress_mode"),
 	};
@@ -933,6 +939,7 @@ function assertChannelConversationInput(value: unknown): ChannelConversationInpu
 		agent_instructions: assertString(input.agent_instructions, "agent_instructions"),
 		approval_instructions_mode: assertChannelOverrideMode(input.approval_instructions_mode, "approval_instructions_mode"),
 		approval_instructions: assertString(input.approval_instructions, "approval_instructions"),
+		approval_policy: assertChannelApprovalPolicy(input.approval_policy),
 		review_all_tools: input.review_all_tools === undefined ? undefined : assertBoolean(input.review_all_tools, "review_all_tools"),
 	};
 }

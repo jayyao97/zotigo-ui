@@ -125,8 +125,12 @@ test("connection Save follows and includes prompt settings", async () => {
     const prompt = [...document.querySelectorAll("h2")].find((heading) => heading.textContent === "Prompt and approval")!;
     const actions = document.querySelector("#root .channels-form-actions")!;
     assert.ok(prompt.compareDocumentPosition(actions) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    const permissions = [...document.querySelectorAll<HTMLSelectElement>("select")].find((select) => select.parentElement?.textContent?.startsWith("Permissions"))!;
+    assert.equal(permissions.value, "auto");
+    await act(async () => changeSelect(permissions, "bypass_permissions"));
     await act(async () => click(button(actions, "Save")));
     await flush();
+    assert.equal(savedInput?.approval_policy, "bypass_permissions");
     assert.equal(savedInput?.agent_instructions, "Use connection vocabulary.");
     assert.equal(savedInput?.approval_instructions, "Review connection actions.");
     assert.match(actions.textContent ?? "", /connection, prompt, and approval/);
