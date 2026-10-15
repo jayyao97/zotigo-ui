@@ -6,7 +6,6 @@ import { createRoot } from "react-dom/client";
 
 import { createClientApi } from "../shared/clientApi";
 import type { DesktopState, NavigationItem } from "../shared/clientTypes";
-import { unreadSessionsStorageKey } from "../src/unreadSessions";
 import { ClientContext } from "../src/ClientContext";
 import { HostShell } from "../src/HostShell";
 
@@ -201,7 +200,6 @@ test("a successful host switch opens New session without clearing unread state",
   const restore = installDom();
   try {
     const client = hostClient();
-    localStorage.setItem(unreadSessionsStorageKey("dev"), JSON.stringify(["unread-dev-session"]));
     const root = await mountHostShell(client.api);
     assert.ok(client.calls.some((call) => call.host === "local" && call.channel === "desktop:get-state"));
     assert.ok(!client.calls.some((call) => call.channel === "desktop:select-project"));
@@ -210,7 +208,7 @@ test("a successful host switch opens New session without clearing unread state",
 
     assert.equal(client.activeHost(), "dev");
     assert.ok(client.calls.some((call) => call.host === "dev" && call.channel === "desktop:select-project" && call.args[0] === null));
-    assert.equal(localStorage.getItem(unreadSessionsStorageKey("dev")), JSON.stringify(["unread-dev-session"]));
+    assert.ok(!client.calls.some(call => call.channel === "sessions:set-read-state"), "opening New session must not acknowledge another session");
     await act(async () => root.unmount());
   } finally { restore(); }
 });

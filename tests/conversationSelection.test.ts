@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { selectedMessageRange, textRanges } from "../src/conversation/selectionText";
+import { conversationSelection, selectedMessageRange, textRanges } from "../src/conversation/selectionText";
 import { referencePrompt } from "../shared/conversationReferences";
 import { emptyComposerDraft, restoreSubmittedDraft, updateComposerDrafts } from "../src/composerDrafts";
 import { avoidAnnotationMarkers } from "../src/conversation/ConversationAnnotations";
@@ -123,5 +123,58 @@ test("thinking selection is translatable without becoming a message reference", 
     assert.equal(selectedMessageRange(range, root), null);
     range.selectNodeContents(root.querySelector('button')!);
     assert.equal(selectedMessageRange(range, root), null);
+  } finally { dom.window.close(); }
+});
+
+
+test("translation spans thinking and body blocks in order without creating references", () => {
+  const dom = new JSDOM('<main><div class="reasoning-block"><p>First <b>thought</b>.</p><p>Another paragraph.</p></div><button>UI control</button><div class="reasoning-block"><p>Second thought.</p></div><div data-message-id="answer"><p>The answer.</p></div></main><aside>Outside</aside>');
+  try {
+    const root = dom.window.document.querySelector('main')!;
+    const paragraphs = root.querySelectorAll('p');
+    const range = dom.window.document.createRange();
+    range.setStart(paragraphs[0].firstChild!, 2);
+    range.setEnd(paragraphs[2].firstChild!, 6);
+    assert.equal(conversationSelection(range, root)?.text, 'rst thought.\n\nAnother paragraph.\n\nSecond');
+    assert.equal(conversationSelection(range, root)?.reference, null);
+    range.setEnd(paragraphs[3].firstChild!, 10);
+    assert.equal(conversationSelection(range, root)?.text, 'rst thought.\n\nAnother paragraph.\n\nSecond thought.\n\nThe answer');
+    assert.equal(conversationSelection(range, root)?.reference, null);
+    range.selectNodeContents(paragraphs[3]);
+    assert.equal(conversationSelection(range, root)?.reference?.message.dataset.messageId, 'answer');
+    range.setEnd(dom.window.document.querySelector('aside')!.firstChild!, 3);
+    assert.equal(conversationSelection(range, root), null);
+  } finally { dom.window.close(); }
+});
+
+test("a body selection crossing nested thinking cannot become a reference", () => {
+  const dom = new JSDOM('<main><div data-message-id="answer"><p>Before.</p><div class="reasoning-block">Thinking.</div><p>After.</p></div></main>');
+  try {
+    const root = dom.window.document.querySelector('main')!;
+    const range = dom.window.document.createRange();
+    range.selectNodeContents(root.firstChild!);
+    const selection = conversationSelection(range, root)!;
+    assert.equal(selection.text, 'Before.\n\nThinking.\n\nAfter.');
+    assert.equal(selection.reference, null);
+  } finally { dom.window.close(); }
+});
+
+test("translation omits timestamps and message controls, including invisible metadata", () => {
+  const dom = new JSDOM('<main><div data-message-id="user"><p>My question</p><div class="turn-actions user-message-actions"><time style="opacity:0">Thu 18:12</time><span>Copied</span><button>Copy</button></div></div><div data-message-id="assistant"><p>My answer</p></div></main>');
+  try {
+    const root = dom.window.document.querySelector('main')!;
+    const paragraphs = root.querySelectorAll('p');
+    const range = dom.window.document.createRange();
+    range.setStart(paragraphs[0].firstChild!, 0);
+    range.setEnd(paragraphs[1].firstChild!, 9);
+    assert.equal(conversationSelection(range, root)?.text, 'My question\n\nMy answer');
+    range.selectNodeContents(root.firstChild!);
+    const fullMessage = conversationSelection(range, root)!;
+    assert.equal(fullMessage.text, 'My question');
+    assert.equal(fullMessage.reference, null, 'cleaned text must not be assigned inaccurate raw offsets');
+    range.selectNodeContents(paragraphs[0]);
+    assert.equal(conversationSelection(range, root)?.reference?.message.dataset.messageId, 'user');
+    range.selectNodeContents(root.querySelector('time')!);
+    assert.equal(conversationSelection(range, root), null);
   } finally { dom.window.close(); }
 });

@@ -1,3 +1,4 @@
+import type { SessionReadState } from "./zotigod";
 import type { MessageFileInput } from "./messageFiles";
 import type { WatchedFile, FileEventEnvelope } from "./fileEvents";
 import type {
@@ -351,6 +352,7 @@ export interface ClientApi {
   resumeInputQueue(id: string): Promise<void>;
   translateSelection(sessionId: string, text: string, targetLanguage: "zh-CN" | "en", profile?: string): Promise<TranslationResult>;
   suggestConversationTitle(conversationId: string): Promise<DesktopState>;
+  setSessionReadState(id: string, readVersion: number | null): Promise<SessionReadState>;
   renameConversation(conversationId: string, title: string): Promise<DesktopState>;
   forkConversation(conversationId: string, requestId: string, throughTurnId?: string): Promise<DesktopActionResult>;
   setConversationPinned(conversationId: string, pinned: boolean): Promise<DesktopState>;

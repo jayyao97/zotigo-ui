@@ -43,6 +43,7 @@ import {
   setCatalogSessionPosition,
   parseNavigationItem,
   setCatalogSessionTitle,
+  setSessionReadState,
 	listChannelConnections,
 	createChannelConnection,
 	updateChannelConnection,
@@ -395,6 +396,10 @@ addWorkspaceSourceToCatalog,
     const suggestion = await suggestSessionTitle(id);
     await setCatalogSessionTitle(id, suggestion.title);
     return getCatalogDesktopState();
+  });
+  handle("sessions:set-read-state", (id, readVersion) => {
+    if (readVersion !== null && (typeof readVersion !== "number" || !Number.isSafeInteger(readVersion) || readVersion < 0)) throw new Error("Invalid read version");
+    return setSessionReadState(assertNonEmptyString(id, "sessionId"), readVersion as number | null);
   });
   handle("desktop:rename-conversation", (conversationIdValue, title) => {
     const conversationId = assertString(conversationIdValue, "conversationId");

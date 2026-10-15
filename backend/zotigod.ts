@@ -1,3 +1,4 @@
+import type { SessionReadState } from "../shared/zotigod";
 import { attachmentReference, type MessageFileInput } from "../shared/messageFiles";
 import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";
@@ -1108,6 +1109,19 @@ function parseSessionListResponse(value: unknown): SessionListResponse {
   };
 }
 
+export async function setSessionReadState(id: string, readVersion: number | null): Promise<SessionReadState> {
+  return parseSessionReadState(await requestJSON(`/sessions/${encodeURIComponent(id)}/read-state`, jsonRequest("PUT", readVersion === null ? { unread: true } : { read_version: readVersion })), "session read state");
+}
+
+function parseSessionReadState(value: unknown, context: string): SessionReadState {
+  const record = expectRecord(value, context);
+  const version = expectNumber(record.version, `${context} version`);
+  const readVersion = expectNumber(record.read_version, `${context} read_version`);
+  const sequence = expectNumber(record.completed_sequence, `${context} completed_sequence`);
+  if (![version, readVersion, sequence].every(value => Number.isSafeInteger(value) && value >= 0) || readVersion > version) throw new Error(`${context} invalid read cursor`);
+  return { version, read_version: readVersion, completed_sequence: sequence, unread: readVersion < version };
+}
+
 function parseSession(value: unknown, context: string): ZotigoSession {
   const record = expectRecord(value, context);
   const state = expectString(record.state, `${context} state`);
@@ -1122,6 +1136,7 @@ function parseSession(value: unknown, context: string): ZotigoSession {
 
   return {
     id: expectString(record.id, `${context} id`),
+    read_state: record.read_state == null ? undefined : parseSessionReadState(record.read_state, `${context} read_state`),
     state,
     forked_from: fork ? {
       session_id: expectString(fork.session_id, `${context} forked_from session_id`),

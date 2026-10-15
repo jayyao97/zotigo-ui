@@ -6,7 +6,7 @@ import type { TranslationResult } from "../../shared/clientTypes";
 import { ConversationAnnotations, useAnchoredPopup } from "./ConversationAnnotations";
 export { ComposerReferences } from "./ConversationAnnotations";
 import { selectionOffset } from "./annotationRange";
-import { selectedMessageRange } from "./selectionText";
+import { conversationSelection } from "./selectionText";
 import { ConversationFind } from "./ConversationFind";
 import type { DisplayItem, SessionSearchHit, SessionSearchResponse } from "../../shared/zotigod";
 
@@ -26,7 +26,7 @@ type Props = {
   onCloseSearch: () => void;
   onSearch: () => void;
 };
-type SelectionText = { text: string; messageId?: string; startOffset: number; rect: DOMRect };
+type SelectionText = { text: string; messageId?: string; startOffset: number; rect: DOMRect; range: Range; visible: boolean };
 
 export function ConversationTools({ root, onReference, translate, translationProfile, items, search, showHit, onCloseSearch, onSearch, language, references, editingId, onEdit, onReferencesChange }: Props) {
   const [selection, setSelection] = useState<SelectionText | null>(null);
@@ -45,32 +45,48 @@ export function ConversationTools({ root, onReference, translate, translationPro
         const selected = window.getSelection();
         if (!selected || selected.isCollapsed || !selected.rangeCount) { if (!translationOpen) setSelection(null); return; }
         if (popup.current?.contains(selected.getRangeAt(0).startContainer)) return;
-        const match = root.current && selectedMessageRange(selected.getRangeAt(0), root.current);
+        const match = root.current && conversationSelection(selected.getRangeAt(0), root.current);
         if (!match) { if (!translationOpen) setSelection(null); return; }
-        const { message, range } = match;
-        const rawText = range.toString();
-        const text = rawText.trim();
-        if (!text) return;
+        const { text, range, reference } = match;
         const rect = range.getBoundingClientRect();
         request.current++; setTranslation(null);
-        setSelection({ text, messageId: message.dataset.messageId, rect, startOffset: selectionOffset(message, range) + rawText.indexOf(text) });
+        setSelection({ text, range, visible: true, messageId: reference?.message.dataset.messageId, rect,
+          startOffset: reference ? selectionOffset(reference.message, range) + range.toString().indexOf(text) : 0 });
       }, 150);
     };
-    const dismiss = (event: PointerEvent) => { if (!popup.current?.contains(event.target as Node)) { request.current++; setTranslation(null); setSelection(null); } };
-    // A touch scroll starts with pointerdown too; only an outside click should
-    // dismiss a translation the user is reading (or waiting for).
-    const outsideClick = (event: MouseEvent) => { if (translationOpen && !popup.current?.contains(event.target as Node)) { request.current++; setTranslation(null); setSelection(null); } };
-    const outsidePointer = (event: PointerEvent) => { if (!translationOpen) dismiss(event); };
+    let pointerStart: { x: number; y: number } | null = null;
+    const outsidePointer = (event: PointerEvent) => { pointerStart = { x: event.clientX, y: event.clientY }; };
+    const outsideClick = (event: MouseEvent) => {
+      if (popup.current?.contains(event.target as Node)) return;
+      if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) return;
+      const selected = window.getSelection();
+      if (selected && !selected.isCollapsed && root.current?.contains(selected.anchorNode)) return;
+      request.current++; setTranslation(null); setSelection(null);
+    };
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { request.current++; setSelection(null); setTranslation(null); } };
-    const scrolled = () => { if (!translationOpen) { request.current++; setSelection(null); } };
-    const element = root.current;
-    element?.addEventListener("scroll", scrolled, { passive: true });
+    let frame = 0;
+    const scrolled = () => {
+      if (translationOpen || frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setSelection(current => {
+          const container = root.current;
+          if (!current || !container) return current;
+          if (!container.contains(current.range.commonAncestorContainer)) return null;
+          const bounds = container.getBoundingClientRect();
+          const rects = Array.from(current.range.getClientRects());
+          const rect = rects.find(rect => rect.bottom > Math.max(0, bounds.top) && rect.top < Math.min(window.innerHeight, bounds.bottom));
+          return { ...current, rect: rect ?? current.rect, visible: !!rect };
+        });
+      });
+    };
+    document.addEventListener("scroll", scrolled, { passive: true, capture: true });
     window.addEventListener("resize", scrolled);
     document.addEventListener("selectionchange", changed);
     document.addEventListener("pointerdown", outsidePointer);
     document.addEventListener("click", outsideClick);
     document.addEventListener("keydown", escape);
-    return () => { element?.removeEventListener("scroll", scrolled); window.removeEventListener("resize", scrolled); clearTimeout(timer); document.removeEventListener("selectionchange", changed); document.removeEventListener("pointerdown", outsidePointer); document.removeEventListener("click", outsideClick); document.removeEventListener("keydown", escape); };
+    return () => { document.removeEventListener("scroll", scrolled, true); cancelAnimationFrame(frame); window.removeEventListener("resize", scrolled); clearTimeout(timer); document.removeEventListener("selectionchange", changed); document.removeEventListener("pointerdown", outsidePointer); document.removeEventListener("click", outsideClick); document.removeEventListener("keydown", escape); };
   }, [root, translationOpen]);
   async function runTranslation(target = language) {
     if (!selection) return;
@@ -86,7 +102,7 @@ export function ConversationTools({ root, onReference, translate, translationPro
   return <>
     <ConversationAnnotations root={root} references={references} editingId={editingId} onEdit={onEdit} onChange={onReferencesChange} />
     <ConversationFind root={root} items={items} search={search} showHit={showHit} onClose={onCloseSearch} onOpen={() => { request.current++; setSelection(null); setTranslation(null); onSearch(); }} />
-    {selection && createPortal(<div ref={popup} className={`selection-tools ${translation ? "has-translation" : ""}`} style={position} onPointerDown={event => event.stopPropagation()}>
+    {selection && createPortal(<div ref={popup} className={`selection-tools ${translation ? "has-translation" : ""}`} style={{ ...position, visibility: !translation && !selection.visible ? "hidden" : undefined }} onPointerDown={event => event.stopPropagation()}>
       <div className="selection-actions">
         {selection.messageId && <button type="button" disabled={[...selection.text].length > 8000} onClick={() => {
           if (!selection.messageId) return;
