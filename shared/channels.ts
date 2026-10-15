@@ -7,6 +7,7 @@ export type ChannelChatMode = "group" | "topic";
 export type ChannelSenderPolicy = "owners" | "all" | "selected";
 
 export interface ChannelConnection {
+  approval_policy?: "auto" | "bypass_permissions" | "";
   id: string;
   provider: "feishu";
   name: string;
@@ -29,6 +30,7 @@ export interface ChannelConnection {
 }
 
 export interface ChannelConnectionInput {
+  approval_policy?: "auto" | "bypass_permissions" | "";
   provider: "feishu";
   name: string;
   app_id: string;
@@ -67,6 +69,7 @@ export interface ChannelGroup {
 }
 
 export interface ChannelConversation {
+  approval_policy?: "auto" | "bypass_permissions" | "";
   id: string;
   connection_id: string;
   chat_id: string;
@@ -98,6 +101,7 @@ export interface ChannelConversation {
 }
 
 export interface ChannelConversationInput {
+  approval_policy?: "auto" | "bypass_permissions" | "";
   display_name: string;
   session_strategy: ChannelSessionStrategy;
   session_id: string;

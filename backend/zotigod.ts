@@ -800,6 +800,11 @@ function unwrapApiResponse(value: unknown, path: string): unknown {
   return record.data;
 }
 
+function parseChannelApprovalPolicy(value: unknown): "auto" | "bypass_permissions" | "" | undefined {
+  if (value === undefined || value === "" || value === "auto" || value === "bypass_permissions") return value;
+  throw new Error("invalid channel approval_policy");
+}
+
 function parseChannelConnection(value: unknown, context: string): ChannelConnection {
   const record = expectRecord(value, context);
   const provider = expectString(record.provider, `${context} provider`);
@@ -813,6 +818,7 @@ function parseChannelConnection(value: unknown, context: string): ChannelConnect
     bot_name: expectOptionalString(record.bot_name, `${context} bot_name`), allow_chat_ids: parseChannelStringList(record.allow_chat_ids, `${context} allow_chat_ids`),
     owner_sender_ids: parseChannelStringList(record.owner_sender_ids, `${context} owner_sender_ids`), agent_instructions: expectString(record.agent_instructions, `${context} agent_instructions`),
     approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`), review_all_tools: expectBoolean(record.review_all_tools, `${context} review_all_tools`),
+    approval_policy: parseChannelApprovalPolicy(record.approval_policy),
     cot_available: expectBoolean(record.cot_available, `${context} cot_available`), progress_mode: progressMode,
     created_at: expectString(record.created_at, `${context} created_at`), updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
@@ -856,6 +862,7 @@ function parseChannelConversation(value: unknown, context: string): ChannelConve
     model: expectOptionalString(record.model, `${context} model`) ?? "", reasoning_effort: expectOptionalString(record.reasoning_effort, `${context} reasoning_effort`) ?? "",
     agent_instructions_mode: agentMode, agent_instructions: expectString(record.agent_instructions, `${context} agent_instructions`),
     approval_instructions_mode: approvalMode, approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`),
+    approval_policy: parseChannelApprovalPolicy(record.approval_policy),
     review_all_tools: reviewAllTools, last_activity_at: expectString(record.last_activity_at, `${context} last_activity_at`),
     created_at: expectString(record.created_at, `${context} created_at`), updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
