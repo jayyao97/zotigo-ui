@@ -202,12 +202,24 @@ function SessionRow({ item }: { item: CatalogSessionProjection }) {
   return (
     <Row
       title={sessionTitle(item)}
+      right={
+        !item.runtime?.working && item.runtime?.read_state?.unread ? (
+          <View
+            accessible
+            accessibilityLabel="Unread"
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: 3.5,
+              backgroundColor: "#3b82f6",
+            }}
+          />
+        ) : undefined
+      }
       subtitle={
-        item.runtime?.read_state?.unread
-          ? "Unread"
-          : item.runtime?.working
-            ? `Working · ${pathLabel(item.runtime.working_directory ?? "")}`
-            : undefined
+        item.runtime?.working
+          ? `Working · ${pathLabel(item.runtime.working_directory ?? "")}`
+          : undefined
       }
       onPress={() =>
         nav.navigate("Conversation", {
