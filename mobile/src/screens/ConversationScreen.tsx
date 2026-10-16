@@ -166,10 +166,11 @@ function ConversationContent() {
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sendCanLeave, setSendCanLeave] = useState(false);
   const lock = useRef(false);
   const alive = useRef(true);
   const focused = useRef(false);
-  usePreventRemove(busy, ({ data }) => {
+  usePreventRemove(busy && !sendCanLeave, ({ data }) => {
     if (!lock.current) nav.dispatch(data.action);
     else
       Alert.alert(
@@ -395,7 +396,10 @@ function ConversationContent() {
       if (alive.current) setError(errorText(e));
     } finally {
       lock.current = false;
-      if (alive.current) setBusy(false);
+      if (alive.current) {
+        setBusy(false);
+        setSendCanLeave(false);
+      }
       if (focused.current)
         void timeline.refreshSession().catch((e) => {
           if (alive.current) setError(errorText(e));
@@ -421,6 +425,7 @@ function ConversationContent() {
     setSaved(pending);
     revision.current++;
     await composer.write(pending); // Persist exact payload/id before dispatch so a timeout is retryable.
+    if (alive.current) setSendCanLeave(true);
     try {
       await client.send(
         id,
@@ -432,12 +437,16 @@ function ConversationContent() {
         },
         attempt.mode ?? attempt.steer,
       );
-      if (alive.current) setQueueRevision((value) => value + 1);
+      // A reopened screen owns the persisted attempt now. Do not let this old
+      // request overwrite its draft; retrying the saved ID is idempotent.
+      if (!alive.current) return;
+      setQueueRevision((value) => value + 1);
       const empty = { draft: emptyDraft() };
       const persisted = composer.transition(draftRef, empty);
       if (alive.current) setSaved(empty);
       await persisted;
     } catch (e) {
+      if (!alive.current) return;
       // Validation is definitely rejected; network/5xx remains uncertain and retains the same id.
       if (
         e instanceof ApiError &&
@@ -955,9 +964,6 @@ function ConversationContent() {
       >
         <InputQueue sessionId={id} refresh={queueRevision} />
         <Notice text={defaultSendMode.error} error />
-        {!!saved.attempt && (
-          <Notice text="Delivery is unconfirmed. Retry sends the exact same message safely; discard only after checking the conversation." />
-        )}
         {!!draft.references?.length && (
           <View style={{ maxHeight: 136 }}>
             <FlatList
@@ -1149,7 +1155,7 @@ function ConversationContent() {
             )}
           </View>
         </View>
-        {saved.attempt && (
+        {saved.attempt && !busy && (
           <Action
             label="Discard pending submission"
             danger
