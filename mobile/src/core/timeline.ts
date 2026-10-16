@@ -1,3 +1,4 @@
+import { mergeReadState } from "@zotigo/shared/sessionReadState";
 import { cachedHistory, cacheHistory } from "./historyCache";
 import type {
   DisplayItem,
@@ -75,6 +76,14 @@ export class Timeline {
     };
   };
   private publish(patch: Partial<TimelineSnapshot> = {}) {
+    if (patch.session)
+      patch.session = {
+        ...patch.session,
+        read_state: mergeReadState(
+          this.state.session?.read_state,
+          patch.session.read_state,
+        ),
+      };
     this.state = { ...this.state, ...patch };
     for (const listener of this.listeners) listener();
   }
@@ -336,6 +345,12 @@ export class Timeline {
       if (this.backfill === controller) this.backfill = undefined;
       if (controller === this.controller) this.publish({ loadingOlder: false });
     }
+  }
+  async setReadState(version: number | null) {
+    const state = await this.client.setSessionReadState(this.id, version);
+    if (!this.client.signal.aborted && this.state.session)
+      this.publish({ session: { ...this.state.session, read_state: state } });
+    return state;
   }
   async refreshSession() {
     if (this.refreshing) return;

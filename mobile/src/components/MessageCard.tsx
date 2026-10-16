@@ -1,3 +1,4 @@
+import { messageTimestamp } from "@zotigo/shared/messageTimestamp";
 import { highlightParts } from "../core/conversationSearch";
 import { parseMarkdownLink } from "@zotigo/shared/markdownLinks";
 import { SelectableText } from "./SelectableText";
@@ -41,6 +42,7 @@ function Detail({
   label,
   text,
   language = "plaintext",
+  allowReference = true,
   title,
   command,
   status,
@@ -51,6 +53,7 @@ function Detail({
   label: string;
   text: string;
   language?: string;
+  allowReference?: boolean;
   title?: string;
   command?: string;
   status?: "Success" | "Failed" | "Running";
@@ -191,6 +194,7 @@ function Detail({
           >
             {onSelection ? (
               <SelectableText
+                allowReference={allowReference}
                 runs={[{ text: text.slice(0, limit) }]}
                 highlight={highlight}
                 textColor={colors.muted}
@@ -315,6 +319,7 @@ export const MessageCard = memo(function MessageCard({
 
   const user = item.type === "user_message" || item.type === "steering_message";
   const parts = item.content ?? [];
+  const timestamp = messageTimestamp(item.created_at);
   const userText = user
     ? codexUserText(
         parts
@@ -405,17 +410,24 @@ export const MessageCard = memo(function MessageCard({
               />
             </View>
           )}
-          {!!userText && (
-            <IconButton
-              icon={copied ? Check : Copy}
-              label={copied ? "Copied message" : "Copy message"}
-              onPress={() =>
-                void Clipboard.setStringAsync(userText)
-                  .then(() => setCopied(true))
-                  .catch((e) => Alert.alert("Copy failed", errorText(e)))
-              }
-            />
-          )}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            {timestamp && (
+              <Text accessibilityLabel={timestamp.full} style={styles.muted}>
+                {timestamp.label}
+              </Text>
+            )}
+            {!!userText && (
+              <IconButton
+                icon={copied ? Check : Copy}
+                label={copied ? "Copied message" : "Copy message"}
+                onPress={() =>
+                  void Clipboard.setStringAsync(userText)
+                    .then(() => setCopied(true))
+                    .catch((e) => Alert.alert("Copy failed", errorText(e)))
+                }
+              />
+            )}
+          </View>
         </View>
       )}
       {parts.map((p, index) => {
@@ -439,6 +451,7 @@ export const MessageCard = memo(function MessageCard({
         if (p.type === "reasoning")
           return revealReasoning ? (
             <SelectableText
+              allowReference={false}
               key={index}
               highlight={highlight}
               runs={[{ text: p.text ?? "" }]}
@@ -454,6 +467,7 @@ export const MessageCard = memo(function MessageCard({
             <Detail
               key={index}
               label="reasoning"
+              allowReference={false}
               text={p.text ?? ""}
               onSelection={(selection) =>
                 onSelectText?.({ ...selection, messageId: item.id })

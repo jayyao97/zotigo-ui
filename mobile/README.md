@@ -40,7 +40,7 @@ Tokens use SecureStore; device metadata and drafts use AsyncStorage. Drafts are 
 
 ## Features and limits
 
-The app supports project and workspace management, source registration, session search, streaming conversations, image/file attachments, inline skills, approvals, interactive questions, session controls, and remote text-file editing. Settings expose daemon health, runtimes, model favorites, translation language/profile, and the default Queue/Steer send mode. Channels support browsing and navigation to associated sessions.
+The app supports project and workspace management, source registration, session search, streaming conversations, image/file attachments, inline skills, approvals, interactive questions, session controls, and remote text-file editing. Settings expose daemon health, runtimes, model favorites, translation language/profile, and the default Queue/Steer send mode. Channels support browsing, navigation to associated sessions, and connection/conversation approval policies. Sessions share daemon read state across clients and show user-message timestamps. These server-backed controls require a daemon version supporting the corresponding fields and endpoints.
 
 Conversation search queries the daemon's full history and opens an isolated message window, without changing the live SSE cursor. Selected text (including reasoning) supports translation and quoted references with editable comments and original-message highlighting. Placeholder session titles are suggested after a completed turn, with a fresh catalog check before replacing them.
 
@@ -53,7 +53,8 @@ Current limits:
 - No permanent project/workspace deletion, custom navigation ordering, or project pinning. Workspace and session pins use the daemon navigation catalog.
 - No archived-history browser or desktop diff/editor parity.
 - Text editing is limited to 256 KiB. Revision conflicts preserve the draft; file content reload is manual, with a freshness reminder on foreground return.
-- Channel configuration editing, push notifications, and background streaming are not implemented.
+- Channel credentials/routing editing, push notifications, and background streaming are not implemented.
+- Native text selection supports translation within a text block; reasoning cannot be added as a message reference. Cross-block selection is not yet supported.
 - Navigation does not restore the last open page after restarting the app.
 
 See [Mobile architecture](../docs/mobile-architecture.md) for module ownership and state invariants.

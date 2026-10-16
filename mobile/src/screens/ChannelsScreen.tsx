@@ -1,3 +1,9 @@
+import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
+import {
+  connectionPermissions,
+  conversationPermissions,
+  channelPermissionLabel,
+} from "../core/channelPermissions";
 import { useEffect, useRef, useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -24,6 +30,10 @@ export function ChannelsScreen({
   const client = useDaemon();
   const [connections, setConnections] = useState<ChannelConnection[]>([]);
   const [conversations, setConversations] = useState<ChannelConversation[]>([]);
+  const [permissionTarget, setPermissionTarget] = useState<{
+    kind: "connection" | "conversation";
+    id: string;
+  }>();
   const [selected, setSelected] = useState<ChannelConversation>();
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
   const [error, setError] = useState("");
@@ -69,6 +79,72 @@ export function ChannelsScreen({
   useEffect(() => {
     void run(load);
   }, [client]);
+  const target =
+    permissionTarget?.kind === "connection"
+      ? connections.find((value) => value.id === permissionTarget.id)
+      : conversations.find((value) => value.id === permissionTarget?.id);
+  const permissionSheet = (
+    <BottomSheet
+      visible={!!permissionTarget}
+      title="Permissions"
+      disabled={busy}
+      onClose={() => setPermissionTarget(undefined)}
+    >
+      <Notice text={error} error />
+      <Notice text="Full access skips tool approval. Changes apply to existing sessions at their next idle turn." />
+      {(permissionTarget?.kind === "conversation"
+        ? (["", "auto", "bypass_permissions"] as const)
+        : (["auto", "bypass_permissions"] as const)
+      ).map((policy) => (
+        <ChoiceRow
+          key={policy}
+          title={policy ? channelPermissionLabel(policy) : "Inherit connection"}
+          selected={
+            (target?.approval_policy ||
+              (permissionTarget?.kind === "connection" ? "auto" : "")) ===
+            policy
+          }
+          disabled={busy}
+          onPress={() =>
+            void run(async () => {
+              if (!permissionTarget) return;
+              if (permissionTarget.kind === "connection") {
+                const latest = (await client.connections()).find(
+                  (value) => value.id === permissionTarget.id,
+                );
+                if (!latest || !policy)
+                  throw new Error(
+                    "Connection unavailable. Refresh and try again.",
+                  );
+                await client.updateConnection(
+                  latest.id,
+                  connectionPermissions(latest, policy),
+                );
+              } else {
+                const latest = (await client.channelConversations()).find(
+                  (value) => value.id === permissionTarget.id,
+                );
+                if (!latest)
+                  throw new Error(
+                    "Conversation unavailable. Refresh and try again.",
+                  );
+                const saved = await client.updateChannelConversation(
+                  latest.id,
+                  conversationPermissions(latest, policy),
+                );
+                if (alive.current)
+                  setSelected((current) =>
+                    current?.id === saved.id ? saved : current,
+                  );
+              }
+              await load();
+              if (alive.current) setPermissionTarget(undefined);
+            })
+          }
+        />
+      ))}
+    </BottomSheet>
+  );
   const status = (
     <>
       {busy && <Loading />}
@@ -86,6 +162,7 @@ export function ChannelsScreen({
         windowSize={7}
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
+            {permissionSheet}
             <Action
               label="All channel conversations"
               secondary
@@ -101,6 +178,17 @@ export function ChannelsScreen({
             </Text>
             <Notice
               text={`${selected.enabled ? "Enabled" : "Disabled"} · ${selected.agent} · ${selected.session_strategy}`}
+            />
+            <Row
+              title="Permissions"
+              subtitle={
+                selected.approval_policy
+                  ? channelPermissionLabel(selected.approval_policy)
+                  : `Inherit connection · ${channelPermissionLabel(connections.find((value) => value.id === selected.connection_id)?.approval_policy)}`
+              }
+              onPress={() =>
+                setPermissionTarget({ kind: "conversation", id: selected.id })
+              }
             />
             {selected.session_id ? (
               <Action
@@ -163,6 +251,7 @@ export function ChannelsScreen({
       windowSize={7}
       ListHeaderComponent={
         <View style={{ gap: 12 }}>
+          {permissionSheet}
           <Notice text="View connections, channel messages and linked sessions. Manage channel credentials and routing in Desktop or Web." />
           <Action
             label="Refresh channels"
@@ -175,7 +264,10 @@ export function ChannelsScreen({
               <Row
                 key={connection.id}
                 title={connection.name}
-                subtitle={`${connection.enabled ? connection.status : "Disabled"}${connection.last_error ? " · " + connection.last_error : ""}`}
+                subtitle={`${connection.enabled ? connection.status : "Disabled"}${connection.last_error ? " · " + connection.last_error : ""} · ${channelPermissionLabel(connection.approval_policy)}`}
+                onPress={() =>
+                  setPermissionTarget({ kind: "connection", id: connection.id })
+                }
               />
             ))}
             {!busy && !error && connections.length === 0 && (

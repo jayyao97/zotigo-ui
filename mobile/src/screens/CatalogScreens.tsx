@@ -18,6 +18,7 @@ import {
 } from "react";
 import {
   Alert,
+  AppState,
   FlatList,
   Modal,
   SafeAreaView,
@@ -101,37 +102,55 @@ const css = StyleSheet.create({
 });
 
 // Focus-bound reads cannot commit after a route blur, host replacement, or newer refresh.
-function useCatalogLoad<T>(load: () => Promise<T>) {
+function useCatalogLoad<T>(load: () => Promise<T>, poll = false) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
   const active = useRef(false);
-  const refresh = useCallback(async () => {
-    const ticket = ++generation.current;
-    setLoading(true);
-    setError("");
-    try {
-      const result = await load();
-      if (active.current && ticket === generation.current) setData(result);
-    } catch (e) {
-      if (active.current && ticket === generation.current)
-        setError(errorText(e));
-    } finally {
-      if (active.current && ticket === generation.current) setLoading(false);
-    }
-  }, [load]);
+  const inFlight = useRef(0);
+  const refresh = useCallback(
+    async (silent = false) => {
+      if (silent && inFlight.current > 0) return;
+      inFlight.current++;
+      const ticket = ++generation.current;
+      if (!silent) {
+        setLoading(true);
+        setError("");
+      }
+      try {
+        const result = await load();
+        if (active.current && ticket === generation.current) {
+          setData(result);
+          setError("");
+        }
+      } catch (e) {
+        if (active.current && ticket === generation.current)
+          setError(errorText(e));
+      } finally {
+        inFlight.current--;
+        if (active.current && ticket === generation.current) setLoading(false);
+      }
+    },
+    [load],
+  );
   useFocusEffect(
     useCallback(() => {
       active.current = true;
       void refresh();
+      const timer = poll
+        ? setInterval(() => {
+            if (AppState.currentState === "active") void refresh(true);
+          }, 10000)
+        : undefined;
       return () => {
+        if (timer) clearInterval(timer);
         active.current = false;
         generation.current++;
       };
-    }, [refresh]),
+    }, [refresh, poll]),
   );
-  return { data, error, loading, refresh };
+  return { data, error, loading, refresh: () => refresh() };
 }
 function useMutation() {
   const lock = useRef(false);
@@ -184,9 +203,11 @@ function SessionRow({ item }: { item: CatalogSessionProjection }) {
     <Row
       title={sessionTitle(item)}
       subtitle={
-        item.runtime?.working
-          ? `Working · ${pathLabel(item.runtime.working_directory ?? "")}`
-          : undefined
+        item.runtime?.read_state?.unread
+          ? "Unread"
+          : item.runtime?.working
+            ? `Working · ${pathLabel(item.runtime.working_directory ?? "")}`
+            : undefined
       }
       onPress={() =>
         nav.navigate("Conversation", {
@@ -237,6 +258,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
       }
       return { projects, sessions, workspaces, workspaceErrors, navigation };
     }, [daemon]),
+    true,
   );
   const rows = useMemo(
     () =>
