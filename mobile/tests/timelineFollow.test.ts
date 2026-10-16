@@ -17,7 +17,7 @@ test("user drag cancels jump correction immediately and can resume following at 
   follow.beginDrag();
   assert.equal(follow.following, false);
   assert.equal(follow.observeDistance(500), false);
-  assert.equal(follow.observeDistance(30), true);
+  assert.equal(follow.observeDistance(30), false);
   // The same drag may reverse direction; it remains user-owned.
   assert.equal(follow.observeDistance(200), false);
   follow.jump();
@@ -33,8 +33,8 @@ test("initial stream growth follows while loading older history explicitly opts 
 test("manual return to bottom survives content growth after drag finishes", () => {
   const follow = new TimelineFollow();
   follow.beginDrag();
-  assert.equal(follow.observeDistance(30), true);
-  follow.endDrag();
+  assert.equal(follow.observeDistance(0), false);
+  assert.equal(follow.endDrag(), true);
   assert.equal(follow.observeDistance(240), true);
 });
 
@@ -44,8 +44,8 @@ test("user momentum may change intent but stops owning measurements when it ends
   follow.observeDistance(300);
   follow.endDrag();
   follow.beginMomentum();
-  assert.equal(follow.observeDistance(20), true);
-  follow.endMomentum();
+  assert.equal(follow.observeDistance(0), false);
+  assert.equal(follow.endMomentum(), true);
   assert.equal(follow.observeDistance(600), true);
   follow.beginDrag();
   follow.observeDistance(400);
@@ -65,4 +65,27 @@ test("programmatic jump momentum never takes over follow intent", () => {
   assert.equal(follow.observeDistance(1800), true);
   follow.endMomentum();
   assert.equal(follow.observeDistance(3000), true);
+});
+
+test("streaming never resumes follow while dragging or parked just above the bottom", () => {
+  for (const distance of [3, 30, 99, 400]) {
+    const follow = new TimelineFollow();
+    follow.beginDrag();
+    assert.equal(follow.observeDistance(distance), false);
+    assert.equal(follow.endDrag(), false);
+    for (const layoutDistance of [distance + 100, 0, distance + 300])
+      assert.equal(follow.observeDistance(layoutDistance), false);
+  }
+});
+test("momentum owns the viewport until it ends at the actual bottom", () => {
+  const follow = new TimelineFollow();
+  follow.beginDrag();
+  follow.observeDistance(0);
+  follow.endDrag();
+  follow.beginMomentum();
+  assert.equal(follow.following, false);
+  assert.equal(follow.observeDistance(80), false);
+  assert.equal(follow.endMomentum(), false);
+  follow.jump();
+  assert.equal(follow.following, true);
 });
