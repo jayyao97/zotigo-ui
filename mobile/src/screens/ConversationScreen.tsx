@@ -862,31 +862,26 @@ function ConversationContent() {
         onScrollEndDrag={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } =
             event.nativeEvent;
-          setFollowing(
-            follow.current.observeDistance(
-              inverted
-                ? contentOffset.y
-                : contentSize.height -
-                    contentOffset.y -
-                    layoutMeasurement.height,
-            ),
+          follow.current.observeDistance(
+            inverted
+              ? contentOffset.y
+              : contentSize.height - contentOffset.y - layoutMeasurement.height,
           );
-          follow.current.endDrag();
+          setFollowing(follow.current.endDrag());
         }}
-        onMomentumScrollBegin={() => follow.current.beginMomentum()}
+        onMomentumScrollBegin={() => {
+          follow.current.beginMomentum();
+          setFollowing(follow.current.following);
+        }}
         onMomentumScrollEnd={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } =
             event.nativeEvent;
-          setFollowing(
-            follow.current.observeDistance(
-              inverted
-                ? contentOffset.y
-                : contentSize.height -
-                    contentOffset.y -
-                    layoutMeasurement.height,
-            ),
+          follow.current.observeDistance(
+            inverted
+              ? contentOffset.y
+              : contentSize.height - contentOffset.y - layoutMeasurement.height,
           );
-          follow.current.endMomentum();
+          setFollowing(follow.current.endMomentum());
         }}
         onScroll={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } =
