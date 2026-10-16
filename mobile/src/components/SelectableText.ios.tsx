@@ -4,6 +4,7 @@ import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import type { SelectionRun, SelectionAction } from "../core/selectionRuns";
 export type SelectableTextProps = {
   fitContent?: boolean;
+  allowReference?: boolean;
   highlight?: string;
   runs: SelectionRun[];
   fontSize?: number;
@@ -16,13 +17,16 @@ export type SelectableTextProps = {
 };
 const NativeText = requireNativeView<
   ViewProps & {
+    allowReference: boolean;
     highlight?: string;
     runs: SelectionRun[];
     fontSize: number;
     lineHeight: number;
     textColor: string;
     linkColor: string;
-    onMeasure: (e: NativeSyntheticEvent<{ height: number; width: number }>) => void;
+    onMeasure: (
+      e: NativeSyntheticEvent<{ height: number; width: number }>,
+    ) => void;
     onLink: (e: NativeSyntheticEvent<{ url: string }>) => void;
     onAction: (e: NativeSyntheticEvent<SelectionAction>) => void;
     onSelecting: () => void;
@@ -30,6 +34,7 @@ const NativeText = requireNativeView<
 >("ZotigoSelectableText");
 export function SelectableText({
   fitContent = false,
+  allowReference = true,
   fontSize = 16,
   lineHeight = 26,
   onLink,
@@ -41,6 +46,7 @@ export function SelectableText({
   return (
     <NativeText
       {...props}
+      allowReference={allowReference}
       fontSize={fontSize}
       lineHeight={lineHeight}
       style={{

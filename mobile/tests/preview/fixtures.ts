@@ -21,6 +21,7 @@ type Fault =
   | "save-conflict"
   | "send-rejected";
 type HostState = {
+  channelPolicies?: Record<string, string>;
   fault: Fault;
   pins: { kind: string; id: string }[];
   projects: CatalogProjectDetail[];
@@ -276,6 +277,12 @@ function makeHost(work: boolean): HostState {
     const id = i ? `session-${i}` : "session-shared";
     sessions.set(id, {
       runtime: {
+        read_state: {
+          version: 1,
+          read_version: 0,
+          completed_sequence: 1,
+          unread: true,
+        },
         id,
         state: i ? "paused" : "running",
         live: true,
@@ -760,11 +767,37 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       sizeBytes: host.file.content.length,
     });
   }
+  if (
+    method === "PUT" &&
+    [
+      "/channels/connections/channel-1",
+      "/channels/conversations/channel-room",
+    ].includes(path)
+  ) {
+    host.channelPolicies ??= {};
+    host.channelPolicies[path] = String(body.approval_policy ?? "");
+    return envelope({
+      ...body,
+      id: path.split("/").at(-1),
+      connection_id: "channel-1",
+      chat_id: "engineering",
+      chat_type: "group",
+    });
+  }
   if (path === "/channels/connections")
     return envelope({
       connections: [
         {
           id: "channel-1",
+          approval_policy:
+            host.channelPolicies?.["/channels/connections/channel-1"] ?? "auto",
+          app_id: "fixture-app",
+          allow_chat_ids: [],
+          owner_sender_ids: [],
+          agent_instructions: "",
+          approval_instructions: "",
+          review_all_tools: false,
+          progress_mode: "auto",
           name: "Development bot",
           provider: "feishu",
           enabled: true,
@@ -779,6 +812,17 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       conversations: [
         {
           id: "channel-room",
+          approval_policy:
+            host.channelPolicies?.["/channels/conversations/channel-room"] ??
+            "",
+          allowed_sender_ids: [],
+          profile_name: "",
+          model: "",
+          reasoning_effort: "",
+          agent_instructions_mode: "inherit",
+          agent_instructions: "",
+          approval_instructions_mode: "inherit",
+          approval_instructions: "",
           connection_id: "channel-1",
           chat_id: "engineering",
           display_name: "Mobile client review",
@@ -866,6 +910,22 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
         prev_cursor: "",
         next_cursor: "",
       });
+    }
+    if (action === "read-state" && method === "PUT") {
+      const current = session.runtime.read_state ?? {
+        version: 1,
+        read_version: 0,
+        completed_sequence: 1,
+        unread: true,
+      };
+      session.runtime.read_state = body.unread
+        ? { ...current, version: current.version + 1, unread: true }
+        : {
+            ...current,
+            read_version: Number(body.read_version),
+            unread: false,
+          };
+      return envelope(session.runtime.read_state);
     }
     if (action === "queue" && method === "GET")
       return envelope({ items: session.queue ?? [] });
