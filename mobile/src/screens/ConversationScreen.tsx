@@ -1,3 +1,4 @@
+import { canAcknowledgeSession } from "@zotigo/shared/sessionReadState";
 import { DraftImages } from "../components/DraftImages";
 import { SkillInput } from "../components/SkillInput";
 import { AttachmentFiles } from "../components/AttachmentFiles";
@@ -216,6 +217,66 @@ function ConversationContent() {
     text: string;
     messageId: string;
   }>();
+  const readTracking = useMemo(
+    () => ({
+      manual: undefined as number | undefined,
+      auto: undefined as number | undefined,
+      request: Promise.resolve() as Promise<unknown>,
+    }),
+    [timeline],
+  );
+  function setReadState(version: number | null) {
+    const pending = readTracking.request
+      .catch(() => {})
+      .then(async () => {
+        const result = await timeline.setReadState(version);
+        readTracking.manual = version === null ? result.version : undefined;
+      });
+    readTracking.request = pending;
+    return pending;
+  }
+  useEffect(() => {
+    const read = state.session?.read_state;
+    if (
+      !read ||
+      read.version === readTracking.manual ||
+      read.version === readTracking.auto
+    )
+      return;
+    const visible = Math.max(0, ...state.items.map((item) => item.sequence));
+    if (
+      canAcknowledgeSession(
+        read,
+        visible,
+        focused.current &&
+          AppState.currentState === "active" &&
+          following &&
+          !history &&
+          !options &&
+          !selection &&
+          !attachmentMenu &&
+          state.status === "connected" &&
+          !state.error,
+      )
+    ) {
+      readTracking.auto = read.version;
+      void setReadState(read.version).catch((e) => {
+        if (readTracking.auto === read.version) readTracking.auto = undefined;
+        if (alive.current) setError(errorText(e));
+      });
+    }
+  }, [
+    state.session,
+    state.items,
+    state.status,
+    state.error,
+    following,
+    history,
+    options,
+    selection,
+    attachmentMenu,
+    readTracking,
+  ]);
   const selectingText = useCallback(() => {
     follow.current.leaveLatest();
     setFollowing(false);
@@ -1205,6 +1266,25 @@ function ConversationContent() {
                   });
                 }}
               />
+              {state.session?.read_state && (
+                <Action
+                  label={
+                    state.session.read_state.unread
+                      ? "Mark as read"
+                      : "Mark as unread"
+                  }
+                  disabled={busy}
+                  onPress={() =>
+                    void run(() =>
+                      setReadState(
+                        state.session!.read_state!.unread
+                          ? state.session!.read_state!.version
+                          : null,
+                      ),
+                    )
+                  }
+                />
+              )}
               <Action
                 label="Resume runtime"
                 disabled={busy || state.session?.live}

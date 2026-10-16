@@ -1,3 +1,4 @@
+import { mergeReadState } from "@zotigo/shared/sessionReadState";
 import {
   parseMessageFiles,
   type MessageFileInput,
@@ -63,6 +64,25 @@ export function record(value: unknown): Record<string, unknown> {
 }
 const enc = encodeURIComponent;
 export class DaemonClient {
+  private readStates = new Map<string, D.SessionReadState>();
+  private mergeSessionReadState(session: D.ZotigoSession) {
+    const read_state = mergeReadState(
+      this.readStates.get(session.id),
+      session.read_state,
+    );
+    if (read_state) this.readStates.set(session.id, read_state);
+    return { ...session, read_state };
+  }
+  setSessionReadState = async (id: string, version: number | null) => {
+    const state = await this.request<D.SessionReadState>(
+      `/sessions/${enc(id)}/read-state`,
+      "PUT",
+      version === null ? { unread: true } : { read_version: version },
+    );
+    const merged = mergeReadState(this.readStates.get(id), state)!;
+    this.readStates.set(id, merged);
+    return merged;
+  };
   readonly connection: Readonly<Connection>;
   private lifetime = new AbortController();
   constructor(
@@ -412,9 +432,16 @@ export class DaemonClient {
       await this.request<{ sessions: D.CatalogSessionProjection[] }>(
         "/catalog/sessions" + (sync ? "?sync_codex=true" : ""),
       )
-    ).sessions;
-  session = (id: string) =>
-    this.request<D.ZotigoSession>(`/sessions/${enc(id)}`);
+    ).sessions.map((entry) => ({
+      ...entry,
+      runtime: entry.runtime
+        ? this.mergeSessionReadState(entry.runtime)
+        : entry.runtime,
+    }));
+  session = async (id: string) =>
+    this.mergeSessionReadState(
+      await this.request<D.ZotigoSession>(`/sessions/${enc(id)}`),
+    );
   createSession = (input: D.CreateSessionInput) =>
     this.request<D.ZotigoSession>("/sessions", "POST", {
       workspace_id: input.workspaceId,
@@ -536,6 +563,24 @@ export class DaemonClient {
     });
   saveFile = (input: SaveTextFileInput) =>
     this.request<TextFileSnapshot>("/files/save", "POST", input);
+  updateConnection = (
+    id: string,
+    input: import("@zotigo/shared/channels").ChannelConnectionInput,
+  ) =>
+    this.request<ChannelConnection>(
+      `/channels/connections/${enc(id)}`,
+      "PUT",
+      input,
+    );
+  updateChannelConversation = (
+    id: string,
+    input: import("@zotigo/shared/channels").ChannelConversationInput,
+  ) =>
+    this.request<ChannelConversation>(
+      `/channels/conversations/${enc(id)}`,
+      "PUT",
+      input,
+    );
   connections = async () =>
     (
       await this.request<{ connections: ChannelConnection[] }>(

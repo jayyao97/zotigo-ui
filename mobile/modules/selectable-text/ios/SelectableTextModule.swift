@@ -15,6 +15,7 @@ public class SelectableTextModule: Module {
     Name("ZotigoSelectableText")
     View(SelectableTextView.self) {
       Events("onMeasure", "onAction", "onLink", "onSelecting")
+      Prop("allowReference") { (view, allowed: Bool) in view.allowReference = allowed }
       Prop("highlight") { (view, text: String?) in view.highlight = text ?? "" }
       Prop("runs") { (view, runs: [TextRun]) in view.runs = runs }
       Prop("fontSize") { (view, size: Double) in view.fontSize = size }
@@ -31,6 +32,7 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
   let onAction = EventDispatcher()
   let onLink = EventDispatcher()
   let onSelecting = EventDispatcher()
+  var allowReference = true
   var highlight = ""
   var runs: [TextRun] = []
   var fontSize = 16.0
@@ -147,7 +149,7 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
       UIAction(title: "Translate", image: UIImage(systemName: "character.bubble")) { [weak self] _ in self?.send("translate", text: text) }
     ]
     if text.utf16.count > 8000 { actions[0].attributes = .disabled; actions[2].attributes = .disabled }
-    return UIMenu(children: actions)
+    return UIMenu(children: allowReference ? actions : Array(actions.dropFirst()))
   }
 
   private func send(_ action: String, text: String) {
