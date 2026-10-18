@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   HistoryPaginationGesture,
   TimelineScrollMetrics,
+  retainExpandedTimelineGroups,
 } from "../src/core/timelineScroll";
 
 test("a prepend's synthetic scroll events cannot cascade through every older page", () => {
@@ -75,4 +76,18 @@ test("native bottom anchoring does not chase estimated heights as rows mount", (
   metrics.offset = 0;
   metrics.viewportHeight = 300;
   assert.equal(metrics.correction(), undefined);
+});
+
+test("reading an expanded activity keeps its rows present when the default collapses", () => {
+  const rows = [
+    { kind: "activity", key: "tools:1", open: true },
+    { kind: "item", key: "tool-result" },
+    { kind: "activity", key: "thinking:2", open: false },
+  ];
+  const retained = retainExpandedTimelineGroups(rows, {});
+  assert.equal(retained["tools:1"] ?? false, true);
+  assert.equal(retained["thinking:2"], undefined);
+  // A subsequent explicit collapse is preserved on the next drag.
+  const collapsed = { ...retained, "tools:1": false };
+  assert.equal(retainExpandedTimelineGroups(rows, collapsed), collapsed);
 });

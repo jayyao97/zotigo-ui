@@ -99,6 +99,7 @@ import type { ConversationReference } from "../core/conversationReferences";
 import {
   HistoryPaginationGesture,
   TimelineScrollMetrics,
+  retainExpandedTimelineGroups,
 } from "../core/timelineScroll";
 import {
   ComposerStore,
@@ -859,6 +860,9 @@ function ConversationContent() {
                     historyGesture.current.arm();
                   scrollMetrics.current.resetCorrection();
                   follow.current.leaveLatest();
+                  setDisclosures((previous) =>
+                    retainExpandedTimelineGroups(data, previous),
+                  );
                   setFollowing(false);
                 }
               },
@@ -869,6 +873,9 @@ function ConversationContent() {
             historyGesture.current.arm();
           scrollMetrics.current.resetCorrection();
           follow.current.beginDrag();
+          setDisclosures((previous) =>
+            retainExpandedTimelineGroups(data, previous),
+          );
           setFollowing(false);
         }}
         onScrollEndDrag={(event) => {
@@ -879,7 +886,7 @@ function ConversationContent() {
               ? contentOffset.y
               : contentSize.height - contentOffset.y - layoutMeasurement.height,
           );
-          setFollowing(follow.current.endDrag());
+          setFollowing(follow.current.endDrag(event.nativeEvent.velocity?.y));
         }}
         onMomentumScrollBegin={() => {
           follow.current.beginMomentum();
