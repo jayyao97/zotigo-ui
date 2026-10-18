@@ -8,6 +8,7 @@ import {
   ScrollView,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import X from "lucide-react-native/icons/x";
@@ -34,6 +35,7 @@ export function BottomSheet({
   scroll?: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const wide = useWindowDimensions().width >= 768;
   return (
     <Modal
       visible={visible}
@@ -62,6 +64,12 @@ export function BottomSheet({
         <View
           accessibilityViewIsModal
           style={{
+            width: "100%",
+            maxWidth: wide ? 560 : undefined,
+            alignSelf: "center",
+            marginBottom: wide ? Math.max(insets.bottom, 24) : 0,
+            borderBottomLeftRadius: wide ? 26 : 0,
+            borderBottomRightRadius: wide ? 26 : 0,
             maxHeight: "75%",
             backgroundColor: colors.surface,
             borderTopLeftRadius: 26,
