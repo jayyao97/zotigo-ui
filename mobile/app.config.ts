@@ -3,6 +3,7 @@ import type { ExpoConfig } from "expo/config";
 const config: ExpoConfig = {
   name: "Zotigo",
   slug: "zotigo-mobile",
+  icon: "../resources/brand/zotigo-charcoal.png",
   version: "0.1.0",
   scheme: "zotigo",
   orientation: "default",
