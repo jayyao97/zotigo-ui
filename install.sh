@@ -174,6 +174,7 @@ else
 Type=Application
 Name=Zotigo
 Exec="$root/current/zotigo-desktop"
+Icon=$root/current/resources/app/dist/brand/zotigo-app.png
 Terminal=false
 Categories=Development;
 EOF

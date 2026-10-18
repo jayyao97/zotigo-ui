@@ -1156,16 +1156,13 @@ p {
 }
 
 .user-chip {
-  display: grid;
+  display: block;
   width: 30px;
   height: 30px;
-  place-items: center;
-  border-radius: 50%;
-  background: #3482c5;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 600;
+  object-fit: contain;
 }
+
+.web-login-brand { display: block; width: 64px; height: 64px; object-fit: contain; margin-bottom: 16px; }
 
 .sidebar-footer strong,
 .sidebar-footer span {

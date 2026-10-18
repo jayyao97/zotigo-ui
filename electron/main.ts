@@ -37,6 +37,7 @@ async function createMainWindow(): Promise<void> {
     minWidth: minimumWindowWidth,
     minHeight: minimumWindowHeight,
     title: appName,
+    icon: path.join(app.getAppPath(), app.isPackaged ? "dist" : "public", "brand/zotigo-app.png"),
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: "#00000000",

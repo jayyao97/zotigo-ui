@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/brand/zotigo-app.png" alt="Zotigo" width="112" height="112" />
+</p>
+
 # Zotigo Desktop and Web
 
 Electron and browser clients for managing `zotigod` sessions, using the same React interface and application services.
