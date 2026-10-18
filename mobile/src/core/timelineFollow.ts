@@ -20,10 +20,11 @@ export class TimelineFollow {
     this.following = false;
     this.distance = Infinity;
   }
-  endDrag() {
+  endDrag(velocity = 0) {
     this.userScrolling = false;
     this.awaitingMomentum = true;
-    this.following = this.distance <= 2;
+    // A moving release still belongs to the user until momentum finishes.
+    this.following = velocity === 0 && this.distance <= 2;
     return this.following;
   }
   beginMomentum() {
