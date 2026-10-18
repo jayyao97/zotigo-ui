@@ -1,12 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import { useImagePreview } from "./ImagePreviewProvider";
 import { useDaemon } from "../platform/context";
 import { messageImage } from "../core/messageImages";
@@ -29,7 +22,7 @@ export function MessageImage({
   const [attempt, setAttempt] = useState(0);
   const openImage = useImagePreview();
   const [ratio, setRatio] = useState(1.5);
-  const { width } = useWindowDimensions();
+  const [width, setWidth] = useState(0);
   useEffect(() => {
     let active = true;
     setUri("");
@@ -61,7 +54,10 @@ export function MessageImage({
     };
   }, [client, url, sessionId, attempt, approved]);
   return (
-    <View style={thumbnail ? { width: 80 } : { width: "100%" }}>
+    <View
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      style={thumbnail ? { width: 80 } : { width: "100%" }}
+    >
       {uri && !error ? (
         <Pressable
           accessibilityRole="button"
@@ -76,7 +72,7 @@ export function MessageImage({
             onError={() => setError("Image could not be loaded.")}
             style={{
               width: "100%",
-              height: thumbnail ? 80 : Math.min(400, (width - 36) / ratio),
+              height: thumbnail ? 80 : Math.min(400, width / ratio),
               borderRadius: 10,
               backgroundColor: colors.surface,
             }}

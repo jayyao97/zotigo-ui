@@ -2,14 +2,7 @@ import { highlightParts } from "../core/conversationSearch";
 import { SelectableText } from "./SelectableText";
 import { selectionRuns, type SelectionAction } from "../core/selectionRuns";
 import { memo, useMemo, useState, type ReactNode } from "react";
-import {
-  Alert,
-  Platform,
-  ScrollView,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { Alert, Platform, ScrollView, Text, View } from "react-native";
 import Markdown, {
   parser,
   MarkdownIt,
@@ -166,7 +159,6 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   onSelection?: (action: SelectionAction) => void;
   onSelecting?: () => void;
 }) {
-  const { width } = useWindowDimensions();
   const ast = useMemo(() => {
     let nodes: ASTNode[] = [];
     parser(
@@ -296,20 +288,12 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           <Code key={node.key} text={node.content} highlight={highlight} />
         ),
         table: (node, children) => (
-          <ScrollView key={node.key} horizontal style={{ marginVertical: 8 }}>
-            <View
-              style={{
-                minWidth: Math.max(
-                  width - 36,
-                  (node.children[0]?.children[0]?.children.length ?? 1) * 120,
-                ),
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              {children}
-            </View>
-          </ScrollView>
+          <MarkdownTable
+            key={node.key}
+            columns={node.children[0]?.children[0]?.children.length ?? 1}
+          >
+            {children}
+          </MarkdownTable>
         ),
       }}
     >
@@ -317,3 +301,30 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     </Markdown>
   );
 });
+
+function MarkdownTable({
+  columns,
+  children,
+}: {
+  columns: number;
+  children: ReactNode;
+}) {
+  const [width, setWidth] = useState(0);
+  return (
+    <ScrollView
+      horizontal
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      style={{ marginVertical: 8 }}
+    >
+      <View
+        style={{
+          minWidth: Math.max(width, columns * 120),
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        {children}
+      </View>
+    </ScrollView>
+  );
+}

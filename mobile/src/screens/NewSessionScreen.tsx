@@ -334,7 +334,13 @@ export function NewSessionScreen() {
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={header}
-      style={{ flex: 1, backgroundColor: colors.background }}
+      style={{
+        flex: 1,
+        width: "100%",
+        maxWidth: 860,
+        alignSelf: "center",
+        backgroundColor: colors.background,
+      }}
     >
       <View
         style={{

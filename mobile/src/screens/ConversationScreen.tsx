@@ -787,7 +787,10 @@ function ConversationContent() {
   );
   return (
     <KeyboardAvoidingView
-      style={styles.screen}
+      style={[
+        styles.screen,
+        { width: "100%", maxWidth: 860, alignSelf: "center" },
+      ]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={header}
     >

@@ -2,6 +2,12 @@
 
 React Native and Expo client for Zotigo daemons. The app connects directly to the public HTTP/SSE API and shares types and display logic through `@zotigo/shared`. It does not depend on Electron or the Node backend.
 
+## iPad layout
+
+The same iOS app supports iPhone and iPad. At widths of 768 points and above, device/project/workspace navigation stays in a 280-point sidebar while the selected page opens alongside it. Narrow Split View windows use the phone layout without resetting the current page. Conversation and new-session content is limited to 860 points; tablet sheets are limited to 560 points. Images and tables measure their actual content pane.
+
+Switching devices first returns to Home so unsaved file and new-session guards can run. Before shipping, validate rotation, Split View resizing, keyboard presentation, and cancelling unsaved-change prompts on an iPad; web previews and a successful universal build do not cover those native interactions.
+
 ## Development
 
 Use Node.js compatible with the React Native version in `package.json` and the pnpm version pinned by the repository. Run installation from the repository root so workspace dependencies resolve correctly:
