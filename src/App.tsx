@@ -3819,7 +3819,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         </div>
 
         <div className="sidebar-footer">
-          <div className="user-chip">ZT</div>
+          <img className="user-chip" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" />
           <div>
             <strong>Zotigo</strong>
             <span>{connectionLabel(connectionState)}</span>

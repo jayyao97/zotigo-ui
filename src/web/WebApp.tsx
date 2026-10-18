@@ -33,6 +33,7 @@ export function WebApp() {
       void webRequest("/api/login", { token }).then(() => { setToken(""); setAuthenticated(true); })
         .catch((error: Error) => setError(error.message)).finally(() => setBusy(false));
     }}>
+      <img className="web-login-brand" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" />
       <h1>Zotigo Web</h1>
       <p>Connect to your workspace server. The access token is shown when the server starts.</p>
       <label htmlFor="web-token">Access token</label>

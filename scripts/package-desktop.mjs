@@ -18,6 +18,7 @@ try {
     dir: staging, out: "build/desktop", overwrite: true,
     name: "Zotigo", executableName: "zotigo-desktop",
     appBundleId: "com.zotigo.desktop", appVersion: pkg.version,
+    icon: path.resolve(process.platform === "darwin" ? "resources/zotigo.icns" : process.platform === "win32" ? "resources/zotigo.ico" : "public/brand/zotigo-app.png"),
     extendInfo: { CFBundleDisplayName: "Zotigo" },
     electronVersion: JSON.parse(await readFile("node_modules/electron/package.json", "utf8")).version,
     platform: process.platform, arch: process.arch, prune: false,
