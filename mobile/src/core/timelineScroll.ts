@@ -44,3 +44,20 @@ export class TimelineScrollMetrics {
     return target;
   }
 }
+
+// Once someone starts reading, completion of a tool/reasoning group must not
+// remove the rows under their finger. Explicit disclosure choices still win.
+export function retainExpandedTimelineGroups(
+  rows: readonly { kind: string; key: string; open?: boolean }[],
+  disclosures: Record<string, boolean>,
+): Record<string, boolean> {
+  const expanded = rows.filter(
+    (row) =>
+      row.kind === "activity" && row.open && disclosures[row.key] === undefined,
+  );
+  if (!expanded.length) return disclosures;
+  return {
+    ...disclosures,
+    ...Object.fromEntries(expanded.map((row) => [row.key, true])),
+  };
+}

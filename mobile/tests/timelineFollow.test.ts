@@ -89,3 +89,17 @@ test("momentum owns the viewport until it ends at the actual bottom", () => {
   follow.jump();
   assert.equal(follow.following, true);
 });
+
+test("releasing at the bottom with velocity cannot start a correction before momentum", () => {
+  for (const velocity of [-1.2, 0.8]) {
+    const follow = new TimelineFollow();
+    follow.beginDrag();
+    follow.observeDistance(0);
+    assert.equal(follow.endDrag(velocity), false);
+    // Layout/stream callbacks can run before onMomentumScrollBegin arrives.
+    assert.equal(follow.observeDistance(160), false);
+    follow.beginMomentum();
+    follow.observeDistance(160);
+    assert.equal(follow.endMomentum(), false);
+  }
+});
