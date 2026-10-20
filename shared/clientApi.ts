@@ -103,6 +103,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     editQueuedInput: (id, itemId, revision, text) => invoke("sessions:queue-edit", id, itemId, revision, text),
     deleteQueuedInput: (id, itemId, revision) => invoke("sessions:queue-delete", id, itemId, revision),
     resumeInputQueue: (id) => invoke("sessions:queue-resume", id),
+    sendQueuedInput: (id, itemId, revision) => invoke("sessions:queue-send", id, itemId, revision),
     suggestConversationTitle: (conversationId) => invoke("desktop:suggest-conversation-title", conversationId),
     setSessionReadState: (id, readVersion) => invoke("sessions:set-read-state", id, readVersion),
     renameConversation: (conversationId, title) => invoke("desktop:rename-conversation", conversationId, title),

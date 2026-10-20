@@ -41,6 +41,7 @@ export interface ZotigoSession {
   context_usage?: {
     tokens: number;
     window: number;
+    source?: string;
   };
 }
 
@@ -257,6 +258,9 @@ export interface DisplayContextCompaction {
 }
 
 export interface DisplayItem {
+  before_input_id?: string;
+  /** Client-only delivery state; never submitted to the daemon. */
+  delivery?: { state: "sending" | "failed" | "rejected"; error?: string };
   id: string;
   sequence: number;
   type: DisplayItemType;
@@ -288,6 +292,7 @@ export interface SessionItemsResponse {
 }
 
 export interface DisplayDelta {
+  before_input_id?: string;
   item_id: string;
   role: "assistant";
   part_type: "text" | "reasoning" | "tool_progress";

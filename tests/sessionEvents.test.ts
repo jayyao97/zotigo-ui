@@ -124,6 +124,27 @@ test("parses volatile shell progress with its tool call identity", () => {
   });
 });
 
+test("preserves daemon ordering boundaries in streaming and durable events", () => {
+  const delta = parseSessionEventFrame({
+    event: "delta", id: "",
+    data: [JSON.stringify({
+      item_id: "thinking", role: "assistant", part_type: "reasoning", delta: "", before_input_id: "steer",
+    })],
+  });
+  assert.equal(delta?.type, "delta");
+  if (delta?.type === "delta") assert.equal(delta.delta.before_input_id, "steer");
+  const durable = parseSessionEventFrame({
+    event: "item", id: "5",
+    data: [JSON.stringify({
+      id: "thinking", sequence: 5, type: "assistant_message", role: "assistant",
+      content: [{ type: "reasoning", text: "old thinking" }],
+      before_input_id: "steer", created_at: "2026-10-20T00:00:00Z",
+    })],
+  });
+  assert.equal(durable?.type, "item");
+  if (durable?.type === "item") assert.equal(durable.item.before_input_id, "steer");
+});
+
 test("parses volatile subagent progress with its parent spawn identity", () => {
   const event = parseSessionEventFrame({
     event: "delta",

@@ -95,6 +95,9 @@ export const SessionTimeline = memo(function SessionTimeline({
   forkBusy = false,
   onOpenForkSource,
   forkSourceTitle,
+  onRetryPrompt,
+  onRestorePrompt,
+  onDismissPrompt,
 }: {
   binding: DaemonSessionBinding | null;
   session: ZotigoSession | null;
@@ -115,6 +118,9 @@ export const SessionTimeline = memo(function SessionTimeline({
   forkBusy?: boolean;
   onOpenForkSource?: (sessionId: string) => void;
   forkSourceTitle?: string;
+  onRetryPrompt?: (id: string) => void;
+  onRestorePrompt?: (id: string) => void;
+  onDismissPrompt?: (id: string) => void;
 }) {
   const compactedItemCacheRef = useRef(new WeakMap<DisplayItem, { workspaceRoot: string; item: DisplayItem }>());
   const displayItems = useMemo(
@@ -178,6 +184,9 @@ export const SessionTimeline = memo(function SessionTimeline({
                   <DisplayTimelineItem
                     key={item.id}
                     item={item}
+                    onRetryPrompt={onRetryPrompt}
+                    onRestorePrompt={onRestorePrompt}
+                    onDismissPrompt={onDismissPrompt}
                     turnEnd={item.type === "turn_started" ? nextTurnTerminal(orderedItems, item.sequence) : null}
                     terminalAt={itemsAuthoritative && item.id === recordedActiveTurn?.id && !activeTurn ? session?.ended_at : undefined}
                     turnStopped={itemsAuthoritative && item.id === recordedActiveTurn?.id && !activeTurn}
@@ -238,6 +247,7 @@ export const SessionTimeline = memo(function SessionTimeline({
         </div>
       ) : (
         <div className="assistant-note">
+          {items.filter(item => item.delivery).map(item => <UserMessage key={item.id} messageId={item.id} text={displayContentText(item.content)} delivery={item.delivery} onRetry={onRetryPrompt ? () => onRetryPrompt(item.id) : undefined} onRestore={onRestorePrompt ? () => onRestorePrompt(item.id) : undefined} onDismiss={onDismissPrompt ? () => onDismissPrompt(item.id) : undefined} />)}
           <p>This conversation is local until a zotigod session is created.</p>
         </div>
       )}
@@ -373,6 +383,9 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   interactionSubmitting,
   onSubmitInteraction,
   smoothStreaming,
+  onRetryPrompt,
+  onRestorePrompt,
+  onDismissPrompt,
 }: {
   item: DisplayItem;
   turnEnd: DisplayItem | null;
@@ -389,6 +402,9 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   interactionSubmitting: boolean;
   onSubmitInteraction: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
   smoothStreaming: boolean;
+  onRetryPrompt?: (id: string) => void;
+  onRestorePrompt?: (id: string) => void;
+  onDismissPrompt?: (id: string) => void;
 }) {
   if (item.type === "profile_changed" || item.type === "profile_change_failed") {
     const target = item.profile?.to ?? "profile";
@@ -460,7 +476,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     const imageSummary = formatImageAttachmentSummary(hiddenImageCount);
     const originKicker = formatChannelOrigin(item.command?.request_context);
     return (
-      <UserMessage createdAt={item.created_at} messageId={item.id} skills={skills} text={text || (images.length === 0 ? "(No content)" : "")} kicker={pendingSteering ? "Steering · Pending" : item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
+      <UserMessage delivery={item.delivery} onRetry={onRetryPrompt ? () => onRetryPrompt(item.id) : undefined} onRestore={onRestorePrompt ? () => onRestorePrompt(item.id) : undefined} onDismiss={onDismissPrompt ? () => onDismissPrompt(item.id) : undefined} createdAt={item.created_at} messageId={item.id} skills={skills} text={text || (images.length === 0 ? "(No content)" : "")} kicker={pendingSteering ? "Steering · Pending" : item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
         <div className="message-image-grid" aria-label="Attached images">
           {images.map((image) => <PreviewImage key={image.id} src={image.url} alt={image.name} />)}
         </div>
@@ -1081,7 +1097,7 @@ function MarkdownContent({ text, smoothStreaming = false }: { text: string; smoo
 
 const userMessageCollapsedLines = 20;
 
-export function UserMessage({ messageId, createdAt, text, skills = [], kicker, children, attachments }: { messageId?: string; createdAt?: string; text: string; skills?: string[]; kicker?: string; children?: ReactNode; attachments?: ReactNode }) {
+export function UserMessage({ messageId, createdAt, text, skills = [], kicker, children, attachments, delivery, onRetry, onRestore, onDismiss }: { messageId?: string; createdAt?: string; text: string; skills?: string[]; kicker?: string; children?: ReactNode; attachments?: ReactNode; delivery?: DisplayItem["delivery"]; onRetry?: () => void; onRestore?: () => void; onDismiss?: () => void }) {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const timestamp = messageTimestamp(createdAt);
   const mentioned = new Set(skillTokens(text, skills).map(token => token.name));
@@ -1123,6 +1139,9 @@ export function UserMessage({ messageId, createdAt, text, skills = [], kicker, c
           {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}
           {legacySkills.length > 0 && <div className="message-skills" aria-label="Selected skills">{legacySkills.map(name => <span key={name}><Sparkles size={11} />{name}</span>)}</div>}
           {children}
+        </div>}
+        {delivery && <div className="message-delivery" role="status">
+          {delivery.state === "sending" ? <><LoaderCircle size={13} className="spinning" />Sending…</> : delivery.state === "rejected" ? <><span>{delivery.error || "Message was not sent"}</span>{onRestore && <button type="button" onClick={onRestore}>Restore draft</button>}{onDismiss && <button type="button" onClick={onDismiss}>Delete</button>}</> : <><span title={delivery.error}>Could not confirm delivery</span>{onRetry && <button type="button" onClick={onRetry}>Retry</button>}</>}
         </div>}
         {(text || timestamp) && <div className="turn-actions user-message-actions">
           {timestamp && <time className="user-message-time" dateTime={createdAt} title={timestamp.full}>{timestamp.label}</time>}

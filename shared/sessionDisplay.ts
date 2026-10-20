@@ -2,6 +2,7 @@ import type { CommandImageMetadata, DisplayDelta, DisplayItem, DisplaySubagent, 
 import type { DaemonSessionBinding } from "./clientTypes";
 
 export interface EphemeralDisplayBlock {
+  beforeInputID?: string;
   id: string;
   partType: "text" | "reasoning" | "tool_progress";
   text: string;
@@ -375,6 +376,7 @@ export function optimisticPromptDisplayItem(input: OptimisticPromptInput): Displ
   for (const image of input.images ?? []) content.push({ type: "image", image });
   return {
     id: input.id,
+    delivery: { state: "sending" },
     sequence: Number.MAX_SAFE_INTEGER,
     type: input.steering ? "steering_message" : "user_message",
     role: "user",
@@ -396,6 +398,7 @@ export function acknowledgeOptimisticPrompt(
   const steering = command.type === "steering";
   return {
     ...item,
+    delivery: undefined,
     id: command.id,
     type: steering ? "steering_message" : "user_message",
     content,
@@ -409,6 +412,57 @@ export function acknowledgeOptimisticPrompt(
     },
     created_at: command.created_at,
   };
+}
+
+export interface PromptTimelineAnchor {
+  sequence: number;
+  previews: string[];
+  previousPrompt?: string;
+}
+
+// Sequence remains the storage/pagination cursor. Display boundaries come from
+// the daemon, so a fresh history load and streaming output use the same order.
+export function orderDisplayInputs(items: DisplayItem[]): DisplayItem[] {
+  const inputs = new Set(items.filter(item => item.type === "user_message" || item.type === "steering_message" ||
+    (item.type === "session_command" && item.command?.type === "steering")).map(item => item.id));
+  const before = new Map<string, DisplayItem[]>();
+  const moved = new Set<string>();
+  for (const item of items) {
+    if (item.type !== "assistant_message" || !item.before_input_id || !inputs.has(item.before_input_id)) continue;
+    const group = before.get(item.before_input_id) ?? [];
+    group.push(item);
+    before.set(item.before_input_id, group);
+    moved.add(item.id);
+  }
+  return items.flatMap(item => moved.has(item.id) ? [] : [...(before.get(item.id) ?? []), item]);
+}
+
+export function capturePromptTimelineAnchor(sequence: number, previewIDs: string[], anchors: ReadonlyMap<string, PromptTimelineAnchor>): PromptTimelineAnchor {
+  const positioned = new Set([...anchors.values()].flatMap(anchor => anchor.previews));
+  return {
+    sequence,
+    previews: previewIDs.filter(id => !positioned.has(id)),
+    previousPrompt: [...anchors.keys()].at(-1),
+  };
+}
+
+// Streaming blocks keep their position across a prompt boundary even when
+// their final durable item arrives after the prompt's acknowledgement.
+export function anchorPromptTimeline(items: DisplayItem[], anchors: ReadonlyMap<string, PromptTimelineAnchor>): DisplayItem[] {
+  let ordered = items;
+  for (const [id, anchor] of anchors) {
+    const prompt = ordered.find(item => item.id === id);
+    if (!prompt) continue;
+    const previewIDs = new Set(anchor.previews);
+    const before = ordered.filter(item => previewIDs.has(item.id));
+    const rest = ordered.filter(item => item.id !== id && !previewIDs.has(item.id));
+    let position = 0;
+    for (let index = 0; index < rest.length; index++) {
+      if (rest[index].sequence <= anchor.sequence || rest[index].id === anchor.previousPrompt) position = index + 1;
+    }
+    ordered = [...rest.slice(0, position), ...before, prompt, ...rest.slice(position)];
+  }
+  return ordered;
 }
 
 export function reconcileOptimisticSteering(
@@ -429,9 +483,13 @@ export function appendDisplayDelta(
   }
   const index = blocks.findIndex((block) => block.id === delta.item_id);
   if (index === -1) {
+    // Reconnecting clients may receive a position update for a preview they
+    // never saw. Its durable item will carry the same boundary later.
+    if (delta.delta === "") return blocks;
     return [
       ...blocks,
       {
+        beforeInputID: delta.before_input_id,
         id: delta.item_id,
         partType: delta.part_type,
         text: delta.delta,
@@ -446,6 +504,7 @@ export function appendDisplayDelta(
   const text = next[index].text + delta.delta;
   next[index] = {
     ...next[index],
+    beforeInputID: delta.before_input_id ?? next[index].beforeInputID,
     subagent: delta.subagent ?? next[index].subagent,
     text: delta.part_type === "tool_progress" && text.length > toolProgressPreviewLimit
       ? text.slice(-toolProgressPreviewLimit)
@@ -478,6 +537,7 @@ export function reconcileDisplayPreviews(blocks: EphemeralDisplayBlock[], item: 
 
 export function ephemeralDisplayItems(blocks: EphemeralDisplayBlock[]): DisplayItem[] {
   return blocks.map((block, index) => ({
+    before_input_id: block.beforeInputID,
     id: block.id,
     sequence: Number.MAX_SAFE_INTEGER - blocks.length + index,
     type: "assistant_message",

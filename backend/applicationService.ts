@@ -29,6 +29,7 @@ import {
   listQueuedInputs,
   changeQueuedInput,
   resumeInputQueue,
+  sendQueuedInput,
   sendSessionSteering,
   suggestSessionTitle,
   translateSelection,
@@ -39,6 +40,7 @@ import {
   changeSessionCodexSettings,
   changeSessionProfile,
   ZotigodRequestError,
+  inputDeliveryFailure,
   isMessageDuringActiveTurnError,
   setCatalogSessionPosition,
   parseNavigationItem,
@@ -346,7 +348,7 @@ addWorkspaceSourceToCatalog,
       );
       return { state: await getCatalogDesktopState(), ...session };
     } catch (error) {
-      return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error) };
+      return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: inputDeliveryFailure(error) };
     }
   });
   handle("desktop:start-conversation-session", async (conversationIdValue) => {
@@ -374,7 +376,7 @@ addWorkspaceSourceToCatalog,
       );
       return { state: await getCatalogDesktopState(), ...result };
     } catch (error) {
-      return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error) };
+      return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: inputDeliveryFailure(error) };
     }
   });
   handle("sessions:translate", (id, text, language, profile) => {
@@ -385,9 +387,10 @@ addWorkspaceSourceToCatalog,
   });
   handle("sessions:queue-list", id => listQueuedInputs(assertNonEmptyString(id, "sessionId")));
   handle("sessions:queue-resume", id => resumeInputQueue(assertNonEmptyString(id, "sessionId")));
-  for (const operation of ["edit", "delete"] as const) {
+  for (const operation of ["edit", "delete", "send"] as const) {
     handle(`sessions:queue-${operation}`, (id, itemId, revision, text) => {
       if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1) throw new Error("Invalid queue revision");
+      if (operation === "send") return sendQueuedInput(assertNonEmptyString(id, "sessionId"), assertNonEmptyString(itemId, "itemId"), revision);
       return changeQueuedInput(assertNonEmptyString(id, "sessionId"), assertNonEmptyString(itemId, "itemId"), revision, operation === "edit" ? assertString(text, "text") : undefined);
     });
   }
