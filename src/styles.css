@@ -5693,6 +5693,9 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .queue-message { flex: 1; min-width: 0; font-size: 13px; }
 .queue-message > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap; }
 .queue-message small { color: var(--text-muted); margin-right: 8px; }
+.message-delivery { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; color: var(--text-muted); font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
+.message-delivery .spinning { animation: sidebar-session-spin 0.9s linear infinite; }
+.message-delivery button { color: inherit; background: transparent; border: 0; text-decoration: underline; cursor: pointer; }
 .queue-editor { flex: 1; min-width: 0; }
 .queue-editor textarea { width: 100%; min-height: 64px; max-height: 140px; padding: 8px; resize: none; border: 1px solid var(--border-heavy); border-radius: var(--radius-md); background: var(--app-bg); color: var(--text); font: inherit; line-height: 1.5; }
 .queue-editor > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }

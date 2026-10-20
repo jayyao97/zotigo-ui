@@ -48,6 +48,15 @@ export class ZotigodRequestError extends Error {
   }
 }
 
+export function inputDeliveryFailure(error: unknown): "rejected" | "unknown" {
+  // A timeout or server-side failure may follow durable admission.
+  if (!(error instanceof ZotigodRequestError)) return "unknown";
+  if (error.status >= 400 && error.status < 500 && error.status !== 408 &&
+      error.code !== "command_pending" && error.code !== "command_id_conflict" &&
+      error.code !== "input_failed") return "rejected";
+  return "unknown";
+}
+
 export function isMessageDuringActiveTurnError(error: unknown): boolean {
   return error instanceof ZotigodRequestError
     && error.status === 409
@@ -516,6 +525,12 @@ export async function resumeInputQueue(id: string): Promise<void> {
   await requestJSON(`/sessions/${encodeURIComponent(id)}/queue/resume`, { method: "POST" });
 }
 
+export async function sendQueuedInput(id: string, itemId: string, revision: number): Promise<void> {
+  await requestJSON(`/sessions/${encodeURIComponent(id)}/queue/${encodeURIComponent(itemId)}/send`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision }),
+  });
+}
+
 export function sendSessionSteering(
   id: string,
   text: string,
@@ -664,6 +679,7 @@ function parseDisplayDelta(value: unknown): DisplayDelta {
     throw new Error("session event tool progress delta requires tool_call_id");
   }
   const delta: DisplayDelta = {
+    ...(record.before_input_id === undefined ? {} : { before_input_id: expectOptionalString(record.before_input_id, "session event before_input_id") }),
     item_id: expectString(record.item_id, "session event delta item_id"),
     role,
     part_type: partType,
@@ -1192,6 +1208,7 @@ function parseDisplayItem(value: unknown, context: string): DisplayItem {
   }
 
   return {
+    ...(record.before_input_id === undefined ? {} : { before_input_id: expectOptionalString(record.before_input_id, `${context} before_input_id`) }),
     id: expectString(record.id, `${context} id`),
     sequence: expectNumber(record.sequence, `${context} sequence`),
     type,
@@ -1463,6 +1480,7 @@ function parseOptionalContextUsage(value: unknown, context: string) {
   return {
     tokens: expectNumber(record.tokens, `${context} tokens`),
     window: expectNumber(record.window, `${context} window`),
+    source: expectOptionalString(record.source, `${context} source`),
   };
 }
 

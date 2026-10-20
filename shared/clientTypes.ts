@@ -200,6 +200,7 @@ export interface DesktopActionResult {
   command?: SessionCommandResponse;
   error?: string;
   errorCode?: string;
+  deliveryState?: "rejected" | "unknown";
 }
 
 export interface TextFileSnapshot {
@@ -350,6 +351,7 @@ export interface ClientApi {
   editQueuedInput(id: string, itemId: string, revision: number, text: string): Promise<void>;
   deleteQueuedInput(id: string, itemId: string, revision: number): Promise<void>;
   resumeInputQueue(id: string): Promise<void>;
+  sendQueuedInput(id: string, itemId: string, revision: number): Promise<void>;
   translateSelection(sessionId: string, text: string, targetLanguage: "zh-CN" | "en", profile?: string): Promise<TranslationResult>;
   suggestConversationTitle(conversationId: string): Promise<DesktopState>;
   setSessionReadState(id: string, readVersion: number | null): Promise<SessionReadState>;

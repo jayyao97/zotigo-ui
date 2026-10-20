@@ -381,7 +381,7 @@ test("preserves the runtime occupied code in sessions and request errors", async
   assert.equal(session.error_code, "runtime_occupied");
   assert.equal(session.working, true);
   assert.equal(session.active_tool, "shell");
-  assert.deepEqual(session.context_usage, { tokens: 52000, window: 200000 });
+  assert.deepEqual(session.context_usage, { tokens: 52000, window: 200000, source: "provider" });
 
   await assert.rejects(
     sendSessionMessage("session-occupied", "hello"),

@@ -13,11 +13,13 @@ test("queued messages edit and delete by revision and lock once sending", async 
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { value, configurable: true });
   const root = createRoot(document.getElementById("root")!);
   let items: QueuedInput[] = [{ id: "a", sequence: 0, type: "message", text: "First message", created_at: "", revision: 3, state: "queued", editable: true }, { id: "b", sequence: 0, type: "message", text: "Second message", created_at: "", revision: 1, state: "sending", editable: false }];
+  let failSend = true;
   const client = {
     listQueuedInputs: async () => items,
     editQueuedInput: async (id: string, itemId: string, revision: number, text: string) => { assert.equal(id, "s"); assert.equal(itemId, "a"); assert.equal(revision, 3); items = items.map(item => item.id === itemId ? { ...item, text, revision: 4 } : item); },
     deleteQueuedInput: async (_id: string, itemId: string, revision: number) => { assert.equal(revision, 4); items = items.filter(item => item.id !== itemId); },
     resumeInputQueue: async () => {},
+    sendQueuedInput: async (_id: string, itemId: string, revision: number) => { assert.equal(revision, 1); if (failSend) throw new Error("Worker unavailable"); items = items.filter(item => item.id !== itemId); },
   };
   try {
     await act(async () => root.render(<InputQueue client={client} sessionId="s" refresh={0} active={false} />));
@@ -30,6 +32,16 @@ test("queued messages edit and delete by revision and lock once sending", async 
     await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Delete queued message"]')!.click());
     assert.equal(document.querySelectorAll("li").length, 1);
     assert.match(document.body.textContent!, /Second message/);
+    assert.equal(document.querySelector<HTMLButtonElement>('[aria-label="Send now"]')!.disabled, true);
+    items = [...items, { id: "c", sequence: 0, type: "message", text: "Send this now", created_at: "", revision: 1, state: "queued", editable: true }];
+    await act(async () => root.render(<InputQueue client={client} sessionId="s" refresh={1} active={false} />));
+    await act(async () => document.querySelectorAll<HTMLButtonElement>('[aria-label="Send now"]')[1].click());
+    assert.equal(document.querySelectorAll("li").length, 2);
+    assert.match(document.querySelector('[role="alert"]')!.textContent!, /Worker unavailable/);
+    failSend = false;
+    await act(async () => document.querySelectorAll<HTMLButtonElement>('[aria-label="Send now"]')[1].click());
+    assert.equal(document.querySelectorAll("li").length, 1);
+    assert.doesNotMatch(document.body.textContent!, /Send this now/);
     let unsupportedCalls = 0;
     await act(async () => root.render(<InputQueue client={{ ...client, listQueuedInputs: async () => { unsupportedCalls++; return null; } }} sessionId="s" refresh={0} active={true} />));
     assert.equal(document.querySelector(".input-queue"), null);

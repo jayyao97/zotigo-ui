@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Pencil, Trash2, ListOrdered } from "lucide-react";
+import { ArrowUp, Pencil, Trash2, ListOrdered } from "lucide-react";
 import type { QueuedInput } from "../../shared/zotigod";
 import type { ClientApi } from "../../shared/clientTypes";
 
-export function InputQueue({ client, sessionId, refresh, active }: { client: Pick<ClientApi, "listQueuedInputs" | "editQueuedInput" | "deleteQueuedInput" | "resumeInputQueue">; sessionId: string; refresh: number; active: boolean }) {
+export function InputQueue({ client, sessionId, refresh, active }: { client: Pick<ClientApi, "listQueuedInputs" | "editQueuedInput" | "deleteQueuedInput" | "resumeInputQueue" | "sendQueuedInput">; sessionId: string; refresh: number; active: boolean }) {
   const [items, setItems] = useState<QueuedInput[]>([]);
   const [editing, setEditing] = useState<{ item: QueuedInput; text: string } | null>(null);
   const [error, setError] = useState("");
@@ -30,9 +30,9 @@ export function InputQueue({ client, sessionId, refresh, active }: { client: Pic
   }, [client, sessionId, refresh, revision, active]);
   async function change(action: () => Promise<void>) {
     setBusy(true); setError("");
-    try { await action(); setEditing(null); setRevision(value => value + 1); }
+    try { await action(); setEditing(null); }
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setRevision(value => value + 1); }
   }
   if (!items.length && !error && !pollError) return null;
   return <section className="input-queue" aria-label="Queued messages">
@@ -41,7 +41,12 @@ export function InputQueue({ client, sessionId, refresh, active }: { client: Pic
       {editing?.item.id === item.id ? <div className="queue-editor">
         <textarea aria-label="Edit queued message" value={editing.text} onChange={event => setEditing({ ...editing, text: event.target.value })} autoFocus />
         <div><button type="button" disabled={busy} onClick={() => setEditing(null)}>Cancel</button><button type="button" disabled={busy || !item.editable} onClick={() => void change(() => client.editQueuedInput(sessionId, item.id, editing.item.revision, editing.text))}>Save</button></div>
-      </div> : <><div className="queue-message"><span>{item.text || "Image attachment"}</span>{!!item.images?.length && <small>{item.images.length} image(s)</small>}{item.state !== "queued" && <small>{item.state === "paused" ? "Paused" : "Sending…"}</small>}</div><button type="button" className="icon-button" aria-label="Edit queued message" disabled={busy || !item.editable} onClick={() => setEditing({ item, text: item.text ?? "" })}><Pencil size={14} /></button><button type="button" className="icon-button" aria-label="Delete queued message" disabled={busy || !item.editable} onClick={() => void change(() => client.deleteQueuedInput(sessionId, item.id, item.revision))}><Trash2 size={14} /></button></>}
+      </div> : <>
+        <div className="queue-message"><span>{item.text || "Image attachment"}</span>{!!item.images?.length && <small>{item.images.length} image(s)</small>}{item.state !== "queued" && <small>{item.state === "paused" ? "Paused" : "Sending…"}</small>}</div>
+        <button type="button" className="icon-button" aria-label="Send now" title="Send now" disabled={busy || !item.editable} onClick={() => void change(() => client.sendQueuedInput(sessionId, item.id, item.revision))}><ArrowUp size={14} /></button>
+        <button type="button" className="icon-button" aria-label="Edit queued message" disabled={busy || !item.editable} onClick={() => setEditing({ item, text: item.text ?? "" })}><Pencil size={14} /></button>
+        <button type="button" className="icon-button" aria-label="Delete queued message" disabled={busy || !item.editable} onClick={() => void change(() => client.deleteQueuedInput(sessionId, item.id, item.revision))}><Trash2 size={14} /></button>
+      </>}
     </li>)}</ol>
     {(error || pollError) && <p role="alert">{error || pollError}</p>}
   </section>;

@@ -107,6 +107,10 @@ import {
   hasUnresolvedTurnItems,
   mergeDisplayItems,
   optimisticPromptDisplayItem,
+  anchorPromptTimeline,
+  capturePromptTimelineAnchor,
+  orderDisplayInputs,
+  type PromptTimelineAnchor,
   reconcileOptimisticSteering,
   reconcileDisplayPreviews,
   sessionAllowsActiveTurn,
@@ -142,11 +146,13 @@ import { ImagePreview } from "./ImagePreview";
 import { clipboardFiles } from "./clipboardFiles";
 import { matchingSkills, editorSkillTokens, skillPromptText, skillCommandQuery, insertSkillCommand } from "../shared/skillCommands";
 import {
-  formatCompactTokenCount,
   latestActiveTurn,
   latestProfileResult,
   SessionTimeline,
+  UserMessage,
+  displayContentText,
 } from "./conversation/ConversationTimeline";
+import { ContextUsageBadge } from "./conversation/ContextUsageBadge";
 import {
   buildSubagentRuns,
   SubagentAvatar,
@@ -458,8 +464,21 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   const [sidebarDragItem, setSidebarDragItem] = useState<SidebarDragItem | null>(null);
   const [sidebarDropTarget, setSidebarDropTarget] = useState<SidebarDropTarget | null>(null);
   const [sessionItems, setSessionItems] = useState<DisplayItem[]>([]);
-  const [ephemeralBlocks, setEphemeralBlocks] = useState<EphemeralDisplayBlock[]>([]);
+  const [ephemeralBlocks, setEphemeralBlocksState] = useState<EphemeralDisplayBlock[]>([]);
+  const ephemeralBlocksRef = useRef<EphemeralDisplayBlock[]>([]);
+  function setEphemeralBlocks(update: EphemeralDisplayBlock[] | ((current: EphemeralDisplayBlock[]) => EphemeralDisplayBlock[])) {
+    const next = typeof update === "function" ? update(ephemeralBlocksRef.current) : update;
+    ephemeralBlocksRef.current = next;
+    setEphemeralBlocksState(next);
+  }
   const [optimisticPromptItems, setOptimisticPromptItems] = useState<DisplayItem[]>([]);
+  const [newPromptPreview, setNewPromptPreview] = useState<{ draftKey: string; item: DisplayItem } | null>(null);
+  const promptAnchors = useRef(new Map<string, PromptTimelineAnchor>());
+  const promptRetries = useRef(new Map<string, () => Promise<void>>());
+  const promptRecovery = useRef(new Map<string, { restore: () => void; discard: () => void; release: () => void }>());
+  const newPromptRecovery = useRef<{ restore: () => void; discard: () => void } | null>(null);
+  const promptScope = useRef("");
+  promptScope.current = `${clientScope}:${desktopState.selectedConversationId}`;
   const [sessionItemsLoading, setSessionItemsLoading] = useState(false);
   const [sessionItemsError, setSessionItemsError] = useState<string | null>(null);
   const [composerDrafts, setComposerDrafts] = useState<Record<string, ComposerDraft>>(() => restoredHostState?.composerDrafts ?? {});
@@ -971,11 +990,11 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   const selectedActiveTurnId = selectedActiveTurn?.turn?.id ?? null;
   const hasActiveTurn = sessionAllowsActiveTurn(selectedSession?.state) && selectedActiveTurn !== null;
   const timelineItems = useMemo(
-    () => [
+    () => orderDisplayInputs(anchorPromptTimeline([
       ...sessionItems,
       ...ephemeralDisplayItems(ephemeralBlocks),
       ...reconcileOptimisticSteering(optimisticPromptItems, sessionItems),
-    ],
+    ], promptAnchors.current)),
     [ephemeralBlocks, optimisticPromptItems, sessionItems],
   );
   const streamingItemIds = useMemo(
@@ -1129,6 +1148,10 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     olderSessionItemsLoadingRef.current = false;
     setEphemeralBlocks([]);
     setOptimisticPromptItems([]);
+    promptAnchors.current.clear();
+    promptRetries.current.clear();
+    promptRecovery.current.forEach(recovery => recovery.release());
+    promptRecovery.current.clear();
     setSessionItemsError(null);
     if (!selectedBinding) {
       sessionItemsPrevCursorRef.current = null;
@@ -1169,8 +1192,12 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       if (sessionEvent?.type === "item") {
         flushPendingSessionDeltas();
         const item = sessionEvent.item;
+        promptAnchors.current.delete(item.id);
         mergeCachedSessionHistory(sessionId, [item]);
-        setEphemeralBlocks((current) => reconcileDisplayPreviews(current, item));
+        setEphemeralBlocks(current => reconcileDisplayPreviews(current, item));
+        promptRetries.current.delete(item.id);
+        promptRecovery.current.get(item.id)?.release();
+        promptRecovery.current.delete(item.id);
         setOptimisticPromptItems((current) => reconcileOptimisticSteering(current, [item]));
         applyDurableItemEffects(selectedBinding, [item]);
       }
@@ -1361,6 +1388,9 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   ): DisplayItem[] {
     const cached = sessionHistoryCacheRef.current.get(sessionId);
     const merged = mergeDisplayItems(cached?.items ?? [], items);
+    if (selectedSessionIdRef.current === sessionId) {
+      for (const item of items) promptAnchors.current.delete(item.id);
+    }
     const entry = {
       items: merged,
       prevCursor: prevCursor === undefined ? cached?.prevCursor ?? null : prevCursor,
@@ -1962,6 +1992,10 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     setSessionItemsLoading(Boolean(binding) && !cachedHistory);
     setEphemeralBlocks([]);
     setOptimisticPromptItems([]);
+    promptAnchors.current.clear();
+    promptRetries.current.clear();
+    promptRecovery.current.forEach(recovery => recovery.release());
+    promptRecovery.current.clear();
     applyDesktopState((current) => ({
       ...current,
       selectedProjectId: conversation.project_id,
@@ -2245,6 +2279,10 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
 
   async function createConversation(prompt: string) {
     const trimmedPrompt = skillPromptText(prompt, activeComposerDraft.selectedSkillNames).trim();
+    if (trimmedPrompt === "/compact" || trimmedPrompt === "/compress") {
+      setMessage("Open an existing idle Zotigo session to compact its history.");
+      return;
+    }
     if (attachmentsBlocked) return;
     if (!trimmedPrompt && composerAttachments.length === 0) {
       return;
@@ -2254,6 +2292,20 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     const submittedDraft = activeComposerDraft;
     const submittedAttachments = submittedDraft.attachments;
     const submittedSkills = submittedDraft.selectedSkillNames;
+    const preview = optimisticPromptDisplayItem({ id: createOptimisticPromptId(), text: trimmedPrompt || submittedAttachments.map(item => item.name).join("\n"), steering: false, createdAt: new Date().toISOString() });
+    setNewPromptPreview({ draftKey: submittedDraftKey, item: preview });
+    newPromptRecovery.current = {
+      restore: () => {
+        updateComposerDraft(submittedDraftKey, current => restoreSubmittedDraft(current, submittedDraft));
+        setNewPromptPreview(null);
+        newPromptRecovery.current = null;
+      },
+      discard: () => {
+        for (const attachment of submittedAttachments) if (attachment.url) URL.revokeObjectURL(attachment.url);
+        setNewPromptPreview(null);
+        newPromptRecovery.current = null;
+      },
+    };
     updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
     setPreviewAttachmentId(null);
     setIsBusy(true);
@@ -2289,17 +2341,26 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           projectId: result.state.selectedProjectId,
           workspaceId: result.state.selectedWorkspaceId,
         });
-        updateComposerDraft(retryDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
+        setNewPromptPreview({ draftKey: retryDraftKey, item: { ...preview, delivery: { state: result.deliveryState === "rejected" ? "rejected" : "failed", error: result.error } } });
+        if (newPromptRecovery.current) {
+          newPromptRecovery.current.restore = () => {
+            updateComposerDraft(retryDraftKey, current => restoreSubmittedDraft(current, submittedDraft));
+            setNewPromptPreview(null);
+            newPromptRecovery.current = null;
+          };
+        }
         setMessage(result.error);
       } else {
+        setNewPromptPreview(null);
+        newPromptRecovery.current = null;
         for (const attachment of submittedAttachments) {
           if (attachment.url) URL.revokeObjectURL(attachment.url);
         }
         void refreshSessions({ quiet: true });
       }
     } catch (error) {
-      updateComposerDraft(submittedDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
-      setMessage(errorMessage(error));
+      setNewPromptPreview({ draftKey: submittedDraftKey, item: { ...preview, delivery: { state: "failed", error: errorMessage(error) } } });
+      setMessage(`${errorMessage(error)} Check the session list before restoring this draft; creation may have succeeded.`);
     } finally {
       setIsBusy(false);
     }
@@ -2421,6 +2482,16 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     if (!selectedConversation || runtimeOccupied || isBusy || attachmentsBlocked || (!text && composerAttachments.length === 0)) {
       return;
     }
+    if ((text === "/compact" || text === "/compress") && composerAttachments.length === 0 && activeComposerDraft.selectedSkillNames.length === 0) {
+      if ((selectedSession?.agent ?? selectedAgent) === "codex") {
+        setMessage("/compact is currently supported only in Zotigo runtime sessions.");
+        return;
+      }
+      if (selectedSession?.working || hasActiveTurn || selectedSession?.state === "paused") {
+        setMessage("Wait for the current turn to finish, or stop it, before running /compact.");
+        return;
+      }
+    }
 
     closeSearchWindow();
     const conversationId = selectedConversation.id;
@@ -2450,62 +2521,93 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     setStickToBottom(true);
     setIsBusy(true);
     setMessage(null);
-    if (mode !== "queue") setOptimisticPromptItems((current) => [...current, optimisticItem]);
+    promptAnchors.current.set(optimisticId, capturePromptTimelineAnchor(
+      sessionItems.reduce((max, item) => Math.max(max, item.sequence), 0),
+      ephemeralBlocks.map(block => block.id),
+      promptAnchors.current,
+    ));
+    setOptimisticPromptItems((current) => [...current, optimisticItem]);
     updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
     setPreviewAttachmentId(null);
-    if (selectedSession && mode !== "queue") {
-      setSessions((current) => upsertSession(current, {
-        ...selectedSession,
-        state: isSteering ? selectedSession.state : "starting",
-        working: true,
-      }));
-    }
-    try {
-      const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
-      const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
-      const result = await client.sendConversationMessage({
-        mode,
-        conversationId,
-        clientMessageId: optimisticId,
-        text: appendUploadedReferences(text, submittedAttachments),
-        skills: submittedSkills.length > 0 ? submittedSkills : undefined,
-        images: images.length > 0 ? images : undefined,
-        files: files.length > 0 ? files : undefined,
-        approvalPolicy: selectedSession ? undefined : selectedApprovalPolicy ?? "auto",
-      });
-      applyDesktopActionResult(result);
-      if (result.error) {
-        setOptimisticPromptItems((current) => current.filter((item) => item.id !== optimisticId));
-        updateComposerDraft(submittedDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
-        if (result.errorCode === "runtime_occupied") {
-          await refreshSessions({ quiet: true });
+    const scope = promptScope.current;
+    let sending = false;
+    const removeFailedPrompt = () => {
+      setOptimisticPromptItems(current => current.filter(item => item.id !== optimisticId));
+      promptRetries.current.delete(optimisticId);
+      promptAnchors.current.delete(optimisticId);
+      promptRecovery.current.delete(optimisticId);
+    };
+    promptRecovery.current.set(optimisticId, {
+      release: revokeSubmittedAttachments,
+      restore: () => {
+        updateComposerDraft(submittedDraftKey, current => restoreSubmittedDraft(current, submittedDraft));
+        removeFailedPrompt();
+      },
+      discard: () => { revokeSubmittedAttachments(); removeFailedPrompt(); },
+    });
+    const send = async () => {
+      if (sending || promptScope.current !== scope) return;
+      sending = true;
+      setIsBusy(true);
+      setOptimisticPromptItems(current => current.map(item => item.id === optimisticId ? { ...item, delivery: { state: "sending" } } : item));
+      let dispatched = false;
+      try {
+        const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
+        const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
+        dispatched = true;
+        const result = await client.sendConversationMessage({
+          mode,
+          conversationId,
+          clientMessageId: optimisticId,
+          text: appendUploadedReferences(text, submittedAttachments),
+          skills: submittedSkills.length > 0 ? submittedSkills : undefined,
+          images: images.length > 0 ? images : undefined,
+          files: files.length > 0 ? files : undefined,
+          approvalPolicy: selectedSession ? undefined : selectedApprovalPolicy ?? "auto",
+        });
+        if (promptScope.current !== scope) return;
+        applyDesktopActionResult(result);
+        if (result.error) {
+          setOptimisticPromptItems(current => current.map(item => item.id === optimisticId ? { ...item, delivery: { state: result.deliveryState === "rejected" ? "rejected" : "failed", error: result.error } } : item));
+          if (result.errorCode === "runtime_occupied") {
+            await refreshSessions({ quiet: true });
+          } else {
+            setMessage(result.error);
+          }
+        } else if (result.command?.type === "queued") {
+          setOptimisticPromptItems(current => current.filter(item => item.id !== optimisticId));
+          promptRetries.current.delete(optimisticId);
+          promptRecovery.current.delete(optimisticId);
+          promptAnchors.current.delete(optimisticId);
+          setQueueRefresh(value => value + 1);
+          requestAnimationFrame(revokeSubmittedAttachments);
         } else {
-          setMessage(result.error);
+          const command = result.command;
+          if (!command) {
+            throw new Error("Message response did not include a command.");
+          }
+          setOptimisticPromptItems((current) => current.flatMap((item) => {
+            if (item.id !== optimisticId) return [item];
+            const acknowledged = acknowledgeOptimisticPrompt(item, command, sessionItemsRef.current);
+            return acknowledged ? [acknowledged] : [];
+          }));
+          promptRetries.current.delete(optimisticId);
+          promptRecovery.current.delete(optimisticId);
+          requestAnimationFrame(revokeSubmittedAttachments);
+          void refreshSessions({ quiet: true });
         }
-      } else if (result.command?.type === "queued") {
-        setQueueRefresh(value => value + 1);
-        requestAnimationFrame(revokeSubmittedAttachments);
-      } else {
-        const command = result.command;
-        if (!command) {
-          throw new Error("Message response did not include a command.");
-        }
-        setOptimisticPromptItems((current) => current.flatMap((item) => {
-          if (item.id !== optimisticId) return [item];
-          const acknowledged = acknowledgeOptimisticPrompt(item, command, sessionItemsRef.current);
-          return acknowledged ? [acknowledged] : [];
-        }));
-        requestAnimationFrame(revokeSubmittedAttachments);
+      } catch (error) {
+        if (promptScope.current !== scope) return;
+        setOptimisticPromptItems(current => current.map(item => item.id === optimisticId ? { ...item, delivery: { state: dispatched ? "failed" : "rejected", error: errorMessage(error) } } : item));
+        setMessage(errorMessage(error));
         void refreshSessions({ quiet: true });
+      } finally {
+        sending = false;
+        setIsBusy(false);
       }
-    } catch (error) {
-      setOptimisticPromptItems((current) => current.filter((item) => item.id !== optimisticId));
-      updateComposerDraft(submittedDraftKey, (current) => restoreSubmittedDraft(current, submittedDraft));
-      setMessage(errorMessage(error));
-      void refreshSessions({ quiet: true });
-    } finally {
-      setIsBusy(false);
-    }
+    };
+    promptRetries.current.set(optimisticId, send);
+    await send();
   }
 
   async function retryRuntimeOccupiedSession() {
@@ -4000,8 +4102,28 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         >
           {searchWindow && <div className="search-history-notice">Showing messages near a search result <button type="button" onClick={closeSearchWindow}>Return to conversation</button></div>}
           <article className="conversation-body">
+            {newPromptPreview?.draftKey === composerDraftKey && (
+              <>
+                <UserMessage
+                  text={displayContentText(newPromptPreview.item.content)}
+                  delivery={newPromptPreview.item.delivery}
+                  onRestore={() => newPromptRecovery.current?.restore()}
+                  onDismiss={() => newPromptRecovery.current?.discard()}
+                />
+                {newPromptPreview.item.delivery?.state === "failed" && (
+                  <div className="message-delivery">
+                    <span>Check sessions before restoring; creation may have succeeded.</span>
+                    <button type="button" onClick={() => newPromptRecovery.current?.restore()}>Restore draft</button>
+                    <button type="button" onClick={() => newPromptRecovery.current?.discard()}>Dismiss</button>
+                  </div>
+                )}
+              </>
+            )}
             {selectedConversation ? (
               <SessionTimeline
+                onRetryPrompt={(id) => { if (!isBusy) void promptRetries.current.get(id)?.(); }}
+                onRestorePrompt={(id) => { if (!isBusy) promptRecovery.current.get(id)?.restore(); }}
+                onDismissPrompt={(id) => { if (!isBusy) promptRecovery.current.get(id)?.discard(); }}
                 onFork={timelineActions.onFork}
                 forkBusy={isBusy}
                 forkSourceTitle={forkSourceConversation?.title}
@@ -5030,26 +5152,6 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       )}
     </main>
     </MarkdownImageContext.Provider>
-  );
-}
-
-function ContextUsageBadge({ usage }: { usage: { tokens: number; window: number } }) {
-  const ratio = usage.window > 0 ? Math.min(1, usage.tokens / usage.window) : 0;
-  const percent = Math.round(ratio * 100);
-  return (
-    <span
-      className="context-usage-badge"
-      tabIndex={0}
-      aria-label={`Context window ${percent}% used`}
-    >
-      <span className="context-usage-ring" style={{ "--context-used": `${ratio * 360}deg` } as React.CSSProperties} />
-      {percent}%
-      <span className="context-usage-tooltip" role="tooltip">
-        <span>Context window:</span>
-        <strong>{percent}% used</strong>
-        <small>{formatCompactTokenCount(usage.tokens)} tokens used, {formatCompactTokenCount(usage.window)} total</small>
-      </span>
-    </span>
   );
 }
 
