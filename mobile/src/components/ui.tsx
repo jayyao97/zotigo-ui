@@ -202,17 +202,24 @@ export function IconButton({
   onPress,
   disabled,
   filled = false,
+  outlined = false,
+  color,
+  hint,
 }: {
   icon: LucideIcon;
   label: string;
   onPress: () => void;
   disabled?: boolean;
   filled?: boolean;
+  outlined?: boolean;
+  color?: string;
+  hint?: string;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityHint={hint}
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
@@ -232,12 +239,14 @@ export function IconButton({
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: filled ? colors.text : "transparent",
+          borderWidth: outlined ? 1.5 : 0,
+          borderColor: colors.border,
         }}
       >
         <Icon
           size={20}
           strokeWidth={1.8}
-          color={filled ? colors.background : colors.text}
+          color={color ?? (filled ? colors.background : colors.text)}
         />
       </View>
     </Pressable>

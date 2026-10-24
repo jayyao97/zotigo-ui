@@ -1084,39 +1084,29 @@ function ConversationContent() {
               disabled={!canSend || !!saved.attempt}
               onPress={() => setAttachmentMenu(true)}
             />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Permissions"
-              accessibilityHint={
+            <IconButton
+              icon={AccessIcon}
+              label="Permissions"
+              outlined
+              hint={
                 state.session?.approval_policy === "bypass_permissions"
                   ? "Full access"
                   : "Auto"
               }
-              style={{
-                minHeight: 44,
-                minWidth: 44,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 12,
-                backgroundColor: colors.elevated,
-              }}
+              color={
+                state.session?.approval_policy === "bypass_permissions"
+                  ? "#ff8549"
+                  : colors.text
+              }
               onPress={() => {
                 setOptionPane("policy");
                 setOptions(true);
               }}
-            >
-              <AccessIcon
-                size={18}
-                color={
-                  state.session?.approval_policy === "bypass_permissions"
-                    ? "#ff8549"
-                    : colors.muted
-                }
-              />
-            </Pressable>
+            />
             <View style={{ flex: 1 }} />
             <IconButton
               icon={Gauge}
+              outlined
               label="Model and reasoning"
               onPress={() => {
                 setOptionPane("model");

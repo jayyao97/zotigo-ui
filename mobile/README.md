@@ -90,3 +90,9 @@ Home restores the last selected device (or connects the only saved device). Devi
 On iOS, touch and hold formatted message text to select a passage in place. The native menu offers Copy, Add to conversation and Translate; there is no separate source-selection page. Translation opens a compact result sheet and uses the daemon's public `POST /sessions/{id}/translate` endpoint. References persist in the host/session draft without sending. Android and browser fixtures retain their platform text-selection menu; custom selection actions are iOS-only. The local Expo module in `modules/selectable-text` requires Pods installation and a native rebuild. Native selection handles, menu positioning and scroll gestures must be verified on iOS; browser previews do not cover them.
 
 Code fences use native syntax colors, wrap and copy controls. Previews cap at 20,000 characters; copying preserves the complete source. Mermaid diagrams open on demand in one isolated, offline viewer (50,000 characters / 300 edges), with source still readable in the message. The bundled Mermaid runtime is generated automatically by start, ios, android, typecheck and export:ios scripts; direct Expo commands require `corepack pnpm prepare:renderers` first. Browser fixtures use a sandboxed iframe; iOS uses react-native-webview and needs a native rebuild after this dependency change.
+
+When copying a checkout for a native build, preserve `mobile/modules/**/ios/` (these are source files, unlike generated `mobile/ios/`). Do not use a recursive `--exclude ios` rule. Before installing the resulting app, check the linked local modules:
+
+```sh
+node mobile/scripts/verify-ios-modules.mjs /absolute/path/to/Zotigo.app /absolute/build-checkout/mobile/ios
+```
