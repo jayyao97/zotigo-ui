@@ -1,7 +1,7 @@
 import { stateLabel } from "../shared/i18n/display";
 import { useLocale } from "./i18n";
 import { getLocale, t } from "../shared/i18n/index";
-import { SidebarResizeHandle } from "./SidebarResizeHandle";
+import { SidebarResizeHandle, loadSidebarWidth } from "./SidebarResizeHandle";
 import { retainSessionContextUsage } from "./sessionContextCache";
 import { referencePrompt } from "../shared/conversationReferences";
 import { InputQueue } from "./conversation/InputQueue";
@@ -535,7 +535,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   const { panels: sessionSidePanels, sidePanelTabs, setSidePanelTabs, sidePanelOpen, setSidePanelOpen,
     sidePanelExpanded, setSidePanelExpanded, directoryLocation, setDirectoryLocation, fileOpenInOtherSession,
   } = useSessionSidePanel(desktopState.selectedConversationId ?? "new", restoredHostState?.sessionSidePanels);
-  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [sidePanelWidth, setSidePanelWidth] = useState(defaultSidePanelWidth);
   const [isSidePanelResizing, setIsSidePanelResizing] = useState(false);

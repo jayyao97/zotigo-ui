@@ -3,7 +3,7 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 import { act, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { SidebarResizeHandle } from "../src/SidebarResizeHandle";
+import { SidebarResizeHandle, loadSidebarWidth } from "../src/SidebarResizeHandle";
 
 test("sidebar resizing clamps, persists across connections, resets and releases capture", async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: "http://localhost" });
@@ -25,7 +25,7 @@ test("sidebar resizing clamps, persists across connections, resets and releases 
   let resizing = false;
   function Harness() {
     const ref = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(320);
+    const [width, setWidth] = useState(loadSidebarWidth);
     return <div ref={ref}><SidebarResizeHandle frameRef={ref} width={width} onWidth={setWidth} onResizing={value => { resizing = value; }} /></div>;
   }
   const root = createRoot(document.getElementById("root")!);
