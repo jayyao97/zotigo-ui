@@ -1,33 +1,32 @@
 import { useLocale } from "./i18n";
 import { t } from "../shared/i18n/index";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 const minWidth = 240;
 const defaultWidth = 320;
 const maxWidth = 480;
+const storageKey = "zotigo:sidebar-width";
 
-export function SidebarResizeHandle({ scope, frameRef, width, onWidth, onResizing }: {
-  scope: string;
+// Read before the frame's first render so CSS cannot animate from the default.
+export function loadSidebarWidth(): number {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const value = raw === null ? NaN : Number(raw);
+    if (Number.isFinite(value)) return Math.max(minWidth, Math.min(maxWidth, value));
+  } catch { /* Storage is optional. */ }
+  return defaultWidth;
+}
+
+export function SidebarResizeHandle({ frameRef, width, onWidth, onResizing }: {
   frameRef: RefObject<HTMLElement | null>;
   width: number;
   onWidth: (width: number) => void;
   onResizing: (active: boolean) => void;
 }) {
   useLocale();
-  const storageKey = `zotigo:sidebar-width:${scope}`;
   const [limit, setLimit] = useState(maxWidth);
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
   const latestWidth = useRef(width);
-  useLayoutEffect(() => {
-    let saved = defaultWidth;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      const value = raw === null ? NaN : Number(raw);
-      if (Number.isFinite(value)) saved = Math.max(minWidth, Math.min(maxWidth, value));
-    } catch { /* Storage is optional. */ }
-    latestWidth.current = saved;
-    onWidth(saved);
-  }, [storageKey, onWidth]);
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;

@@ -3,9 +3,9 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 import { act, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { SidebarResizeHandle } from "../src/SidebarResizeHandle";
+import { SidebarResizeHandle, loadSidebarWidth } from "../src/SidebarResizeHandle";
 
-test("sidebar resizing clamps, persists per connection, resets and releases capture", async () => {
+test("sidebar resizing clamps, persists across connections, resets and releases capture", async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: "http://localhost" });
   let measure = () => {};
   let frameWidth = 1200;
@@ -23,10 +23,10 @@ test("sidebar resizing clamps, persists per connection, resets and releases capt
   dom.window.HTMLElement.prototype.hasPointerCapture = () => captured;
   dom.window.HTMLElement.prototype.releasePointerCapture = () => { captured = false; };
   let resizing = false;
-  function Harness({ scope }: { scope: string }) {
+  function Harness() {
     const ref = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(320);
-    return <div ref={ref}><SidebarResizeHandle scope={scope} frameRef={ref} width={width} onWidth={setWidth} onResizing={value => { resizing = value; }} /></div>;
+    const [width, setWidth] = useState(loadSidebarWidth);
+    return <div ref={ref}><SidebarResizeHandle frameRef={ref} width={width} onWidth={setWidth} onResizing={value => { resizing = value; }} /></div>;
   }
   const root = createRoot(document.getElementById("root")!);
   const handle = () => document.querySelector('[role="separator"]')!;
@@ -42,7 +42,7 @@ test("sidebar resizing clamps, persists per connection, resets and releases capt
     await act(async () => { handle().dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true })); });
   };
   try {
-    await act(async () => root.render(<Harness scope="a" />));
+    await act(async () => root.render(<Harness key="a" />));
     assert.equal(value(), 320);
     await pointer("pointerdown", 318);
     await pointer("pointermove", 2000);
@@ -51,24 +51,26 @@ test("sidebar resizing clamps, persists per connection, resets and releases capt
     await pointer("pointerup", 2000);
     assert.equal(resizing, false);
     assert.equal(captured, false);
-    assert.equal(localStorage.getItem("zotigo:sidebar-width:a"), "480");
+    assert.equal(localStorage.getItem("zotigo:sidebar-width"), "480");
     await key("Home");
     assert.equal(value(), 240);
     await key("ArrowLeft");
     assert.equal(value(), 240);
     await key("ArrowRight");
     assert.equal(value(), 256);
-    await act(async () => root.render(<Harness scope="b" />));
-    assert.equal(value(), 320);
-    await act(async () => root.render(<Harness scope="a" />));
-    assert.equal(value(), 256);
+    await act(async () => root.render(<Harness key="b" />));
+    assert.equal(value(), 256, "switching hosts retains the UI width across remounts");
+    await act(async () => root.render(<Harness key="a" />));
+    assert.equal(value(), 256, "returning to a host uses the same UI width");
+    await act(async () => root.render(<Harness key="reload" />));
+    assert.equal(value(), 256, "reopening the UI restores the global preference");
     await act(async () => { handle().dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true })); });
     assert.equal(value(), 320);
     await key("End");
     frameWidth = 800;
     await act(async () => measure());
     assert.equal(value(), 380);
-    assert.equal(localStorage.getItem("zotigo:sidebar-width:a"), "480", "window resize preserves the preferred width");
+    assert.equal(localStorage.getItem("zotigo:sidebar-width"), "480", "window resize preserves the preferred width");
     frameWidth = 1200;
     await act(async () => measure());
     assert.equal(value(), 480);
