@@ -36,6 +36,8 @@ Desktop and Web share catalog data through zotigod. Browser selection is scoped 
 
 ## Search and remote hosts
 
+Connection settings support adding, editing, testing and removing saved hosts. Renaming keeps the connection identity; changing the address or token replaces it, so other Web tabs must reload and select the updated host before continuing. Changes to an active connection’s address or token first switch this client to Local. The built-in Local connection remains application-managed.
+
 Click the sidebar search icon or press **Cmd+K** (macOS) / **Ctrl+K** to search recent sessions by title, project or workspace. Use the arrow keys and Enter to open a result, or Escape to close. The palette searches the currently selected host and includes shortcuts for creating sessions and projects.
 
 Open the host menu at the top left, then **Host settings**. Add a name, daemon origin (for example `http://dev:8766`) and its daemon token, then **Test**. Select the saved host from the same menu. The address is the daemon's reachable address, not `0.0.0.0` or the Web UI URL. Remote daemons must include the directory-browsing and `/files/capabilities` APIs from the paired daemon revision; an older daemon produces an upgrade message.

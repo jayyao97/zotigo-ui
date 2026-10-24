@@ -7,8 +7,10 @@ import { closePreferencesStore, getWindowBoundsPreference, initializePreferences
 import { startManagedZotigodIfNeeded, stopManagedZotigod } from "./daemonManager";
 import { resolveDevServerUrl } from "./devServerUrl";
 import { startLogging } from "../backend/logging";
+import { loadInstalledLocalHost } from "./localHostConfig";
 
 startLogging("desktop");
+if (app.isPackaged) loadInstalledLocalHost(path.join(process.resourcesPath, "local-host.json"));
 const devServerUrl = resolveDevServerUrl();
 const appName = "Zotigo";
 const defaultWindowWidth = 1280;

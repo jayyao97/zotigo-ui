@@ -33,7 +33,9 @@ export async function startManagedZotigodIfNeeded(appPath: string, userDataPath:
     return;
   }
 
-  managedProcess = spawn(binaryPath, ["--addr", daemonUrl.host], {
+  const args = ["--addr", daemonUrl.host];
+  if (process.env.ZOTIGOD_AUTH_TOKEN_FILE) args.push("--auth-token-file", process.env.ZOTIGOD_AUTH_TOKEN_FILE);
+  managedProcess = spawn(binaryPath, args, {
     cwd: workdir,
     env: process.env,
     stdio: "pipe",

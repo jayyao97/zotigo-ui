@@ -108,7 +108,6 @@ if [ "$component" = web ]; then
   cp -R "$stage/ui/dist" "$stage/ui/dist-electron" "$stage/output/"
   cp "$source_dir/LICENSE" "$source_dir/THIRD_PARTY_NOTICES.md" "$stage/output/"
   config="$prefix/config/web.env"
-  [ -e "$config" ] || printf '%s\n' '# Shell assignments; preserved on upgrade.' 'ZOTIGOD_URL=http://127.0.0.1:8766' 'ZOTIGO_WEB_HOST=127.0.0.1' 'ZOTIGO_WEB_PORT=8080' > "$config"
   {
     echo '#!/bin/sh'
     printf 'PATH=%s; export PATH\n' "$(quote "$PATH")"
@@ -149,6 +148,8 @@ else
   [ "$service" = yes ] || set -- "$@" --no-service
   sh "$daemon_source/install.sh" "$@"
 fi
+. "$source_dir/scripts/install-client-config.sh"
+install_client_config
 publish_install
 if [ "$component" = web ]; then
   service_install

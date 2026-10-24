@@ -5046,9 +5046,20 @@ p {
 .host-settings-row strong, .host-settings-row small { display: block; overflow-wrap: anywhere; }
 .host-settings label { display: grid; gap: 6px; margin: 14px 0; font-size: 13px; }
 .host-settings input, .host-settings textarea { padding: 10px; border: 1px solid var(--border-heavy); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; width: 100%; }
+.host-settings .host-token-clear { display: flex; align-items: center; }
+.host-settings .host-token-clear input { width: auto; }
 .host-settings button { display: inline-flex; gap: 6px; align-items: center; padding: 8px 12px; border: 1px solid var(--border-heavy); border-radius: 8px; color: var(--text); background: var(--surface-row); cursor: pointer; }
 .host-settings button:disabled { opacity: .4; cursor: default; }
-.host-settings form > button { margin-top: 16px; }.host-settings footer { justify-content: flex-end; }
+@media (max-width: 600px) {
+  .host-settings-row { flex-wrap: wrap; }
+  .host-settings-row > div { flex-basis: calc(100% - 30px); }
+  .host-settings-row > button:first-of-type { margin-left: 30px; }
+}
+.host-settings footer { justify-content: flex-end; margin-top: 24px; }
+.host-settings h2:focus { outline: none; }
+.host-settings-confirm { width: min(440px, calc(100vw - 32px)); }
+.host-settings .host-delete-copy { margin-top: 20px; line-height: 1.6; }
+.host-settings .host-delete-action { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, transparent); background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
 .host-error { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; background: var(--surface-row); padding: 12px 16px; border: 1px solid var(--border-heavy); border-radius: 10px; display: flex; gap: 16px; }
 
 .host-menu .brand-button { max-width: min(190px, 100%); }
