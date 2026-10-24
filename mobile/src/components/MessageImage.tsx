@@ -5,7 +5,8 @@ import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import { useImagePreview } from "./ImagePreviewProvider";
 import { useDaemon } from "../platform/context";
 import { messageImage } from "../core/messageImages";
-import { Action, colors, errorText, styles } from "./ui";
+import RefreshCw from "lucide-react-native/icons/refresh-cw";
+import { Action, IconButton, colors, errorText, styles } from "./ui";
 
 export function MessageImage({
   url,
@@ -62,25 +63,30 @@ export function MessageImage({
       style={thumbnail ? { width: 80 } : { width: "100%" }}
     >
       {uri && !error ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("mobile.previewImage")}
-          disabled={!openImage}
-          onPress={() => openImage?.(uri)}
-        >
-          <Image
-            source={{ uri }}
-            resizeMode="contain"
-            accessibilityLabel={t("mobile.conversationAttachment")}
-            onError={() => setError(t("imagePreview.imageCouldNotBeLoaded"))}
-            style={{
-              width: "100%",
-              height: thumbnail ? 80 : Math.min(400, width / ratio),
-              borderRadius: 10,
-              backgroundColor: colors.surface,
-            }}
-          />
-        </Pressable>
+        <View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("mobile.previewImage")}
+            disabled={!openImage}
+            onPress={() => openImage?.(uri)}
+          >
+            <Image
+              source={{ uri, cache: attempt > 0 ? "reload" : "default" }}
+              resizeMode="contain"
+              accessibilityLabel={t("mobile.conversationAttachment")}
+              onError={() => setError(t("imagePreview.imageCouldNotBeLoaded"))}
+              style={{
+                width: "100%",
+                height: thumbnail ? 80 : Math.min(400, width / ratio),
+                borderRadius: 10,
+                backgroundColor: colors.surface,
+              }}
+            />
+          </Pressable>
+          <View style={{ alignItems: "flex-end" }}>
+            <IconButton icon={RefreshCw} label={t("mobile.retryImage")} onPress={() => setAttempt(n => n + 1)} />
+          </View>
+        </View>
       ) : error || confirm ? (
         <View>
           <Text style={styles.muted}>
