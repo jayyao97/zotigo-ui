@@ -4,7 +4,7 @@ Desktop and Web share the same English (`en`) and Simplified Chinese (`zh-CN`) c
 
 Mobile uses the same catalogs and language key through AsyncStorage. Settings → Interface language applies to both iPhone and iPad without recreating the conversation or composer; it is independent of translation language and daemon preferences. Native OS dialogs continue to follow the OS language.
 
-iPad also shares Desktop’s sidebar width limits (240–480 pt, leaving at least 420 pt for the conversation). Drag the divider to resize or long-press to reset to 320 pt. Width is saved separately for each device connection. Phones keep single-pane navigation.
+iPad also shares Desktop’s sidebar width limits (240–480 pt, leaving at least 420 pt for the conversation). Drag the divider to resize or long-press to reset to 320 pt. Width is saved as a client-wide layout preference and survives switching device connections. Mobile waits for the initial AsyncStorage read before mounting navigation to avoid a first-frame width jump. Phones keep single-pane navigation.
 
 ## Adding UI copy
 

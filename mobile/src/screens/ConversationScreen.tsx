@@ -1243,7 +1243,7 @@ function ConversationContent() {
         )}
       </View>
       <BottomSheet
-        anchorRef={optionPane === "model" ? composerAnchor : undefined}
+        anchorRef={composerAnchor}
         visible={options}
         scroll={optionPane !== "model"}
         disabled={busy}
@@ -1501,6 +1501,7 @@ function ConversationContent() {
         </>
       </BottomSheet>
       <BottomSheet
+        anchorRef={composerAnchor}
         visible={attachmentMenu}
         title={t("attachmentMenu.composerActions")}
         onClose={() => setAttachmentMenu(false)}

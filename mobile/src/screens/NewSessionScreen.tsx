@@ -527,7 +527,7 @@ export function NewSessionScreen() {
         </View>
       </View>
       <BottomSheet
-        anchorRef={panel === "model" ? composerAnchor : undefined}
+        anchorRef={composerAnchor}
         visible={panelVisible}
         scroll={panel !== "workspace" && panel !== "model"}
         disabled={busy}
