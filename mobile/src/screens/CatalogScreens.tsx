@@ -1,3 +1,4 @@
+import LoaderCircle from "lucide-react-native/icons/loader-circle";
 import SquarePen from "lucide-react-native/icons/square-pen";
 import { useLayoutTransition } from "../components/useLayoutTransition";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +19,9 @@ import {
 } from "react";
 import {
   Alert,
+  Animated,
+  Easing,
+  Platform,
   AppState,
   FlatList,
   Modal,
@@ -56,6 +60,7 @@ import {
   Notice,
   Section,
   errorText,
+  colors,
 } from "../components/ui";
 import {
   sessionId,
@@ -197,13 +202,45 @@ function Footer({ children }: { children: ReactNode }) {
     </View>
   );
 }
+function RunningIndicator() {
+  const rotation = useRef(new Animated.Value(0)).current;
+  useFocusEffect(
+    useCallback(() => {
+      rotation.setValue(0);
+      const animation = Animated.loop(
+        Animated.timing(rotation, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.linear,
+          useNativeDriver: Platform.OS !== "web",
+          isInteraction: false,
+        }),
+      );
+      animation.start();
+      return () => animation.stop();
+    }, [rotation]),
+  );
+  return (
+    <Animated.View
+      accessible
+      accessibilityLabel="Running"
+      style={{ transform: [{ rotate: rotation.interpolate({
+        inputRange: [0, 1], outputRange: ["0deg", "360deg"],
+      }) }] }}
+    >
+      <LoaderCircle size={13} strokeWidth={1.9} color={colors.muted} />
+    </Animated.View>
+  );
+}
 function SessionRow({ item }: { item: CatalogSessionProjection }) {
   const nav = useNavigation<Nav>();
   return (
     <Row
       title={sessionTitle(item)}
       right={
-        !item.runtime?.working && item.runtime?.read_state?.unread ? (
+        item.runtime?.working ? (
+          <RunningIndicator />
+        ) : item.runtime?.read_state?.unread ? (
           <View
             accessible
             accessibilityLabel="Unread"
@@ -215,11 +252,6 @@ function SessionRow({ item }: { item: CatalogSessionProjection }) {
             }}
           />
         ) : undefined
-      }
-      subtitle={
-        item.runtime?.working
-          ? `Working · ${pathLabel(item.runtime.working_directory ?? "")}`
-          : undefined
       }
       onPress={() =>
         nav.navigate("Conversation", {
