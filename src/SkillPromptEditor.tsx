@@ -1,3 +1,5 @@
+import { useLocale } from "./i18n";
+import { t, getLocale } from "../shared/i18n/index";
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { minimalSetup } from "codemirror";
 import { Annotation, Compartment, EditorState, Prec } from "@codemirror/state";
@@ -10,7 +12,8 @@ const externalChange = Annotation.define<boolean>();
 export type SkillPromptEditorHandle = { focus: (options?: FocusOptions) => void };
 class SkillWidget extends WidgetType {
   constructor(readonly name: string) { super(); }
-  eq(other: SkillWidget) { return this.name === other.name; }
+  readonly locale = getLocale();
+  eq(other: SkillWidget) { return this.name === other.name && this.locale === other.locale; }
   toDOM() {
     const span = document.createElement("span");
     span.className = "inline-skill-token";
@@ -21,7 +24,7 @@ class SkillWidget extends WidgetType {
     label.className = "inline-skill-name";
     label.textContent = this.name;
     span.append(icon, label);
-    span.setAttribute("aria-label", `Skill: ${this.name}`);
+    span.setAttribute("aria-label", t("skillPromptEditor.skill", { p0: this.name }));
     return span;
   }
 }
@@ -47,6 +50,7 @@ export function SkillPromptEditor(props: {
   onKeyDown: (event: globalThis.KeyboardEvent) => void;
   onPaste: (event: globalThis.ClipboardEvent) => void;
 }) {
+  const locale = useLocale();
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const focusRequested = useRef(false);
@@ -54,13 +58,14 @@ export function SkillPromptEditor(props: {
   const knownSkills = useRef(new Set(props.skills));
   for (const name of props.skills) knownSkills.current.add(name);
   const compartment = useRef(new Compartment());
+  const labels = useRef(new Compartment());
   useImperativeHandle(props.ref, () => ({ focus: () => { focusRequested.current = true; editor.current?.focus(); } }), []);
   useEffect(() => {
     const p = current.current;
     const view = new EditorView({ parent: host.current!, state: EditorState.create({ doc: p.value, selection: { anchor: p.value.length }, extensions: [
-      minimalSetup, EditorView.lineWrapping, placeholder(p.placeholder),
+      minimalSetup, EditorView.lineWrapping,
+      labels.current.of([placeholder(p.placeholder), EditorView.contentAttributes.of({ "aria-label": p.placeholder, "aria-multiline": "true", role: "textbox", spellcheck: "true" })]),
       compartment.current.of(skillDecorations([...knownSkills.current])),
-      EditorView.contentAttributes.of({ "aria-label": p.placeholder, "aria-multiline": "true", role: "textbox", spellcheck: "true" }),
       Prec.highest(EditorView.domEventHandlers({
         keydown(event, view) {
           if (event.isComposing) return false;
@@ -109,6 +114,9 @@ export function SkillPromptEditor(props: {
   const skillsKey = JSON.stringify(props.skills);
   useEffect(() => {
     editor.current?.dispatch({ effects: compartment.current.reconfigure(skillDecorations([...knownSkills.current])) });
-  }, [skillsKey]);
+  }, [skillsKey, locale]);
+  useEffect(() => {
+    editor.current?.dispatch({ effects: labels.current.reconfigure([placeholder(props.placeholder), EditorView.contentAttributes.of({ "aria-label": props.placeholder, "aria-multiline": "true", role: "textbox", spellcheck: "true" })]) });
+  }, [props.placeholder]);
   return <div className="skill-prompt-editor" ref={host} />;
 }

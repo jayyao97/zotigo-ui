@@ -1,3 +1,5 @@
+import { useLocale } from "../i18n";
+import { t } from "../../shared/i18n/index";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
 import type { DisplayItem, SessionSearchHit, SessionSearchResponse } from "../../shared/zotigod";
@@ -25,6 +27,7 @@ type Props = {
   onClose: () => void;
 };
 export function ConversationFind({ root, items, search, showHit, onOpen, onClose }: Props) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [term, setTerm] = useState("");
@@ -60,7 +63,7 @@ export function ConversationFind({ root, items, search, showHit, onOpen, onClose
     if (open) actions.current.onOpen();
     setTerm(""); setRemote({ hits: [], truncated: false }); setIndex(0); setError(""); setBusy(false);
     if (!open || !query.trim()) return;
-    if ([...query].length > 256) { setError("Use up to 256 characters."); return; }
+    if ([...query].length > 256) { setError(t("conversationFind.useUpTo256Characters")); return; }
     const timer = setTimeout(() => {
       setTerm(query); setBusy(true);
       // Serialize requests and skip superseded queued work. IPC/Web share this
@@ -68,7 +71,7 @@ export function ConversationFind({ root, items, search, showHit, onOpen, onClose
       const job = pending.current.catch(() => {}).then(async () => {
         if (cancelled) return;
         try { const result = await actions.current.search(query); if (!cancelled) setRemote(result); }
-        catch (cause) { if (!cancelled) setError(cause instanceof Error ? cause.message : "Search failed"); }
+        catch (cause) { if (!cancelled) setError(cause instanceof Error ? cause.message : t("conversationFind.searchFailed")); }
         finally { if (!cancelled) setBusy(false); }
       });
       pending.current = job;
@@ -102,20 +105,20 @@ export function ConversationFind({ root, items, search, showHit, onOpen, onClose
     else {
       // React may commit the fetched window after the request promise resolves.
       // Observe that commit instead of assuming one animation frame is enough.
-      void actions.current.showHit(hit, controller.signal).then(highlight).catch(cause => { observer?.disconnect(); if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load message"); });
+      void actions.current.showHit(hit, controller.signal).then(highlight).catch(cause => { observer?.disconnect(); if (!cancelled) setError(cause instanceof Error ? cause.message : t("conversationFind.couldNotLoadMessage")); });
     }
     return () => { cancelled = true; controller.abort(); observer?.disconnect(); if (typeof CSS !== "undefined" && CSS.highlights) CSS.highlights.delete("conversation-find-active"); };
   }, [open, term, hit?.id, navigation, root]);
   const move = (delta: number) => { setNavigation(value => value + 1); setIndex(value => hits.length ? (value + delta + hits.length) % hits.length : 0); };
   return <>
-    <button type="button" className="icon-button" title="Find in conversation (Ctrl/Cmd+F)" aria-label="Find in conversation" onClick={() => setOpen(value => !value)}><Search size={17} /></button>
-    {open && <div className="conversation-find" role="search" aria-label="Find in conversation" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setOpen(false); } }}>
-      <input ref={input} value={query} onChange={event => setQuery(event.target.value)} placeholder="Find in conversation" aria-label="Search conversation" onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); move(event.shiftKey ? -1 : 1); } }} />
-      <span role="status">{hits.length ? `${index % hits.length + 1}/${hits.length}${remote.truncated ? "+" : ""}` : "0/0"} messages</span>
-      <button type="button" aria-label="Previous match" disabled={!hits.length} onClick={() => move(-1)}><ArrowUp size={16} /></button>
-      <button type="button" aria-label="Next match" disabled={!hits.length} onClick={() => move(1)}><ArrowDown size={16} /></button>
-      <button type="button" aria-label="Close search" onClick={() => setOpen(false)}><X size={16} /></button>
-      {(busy || error || remote.truncated) && <small>{busy ? "Searching history…" : error || "Showing the latest 250 matching messages plus loaded matches. Refine your search."}</small>}
+    <button type="button" className="icon-button" title={t("conversationFind.findInConversationCtrlCmdF")} aria-label={t("conversationFind.findInConversation")} onClick={() => setOpen(value => !value)}><Search size={17} /></button>
+    {open && <div className="conversation-find" role="search" aria-label={t("conversationFind.findInConversation")} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setOpen(false); } }}>
+      <input ref={input} value={query} onChange={event => setQuery(event.target.value)} placeholder={t("conversationFind.findInConversation")} aria-label={t("conversationFind.searchConversation")} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); move(event.shiftKey ? -1 : 1); } }} />
+      <span role="status">{hits.length ? `${index % hits.length + 1}/${hits.length}${remote.truncated ? "+" : ""}` : "0/0"} {t("conversationFind.messages")}</span>
+      <button type="button" aria-label={t("conversationFind.previousMatch")} disabled={!hits.length} onClick={() => move(-1)}><ArrowUp size={16} /></button>
+      <button type="button" aria-label={t("conversationFind.nextMatch")} disabled={!hits.length} onClick={() => move(1)}><ArrowDown size={16} /></button>
+      <button type="button" aria-label={t("conversationFind.closeSearch")} onClick={() => setOpen(false)}><X size={16} /></button>
+      {(busy || error || remote.truncated) && <small>{busy ? t("conversationFind.searchingHistory") : error || t("conversationFind.showingTheLatest250MatchingMessagesPlusLoaded")}</small>}
     </div>}
   </>;
 }

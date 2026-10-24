@@ -1,9 +1,12 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { useEffect, useRef, useState } from "react";
 import { Check, Code2, Copy, Network, RefreshCw } from "lucide-react";
 import { PreviewImage } from "./ImagePreview";
 import { renderMermaid } from "./renderMermaid";
 
 export function MermaidCodeBlock({ code }: { code: string }) {
+  useLocale();
   const [source, setSource] = useState(false);
   const [visible, setVisible] = useState(false);
   const [result, setResult] = useState<{ code: string; url?: string; error?: string } | null>(null);
@@ -33,7 +36,7 @@ export function MermaidCodeBlock({ code }: { code: string }) {
         url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
         setResult({ code, url });
       }).catch(() => {
-        if (active) setResult({ code, error: "Diagram unavailable. The source may be incomplete or invalid." });
+        if (active) setResult({ code, error: t("mermaidCodeBlock.diagramUnavailableTheSourceMayBeIncompleteOr") });
       });
     }, 250);
     return () => {
@@ -57,21 +60,21 @@ export function MermaidCodeBlock({ code }: { code: string }) {
 
   return <div className="markdown-code-block mermaid-code-block" ref={block}>
     <div className="markdown-code-block-header">
-      <Network size={17} aria-hidden="true" /><span>Mermaid</span>
+      <Network size={17} aria-hidden="true" /><span>{t("mermaidCodeBlock.mermaid")}</span>
       <div className="markdown-code-block-actions">
-        <button type="button" aria-label={source ? "Show diagram" : "Show source"} title={source ? "Show diagram" : "Show source"}
+        <button type="button" aria-label={source ? t("mermaidCodeBlock.showDiagram") : t("mermaidCodeBlock.showSource")} title={source ? t("mermaidCodeBlock.showDiagram") : t("mermaidCodeBlock.showSource")}
           aria-pressed={source} onClick={() => setSource(!source)}><Code2 size={17} /></button>
-        {current?.error && <button type="button" aria-label="Retry diagram" title="Retry diagram" onClick={() => { setResult(null); setAttempt((value) => value + 1); }}><RefreshCw size={17} /></button>}
-        <button type="button" aria-label={copied ? "Copied" : "Copy diagram source"} title={copied ? "Copied" : "Copy diagram source"} onClick={() => void copy()}>
+        {current?.error && <button type="button" aria-label={t("mermaidCodeBlock.retryDiagram")} title={t("mermaidCodeBlock.retryDiagram")} onClick={() => { setResult(null); setAttempt((value) => value + 1); }}><RefreshCw size={17} /></button>}
+        <button type="button" aria-label={copied ? t("markdownCodeBlock.copied") : t("mermaidCodeBlock.copyDiagramSource")} title={copied ? t("markdownCodeBlock.copied") : t("mermaidCodeBlock.copyDiagramSource")} onClick={() => void copy()}>
           {copied ? <Check size={17} /> : <Copy size={17} />}
         </button>
       </div>
     </div>
-    {copyError && <p className="mermaid-status" role="status">Could not copy. Select and copy the source instead.</p>}
+    {copyError && <p className="mermaid-status" role="status">{t("mermaidCodeBlock.couldNotCopySelectAndCopyTheSource")}</p>}
     {!source && current?.url
-      ? <div className="mermaid-diagram"><PreviewImage key={current.url} src={current.url} alt="Mermaid diagram.svg" /></div>
+      ? <div className="mermaid-diagram"><PreviewImage key={current.url} src={current.url} alt={t("mermaidCodeBlock.mermaidDiagramSvg")} /></div>
       : <>
-        {!source && <p className="mermaid-status" role="status">{current?.error ?? "Preparing diagram…"}</p>}
+        {!source && <p className="mermaid-status" role="status">{current?.error ?? t("mermaidCodeBlock.preparingDiagram")}</p>}
         <pre><code className="language-mermaid">{code}</code></pre>
       </>}
   </div>;

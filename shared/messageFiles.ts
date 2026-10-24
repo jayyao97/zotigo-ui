@@ -1,3 +1,4 @@
+import { t } from "./i18n/index";
 import { decodedBase64Size, maxMessageImageBytes } from "./messageImages";
 
 export interface MessageFileInput {
@@ -9,21 +10,21 @@ export const maxAttachmentBytes = 20 * 1024 * 1024;
 export const modelImageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 export function attachmentSizeError(files: Array<{ size: number; image: boolean }>): string | null {
-  if (files.length > 5) return "A message can include at most 5 attachments.";
-  if (files.some((file) => file.image && file.size > maxMessageImageBytes)) return "Each image must be 5 MiB or smaller.";
-  if (files.some((file) => !Number.isSafeInteger(file.size) || file.size < 0)) return "Invalid attachment size.";
-  if (files.reduce((sum, file) => sum + file.size, 0) > maxAttachmentBytes) return "Attachments can total at most 20 MiB per message.";
+  if (files.length > 5) return t("messageFiles.aMessageCanIncludeAtMost5Attachments");
+  if (files.some((file) => file.image && file.size > maxMessageImageBytes)) return t("messageFiles.eachImageMustBe5MibOrSmaller");
+  if (files.some((file) => !Number.isSafeInteger(file.size) || file.size < 0)) return t("messageFiles.invalidAttachmentSize");
+  if (files.reduce((sum, file) => sum + file.size, 0) > maxAttachmentBytes) return t("messageFiles.attachmentsCanTotalAtMost20MibPer");
   return null;
 }
 
 export function parseMessageFiles(value: unknown): MessageFileInput[] {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.length > 5) throw new Error("Invalid attachments.");
+  if (!Array.isArray(value) || value.length > 5) throw new Error(t("messageFiles.invalidAttachments"));
   const files = value.map((item: unknown) => {
-    if (!item || typeof item !== "object") throw new Error("Invalid attachment.");
+    if (!item || typeof item !== "object") throw new Error(t("messageFiles.invalidAttachment"));
     const { name, data_base64 } = item as Record<string, unknown>;
-    if (typeof name !== "string" || !name || new TextEncoder().encode(name).length > 180 || /[/\\\x00-\x1f]/.test(name) || name === "." || name === "..") throw new Error("Invalid attachment filename (maximum 180 UTF-8 bytes).");
-    if (typeof data_base64 !== "string" || data_base64.length > Math.ceil(maxAttachmentBytes / 3) * 4 || data_base64.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(data_base64) || (data_base64.includes("=") && !/^[A-Za-z0-9+/]*={1,2}$/.test(data_base64.slice(-4))) || data_base64.slice(0, -2).includes("=")) throw new Error("Invalid attachment data.");
+    if (typeof name !== "string" || !name || new TextEncoder().encode(name).length > 180 || /[/\\\x00-\x1f]/.test(name) || name === "." || name === "..") throw new Error(t("app.invalidAttachmentFilenameMaximum180Utf8Bytes"));
+    if (typeof data_base64 !== "string" || data_base64.length > Math.ceil(maxAttachmentBytes / 3) * 4 || data_base64.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(data_base64) || (data_base64.includes("=") && !/^[A-Za-z0-9+/]*={1,2}$/.test(data_base64.slice(-4))) || data_base64.slice(0, -2).includes("=")) throw new Error(t("messageFiles.invalidAttachmentData"));
     return { name, data_base64 };
   });
   const error = attachmentSizeError(files.map((file) => ({ size: decodedBase64Size(file.data_base64), image: false })));

@@ -1,3 +1,5 @@
+import { useLocale } from "../i18n";
+import { t } from "../../shared/i18n/index";
 import { useWebViewport } from "./useWebViewport";
 import { useEffect, useMemo, useState } from "react";
 import { HostShell } from "../HostShell";
@@ -5,6 +7,7 @@ import { ClientContext } from "../ClientContext";
 import { createWebClient, webRequest, WebRequestError } from "./api";
 
 export function WebApp() {
+  useLocale();
   useWebViewport();
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -22,7 +25,7 @@ export function WebApp() {
     void webRequest("/api/session").then(() => { if (active) setAuthenticated(true); })
       .catch((error: unknown) => {
         if (active && !(error instanceof WebRequestError && error.status === 401)) {
-          setError(error instanceof Error ? error.message : "Cannot connect to the workspace server.");
+          setError(error instanceof Error ? error.message : t("webApp.cannotConnectToTheWorkspaceServer"));
         }
       }).finally(() => { if (active) setChecking(false); });
     return () => { active = false; client.dispose(); window.removeEventListener("zotigo:unauthorized", expired); };
@@ -34,12 +37,12 @@ export function WebApp() {
         .catch((error: Error) => setError(error.message)).finally(() => setBusy(false));
     }}>
       <img className="web-login-brand" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" />
-      <h1>Zotigo Web</h1>
-      <p>Connect to your workspace server. The access token is shown when the server starts.</p>
-      <label htmlFor="web-token">Access token</label>
+      <h1>{t("webApp.zotigoWeb")}</h1>
+      <p>{t("webApp.connectToYourWorkspaceServerTheAccessToken")}</p>
+      <label htmlFor="web-token">{t("webApp.accessToken")}</label>
       <input id="web-token" type="password" autoComplete="current-password" value={token} onChange={(event) => setToken(event.target.value)} required disabled={checking || busy} />
       {error && <p role="alert">{error}</p>}
-      <button disabled={checking || busy || !token}>{checking ? "Connecting…" : busy ? "Signing in…" : "Sign in"}</button>
+      <button disabled={checking || busy || !token}>{checking ? t("webApp.connecting") : busy ? t("webApp.signingIn") : t("webApp.signIn")}</button>
     </form>
   </main>;
 

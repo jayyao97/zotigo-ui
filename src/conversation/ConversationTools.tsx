@@ -1,3 +1,5 @@
+import { useLocale } from "../i18n";
+import { t } from "../../shared/i18n/index";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Languages, MessageSquareQuote, X } from "lucide-react";
@@ -29,6 +31,7 @@ type Props = {
 type SelectionText = { text: string; messageId?: string; startOffset: number; rect: DOMRect; range: Range; visible: boolean };
 
 export function ConversationTools({ root, onReference, translate, translationProfile, items, search, showHit, onCloseSearch, onSearch, language, references, editingId, onEdit, onReferencesChange }: Props) {
+  useLocale();
   const [selection, setSelection] = useState<SelectionText | null>(null);
   const [translation, setTranslation] = useState<(TranslationResult & { pending: boolean; error?: boolean; language: "zh-CN" | "en" }) | null>(null);
   const popup = useRef<HTMLDivElement>(null);
@@ -96,7 +99,7 @@ export function ConversationTools({ root, onReference, translate, translationPro
       const result = await translate(selection.text, target);
       if (id === request.current) setTranslation({ ...result, pending: false, language: target });
     } catch (error) {
-      if (id === request.current) setTranslation({ text: error instanceof Error ? error.message : "Translation failed", pending: false, error: true, profile: translationProfile || undefined, language: target });
+      if (id === request.current) setTranslation({ text: error instanceof Error ? error.message : t("conversationTools.translationFailed"), pending: false, error: true, profile: translationProfile || undefined, language: target });
     }
   }
   return <>
@@ -109,14 +112,14 @@ export function ConversationTools({ root, onReference, translate, translationPro
           window.getSelection()?.removeAllRanges();
           onReference({ id: crypto.randomUUID(), messageId: selection.messageId, startOffset: selection.startOffset, text: selection.text, comment: "" });
           setSelection(null);
-        }}><MessageSquareQuote size={15} />Add to conversation</button>}
-        <button type="button" disabled={translation?.pending || [...selection.text].length > 8000} onClick={() => void runTranslation()}><Languages size={15} />Translate</button>
+        }}><MessageSquareQuote size={15} />{t("conversationTools.addToConversation")}</button>}
+        <button type="button" disabled={translation?.pending || [...selection.text].length > 8000} onClick={() => void runTranslation()}><Languages size={15} />{t("conversationTools.translate")}</button>
       </div>
-      {[...selection.text].length > 8000 && <small>Select up to 8,000 characters.</small>}
+      {[...selection.text].length > 8000 && <small>{t("conversationTools.selectUpTo8000Characters")}</small>}
       {translation && <div className="selection-translation">
-        <div><span>{translation.language === "zh-CN" ? "Chinese" : "English"}</span><button type="button" aria-label="Close translation" onClick={() => { request.current++; setSelection(null); setTranslation(null); }}><X size={16} /></button></div>
-        <p role={translation.error ? "alert" : "status"}>{translation.pending ? "Translating…" : translation.text}</p>
-        {(translation.profile || translation.model) && <small className="translation-model">{translation.profile && <>Profile: {translation.profile}</>}{translation.model && <> · Model: {translation.model}</>}</small>}
+        <div><span>{translation.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")}</span><button type="button" aria-label={t("conversationTools.closeTranslation")} onClick={() => { request.current++; setSelection(null); setTranslation(null); }}><X size={16} /></button></div>
+        <p role={translation.error ? "alert" : "status"}>{translation.pending ? t("conversationTools.translating") : translation.text}</p>
+        {(translation.profile || translation.model) && <small className="translation-model">{translation.profile && <>{t("conversationTools.profile")}{" "}{translation.profile}</>}{translation.model && <> {t("conversationTools.model")}{" "}{translation.model}</>}</small>}
       </div>}
     </div>, document.body)}
   </>;

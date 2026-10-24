@@ -1,3 +1,5 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import {
   Children,
   isValidElement,
@@ -18,24 +20,24 @@ type CodeElementProps = {
 
 const languageLabels: Record<string, string> = {
   css: "CSS",
-  dockerfile: "Dockerfile",
+  get dockerfile() { return t("markdownCodeBlock.dockerfile"); },
   go: "Go",
   html: "HTML",
   javascript: "JavaScript",
   js: "JavaScript",
   json: "JSON",
   jsx: "JSX",
-  markdown: "Markdown",
-  mathematica: "Mathematica",
+  get markdown() { return t("markdownCodeBlock.markdown"); },
+  get mathematica() { return t("markdownCodeBlock.mathematica"); },
   matlab: "MATLAB",
-  md: "Markdown",
-  nginx: "Nginx",
-  plaintext: "Plaintext",
+  get md() { return t("markdownCodeBlock.markdown"); },
+  get nginx() { return t("markdownCodeBlock.nginx"); },
+  get plaintext() { return t("markdownCodeBlock.plaintext"); },
   powershell: "PowerShell",
-  py: "Python",
-  python: "Python",
-  shell: "Shell",
-  sh: "Shell",
+  get py() { return t("markdownCodeBlock.python"); },
+  get python() { return t("markdownCodeBlock.python"); },
+  get shell() { return t("markdownCodeBlock.shell"); },
+  get sh() { return t("markdownCodeBlock.shell"); },
   ts: "TypeScript",
   tsx: "TSX",
   typescript: "TypeScript",
@@ -44,6 +46,7 @@ const languageLabels: Record<string, string> = {
 };
 
 export function MarkdownCodeBlock({ children }: ComponentPropsWithoutRef<"pre">) {
+  useLocale();
   if (Children.count(children) === 1 && isValidElement<CodeElementProps>(children)
     && /(?:^|\s)language-mermaid(?:\s|$)/i.test(children.props.className ?? "")) {
     const code = Children.toArray(children.props.children).join("").replace(/\n$/, "");
@@ -53,12 +56,13 @@ export function MarkdownCodeBlock({ children }: ComponentPropsWithoutRef<"pre">)
 }
 
 function HighlightedCodeBlock({ children }: ComponentPropsWithoutRef<"pre">) {
+  useLocale();
   const codeElement = Children.count(children) === 1 && isValidElement<CodeElementProps>(children)
     ? children as ReactElement<CodeElementProps>
     : null;
   const code = codeElement ? Children.toArray(codeElement.props.children).join("").replace(/\n$/, "") : "";
   const language = codeElement?.props.className?.match(/(?:^|\s)language-([^\s]+)/)?.[1]?.toLowerCase();
-  const title = language ? languageLabels[language] ?? language : "Code";
+  const title = language ? languageLabels[language] ?? language : t("markdownCodeBlock.code");
   const [wrap, setWrap] = useState(false);
   const [copied, setCopied] = useState(false);
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
@@ -115,8 +119,8 @@ function HighlightedCodeBlock({ children }: ComponentPropsWithoutRef<"pre">) {
         <div className="markdown-code-block-actions">
           <button
             type="button"
-            aria-label={wrap ? "Disable word wrap" : "Enable word wrap"}
-            title={wrap ? "Disable word wrap" : "Enable word wrap"}
+            aria-label={wrap ? t("markdownCodeBlock.disableWordWrap") : t("markdownCodeBlock.enableWordWrap")}
+            title={wrap ? t("markdownCodeBlock.disableWordWrap") : t("markdownCodeBlock.enableWordWrap")}
             aria-pressed={wrap}
             onClick={() => setWrap((value) => !value)}
           >
@@ -124,8 +128,8 @@ function HighlightedCodeBlock({ children }: ComponentPropsWithoutRef<"pre">) {
           </button>
           <button
             type="button"
-            aria-label={copied ? "Copied" : "Copy code"}
-            title={copied ? "Copied" : "Copy code"}
+            aria-label={copied ? t("markdownCodeBlock.copied") : t("markdownCodeBlock.copyCode")}
+            title={copied ? t("markdownCodeBlock.copied") : t("markdownCodeBlock.copyCode")}
             onClick={() => void copyCode()}
           >
             {copied

@@ -1,3 +1,5 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CircleAlert, Check, X } from "lucide-react";
@@ -8,6 +10,7 @@ const ToastContext = createContext<(text: string, kind?: ToastKind) => void>(() 
 export const useToast = () => useContext(ToastContext);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  useLocale();
   const [items, setItems] = useState<ToastItem[]>([]);
   const sequence = useRef(0);
   const show = useCallback((text: string, kind: ToastKind = "info") => {
@@ -17,11 +20,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const dismiss = useCallback((id: number) => setItems((current) => current.filter((item) => item.id !== id)), []);
   return <ToastContext.Provider value={show}>
     {children}
-    {createPortal(<div className="app-toasts" aria-label="Notifications">{items.map((item) => <Toast key={item.id} item={item} dismiss={dismiss} />)}</div>, document.body)}
+    {createPortal(<div className="app-toasts" aria-label={t("app.notifications")}>{items.map((item) => <Toast key={item.id} item={item} dismiss={dismiss} />)}</div>, document.body)}
   </ToastContext.Provider>;
 }
 
 function Toast({ item, dismiss }: { item: ToastItem; dismiss: (id: number) => void }) {
+  useLocale();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const remaining = useRef(item.kind === "error" ? 7000 : 4000);
@@ -36,6 +40,6 @@ function Toast({ item, dismiss }: { item: ToastItem; dismiss: (id: number) => vo
     onFocus={() => setFocused(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
     {item.kind === "error" ? <CircleAlert size={17} /> : <Check size={17} />}
     <span>{item.text}</span>
-    <button type="button" aria-label="Dismiss notification" onClick={() => dismiss(item.id)}><X size={16} /></button>
+    <button type="button" aria-label={t("toast.dismissNotification")} onClick={() => dismiss(item.id)}><X size={16} /></button>
   </div>;
 }

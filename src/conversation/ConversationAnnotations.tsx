@@ -1,3 +1,5 @@
+import { useLocale } from "../i18n";
+import { t } from "../../shared/i18n/index";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { MessageSquareQuote, Pencil, Trash2, X } from "lucide-react";
@@ -26,6 +28,7 @@ export function avoidAnnotationMarkers(position: { left: number; top: number }, 
 
 // The same positioning rules serve selection actions, comments and translations.
 export function useAnchoredPopup(popup: RefObject<HTMLDivElement | null>, rect: DOMRect | null, avoidMarkers = false) {
+  useLocale();
   const [position, setPosition] = useState({ left: 8, top: 8 });
   useLayoutEffect(() => {
     if (!rect || !popup.current) return;
@@ -53,6 +56,7 @@ export function useAnchoredPopup(popup: RefObject<HTMLDivElement | null>, rect: 
 }
 
 export function ConversationAnnotations({ root, references, editingId, onEdit, onChange }: Props) {
+  useLocale();
   const [anchors, setAnchors] = useState<{ id: string; rect: DOMRect; marker: DOMRect }[]>([]);
   const popup = useRef<HTMLDivElement>(null);
   const originalComment = useRef("");
@@ -117,15 +121,16 @@ export function ConversationAnnotations({ root, references, editingId, onEdit, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId, root]);
   return createPortal(<>
-    {anchors.map(({ id, marker }) => <button type="button" data-annotation-control className="annotation-marker" key={id} aria-label={`Edit annotation ${references.findIndex(value => value.id === id) + 1}`} style={{ left: Math.min(marker.right, (root.current?.getBoundingClientRect().right ?? window.innerWidth) - 32), top: marker.top - 20 }} onClick={() => onEdit(id)}>{references.findIndex(value => value.id === id) + 1}</button>)}
-    {current && anchor && <div key={current.id} ref={popup} className="annotation-editor" role="dialog" aria-label="Edit annotation" style={position}>
-      <textarea autoFocus aria-label="Annotation comment" placeholder="Add an optional comment…" value={current.comment} onChange={event => onChange(references.map(value => value.id === current.id ? { ...value, comment: event.target.value } : value))} />
-      <footer><button type="button" aria-label="Delete annotation" onClick={() => { onChange(references.filter(value => value.id !== current.id)); onEdit(null); }}><Trash2 size={16} /></button><span /><button type="button" onClick={() => { onChange(references.map(value => value.id === current.id ? { ...value, comment: originalComment.current } : value)); onEdit(null); }}>Cancel</button><button type="button" onClick={() => onEdit(null)}>Save</button></footer>
+    {anchors.map(({ id, marker }) => <button type="button" data-annotation-control className="annotation-marker" key={id} aria-label={t("conversationAnnotations.editAnnotation", { p0: references.findIndex(value => value.id === id) + 1 })} style={{ left: Math.min(marker.right, (root.current?.getBoundingClientRect().right ?? window.innerWidth) - 32), top: marker.top - 20 }} onClick={() => onEdit(id)}>{references.findIndex(value => value.id === id) + 1}</button>)}
+    {current && anchor && <div key={current.id} ref={popup} className="annotation-editor" role="dialog" aria-label={t("conversationAnnotations.editAnnotation2")} style={position}>
+      <textarea autoFocus aria-label={t("conversationAnnotations.annotationComment")} placeholder={t("conversationAnnotations.addAnOptionalComment")} value={current.comment} onChange={event => onChange(references.map(value => value.id === current.id ? { ...value, comment: event.target.value } : value))} />
+      <footer><button type="button" aria-label={t("conversationAnnotations.deleteAnnotation")} onClick={() => { onChange(references.filter(value => value.id !== current.id)); onEdit(null); }}><Trash2 size={16} /></button><span /><button type="button" onClick={() => { onChange(references.map(value => value.id === current.id ? { ...value, comment: originalComment.current } : value)); onEdit(null); }}>{t("app.cancel")}</button><button type="button" onClick={() => onEdit(null)}>{t("app.save")}</button></footer>
     </div>}
   </>, document.body);
 }
 
 export function ComposerReferences({ references, onChange, onEdit }: { references: ConversationReference[]; onChange: (value: ConversationReference[]) => void; onEdit: (id: string) => void }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -136,10 +141,10 @@ export function ComposerReferences({ references, onChange, onEdit }: { reference
   }, [open]);
   if (!references.length) return null;
   return <div ref={container} className="composer-annotations" onMouseEnter={() => { if (window.matchMedia("(hover: hover)").matches) setOpen(true); }} onMouseLeave={() => setOpen(false)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
-    <div className="annotation-chip"><button type="button" aria-expanded={open} onClick={() => setOpen(value => window.matchMedia("(hover: hover)").matches || !value)} onKeyDown={event => { if (event.key === "Escape") setOpen(false); }}><MessageSquareQuote size={16} />{references.length} {references.length === 1 ? "annotation" : "annotations"}</button><button type="button" aria-label="Remove all annotations" onClick={() => onChange([])}><X size={14} /></button></div>
-    {open && <div className="annotation-preview" aria-label="Annotations">{references.map((reference, index) => <div className="annotation-preview-item" key={reference.id}>
-      <span>{index + 1}.</span><div><small>Selected text</small><blockquote>{reference.text}</blockquote>{reference.comment && <><small>Your comment</small><p>{reference.comment}</p></>}</div>
-      <button type="button" aria-label={`Edit annotation ${index + 1}`} onClick={() => { setOpen(false); onEdit(reference.id); }}><Pencil size={16} /></button><button type="button" aria-label={`Delete annotation ${index + 1}`} onClick={() => onChange(references.filter(value => value.id !== reference.id))}><Trash2 size={16} /></button>
+    <div className="annotation-chip"><button type="button" aria-expanded={open} onClick={() => setOpen(value => window.matchMedia("(hover: hover)").matches || !value)} onKeyDown={event => { if (event.key === "Escape") setOpen(false); }}><MessageSquareQuote size={16} />{references.length} {references.length === 1 ? "annotation" : "annotations"}</button><button type="button" aria-label={t("conversationAnnotations.removeAllAnnotations")} onClick={() => onChange([])}><X size={14} /></button></div>
+    {open && <div className="annotation-preview" aria-label={t("conversationAnnotations.annotations")}>{references.map((reference, index) => <div className="annotation-preview-item" key={reference.id}>
+      <span>{index + 1}{"."}</span><div><small>{t("conversationAnnotations.selectedText")}</small><blockquote>{reference.text}</blockquote>{reference.comment && <><small>{t("conversationAnnotations.yourComment")}</small><p>{reference.comment}</p></>}</div>
+      <button type="button" aria-label={t("conversationAnnotations.editAnnotation", { p0: index + 1 })} onClick={() => { setOpen(false); onEdit(reference.id); }}><Pencil size={16} /></button><button type="button" aria-label={t("conversationAnnotations.deleteAnnotation2", { p0: index + 1 })} onClick={() => onChange(references.filter(value => value.id !== reference.id))}><Trash2 size={16} /></button>
     </div>)}</div>}
   </div>;
 }

@@ -1,3 +1,5 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, File, Folder, RefreshCw, X } from "lucide-react";
 import type { ClientApi, DirectoryListing } from "../shared/clientTypes";
@@ -13,6 +15,7 @@ interface Props {
 }
 
 export function DirectoryBrowser({ api, purpose, title, initialPath = "", sessionId, onClose, onSelect }: Props) {
+  useLocale();
   const dialog = useRef<HTMLDialogElement>(null);
   const request = useRef(0);
   const [listing, setListing] = useState<DirectoryListing | null>(null);
@@ -38,7 +41,7 @@ export function DirectoryBrowser({ api, purpose, title, initialPath = "", sessio
       if (id !== request.current) return;
       setListing(next); setLocation(next.path); setFilter("");
     } catch (cause) {
-      if (id === request.current) setError(cause instanceof Error ? cause.message : "Could not read directory.");
+      if (id === request.current) setError(cause instanceof Error ? cause.message : t("directoryBrowser.couldNotReadDirectory"));
     } finally { if (id === request.current) setBusy(false); }
   }
 
@@ -47,37 +50,37 @@ export function DirectoryBrowser({ api, purpose, title, initialPath = "", sessio
     setBusy(true); setError("");
     setSelecting(true);
     try { await onSelect(paths); if (id === request.current) onClose(); }
-    catch (cause) { if (id === request.current) setError(cause instanceof Error ? cause.message : "Could not open selection."); }
+    catch (cause) { if (id === request.current) setError(cause instanceof Error ? cause.message : t("directoryBrowser.couldNotOpenSelection")); }
     finally { if (id === request.current) { setBusy(false); setSelecting(false); } }
   }
 
   return <dialog ref={dialog} className="directory-browser" onCancel={(event) => { event.preventDefault(); if (!selecting) onClose(); }}>
-    <header><h2>{title}</h2><button type="button" aria-label="Close directory browser" disabled={selecting} onClick={onClose}><X size={18} /></button></header>
+    <header><h2>{title}</h2><button type="button" aria-label={t("directoryBrowser.closeDirectoryBrowser")} disabled={selecting} onClick={onClose}><X size={18} /></button></header>
     <form className="directory-location" onSubmit={(event) => { event.preventDefault(); void load(location); }}>
-      <button type="button" aria-label="Parent directory" disabled={busy || !listing || listing.parentPath === null} onClick={() => { if (listing?.parentPath != null) void load(listing.parentPath); }}><ArrowUp size={16} /></button>
-      <input aria-label="Directory path" value={location} onChange={(event) => setLocation(event.target.value)} placeholder={purpose === "sources" ? "Daemon home directory" : "Registered workspaces"} disabled={busy} />
-      <button type="submit" disabled={busy}>Go</button>
-      <button type="button" aria-label="Refresh directory" disabled={busy} onClick={() => void load(listing?.path ?? initialPath)}><RefreshCw size={16} /></button>
+      <button type="button" aria-label={t("directoryBrowser.parentDirectory")} disabled={busy || !listing || listing.parentPath === null} onClick={() => { if (listing?.parentPath != null) void load(listing.parentPath); }}><ArrowUp size={16} /></button>
+      <input aria-label={t("directoryBrowser.directoryPath")} value={location} onChange={(event) => setLocation(event.target.value)} placeholder={purpose === "sources" ? t("directoryBrowser.daemonHomeDirectory") : t("directoryBrowser.registeredWorkspaces")} disabled={busy} />
+      <button type="submit" disabled={busy}>{t("directoryBrowser.go")}</button>
+      <button type="button" aria-label={t("directoryBrowser.refreshDirectory")} disabled={busy} onClick={() => void load(listing?.path ?? initialPath)}><RefreshCw size={16} /></button>
     </form>
-    {purpose === "files" && <button type="button" className="directory-roots" disabled={busy} onClick={() => void load("")}>Registered sources and workspaces</button>}
-    <input className="directory-filter" aria-label="Filter directory entries" placeholder="Filter this directory…" value={filter} onChange={(event) => setFilter(event.target.value)} />
+    {purpose === "files" && <button type="button" className="directory-roots" disabled={busy} onClick={() => void load("")}>{t("directoryBrowser.registeredSourcesAndWorkspaces")}</button>}
+    <input className="directory-filter" aria-label={t("directoryBrowser.filterDirectoryEntries")} placeholder={t("directoryBrowser.filterThisDirectory")} value={filter} onChange={(event) => setFilter(event.target.value)} />
     {error && <p role="alert">{error}</p>}
     <div className="directory-entries" aria-busy={busy}>
       {listing?.entries.filter((entry) => entry.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())).map((entry) => <div className="directory-entry" key={entry.path}>
-        {purpose === "sources" && <input type="checkbox" aria-label={`Select ${entry.name}`} checked={chosen.includes(entry.path)} disabled={busy || chosen.length >= 20 && !chosen.includes(entry.path)} onChange={(event) => setChosen((current) => event.target.checked ? [...current, entry.path] : current.filter((path) => path !== entry.path))} />}
+        {purpose === "sources" && <input type="checkbox" aria-label={t("directoryBrowser.select", { p0: entry.name })} checked={chosen.includes(entry.path)} disabled={busy || chosen.length >= 20 && !chosen.includes(entry.path)} onChange={(event) => setChosen((current) => event.target.checked ? [...current, entry.path] : current.filter((path) => path !== entry.path))} />}
         <button type="button" disabled={busy || entry.kind === "unavailable"} onClick={() => entry.kind === "directory" ? void load(entry.path) : void select([entry.path])}>
           {entry.kind === "directory" ? <Folder size={16} /> : <File size={16} />}<span>{entry.name}</span>
-          {entry.kind === "unavailable" && <small>Unavailable</small>}
+          {entry.kind === "unavailable" && <small>{t("directoryBrowser.unavailable")}</small>}
         </button>
       </div>)}
-      {!busy && listing?.entries.length === 0 && <p>No {purpose === "sources" ? "folders" : "files or folders"} here.</p>}
-      {busy && <p role="status">Loading…</p>}
+      {!busy && listing?.entries.length === 0 && <p>{t(purpose === "sources" ? "directory.emptyFolders" : "directory.emptyEntries")}</p>}
+      {busy && <p role="status">{t("directoryBrowser.loading")}</p>}
     </div>
-    {listing?.truncated && <p>Showing the first 1,000 entries. Enter a deeper directory path to browse further.</p>}
+    {listing?.truncated && <p>{t("directoryBrowser.showingTheFirst1000EntriesEnterA")}</p>}
     {purpose === "sources" && <footer>
-      <span>{chosen.length ? `${chosen.length} folders selected` : "Select folders, or use the current directory."}</span>
-      <button type="button" disabled={busy || !listing?.path || chosen.length > 0} onClick={() => { if (listing?.path) void select([listing.path]); }}>Use this folder</button>
-      {chosen.length > 0 && <><button type="button" disabled={busy} onClick={() => setChosen([])}>Clear</button><button type="button" disabled={busy} onClick={() => void select(chosen)}>Add selected</button></>}
+      <span>{chosen.length ? t("directoryBrowser.foldersSelected", { p0: chosen.length }) : t("directoryBrowser.selectFoldersOrUseTheCurrentDirectory")}</span>
+      <button type="button" disabled={busy || !listing?.path || chosen.length > 0} onClick={() => { if (listing?.path) void select([listing.path]); }}>{t("directoryBrowser.useThisFolder")}</button>
+      {chosen.length > 0 && <><button type="button" disabled={busy} onClick={() => setChosen([])}>{t("directoryBrowser.clear")}</button><button type="button" disabled={busy} onClick={() => void select(chosen)}>{t("directoryBrowser.addSelected")}</button></>}
     </footer>}
   </dialog>;
 }
