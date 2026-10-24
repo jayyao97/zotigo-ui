@@ -212,6 +212,7 @@ function ConversationContent() {
   const inverted = Platform.OS !== "web";
   const scrollMetrics = useRef(new TimelineScrollMetrics(inverted));
   const [following, setFollowing] = useState(true);
+  const [showJump, setShowJump] = useState(false);
   const [history, setHistory] = useState<{
     target?: string;
     excerpt?: string;
@@ -785,6 +786,7 @@ function ConversationContent() {
     historyGesture.current.cancel();
     scrollMetrics.current.resetCorrection();
     follow.current.jump();
+    setShowJump(false);
     setFollowing(true);
     if (inverted) list.current?.scrollToOffset({ offset: 0, animated: true });
     else list.current?.scrollToEnd({ animated: true });
@@ -869,7 +871,9 @@ function ConversationContent() {
           )}
         </View>
       )}
+      <View style={{ flex: 1 }}>
       <FlatList
+        style={{ flex: 1 }}
         ref={list}
         data={listData}
         inverted={inverted}
@@ -918,6 +922,7 @@ function ConversationContent() {
               : contentSize.height - contentOffset.y - layoutMeasurement.height,
           );
           setFollowing(follow.current.endDrag(event.nativeEvent.velocity?.y));
+          setShowJump(follow.current.showJump);
         }}
         onMomentumScrollBegin={() => {
           follow.current.beginMomentum();
@@ -932,6 +937,7 @@ function ConversationContent() {
               : contentSize.height - contentOffset.y - layoutMeasurement.height,
           );
           setFollowing(follow.current.endMomentum());
+          setShowJump(follow.current.showJump);
         }}
         onScroll={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } =
@@ -948,6 +954,7 @@ function ConversationContent() {
                     layoutMeasurement.height,
             ),
           );
+          setShowJump(follow.current.showJump);
           if (
             historyGesture.current.consume(
               follow.current.following,
@@ -986,15 +993,18 @@ function ConversationContent() {
         ListHeaderComponent={inverted ? requestsView : historyLoader}
         ListFooterComponent={inverted ? historyLoader : requestsView}
       />
-      {!following && (
-        <View style={{ alignItems: "center", height: 44 }}>
+      {showJump && (
+        <View pointerEvents="box-none" style={{ position: "absolute", bottom: 8, left: 0, right: 0, alignItems: "center" }}>
+          <View style={{ borderRadius: 22, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }}>
           <IconButton
             icon={ArrowDown}
             label="Jump to latest"
             onPress={scrollToBottom}
           />
+          </View>
         </View>
       )}
+      </View>
       <View
         style={{
           padding: 12,
