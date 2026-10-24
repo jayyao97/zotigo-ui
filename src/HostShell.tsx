@@ -6,10 +6,11 @@ import { ModelFavoritesProvider } from "./modelFavorites";
 import { ToastProvider } from "./Toast";
 import { bindClientGeneration } from "../shared/bindClientGeneration";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Plus, Server, Settings, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Server, Settings, X } from "lucide-react";
 import App, { discardHostVolatileState } from "./App";
 import { DirectoryBrowser } from "./DirectoryBrowser";
 import { ClientContext, useClient } from "./ClientContext";
+import { HostSettings } from "./HostSettings";
 import { SettingsPage } from "./SettingsPage";
 import { parseThinkingDisplayMode, thinkingDisplayStorageKey, type ThinkingDisplayMode } from "./thinkingDisplay";
 import type { AgentCatalogEntry } from "../shared/zotigod";
@@ -68,11 +69,9 @@ export function HostShell() {
     try { return parseThinkingDisplayMode(localStorage.getItem(thinkingDisplayStorageKey)); }
     catch { return "expanded"; }
   });
-  const [name, setName] = useState(""); const [address, setAddress] = useState(""); const [token, setToken] = useState("");
   const [status, setStatus] = useState("");
   const [picker, setPicker] = useState(false);
   const pickerResult = useRef<((value: SourceCandidate[]) => void) | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
   const storage = parent.kind === "web" ? sessionStorage : localStorage;
   useEffect(() => {
     let active = true;
@@ -88,7 +87,6 @@ export function HostShell() {
       if (parent.kind === "web") discardHostVolatileState();
     };
   }, [api, parent.kind, storage]);
-  useEffect(() => { if (hostSettingsOpen) dialog.current?.showModal(); }, [hostSettingsOpen]);
   useEffect(() => {
     const openSettings = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "," && !event.shiftKey && !event.altKey && !event.isComposing) {
@@ -105,12 +103,13 @@ export function HostShell() {
     getDaemonConfig: async () => { const config = await api.getDaemonConfig(); const url = new URL(config.baseUrl); url.searchParams.set("zotigoHost", selected); return { ...config, baseUrl: url.toString() }; },
   }, () => generationRef.current === generation), [api, selected, generation]);
   async function switchHost(id: string) {
-    if (busy || catalogSyncInFlight.current || id === selected) return;
+    if (busy || catalogSyncInFlight.current) return false;
+    if (id === selected) return true;
     setBusy(true); setError("");
     let prepared = false;
     try {
       await api.testHost(id);
-      if (!window.dispatchEvent(new Event("zotigo:before-host-switch", { cancelable: true }))) return;
+      if (!window.dispatchEvent(new Event("zotigo:before-host-switch", { cancelable: true }))) return false;
       prepared = true;
       await api.unsubscribeSessionEvents();
       await api.unsubscribeFileEvents();
@@ -118,9 +117,11 @@ export function HostShell() {
       await api.setActiveHost(id);
       setRefreshedCodex(null); setCatalogSyncStatus(""); setCatalogSyncError(""); setSelected(id); setGeneration(generationRef.current); setNewSessionGeneration(generationRef.current);
       try { storage.setItem("zotigo.host", id); } catch { /* In-memory selection still works. */ }
+      return true;
     } catch (cause) {
       if (prepared) window.dispatchEvent(new Event("zotigo:host-switch-cancelled"));
       setError(cause instanceof Error ? cause.message : t("hostShell.couldNotConnectToHost"));
+      return false;
     }
     finally { setGeneration(generationRef.current); setBusy(false); }
   }
@@ -177,17 +178,7 @@ export function HostShell() {
       </ModelFavoritesProvider></ToastProvider> : <main className="web-login"><p>{error || t("hostShell.loadingHosts")}</p></main>}
     </ClientContext.Provider>
     {error && ready && <div className="host-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("hostShell.dismissError")}><X size={14} /></button></div>}
-    {hostSettingsOpen && <dialog ref={dialog} className="host-settings" onCancel={() => setHostSettingsOpen(false)}>
-      <header><div><h2>{t("hostShell.hosts")}</h2><p>{parent.kind === "web" ? t("hostShell.savedOnThisWebServerAndSharedWith") : t("hostShell.savedOnThisDevice")}</p></div><button aria-label={t("hostShell.closeSettings")} onClick={() => setHostSettingsOpen(false)}><X size={18} /></button></header>
-      <div className="host-settings-list">{profiles.map((host) => <div key={host.id} className="host-settings-row"><Server size={18} /><div><strong>{host.name}</strong><small>{host.baseUrl}</small></div><button disabled={busy} onClick={() => { setBusy(true); setStatus(""); void api.testHost(host.id).then(() => setStatus(t("host.connected", { host: host.name }))).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}>{t("hostShell.test")}</button><button aria-label={t("app.remove", { p0: host.name })} disabled={busy || host.id === "local" || host.id === selected} onClick={() => { setBusy(true); void api.deleteHost(host.id).then(() => { discardHostVolatileState(host.id); return api.listHosts(); }).then(setProfiles).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}><Trash2 size={15} /></button></div>)}</div>
-      <form onSubmit={(event) => { event.preventDefault(); setBusy(true); setStatus(""); void api.saveHost({ name, baseUrl: address, token }).then(() => api.listHosts()).then((list) => { setProfiles(list); setName(""); setAddress(""); setToken(""); setStatus(t("hostShell.hostSavedTestTheConnectionOrSelectIt")); }).catch((cause: Error) => setStatus(cause.message)).finally(() => setBusy(false)); }}>
-        <h3>{t("hostShell.addHost")}</h3><label>{t("hostShell.name")}<input value={name} onChange={(event) => setName(event.target.value)} placeholder={t("hostShell.dev")} required maxLength={100} /></label>
-        <label>{t("hostShell.daemonAddress")}<input value={address} onChange={(event) => setAddress(event.target.value)} placeholder={t("host.urlExample")} required /></label>
-        <label>{t("hostShell.daemonToken")}<input type="password" value={token} onChange={(event) => setToken(event.target.value)} autoComplete="new-password" /></label>
-        <small>{t("hostShell.useHttpsOutsideATrustedNetwork")}{" "}</small>
-        <button disabled={busy} type="submit"><Plus size={15} />{t("hostShell.saveHost")}</button>
-      </form>{status && <p role="status">{status}</p>}
-    </dialog>}
+    {hostSettingsOpen && <HostSettings api={api} kind={parent.kind} profiles={profiles} selected={selected} busy={busy || syncingCatalog} status={status} onProfiles={setProfiles} onClose={() => setHostSettingsOpen(false)} beforeChange={async (id) => id !== selected || await switchHost("local")} onDiscard={discardHostVolatileState} />}
     {picker && <DirectoryBrowser api={client} purpose="sources" title={t("hostShell.chooseFoldersOn", { p0: profiles.find((host) => host.id === selected)?.name ?? "" })} onClose={() => closePicker([])} onSelect={async (paths) => {
       const sources = await client.inspectHostSources(paths);
       closePicker(sources);

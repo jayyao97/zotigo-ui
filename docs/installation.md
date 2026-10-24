@@ -39,9 +39,15 @@ The default prefix is `~/.local/share/zotigo` (override with `--prefix` or `ZOTI
 
 The installer registers/starts the local daemon and, for Web, the Web service. Default addresses are `http://127.0.0.1:8766` and `http://127.0.0.1:8080`. `--no-service` prints the foreground launch paths instead.
 
-- `PREFIX/config/daemon.env`: daemon listen address and optional token file.
+- `PREFIX/config/daemon.env`: daemon listen address and token file. The paired daemon installer generates a private random token on first configuration, even for loopback.
 - `PREFIX/config/web.env`: Web environment variables, including daemon URL and Web host/port/origin/token.
-- These are trusted shell assignment files owned by the installing user and preserved on upgrade.
+- `PREFIX/config/desktop.json`: installed Desktop Local connection (`baseUrl` and `tokenFile` path, never token contents). The installed app links to this file so launching from the applications menu needs no shell environment. Explicit `ZOTIGOD_URL` bypasses these defaults, including the token; explicit `ZOTIGOD_AUTH_TOKEN_FILE` overrides the installed token path.
+
+The `.env` files contain trusted shell assignments owned by the installing user; all these configuration files are preserved on upgrade.
+
+Client defaults are created only when the corresponding configuration and `COMPONENT/current/INSTALLATION` are both absent, after daemon installation. They use the daemon's configured token file and address (wildcard bind addresses become loopback URLs). Existing configurations are never rewritten; a new client alongside a legacy unauthenticated daemon remains unauthenticated. Older installed Desktop versions without `desktop.json` keep their environment-based behavior. A missing configuration for an already installed Web service is an error, not a fresh install. Retry after an interrupted installation reuses existing configuration and credentials.
+
+The UI pins daemon `v0.0.4-dev.23`, which includes first-install token generation. When testing unpublished changes in both repositories, use `--daemon-source /path/to/zotigo`.
 
 Web generates a login token on first startup if none is configured; read `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). This owner-only file is reused across restarts. To rotate the token, stop Web and remove the file before starting again. An explicit ZOTIGO_WEB_TOKEN overrides the file without replacing it. Browser login sessions still expire after 12 hours and are invalidated on server restart. The token itself is not printed or logged. See [README remote access](../README.md#remote-access) for HTTPS, authentication and network requirements. The default Local connection uses the colocated daemon. Saved remote hosts run workspace and text-file operations on their own daemon; the Web backend must be able to reach those addresses.
 
@@ -82,7 +88,7 @@ These are source-built developer installations, not Developer ID-signed or notar
 
 Daemon and Web bind addresses are independent. To expose the daemon, set
 `ZOTIGOD_ADDR=0.0.0.0:8766` and `ZOTIGOD_AUTH_TOKEN_FILE=/absolute/path/to/daemon.token`
-in `PREFIX/config/daemon.env`. Generate a private random token file before restarting.
+in `PREFIX/config/daemon.env`. Fresh installations already configure a private token file; keep that path and token when changing the listen address. Older unauthenticated installations need a private random token file configured explicitly before restarting.
 In `PREFIX/config/web.env`, set:
 
 ```sh
@@ -100,7 +106,7 @@ encrypted. For HTTPS, omit it and configure the reverse proxy as described in RE
 Web login remains required, using its separate token in `~/.zotigo/web/access-token`.
 Restart both user services after changing configuration.
 
-Desktop uses the same `ZOTIGOD_URL` and `ZOTIGOD_AUTH_TOKEN_FILE` environment variables;
+New installed Desktop clients use `PREFIX/config/desktop.json`; development and older installations use the `ZOTIGOD_URL` and `ZOTIGOD_AUTH_TOKEN_FILE` environment variables;
 the token file must exist on the Desktop host. The token is read by the backend,
 never returned through UI configuration APIs. API calls, event streams, image previews
 and downloads carry the daemon credential. Requests do not follow API redirects;

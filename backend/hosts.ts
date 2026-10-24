@@ -32,10 +32,14 @@ export function currentHost(): Connection | undefined { return context.getStore(
 export function withHost<T>(id: string, run: () => T): T { return context.run(resolveHost(id), run); }
 export function listHosts(): HostProfile[] { return [local(), ...hosts].map(({ token, ...host }) => ({ ...host, hasToken: !!token })); }
 export function saveHost(input: HostInput): HostProfile {
-  if (input?.id) throw new Error("Add a new host to change connection credentials.");
-  if (hosts.length >= 50) throw new Error("Too many saved hosts.");
-  const next = validateInput(input, randomUUID());
-  const updated = [...hosts, next];
+  if (input?.id === "local") throw new Error("The default host is managed by the application.");
+  const existing = input?.id ? hosts.find((host) => host.id === input.id) : undefined;
+  if (input?.id && !existing) throw new Error("Host is no longer available.");
+  if (!existing && hosts.length >= 50) throw new Error("Too many saved hosts.");
+  const next = validateInput({ ...input, token: input?.token === undefined ? existing?.token : input.token }, existing?.id ?? randomUUID());
+  // Other clients may still hold the old ID; never redirect their actions to new credentials.
+  if (existing && (next.baseUrl !== existing.baseUrl || next.token !== existing.token)) next.id = randomUUID();
+  const updated = existing ? hosts.map((host) => host.id === existing.id ? next : host) : [...hosts, next];
   persist(updated); hosts = updated;
   const { token, ...host } = next; return { ...host, hasToken: !!token };
 }

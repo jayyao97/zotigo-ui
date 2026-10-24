@@ -1,5 +1,7 @@
 """Exercise the public piped bootstrap against an isolated tagged repository."""
 import os
+import json
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -49,6 +51,88 @@ class BootstrapTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("No stable", result.stderr)
         self.assertFalse(self.result.exists())
+
+
+class ClientConfigTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="zotigo-client-config-")
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name).resolve()
+        self.prefix = self.base / "install with spaces"
+        self.config = self.prefix / "config"
+        self.config.mkdir(parents=True)
+        self.token = self.config / "daemon.token"
+        self.token.write_text("test-secret\n")
+        (self.config / "daemon.env").write_text(f"ZOTIGOD_ADDR=0.0.0.0:8766\nZOTIGOD_AUTH_TOKEN_FILE='{self.token}'\n")
+        self.stage = self.base / "stage"
+        self.stage.mkdir()
+        # Only the paired installer's quoting/probe interface is needed here;
+        # its installer and address mapping are tested in the daemon repository.
+        self.helpers = self.base / "install-helpers.sh"
+        self.helpers.write_text("""fail() { echo "$*" >&2; exit 1; }
+quote() { printf "'%s'" "$1"; }
+daemon_check_url() { check_url=http://127.0.0.1:8766/health; }
+""")
+        self.env = {**os.environ, "HOME": str(self.base / "home"), "prefix": str(self.prefix),
+                    "stage": str(self.stage), "node_executable": shutil.which("node")}
+
+    def configure(self, component, platform="Linux", installed=False):
+        root = self.prefix / component
+        if installed:
+            (root / "current").mkdir(parents=True, exist_ok=True)
+            (root / "current/INSTALLATION").write_text("version=old\n")
+        resources = self.stage / ("output/Zotigo.app/Contents/Resources" if platform == "Darwin" else "output/resources")
+        resources.mkdir(parents=True, exist_ok=True)
+        link = resources / "local-host.json"
+        if link.is_symlink():
+            link.unlink()  # Each install has a fresh staging directory.
+        return subprocess.run(["sh", "-c", 'set -eu; umask 077; . "$1"; . "$2"; install_client_config',
+                               "test", str(self.helpers), str(REPO / "scripts/install-client-config.sh")],
+                              env={**self.env, "component": component, "platform": platform, "root": str(root)},
+                              capture_output=True, text=True)
+
+    def test_first_web_install_connects_to_daemon_and_preserves_config(self):
+        result = self.configure("web")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = self.config / "web.env"
+        values = subprocess.check_output(["sh", "-c", '. "$1"; printf "%s\\n" "$ZOTIGOD_URL" "$ZOTIGOD_AUTH_TOKEN_FILE"', "test", str(config)], text=True).splitlines()
+        self.assertEqual(values, ["http://127.0.0.1:8766", str(self.token)])
+        self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+        config.write_text("ZOTIGOD_URL=http://127.0.0.1:9999\nZOTIGOD_AUTH_TOKEN_FILE=\n")
+        original = config.read_bytes()
+        self.assertEqual(self.configure("web", installed=True).returncode, 0)
+        self.assertEqual(config.read_bytes(), original)
+
+    def test_first_desktop_install_and_retry_link_persistent_config(self):
+        for platform in ["Linux", "Darwin"]:
+            result = self.configure("desktop", platform)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            config = self.config / "desktop.json"
+            self.assertEqual(json.loads(config.read_text()), {"baseUrl": "http://127.0.0.1:8766", "tokenFile": str(self.token)})
+            resources = self.stage / ("output/Zotigo.app/Contents/Resources" if platform == "Darwin" else "output/resources")
+            self.assertEqual((resources / "local-host.json").resolve(), config)
+            self.assertNotIn("test-secret", config.read_text())
+        config.write_text('{"baseUrl":"http://127.0.0.1:9999","tokenFile":""}')
+        original = config.read_bytes()
+        self.assertEqual(self.configure("desktop", installed=True).returncode, 0)
+        self.assertEqual(config.read_bytes(), original)
+
+    def test_legacy_desktop_does_not_automatically_adopt_token(self):
+        self.assertEqual(self.configure("desktop", installed=True).returncode, 0)
+        self.assertFalse((self.config / "desktop.json").exists())
+        self.assertFalse((self.stage / "output/resources/local-host.json").exists())
+
+    def test_missing_existing_web_config_is_not_first_install(self):
+        result = self.configure("web", installed=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Existing Web configuration is missing", result.stderr)
+        self.assertFalse((self.config / "web.env").exists())
+
+    def test_new_client_preserves_legacy_daemon_without_auth(self):
+        (self.config / "daemon.env").write_text("ZOTIGOD_ADDR=127.0.0.1:8766\n")
+        self.env["ZOTIGOD_AUTH_TOKEN_FILE"] = "/unrelated/shell/token"
+        self.assertEqual(self.configure("desktop").returncode, 0)
+        self.assertEqual(json.loads((self.config / "desktop.json").read_text())["tokenFile"], "")
 
 
 if __name__ == "__main__":
