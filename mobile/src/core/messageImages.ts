@@ -1,3 +1,4 @@
+import { parseMarkdownLink } from "@zotigo/shared/markdownLinks";
 import type { DisplayItem } from "@zotigo/shared/zotigod";
 import { userImageUrl } from "@zotigo/shared/codexUserMessage";
 import { imagePreviewUri } from "./fileEditor";
@@ -53,15 +54,17 @@ export async function messageImage(
     // Native Image loads external sources without the daemon Authorization header.
     return url.toString();
   }
-  if (/^[a-z][a-z0-9+.-]*:/i.test(source) || source.startsWith("//"))
-    throw new Error("Unsupported image URL.");
-  const base = !source.startsWith("/")
+  if (source.startsWith("//")) throw new Error("Unsupported image URL.");
+  const link = parseMarkdownLink(source);
+  if (link.kind !== "local") throw new Error("Unsupported image URL.");
+  const absolute = link.path.startsWith("/") || /^file:/i.test(link.path);
+  const base = !absolute
     ? (await client.session(sessionId)).working_directory
     : undefined;
-  if (!source.startsWith("/") && !base)
+  if (!absolute && !base)
     throw new Error("This session has no working directory.");
-  const result = await client.openFile(
-    source,
+  const result = await client.previewImage(
+    link.path,
     sessionId,
     explicit,
     base ? { basePath: base, baseKind: "directory" } : undefined,

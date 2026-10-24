@@ -564,6 +564,14 @@ export class DaemonClient {
       explicitOpen,
       ...base,
     });
+  previewImage = (
+    path: string,
+    sessionId: string,
+    explicitOpen = false,
+    base?: { basePath: string; baseKind: "directory" | "file" },
+  ) => this.request<OpenFile>("/files/open", "POST", {
+    path, sessionId, explicitOpen, imageOnly: true, ...base,
+  });
   saveFile = (input: SaveTextFileInput) =>
     this.request<TextFileSnapshot>("/files/save", "POST", input);
   updateConnection = (
