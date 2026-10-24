@@ -32,3 +32,22 @@ test("sidebar leaves room for the conversation in split view and clamps saved wi
   assert.equal(clampSidebarWidth(NaN, 1024), 320);
   assert.equal(clampSidebarWidth(300, 600), 240);
 });
+
+
+test("conversation activity renders when Hermes has no Intl.PluralRules", () => {
+  const previous = getLocale();
+  const descriptor = Object.getOwnPropertyDescriptor(Intl, "PluralRules")!;
+  try {
+    Object.defineProperty(Intl, "PluralRules", { configurable: true, value: undefined });
+    setLocale("en");
+    for (const [count, expected] of [[0, "Ran 0 commands"], [1, "Ran 1 command"], [2, "Ran 2 commands"]] as const) {
+      assert.equal(t("timeline.activity.command", { count }), expected);
+    }
+    assert.equal(historicalToolSummary([{ content: [{ type: "tool_call", tool_call: { name: "exec_command" } }] }] as DisplayItem[]), "Ran 1 command");
+    setLocale("zh-CN");
+    assert.equal(t("timeline.activity.command", { count: 2 }), "运行了 2 个命令");
+  } finally {
+    Object.defineProperty(Intl, "PluralRules", descriptor);
+    setLocale(previous);
+  }
+});

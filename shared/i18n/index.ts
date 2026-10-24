@@ -26,6 +26,8 @@ export function t(key: MessageKey, params: Record<string, string | number> = {})
 export function translate(locale: Locale, key: MessageKey, params: Record<string, string | number> = {}): string {
   const message = catalogs[locale][key];
   const template = typeof message === "string" ? message
-    : message[new Intl.PluralRules(locale).select(Number(params.count ?? 0)) === "one" ? "one" : "other"];
+    // Supported locales: English has singular ±1; Chinese always uses other.
+    // Hermes does not provide Intl.PluralRules on every supported iOS build.
+    : message[locale === "en" && Math.abs(Number(params.count ?? 0)) === 1 ? "one" : "other"];
   return template.replace(/\{(\w+)\}/g, (match, name: string) => params[name] === undefined ? match : String(params[name]));
 }
