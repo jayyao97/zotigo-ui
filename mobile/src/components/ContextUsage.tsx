@@ -10,7 +10,7 @@ export function ContextUsage({
   window: number;
   onPress: () => void;
 }) {
-  const ratio = window > 0 ? Math.max(0, Math.min(1, tokens / window)) : 0;
+  const ratio = window > 0 ? Math.max(0, tokens / window) : 0;
   const color =
     ratio >= 0.9 ? colors.danger : ratio >= 0.75 ? "#ffb454" : colors.accent;
   const circumference = 2 * Math.PI * 15;
@@ -43,7 +43,7 @@ export function ContextUsage({
           stroke={color}
           strokeWidth={2.5}
           strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={circumference * (1 - ratio)}
+          strokeDashoffset={circumference * (1 - Math.min(1, ratio))}
           rotation={-90}
           origin="18,18"
           strokeLinecap="round"

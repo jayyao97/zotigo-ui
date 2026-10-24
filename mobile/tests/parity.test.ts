@@ -255,3 +255,19 @@ test("history highlighting treats code punctuation literally and matches across 
     { text: "const x = 1", matched: false },
   ]);
 });
+
+test("queue send now and image editing use revision-checked public endpoints", async () => {
+  const requests: { url: string; method?: string; body: unknown }[] = [];
+  const client = new DaemonClient(host, async (url, init) => {
+    requests.push({ url, method: init?.method, body: JSON.parse(String(init?.body)) });
+    return Response.json({ code: "ok", data: {} });
+  });
+  await client.sendQueuedInput("s/1", "q/2", 3);
+  await client.changeQueuedInput("s/1", "q/2", 4, "", [1]);
+  await client.changeQueuedInput("s/1", "q/2", 5, "keep images");
+  assert.deepEqual(requests, [
+    { url: "https://home.test/sessions/s%2F1/queue/q%2F2/send", method: "POST", body: { revision: 3 } },
+    { url: "https://home.test/sessions/s%2F1/queue/q%2F2", method: "PATCH", body: { revision: 4, text: "", image_indices: [1] } },
+    { url: "https://home.test/sessions/s%2F1/queue/q%2F2", method: "PATCH", body: { revision: 5, text: "keep images" } },
+  ]);
+});

@@ -936,6 +936,13 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       }
       return envelope({});
     }
+    if (action.startsWith("queue/") && action.endsWith("/send") && method === "POST") {
+      const item = session.queue?.find(item => item.id === action.slice(6, -5));
+      if (!item) return failure("Queued message missing", 404);
+      if (item.revision !== body.revision || !item.editable) return failure("Queue changed", 409, "conflict");
+      session.queue = session.queue?.filter(value => value !== item);
+      return envelope({});
+    }
     if (action.startsWith("queue/") && ["PATCH", "DELETE"].includes(method)) {
       const item = session.queue?.find((item) => item.id === action.slice(6));
       if (!item) return failure("Queued message missing", 404);
@@ -949,6 +956,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
         session.queue = session.queue?.filter((value) => value !== item);
       else {
         item.text = String(body.text);
+        if (Array.isArray(body.image_indices)) item.images = body.image_indices.map(index => item.images![Number(index)]);
         item.revision++;
       }
       return envelope({});

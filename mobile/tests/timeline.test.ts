@@ -363,3 +363,20 @@ test("cached history fills a gap using the server cursor before resuming live ev
     await running;
   }
 });
+
+test("steering boundaries retain streamed output order without changing durable sequence", async () => {
+  const { orderDisplayInputs, ephemeralDisplayItems, appendDisplayDelta, anchorPromptTimeline, capturePromptTimelineAnchor } = await import("@zotigo/shared/sessionDisplay");
+  const timeline = new Timeline(new DaemonClient(connection, async () => { throw new Error("No network expected"); }), "ordering");
+  const input: DisplayItem = { id: "steer", created_at: "", sequence: 2, type: "steering_message", role: "user" };
+  const output: DisplayItem = { id: "answer", created_at: "", sequence: 3, type: "assistant_message", before_input_id: "steer" };
+  const previews = ephemeralDisplayItems(appendDisplayDelta([], { item_id: "answer", role: "assistant", part_type: "text", delta: "Earlier answer", before_input_id: "steer" }, []));
+  assert.deepEqual(orderDisplayInputs([input, ...previews]).map(item => item.id), ["answer", "steer"]);
+  timeline.accept({ type: "item", item: input });
+  timeline.accept({ type: "item", item: output });
+  assert.deepEqual(timeline.snapshot().items.map(item => item.sequence), [2, 3]);
+  assert.deepEqual(orderDisplayInputs(timeline.snapshot().items).map(item => item.id), ["answer", "steer"]);
+  // A queued input is absent from the timeline and must not reserve its previews.
+  const anchors = new Map();
+  anchors.set("steer", capturePromptTimelineAnchor(1, ["answer"], anchors));
+  assert.deepEqual(anchorPromptTimeline([input, ...previews], anchors).map(item => item.id), ["answer", "steer"]);
+});
