@@ -43,13 +43,17 @@ export function BottomSheet({
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const wide = width >= 768;
+  const [positioned, setPositioned] = useState(false);
   const [anchor, setAnchor] = useState<{
     x: number;
     width: number;
   }>();
   useEffect(() => {
     // Native Modal keeps its content mounted during the dismiss animation.
-    if (!visible) return;
+    if (!visible) {
+      setPositioned(false);
+      return;
+    }
     if (!wide || !anchorRef) {
       setAnchor(undefined);
       return;
@@ -57,7 +61,10 @@ export function BottomSheet({
     let active = true;
     const measure = () =>
       anchorRef.current?.measureInWindow((x, _y, w) => {
-        if (active && w > 0) setAnchor({ x, width: w });
+        if (active && w > 0) {
+          setAnchor({ x, width: w });
+          setPositioned(true);
+        }
       });
     const frame = requestAnimationFrame(measure);
     const keyboard = Keyboard.addListener("keyboardDidHide", measure);
@@ -73,7 +80,7 @@ export function BottomSheet({
     : undefined;
   return (
     <Modal
-      visible={visible}
+      visible={visible && (!wide || !anchorRef || positioned)}
       transparent
       animationType="slide"
       onDismiss={onDismiss}

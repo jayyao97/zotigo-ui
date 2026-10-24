@@ -190,15 +190,18 @@ export default function App() {
   const { width } = useWindowDimensions();
   const wide = width >= 768;
   const [client, setClient] = useState<DaemonClient | null>(null);
-  const sidebar = useSidebarWidth(client?.connection.id ?? "no-device");
+  const sidebar = useSidebarWidth();
   const [dragWidth, setDragWidth] = useState<number>();
-  useEffect(() => setDragWidth(undefined), [client?.connection.id, sidebar.width]);
+  useEffect(() => setDragWidth(undefined), [sidebar.width]);
   const sidebarWidth = clampSidebarWidth(dragWidth ?? sidebar.width, width);
   useEffect(() => () => client?.dispose(), [client]);
   const connect = (next: DaemonClient) => {
     client?.dispose();
     setClient(next);
   };
+  // AsyncStorage must settle before mounting navigation, so the first frame
+  // already has its saved sidebar width. Saving later never hides the frame.
+  if (!sidebar.loaded) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
@@ -227,7 +230,7 @@ export default function App() {
                       <TabletSidebar client={client} connect={connect} />
                     </NavigationContext.Provider>
                   )}
-                  {wide && <SidebarResizeHandle key={client?.connection.id ?? "no-device"}
+                  {wide && <SidebarResizeHandle
                     width={sidebarWidth} frameWidth={width} onWidth={setDragWidth}
                     onCommit={value => { void sidebar.setWidth(value); }} />}
                 </View>

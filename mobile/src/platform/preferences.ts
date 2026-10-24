@@ -17,11 +17,13 @@ function usePreference(key: string) {
   const [value, setValue] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
     let revision = 0;
     setReady(false);
+    setLoaded(false);
     const read = () => {
       const version = ++revision;
       void storage
@@ -30,10 +32,14 @@ function usePreference(key: string) {
           if (active && version === revision) {
             setValue(value);
             setReady(true);
+            setLoaded(true);
           }
         })
         .catch(() => {
-          if (active) setError(t("mobile.couldNotLoadPreferences"));
+          if (active && version === revision) {
+            setError(t("mobile.couldNotLoadPreferences"));
+            setLoaded(true);
+          }
         });
     };
     const callbacks = listeners.get(key) ?? new Set<() => void>();
@@ -58,7 +64,7 @@ function usePreference(key: string) {
       setSaving(false);
     }
   }
-  return { value, ready: ready && !saving, error, save };
+  return { value, loaded, ready: ready && !saving, error, save };
 }
 export function useThinkingDisplay() {
   const pref = usePreference(thinkingDisplayStorageKey);
@@ -109,8 +115,8 @@ export function useSendMode(host: string) {
   };
 }
 
-export function useSidebarWidth(host: string) {
-  const pref = usePreference(`zotigo:sidebar-width:${host}`);
+export function useSidebarWidth() {
+  const pref = usePreference("zotigo:sidebar-width");
   const parsed = pref.value === null ? NaN : Number(pref.value);
   return { ...pref, width: Number.isFinite(parsed) ? parsed : 320, setWidth: (width: number) => pref.save(String(width)) };
 }
