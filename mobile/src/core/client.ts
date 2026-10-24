@@ -230,12 +230,15 @@ export class DaemonClient {
     item: string,
     revision: number,
     text?: string,
+    imageIndices?: number[],
   ) =>
     this.request(
       `/sessions/${enc(id)}/queue/${enc(item)}`,
       text === undefined ? "DELETE" : "PATCH",
-      { revision, text },
+      { revision, text, image_indices: imageIndices },
     );
+  sendQueuedInput = (id: string, item: string, revision: number) =>
+    this.request(`/sessions/${enc(id)}/queue/${enc(item)}/send`, "POST", { revision });
   resumeQueue = (id: string) =>
     this.request(`/sessions/${enc(id)}/queue/resume`, "POST");
   search = (id: string, query: string, signal?: AbortSignal) =>
