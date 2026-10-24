@@ -5,16 +5,15 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 const minWidth = 240;
 const defaultWidth = 320;
 const maxWidth = 480;
+const storageKey = "zotigo:sidebar-width";
 
-export function SidebarResizeHandle({ scope, frameRef, width, onWidth, onResizing }: {
-  scope: string;
+export function SidebarResizeHandle({ frameRef, width, onWidth, onResizing }: {
   frameRef: RefObject<HTMLElement | null>;
   width: number;
   onWidth: (width: number) => void;
   onResizing: (active: boolean) => void;
 }) {
   useLocale();
-  const storageKey = `zotigo:sidebar-width:${scope}`;
   const [limit, setLimit] = useState(maxWidth);
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
   const latestWidth = useRef(width);
@@ -27,7 +26,7 @@ export function SidebarResizeHandle({ scope, frameRef, width, onWidth, onResizin
     } catch { /* Storage is optional. */ }
     latestWidth.current = saved;
     onWidth(saved);
-  }, [storageKey, onWidth]);
+  }, [onWidth]);
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;

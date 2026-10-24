@@ -3806,7 +3806,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     >
       {searchOpen && <SearchPalette state={desktopState} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
-        <SidebarResizeHandle scope={clientScope} frameRef={appFrameRef} width={sidebarWidth} onWidth={setSidebarWidth} onResizing={setIsSidebarResizing} />
+        <SidebarResizeHandle frameRef={appFrameRef} width={sidebarWidth} onWidth={setSidebarWidth} onResizing={setIsSidebarResizing} />
         <div className="sidebar-chrome" aria-hidden="true">
           <PanelLeft size={14} strokeWidth={1.8} />
           <ArrowLeft size={14} strokeWidth={1.8} />
