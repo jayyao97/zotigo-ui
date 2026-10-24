@@ -1,3 +1,4 @@
+import { KeyboardFrameView } from "../components/KeyboardFrameView";
 import { DraftImages } from "../components/DraftImages";
 import { SkillInput } from "../components/SkillInput";
 import Plus from "lucide-react-native/icons/plus";
@@ -11,7 +12,7 @@ import ArrowUp from "lucide-react-native/icons/arrow-up";
 import Shield from "lucide-react-native/icons/shield";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { KeyboardAvoidingView, Platform, Pressable } from "react-native";
+import { Platform, Pressable } from "react-native";
 import { randomUUID } from "expo-crypto";
 import {
   ComposerStore,
@@ -331,8 +332,7 @@ export function NewSessionScreen() {
     }
   }
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    <KeyboardFrameView
       keyboardVerticalOffset={header}
       style={{
         flex: 1,
@@ -714,6 +714,6 @@ export function NewSessionScreen() {
           </>
         )}
       </BottomSheet>
-    </KeyboardAvoidingView>
+    </KeyboardFrameView>
   );
 }

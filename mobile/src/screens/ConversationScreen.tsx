@@ -1,3 +1,4 @@
+import { KeyboardFrameView } from "../components/KeyboardFrameView";
 import { canAcknowledgeSession } from "@zotigo/shared/sessionReadState";
 import { DraftImages } from "../components/DraftImages";
 import { SkillInput } from "../components/SkillInput";
@@ -61,7 +62,6 @@ import {
   Alert,
   AppState,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   Text,
@@ -787,12 +787,11 @@ function ConversationContent() {
     </View>
   );
   return (
-    <KeyboardAvoidingView
+    <KeyboardFrameView
       style={[
         styles.screen,
         { width: "100%", maxWidth: 860, alignSelf: "center" },
       ]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={header}
     >
       <View
@@ -1553,6 +1552,6 @@ function ConversationContent() {
           onClose={() => setSelection(undefined)}
         />
       )}
-    </KeyboardAvoidingView>
+    </KeyboardFrameView>
   );
 }
