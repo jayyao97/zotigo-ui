@@ -27,6 +27,7 @@ Keep the exact contract aligned with `zotigo/docs/zotigod-api.md`. Do not call i
 - Bind daemon requests and long-lived subscriptions to an immutable host context; never use a process-global selected host. Keep credentials in the backend and scope preferences by host.
 - Keep zotigod HTTP calls in `backend/`, not scattered through React components. Desktop IPC and Web HTTP adapters call the same application service.
 - Share React components across platforms. Folder picking uses `DirectoryBrowser` and the selected daemon, including Local. Other OS integration belongs in Electron; Web authentication and browser transport belong in the Web adapter.
+- Manage user-facing renderer copy through typed keys in `shared/i18n/`; include English and Chinese, accessibility labels, and full-sentence interpolation. Follow `docs/localization.md`. Keep protocol values and user/model content unchanged.
 - Prefer React local state until there is a concrete need for more state management.
 - Avoid speculative abstractions, broad cleanup, auth, auto-update, code signing, daemon process management, real workers, browser-use, and computer-use unless explicitly requested.
 

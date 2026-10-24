@@ -1,3 +1,6 @@
+import { stateLabel } from "../shared/i18n/display";
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { useEffect, useState } from "react";
 import { useClient } from "./ClientContext";
 import { favoriteKey, useSavedModelFavorites, type ModelFavorite } from "./modelFavorites";
@@ -5,6 +8,7 @@ import { compatibleReasoningEffort } from "./conversation/ConversationComposer";
 import type { AgentCatalogEntry, AgentKind, RuntimeProfile } from "../shared/zotigod";
 
 export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: string; onCodexRefresh?: (catalog: AgentCatalogEntry) => void }) {
+  useLocale();
   const { api } = useClient();
   const favorites = useSavedModelFavorites();
   const [agents, setAgents] = useState<AgentCatalogEntry[]>([]);
@@ -40,7 +44,7 @@ export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: 
       setModel(first?.id ?? "");
       setEffort(compatibleReasoningEffort(first?.supported_reasoning_efforts ?? [], retry > 0 ? effort : "medium"));
       setProfile(config.profiles.find((item) => item.name === config.default_profile)?.name ?? config.profiles[0]?.name ?? "");
-    })().catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : "Could not load models."); })
+    })().catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : t("favoriteModelSettings.couldNotLoadModels")); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [api, retry, onCodexRefresh]);
@@ -50,33 +54,33 @@ export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: 
   const exists = favorites.items.some((item) => favoriteKey(item) === favoriteKey(favorite));
   const valid = agent === "codex" ? Boolean(selectedModel && selectedModel.supported_reasoning_efforts.includes(effort)) : profiles.some((item) => item.name === profile);
   function label(item: ModelFavorite) {
-    return item.agent === "codex" ? `${models.find((model) => model.id === item.model)?.display_name ?? item.model} · ${item.reasoningEffort}` : item.profile;
+    return item.agent === "codex" ? `${models.find((model) => model.id === item.model)?.display_name ?? item.model} · ${stateLabel(item.reasoningEffort)}` : item.profile;
   }
   return <section className="settings-section" aria-labelledby="favorite-models-heading">
-    <h2 id="favorite-models-heading">Favorite models</h2>
-    <p className="settings-favorites-description">Shown first in the model picker. Saved locally for {hostName}.</p>
+    <h2 id="favorite-models-heading">{t("favoriteModelSettings.favoriteModels")}</h2>
+    <p className="settings-favorites-description">{t("favorites.savedFor", { host: hostName })}</p>
     <div className="settings-card">
       <div className="settings-row">
-        <span><strong>Codex models</strong><small>Reload models from Codex on {hostName}. Does not install or update Codex.</small></span>
-        <button type="button" className="settings-secondary-button" disabled={loading || !agents.some((item) => item.id === "codex")} onClick={() => setRetry((value) => value + 1)}>Refresh models</button>
+        <span><strong>{t("favoriteModelSettings.codexModels")}</strong><small>{t("favorites.refreshHelp", { host: hostName })}</small></span>
+        <button type="button" className="settings-secondary-button" disabled={loading || !agents.some((item) => item.id === "codex")} onClick={() => setRetry((value) => value + 1)}>{t("favoriteModelSettings.refreshModels")}</button>
       </div>
-      {refreshed && <div className="settings-row" role="status"><span><small>Codex models refreshed ({models.length}).{agents.find((item) => item.id === "codex")?.version ? ` Runtime: ${agents.find((item) => item.id === "codex")!.version}.` : ""}</small></span></div>}
-      {favorites.items.length === 0 && <div className="settings-row"><span><small>No favorite models yet.</small></span></div>}
+      {refreshed && <div className="settings-row" role="status"><span><small>{t("favorites.refreshed", { count: models.length })}{agents.find((item) => item.id === "codex")?.version ? t("favoriteModelSettings.runtime", { p0: agents.find((item) => item.id === "codex")!.version ?? "" }) : ""}</small></span></div>}
+      {favorites.items.length === 0 && <div className="settings-row"><span><small>{t("favoriteModelSettings.noFavoriteModelsYet")}</small></span></div>}
       {favorites.items.map((item) => <div className="settings-row" key={favoriteKey(item)}>
-        <span><strong>{label(item)}</strong><small>{item.agent === "codex" ? "Codex" : "Zotigo"}</small></span>
-        <button type="button" className="settings-secondary-button" aria-label={`Remove favorite ${label(item)}`} onClick={() => favorites.toggle(item)}>Remove</button>
+        <span><strong>{label(item)}</strong><small>{item.agent === "codex" ? t("app.codex") : t("app.zotigo")}</small></span>
+        <button type="button" className="settings-secondary-button" aria-label={t("favoriteModelSettings.removeFavorite", { p0: label(item) })} onClick={() => favorites.toggle(item)}>{t("favoriteModelSettings.remove")}</button>
       </div>)}
       <form className="settings-favorite-form" onSubmit={(event) => { event.preventDefault(); if (valid && !exists && !loading && !error) favorites.toggle(favorite); }}>
-        <h3>Add favorite</h3>
-        {loading ? <p role="status">Loading models…</p> : error ? <p role="alert">{error} <button type="button" onClick={() => setRetry((value) => value + 1)}>Retry</button></p> : <>
+        <h3>{t("favoriteModelSettings.addFavorite")}</h3>
+        {loading ? <p role="status">{t("favoriteModelSettings.loadingModels")}</p> : error ? <p role="alert">{error} <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("app.retry2")}</button></p> : <>
           <div className="settings-favorite-fields">
-            <label>Runtime<select value={agent} onChange={(event) => setAgent(event.target.value as AgentKind)}>{agents.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            <label>{t("favoriteModelSettings.runtime2")}<select value={agent} onChange={(event) => setAgent(event.target.value as AgentKind)}>{agents.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             {agent === "codex" ? <>
-              <label>Model<select value={model} onChange={(event) => { setModel(event.target.value); setEffort(compatibleReasoningEffort(models.find((item) => item.id === event.target.value)?.supported_reasoning_efforts ?? [], effort)); }}>{models.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
-              <label>Thinking<select value={effort} onChange={(event) => setEffort(event.target.value)}>{selectedModel?.supported_reasoning_efforts.map((value) => <option key={value}>{value}</option>)}</select></label>
-            </> : <label>Profile<select value={profile} onChange={(event) => setProfile(event.target.value)}>{profiles.map((item) => <option key={item.name}>{item.name}</option>)}</select></label>}
+              <label>{t("app.model")}<select value={model} onChange={(event) => { setModel(event.target.value); setEffort(compatibleReasoningEffort(models.find((item) => item.id === event.target.value)?.supported_reasoning_efforts ?? [], effort)); }}>{models.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
+              <label>{t("app.thinking")}<select value={effort} onChange={(event) => setEffort(event.target.value)}>{selectedModel?.supported_reasoning_efforts.map((value) => <option key={value} value={value}>{stateLabel(value)}</option>)}</select></label>
+            </> : <label>{t("app.profile")}<select value={profile} onChange={(event) => setProfile(event.target.value)}>{profiles.map((item) => <option key={item.name}>{item.name}</option>)}</select></label>}
           </div>
-          <button type="submit" className="settings-secondary-button" disabled={!valid || exists}>{exists ? "Already added" : "Add favorite"}</button>
+          <button type="submit" className="settings-secondary-button" disabled={!valid || exists}>{exists ? t("favoriteModelSettings.alreadyAdded") : t("favoriteModelSettings.addFavorite")}</button>
         </>}
       </form>
     </div>

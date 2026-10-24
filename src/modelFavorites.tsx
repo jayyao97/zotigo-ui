@@ -1,3 +1,5 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 export type ModelFavorite =
@@ -35,6 +37,7 @@ export function parseModelFavorites(raw: string | null): ModelFavorite[] {
 }
 
 export function useModelFavorites(host: string) {
+  useLocale();
   const key = `zotigo.model-favorites.v1:${host}`;
   const [items, setItems] = useState<ModelFavorite[]>(() => {
     try { return parseModelFavorites(localStorage.getItem(key)); } catch { return []; }
@@ -51,12 +54,14 @@ export function useModelFavorites(host: string) {
 const ModelFavoritesContext = createContext<ReturnType<typeof useModelFavorites> | null>(null);
 
 export function ModelFavoritesProvider({ host, children }: { host: string; children: ReactNode }) {
+  useLocale();
   const favorites = useModelFavorites(host);
   return <ModelFavoritesContext.Provider value={favorites}>{children}</ModelFavoritesContext.Provider>;
 }
 
 export function useSavedModelFavorites() {
+  useLocale();
   const favorites = useContext(ModelFavoritesContext);
-  if (!favorites) throw new Error("Model favorites provider is missing.");
+  if (!favorites) throw new Error(t("modelFavorites.modelFavoritesProviderIsMissing"));
   return favorites;
 }

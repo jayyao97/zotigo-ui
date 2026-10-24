@@ -1,3 +1,5 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { MarkdownImage, MarkdownImageContext } from "./MarkdownImage";
 import { Check, Code2, Copy, Eye, LoaderCircle, RefreshCw, Save } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -44,6 +46,7 @@ export function FileEditorTab({
   onModeChange: (mode: FileEditorMode) => void;
   onSave: () => void;
 }) {
+  useLocale();
   const markdown = /\.(?:md|markdown|mdown|mkd)$/i.test(file.path);
   const preview = markdown && mode === "preview";
   return (
@@ -53,7 +56,7 @@ export function FileEditorTab({
         <span className={`file-save-status ${saveStatus}`}>
           {saveStatus === "saving" && <LoaderCircle size={12} />}
           {saveStatus === "clean" && <Check size={12} />}
-          {saveStatus === "dirty" ? "Edited" : saveStatus === "saving" ? "Saving" : saveStatus === "error" ? "Save failed" : "Saved"}
+          {saveStatus === "dirty" ? t("fileEditorTab.edited") : saveStatus === "saving" ? t("fileEditorTab.saving") : saveStatus === "error" ? t("fileEditorTab.saveFailed") : t("fileEditorTab.saved")}
         </span>
         {markdown && (
           <button
@@ -62,14 +65,14 @@ export function FileEditorTab({
             onClick={() => onModeChange(preview ? "source" : "preview")}
           >
             {preview ? <Code2 size={14} /> : <Eye size={14} />}
-            {preview ? "View source" : "View preview"}
+            {preview ? t("fileEditorTab.viewSource") : t("fileEditorTab.viewPreview")}
           </button>
         )}
         <button
           type="button"
           className="file-editor-icon-button"
-          title="Copy path"
-          aria-label="Copy file path"
+          title={t("app.copyPath")}
+          aria-label={t("fileEditorTab.copyFilePath")}
           onClick={() => void navigator.clipboard.writeText(file.path)}
         >
           <Copy size={14} />
@@ -77,18 +80,18 @@ export function FileEditorTab({
         <button
           type="button"
           className="file-editor-icon-button"
-          title="Save"
-          aria-label="Save file"
+          title={t("app.save")}
+          aria-label={t("fileEditorTab.saveFile")}
           disabled={diskChanged || file.readOnly || saveStatus === "clean" || saveStatus === "saving"}
           onClick={onSave}
         >
           <Save size={14} />
         </button>
-        <button type="button" className="file-editor-icon-button" title="Refresh file" aria-label="Refresh file" disabled={saveStatus === "saving"} onClick={onRefresh}><RefreshCw size={14} /></button>
+        <button type="button" className="file-editor-icon-button" title={t("fileEditorTab.refreshFile")} aria-label={t("fileEditorTab.refreshFile")} disabled={saveStatus === "saving"} onClick={onRefresh}><RefreshCw size={14} /></button>
       </header>
-      {diskChanged && <div className="file-editor-banner" role="alert">File changed on disk. Your edits are preserved. Refresh to discard edits and reload.</div>}
+      {diskChanged && <div className="file-editor-banner" role="alert">{t("fileEditorTab.fileChangedOnDiskYourEditsArePreserved")}</div>}
       {refreshError && <div className="file-editor-banner error" role="alert">{refreshError}</div>}
-      {file.readOnly && <div className="file-editor-banner">File opened read-only</div>}
+      {file.readOnly && <div className="file-editor-banner">{t("fileEditorTab.fileOpenedReadOnly")}</div>}
       {saveError && <div className="file-editor-banner error">{saveError}</div>}
       {preview ? (
         <MarkdownImageContext.Provider value={{ sessionId, basePath: file.path, baseKind: "file" }}>

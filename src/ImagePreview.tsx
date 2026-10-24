@@ -1,3 +1,5 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Minus, Plus, X } from "lucide-react";
@@ -5,6 +7,7 @@ import { clampImageOffset, fitImageScale, type ImageSize } from "./imageViewport
 import { useClient } from "./ClientContext";
 
 export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  useLocale();
   const { api } = useClient();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -54,7 +57,7 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
         await api.downloadImage(src);
       }
     } catch (error) {
-      setDownloadError(error instanceof Error ? error.message : "Could not download image.");
+      setDownloadError(error instanceof Error ? error.message : t("imagePreview.couldNotDownloadImage"));
     }
   }
 
@@ -62,7 +65,7 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
     <dialog
       ref={dialogRef}
       className="image-preview-dialog"
-      aria-label={`Image preview: ${alt}`}
+      aria-label={t("imagePreview.imagePreview", { p0: alt })}
       onCancel={(event) => { event.preventDefault(); close(); }}
       onKeyDown={(event) => {
         if (status !== "loaded") return;
@@ -79,8 +82,8 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
       }}
     >
         <div className="image-preview-toolbar">
-          <button type="button" aria-label="Download image" title="Download image" onClick={() => void download()} disabled={status !== "loaded"}><Download size={18} /></button>
-          <button type="button" aria-label="Close image preview" onClick={close} autoFocus><X size={18} /></button>
+          <button type="button" aria-label={t("imagePreview.downloadImage")} title={t("imagePreview.downloadImage")} onClick={() => void download()} disabled={status !== "loaded"}><Download size={18} /></button>
+          <button type="button" aria-label={t("imagePreview.closeImagePreview")} onClick={close} autoFocus><X size={18} /></button>
         </div>
         <div ref={canvasRef} className={`image-preview-canvas${pannable ? " pannable" : ""}`}
           onPointerDown={(event) => {
@@ -96,16 +99,16 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
           onPointerUp={(event) => { dragRef.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
           onLostPointerCapture={() => { dragRef.current = null; }}
         >
-          {status !== "loaded" && <p role="status">{status === "error" ? "Image could not be loaded." : "Loading image…"}</p>}
+          {status !== "loaded" && <p role="status">{status === "error" ? t("imagePreview.imageCouldNotBeLoaded") : t("imagePreview.loadingImage")}</p>}
           <img src={src} alt={alt} draggable={false} hidden={status !== "loaded"}
             style={image ? { width: image.width * scale, height: image.height * scale, transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))` } : undefined}
             onLoad={(event) => { setImage({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }); setStatus("loaded"); }} onError={() => setStatus("error")} />
         </div>
         {downloadError && <p className="image-preview-error" role="alert">{downloadError}</p>}
-        <div className="image-preview-zoom" role="group" aria-label="Image zoom">
-          <button type="button" aria-label="Zoom out" title="Zoom out (-)" onClick={() => changeZoom(scale / 1.25)} disabled={status !== "loaded" || scale <= minimumScale}><Minus size={18} /></button>
-          <button type="button" className="image-preview-scale" title={zoom === null ? "View at 100%" : "Fit to window (0)"} aria-label={`${Math.round(scale * 100)}%, ${zoom === null ? "view at 100%" : "fit to window"}`} onClick={() => changeZoom(zoom === null ? 1 : null)} disabled={status !== "loaded"}>{Math.round(scale * 100)}%</button>
-          <button type="button" aria-label="Zoom in" title="Zoom in (+)" onClick={() => changeZoom(scale * 1.25)} disabled={status !== "loaded" || scale >= 4}><Plus size={18} /></button>
+        <div className="image-preview-zoom" role="group" aria-label={t("imagePreview.imageZoom")}>
+          <button type="button" aria-label={t("imagePreview.zoomOut")} title={t("imagePreview.zoomOut2")} onClick={() => changeZoom(scale / 1.25)} disabled={status !== "loaded" || scale <= minimumScale}><Minus size={18} /></button>
+          <button type="button" className="image-preview-scale" title={zoom === null ? t("imagePreview.viewAt100") : t("imagePreview.fitToWindow0")} aria-label={t("imagePreview.zoomAction", { p0: Math.round(scale * 100), p1: zoom === null ? t("image.viewAtActualSize") : t("image.fitToWindow") })} onClick={() => changeZoom(zoom === null ? 1 : null)} disabled={status !== "loaded"}>{Math.round(scale * 100)}{"%"}</button>
+          <button type="button" aria-label={t("imagePreview.zoomIn")} title={t("imagePreview.zoomIn2")} onClick={() => changeZoom(scale * 1.25)} disabled={status !== "loaded" || scale >= 4}><Plus size={18} /></button>
         </div>
     </dialog>,
     document.body,
@@ -113,13 +116,14 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
 }
 
 export function PreviewImage({ src, alt, width, height }: { src: string; alt: string; width?: number; height?: number }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   return (
     <>
-      <button type="button" className="image-preview-trigger" aria-label={failed ? `Retry ${alt}` : `Preview ${alt}`} onClick={() => failed ? setFailed(false) : setOpen(true)}>
-        {failed ? <span className="image-preview-unavailable">Image unavailable<br />Retry</span> : <img src={src} alt={alt} width={width} height={height} loading="lazy" decoding="async" onError={() => setFailed(true)} />}
+      <button type="button" className="image-preview-trigger" aria-label={failed ? t("app.retry", { p0: alt }) : t("imagePreview.preview", { p0: alt })} onClick={() => failed ? setFailed(false) : setOpen(true)}>
+        {failed ? <span className="image-preview-unavailable">{t("imagePreview.imageUnavailable")}<br />{t("app.retry2")}</span> : <img src={src} alt={alt} width={width} height={height} loading="lazy" decoding="async" onError={() => setFailed(true)} />}
       </button>
       {open && <ImagePreview key={src} src={src} alt={alt} onClose={() => setOpen(false)} />}
     </>

@@ -1,3 +1,7 @@
+import { stateLabel } from "../shared/i18n/display";
+import { useLocale } from "./i18n";
+import { getLocale, t } from "../shared/i18n/index";
+import { SidebarResizeHandle } from "./SidebarResizeHandle";
 import { retainSessionContextUsage } from "./sessionContextCache";
 import { referencePrompt } from "../shared/conversationReferences";
 import { InputQueue } from "./conversation/InputQueue";
@@ -223,6 +227,7 @@ function OpenWorkspaceFileTab({ active, state, line, column, onDraftChange, onMo
   onModeChange: (mode: FileEditorMode) => void;
   onSave: () => void;
 }) {
+  useLocale();
   if (state.kind === "video") return <FileVideoTab active={active} file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
   if (state.kind === "image") return <FileImageTab file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
   return <FileEditorTab
@@ -332,12 +337,13 @@ function readFileAsBase64(file: File): Promise<string> {
       const commaIndex = value.indexOf(",");
       resolve(commaIndex >= 0 ? value.slice(commaIndex + 1) : value);
     });
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("Failed to read attachment")));
+    reader.addEventListener("error", () => reject(reader.error ?? new Error(t("app.failedToReadAttachment"))));
     reader.readAsDataURL(file);
   });
 }
 
 export default function App({ defaultSendMode = "steering", surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { defaultSendMode?: SendMode; surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
+  useLocale();
   const [queueRefresh, setQueueRefresh] = useState(0);
   const submitModeRef = useRef<SendMode | null>(null);
   const toast = useToast();
@@ -529,6 +535,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   const { panels: sessionSidePanels, sidePanelTabs, setSidePanelTabs, sidePanelOpen, setSidePanelOpen,
     sidePanelExpanded, setSidePanelExpanded, directoryLocation, setDirectoryLocation, fileOpenInOtherSession,
   } = useSessionSidePanel(desktopState.selectedConversationId ?? "new", restoredHostState?.sessionSidePanels);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [sidePanelWidth, setSidePanelWidth] = useState(defaultSidePanelWidth);
   const [isSidePanelResizing, setIsSidePanelResizing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -542,12 +550,12 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   useEffect(() => {
     const beforeSwitch = (event: Event) => {
       if (pendingUploadsRef.current > 0) {
-        toast("Wait for attachment uploads before switching hosts.", "info");
+        toast(t("app.waitForAttachmentUploadsBeforeSwitchingHosts"), "info");
         event.preventDefault();
         return;
       }
       if (hostSwitchHasActiveSave(openFilesRef.current, filesSavingRef.current.size)) {
-        window.alert("Wait for the current file save before switching hosts.");
+        window.alert(t("app.waitForTheCurrentFileSaveBeforeSwitching"));
         event.preventDefault();
         return;
       }
@@ -975,7 +983,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             ? await client.reorderWorkspaceConversations(orderedIds)
             : await client.reorderPinnedItems(orderedIds.map((key) => {
               const item = pinnedItems.find((candidate) => navigationKey(candidate) === key);
-              if (!item) throw new Error("Pinned item is no longer available");
+              if (!item) throw new Error(t("app.pinnedItemIsNoLongerAvailable"));
               return item;
             }));
       applyDesktopState(state);
@@ -2039,7 +2047,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       applyDesktopState(state);
       const repaired = state.workspaces.find((candidate) => candidate.id === workspace.id);
       if (repaired?.status === "error") {
-        setMessage(repaired.error || "Workspace repair failed.");
+        setMessage(repaired.error || t("app.workspaceRepairFailed"));
       }
     } catch (error) {
       setMessage(errorMessage(error));
@@ -2060,7 +2068,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       setArchiveWorkspaceTarget(workspace);
       setCopiedWorkspacePath(null);
     } catch (error) {
-      setSidebarActionError(`Could not inspect “${workspace.title}”: ${errorMessage(error)}`);
+      setSidebarActionError(t("app.couldNotInspect", { p0: workspace.title, p1: errorMessage(error) }));
     } finally {
       setIsBusy(false);
     }
@@ -2103,7 +2111,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       setDeleteProjectTarget(project);
       setDeleteProjectConfirmation("");
     } catch (error) {
-      setSidebarActionError(`Could not inspect “${project.name}”: ${errorMessage(error)}`);
+      setSidebarActionError(t("app.couldNotInspect", { p0: project.name, p1: errorMessage(error) }));
     } finally {
       setIsBusy(false);
     }
@@ -2147,7 +2155,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       setDeleteWorkspaceConfirmation("");
       setCopiedWorkspacePath(null);
     } catch (error) {
-      setSidebarActionError(`Could not inspect “${workspace.title}”: ${errorMessage(error)}`);
+      setSidebarActionError(t("app.couldNotInspect", { p0: workspace.title, p1: errorMessage(error) }));
     } finally {
       setIsBusy(false);
     }
@@ -2279,7 +2287,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   async function createConversation(prompt: string) {
     const trimmedPrompt = skillPromptText(prompt, activeComposerDraft.selectedSkillNames).trim();
     if (trimmedPrompt === "/compact" || trimmedPrompt === "/compress") {
-      setMessage("Open an existing idle Zotigo session to compact its history.");
+      setMessage(t("app.openAnExistingIdleZotigoSessionToCompact"));
       return;
     }
     if (attachmentsBlocked) return;
@@ -2359,7 +2367,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       }
     } catch (error) {
       setNewPromptPreview({ draftKey: submittedDraftKey, item: { ...preview, delivery: { state: "failed", error: errorMessage(error) } } });
-      setMessage(`${errorMessage(error)} Check the session list before restoring this draft; creation may have succeeded.`);
+      setMessage(t("app.checkTheSessionListBeforeRestoringThisDraft", { p0: errorMessage(error) }));
     } finally {
       setIsBusy(false);
     }
@@ -2414,7 +2422,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     try {
       const result = await client.changeSessionProfile(selectedSession.id, profile);
       rememberModelSelection({ agent: "zotigo", profile });
-      setMessage(result.status === "pending" ? `Switching to ${profile} before the next model generation.` : `Profile changed to ${profile}.`);
+      setMessage(result.status === "pending" ? t("app.switchingToBeforeTheNextModelGeneration", { p0: profile }) : t("app.profileChangedTo", { p0: profile }));
       if (result.status === "applied") {
         const session = await client.getSession(selectedSession.id);
         setSessions((current) => upsertSession(current, session));
@@ -2445,8 +2453,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       const result = await client.changeSessionApprovalPolicy(selectedSession.id, approvalPolicy);
       setMessage(
         result.status === "pending"
-          ? `Switching access to ${approvalPolicyLabel(approvalPolicy)}.`
-          : `Access changed to ${approvalPolicyLabel(approvalPolicy)}.`,
+          ? t("app.switchingAccessTo", { p0: approvalPolicyLabel(approvalPolicy) })
+          : t("app.accessChangedTo", { p0: approvalPolicyLabel(approvalPolicy) }),
       );
       if (result.status === "applied") {
         const session = await client.getSession(selectedSession.id);
@@ -2483,11 +2491,11 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     }
     if ((text === "/compact" || text === "/compress") && composerAttachments.length === 0 && activeComposerDraft.selectedSkillNames.length === 0) {
       if ((selectedSession?.agent ?? selectedAgent) === "codex") {
-        setMessage("/compact is currently supported only in Zotigo runtime sessions.");
+        setMessage(t("app.compactNativeOnly"));
         return;
       }
       if (selectedSession?.working || hasActiveTurn || selectedSession?.state === "paused") {
-        setMessage("Wait for the current turn to finish, or stop it, before running /compact.");
+        setMessage(t("app.waitForTheCurrentTurnToFinishOr"));
         return;
       }
     }
@@ -2581,7 +2589,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         } else {
           const command = result.command;
           if (!command) {
-            throw new Error("Message response did not include a command.");
+            throw new Error(t("app.messageResponseDidNotIncludeACommand"));
           }
           setOptimisticPromptItems((current) => current.flatMap((item) => {
             if (item.id !== optimisticId) return [item];
@@ -2713,9 +2721,9 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     const acceptedFiles: File[] = [];
     const sizes = composerAttachments.map((attachment) => ({ size: attachment.file.size, image: attachment.kind === "image" }));
     for (const file of files) {
-      const name = file.name || "Pasted file";
+      const name = file.name || t("app.pastedFile");
       if (new TextEncoder().encode(name).length > 180 || /[/\\\x00-\x1f]/.test(name) || name === "." || name === "..") {
-        setMessage("Invalid attachment filename (maximum 180 UTF-8 bytes).");
+        setMessage(t("app.invalidAttachmentFilenameMaximum180Utf8Bytes"));
         continue;
       }
       const size = { size: file.size, image: modelImageTypes.has(file.type) };
@@ -2727,7 +2735,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     const attachments: ComposerAttachment[] = acceptedFiles.map((file) => ({
       id: crypto.randomUUID(),
       kind: modelImageTypes.has(file.type) ? "image" : file.type.startsWith("video/") ? "video" : "file",
-      name: file.name || "Pasted file",
+      name: file.name || t("app.pastedFile"),
       file,
       mimeType: file.type,
       url: URL.createObjectURL(file),
@@ -2813,7 +2821,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     try {
       await client.pauseSession(binding.daemon_session_id, turnId);
       if (selectedSessionIdRef.current === binding.daemon_session_id) {
-        setMessage("Stopping the current turn…");
+        setMessage(t("app.stoppingTheCurrentTurn"));
         void refreshSessionItems(binding, { quiet: true });
       }
     } catch (error) {
@@ -3050,7 +3058,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       applyDesktopState(await client.archiveConversation(conversation.id));
       setArchiveTarget(null);
     } catch (error) {
-      setSidebarActionError(`Could not archive “${conversation.title}”: ${errorMessage(error)}`);
+      setSidebarActionError(t("app.couldNotArchive", { p0: conversation.title, p1: errorMessage(error) }));
     } finally {
       setArchivingSession(false);
     }
@@ -3076,7 +3084,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     }
     const title = draft.trim();
     if (!title) {
-      setMessage("Conversation title is required.");
+      setMessage(t("app.conversationTitleIsRequired"));
       return null;
     }
 
@@ -3157,7 +3165,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     if (!renameDialogProject || isSavingProjectName) return;
     const name = renameDialogProjectNameDraft.trim();
     if (!name) {
-      setMessage("Project name is required.");
+      setMessage(t("app.projectNameIsRequired"));
       return;
     }
     if (name === renameDialogProject.name) {
@@ -3205,7 +3213,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     if (!renameDialogWorkspace || isSavingWorkspaceTitle) return;
     const title = renameDialogWorkspaceTitleDraft.trim();
     if (!title) {
-      setMessage("Workspace name is required.");
+      setMessage(t("app.workspaceNameIsRequired"));
       return;
     }
     if (title === renameDialogWorkspace.title) {
@@ -3444,8 +3452,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             type="button"
             className="workspace-collapse-button"
             onClick={() => toggleWorkspaceCollapsed(workspace.id)}
-            aria-label={`${workspaceOpen ? "Collapse" : "Expand"} ${workspace.title}`}
-            title={`${workspaceOpen ? "Collapse" : "Expand"} ${workspace.title}`}
+            aria-label={`${workspaceOpen ? t("common.collapse") : t("common.expand")} ${workspace.title}`}
+            title={`${workspaceOpen ? t("common.collapse") : t("common.expand")} ${workspace.title}`}
             aria-expanded={workspaceOpen}
           >
             <ProjectDisclosureIcon open={workspaceOpen} />
@@ -3468,7 +3476,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                   setWorkspaceMenuId((current) => current === workspace.id ? null : workspace.id);
                 }}
                 disabled={isBusy}
-                aria-label={`More actions for ${workspace.title}`}
+                aria-label={t("app.moreActionsFor", { p0: workspace.title })}
                 aria-expanded={workspaceMenuId === workspace.id}
               >
                 <MoreHorizontal size={14} strokeWidth={1.8} />
@@ -3480,7 +3488,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                   role="menu"
                 >
                   <button type="button" role="menuitem" onClick={() => void toggleNavigationPinned({ kind: "workspace", id: workspace.id })}>
-                    <Pin size={13} strokeWidth={1.8} /><span>{pinned ? "Unpin workspace" : "Pin workspace"}</span>
+                    <Pin size={13} strokeWidth={1.8} /><span>{pinned ? t("app.unpinWorkspace") : t("app.pinWorkspace")}</span>
                   </button>
                   {<button
                     type="button"
@@ -3491,7 +3499,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                     }}
                   >
                     <FolderOpen size={13} strokeWidth={1.8} />
-                    <span>Browse files</span>
+                    <span>{t("app.browseFiles")}</span>
                   </button>}
                   <button
                     type="button"
@@ -3502,20 +3510,20 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                     }}
                   >
                     <Copy size={13} strokeWidth={1.8} />
-                    <span>{kind === "web" ? "Copy server path" : "Copy absolute path"}</span>
+                    <span>{kind === "web" ? t("app.copyServerPath") : t("app.copyAbsolutePath")}</span>
                   </button>
                   <div className="workspace-action-menu-separator" role="separator" />
                   <button type="button" role="menuitem" onClick={() => openRenameWorkspaceDialog(workspace)}>
                     <SquarePen size={13} strokeWidth={1.8} />
-                    <span>Rename</span>
+                    <span>{t("app.rename")}</span>
                   </button>
                   <button type="button" role="menuitem" onClick={() => void openArchiveWorkspaceDialog(workspace)}>
                     <Archive size={13} strokeWidth={1.8} />
-                    <span>Archive</span>
+                    <span>{t("app.archive")}</span>
                   </button>
                   <button type="button" role="menuitem" className="destructive" onClick={() => void openDeleteWorkspaceDialog(workspace)}>
                     <Trash2 size={13} strokeWidth={1.8} />
-                    <span>Delete</span>
+                    <span>{t("app.delete")}</span>
                   </button>
                 </div>
               )}
@@ -3530,8 +3538,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                   }
                 }}
                 disabled={isBusy}
-                aria-label={workspace.status === "error" ? `Retry ${workspace.title}` : `New session in ${workspace.title}`}
-                title={workspace.status === "error" ? "Retry workspace" : "New session"}
+                aria-label={workspace.status === "error" ? t("app.retry", { p0: workspace.title }) : t("app.newSessionIn", { p0: workspace.title })}
+                title={workspace.status === "error" ? t("app.retryWorkspace") : t("app.newSession")}
               >
                 {workspace.status === "error" ? <RefreshCw size={13} strokeWidth={1.8} /> : <SquarePen size={13} strokeWidth={1.8} />}
               </button>
@@ -3604,7 +3612,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             type="button"
             className="project-collapse-button"
             onClick={() => toggleProjectOpen(project.id)}
-            aria-label={`${isOpen ? "Collapse" : "Expand"} ${project.name}`}
+            aria-label={`${isOpen ? t("common.collapse") : t("common.expand")} ${project.name}`}
             aria-expanded={isOpen}
           >
             <ProjectDisclosureIcon open={isOpen} />
@@ -3625,7 +3633,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 setProjectMenuId((current) => current === project.id ? null : project.id);
               }}
               disabled={isBusy}
-              aria-label={`More actions for ${project.name}`}
+              aria-label={t("app.moreActionsFor", { p0: project.name })}
               aria-expanded={projectMenuId === project.id}
             >
               <MoreHorizontal size={14} strokeWidth={1.8} />
@@ -3637,23 +3645,23 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 role="menu"
               >
                 <button type="button" role="menuitem" onClick={() => void toggleNavigationPinned({ kind: "project", id: project.id })}>
-                  <Pin size={13} strokeWidth={1.8} /><span>{pinned ? "Unpin project" : "Pin project"}</span>
+                  <Pin size={13} strokeWidth={1.8} /><span>{pinned ? t("app.unpinProject") : t("app.pinProject")}</span>
                 </button>
                 <button type="button" role="menuitem" onClick={() => { setProjectMenuId(null); void openProjectOverview(project); }}>
                   <FileText size={13} strokeWidth={1.8} />
-                  <span>Open overview</span>
+                  <span>{t("app.openOverview")}</span>
                 </button>
                 <button type="button" role="menuitem" onClick={() => { setProjectMenuId(null); void addSourcesToProject(project.id); }}>
                   <FolderPlus size={13} strokeWidth={1.8} />
-                  <span>Add Sources</span>
+                  <span>{t("app.addSources")}</span>
                 </button>
                 <button type="button" role="menuitem" onClick={() => openRenameProjectDialog(project)}>
                   <SquarePen size={13} strokeWidth={1.8} />
-                  <span>Rename</span>
+                  <span>{t("app.rename")}</span>
                 </button>
                 <button type="button" role="menuitem" className="destructive" disabled={isBusy} onClick={() => void openDeleteProjectDialog(project)}>
                   <Trash2 size={13} strokeWidth={1.8} />
-                  <span>Delete project</span>
+                  <span>{t("app.deleteProject")}</span>
                 </button>
               </div>
             )}
@@ -3661,8 +3669,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               type="button"
               onClick={() => openCreateWorkspaceDialog(project)}
               disabled={isBusy}
-              aria-label={`New workspace in ${project.name}`}
-              title="New workspace"
+              aria-label={t("app.newWorkspaceIn", { p0: project.name })}
+              title={t("app.newWorkspace")}
             >
               <FolderPlus size={14} strokeWidth={1.8} />
             </button>
@@ -3679,8 +3687,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 className="workspace-empty-action"
                 onClick={() => openCreateWorkspaceDialog(project)}
               >
-                <Plus size={13} /> Create workspace
-              </button>
+                <Plus size={13} /> {t("app.createWorkspace")}</button>
             )}
           </div>
         </SidebarCollapse>
@@ -3748,7 +3755,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     setDirectoryLocation({ path, sessionId: context.sessionId }); setTreeVisible(true); setWebNavigationOpen(false);
     setSidePanelOpen(true); setDetailsOpen(false);
     setSidePanelTabs((state) => ({ ...state, activeTabId: null }));
-    window.requestAnimationFrame(() => appFrameRef.current?.querySelector<HTMLInputElement>('[aria-label="Filter filenames"]')?.focus());
+    window.requestAnimationFrame(() => appFrameRef.current?.querySelector<HTMLInputElement>('[data-file-filter]')?.focus());
   }
 
   async function openTreeFile(path: string, context = treeLocation) {
@@ -3787,8 +3794,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     <MarkdownImageContext.Provider value={markdownImageContext}>
     <main
       ref={appFrameRef}
-      className={`app-frame ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
-      style={{ "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
+      className={`app-frame ${isSidebarResizing ? "resizing-sidebar" : ""} ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
+      style={{ "--preferred-sidebar-width": `${sidebarWidth}px`, "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
       onClickCapture={(event) => void handleMarkdownLinkClick(event)}
       onKeyDown={(event) => {
         if (event.key === "Escape" && detailsOpen) setDetailsOpen(false);
@@ -3799,6 +3806,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     >
       {searchOpen && <SearchPalette state={desktopState} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
+        <SidebarResizeHandle scope={clientScope} frameRef={appFrameRef} width={sidebarWidth} onWidth={setSidebarWidth} onResizing={setIsSidebarResizing} />
         <div className="sidebar-chrome" aria-hidden="true">
           <PanelLeft size={14} strokeWidth={1.8} />
           <ArrowLeft size={14} strokeWidth={1.8} />
@@ -3808,37 +3816,37 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         <div className="sidebar-brand">
           <HostMenu />
           <div className="brand-actions">
-            <button type="button" aria-label="Search" onClick={() => setSearchOpen(true)} title="Search (⌘K / Ctrl+K)"><Search size={15} strokeWidth={1.8} /></button>
-            <button type="button" aria-label="Notifications" disabled title="Notifications are not available yet"><Bell size={15} strokeWidth={1.8} /></button>
-            {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle sidebar-navigation-close" type="button" onClick={() => setWebNavigationOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={18} /></button>}
+            <button type="button" aria-label={t("app.search")} onClick={() => setSearchOpen(true)} title={t("app.searchKCtrlK")}><Search size={15} strokeWidth={1.8} /></button>
+            <button type="button" aria-label={t("app.notifications")} disabled title={t("app.notificationsAreNotAvailableYet")}><Bell size={15} strokeWidth={1.8} /></button>
+            {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle sidebar-navigation-close" type="button" onClick={() => setWebNavigationOpen(false)} aria-label={t("app.closeNavigation")} title={t("app.closeNavigation")}><X size={18} /></button>}
           </div>
         </div>
 
-        <nav className="utility-nav" aria-label="Navigation">
-          <button type="button" aria-label="Home" aria-pressed={!channelsOpen} className={!channelsOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setWebNavigationOpen(false); }}>
+        <nav className="utility-nav" aria-label={t("app.navigation")}>
+          <button type="button" aria-label={t("app.home")} aria-pressed={!channelsOpen} className={!channelsOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setWebNavigationOpen(false); }}>
             <House size={18} strokeWidth={1.8} />
-            <span className="utility-nav-label">Home</span>
+            <span className="utility-nav-label">{t("app.home")}</span>
           </button>
-          <button type="button" aria-disabled="true" aria-label="Scheduled (not available yet)" className="utility-placeholder">
+          <button type="button" aria-disabled="true" aria-label={t("app.scheduledNotAvailableYet")} className="utility-placeholder">
             <CalendarClock size={15} strokeWidth={1.8} />
-            <span className="utility-nav-label">Scheduled</span>
+            <span className="utility-nav-label">{t("app.scheduled")}</span>
           </button>
-          <button ref={channelsEntryButton} type="button" aria-label="Channels" aria-pressed={channelsOpen} className={channelsOpen ? "selected" : ""} onClick={() => { openChannels(); setProjectOverviewId(null); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
+          <button ref={channelsEntryButton} type="button" aria-label={t("app.channels")} aria-pressed={channelsOpen} className={channelsOpen ? "selected" : ""} onClick={() => { openChannels(); setProjectOverviewId(null); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
             <Blocks size={15} strokeWidth={1.8} />
-            <span className="utility-nav-label">Channels</span>
+            <span className="utility-nav-label">{t("app.channels")}</span>
           </button>
         </nav>
 
         <button className="sidebar-new-session" type="button" onClick={() => void openNewConversation()} disabled={isBusy}>
-          <SquarePen size={16} strokeWidth={1.8} /><span>New session</span>
+          <SquarePen size={16} strokeWidth={1.8} /><span>{t("app.newSession")}</span>
         </button>
 
         <div className="sidebar-lower-stack">
         <div ref={navigationScrollRef} className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
-        <section className="sidebar-section pinned-section" aria-label="Pinned">
-          <div className="sidebar-section-title">Pinned</div>
+        <section className="sidebar-section pinned-section" aria-label={t("app.pinned")}>
+          <div className="sidebar-section-title">{t("app.pinned")}</div>
           {pinnedItems.length === 0 ? (
-            <p className="sidebar-empty">No pinned items</p>
+            <p className="sidebar-empty">{t("app.noPinnedItems")}</p>
           ) : (
             <div className="sidebar-session-list">
               {pinnedItems.map((item) => {
@@ -3863,25 +3871,25 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           )}
         </section>
 
-        <section className="sidebar-section projects-section" aria-label="Projects">
+        <section className="sidebar-section projects-section" aria-label={t("app.projects")}>
           <div className="project-section-heading">
-            <span className="sidebar-section-title">Projects</span>
+            <span className="sidebar-section-title">{t("app.projects")}</span>
             <div>
-              <button type="button" onClick={openCreateProjectDialog} disabled={isBusy} aria-label="Add project">
+              <button type="button" onClick={openCreateProjectDialog} disabled={isBusy} aria-label={t("app.addProject")}>
                 <FolderPlus size={15} strokeWidth={1.8} />
               </button>
             </div>
           </div>
 
           {desktopState.projects.length === 0 ? (
-            <p className="sidebar-empty">No projects yet</p>
+            <p className="sidebar-empty">{t("app.noProjectsYet")}</p>
           ) : (
             <>
 {desktopState.projects.filter((project) => !isNavigationPinned("project", project.id)).map((project) => renderProjectNavigation(project))}
 
               {previousConversations.length > 0 && (
                 <div className="previous-sessions-group">
-                  <span className="sidebar-section-title">Previous sessions</span>
+                  <span className="sidebar-section-title">{t("app.previousSessions")}</span>
                   <div className="sidebar-session-list">
                   {previousConversations.map((conversation) => (
                     <ConversationNavItem
@@ -3908,7 +3916,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           <div className="sidebar-action-error" role="alert">
             <ShieldAlert size={14} strokeWidth={1.8} />
             <span>{sidebarActionError}</span>
-            <button type="button" onClick={() => setSidebarActionError(null)} aria-label="Dismiss archive error">
+            <button type="button" onClick={() => setSidebarActionError(null)} aria-label={t("app.dismissArchiveError")}>
               <X size={13} strokeWidth={1.8} />
             </button>
           </div>
@@ -3920,10 +3928,10 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         <div className="sidebar-footer">
           <img className="user-chip" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" />
           <div>
-            <strong>Zotigo</strong>
+            <strong>{t("app.zotigo")}</strong>
             <span>{connectionLabel(connectionState)}</span>
           </div>
-          {signOut && <button type="button" onClick={() => void signOut().catch((error) => setMessage(errorMessage(error)))}>Sign out</button>}
+          {signOut && <button type="button" onClick={() => void signOut().catch((error) => setMessage(errorMessage(error)))}>{t("app.signOut")}</button>}
         </div>
       </aside>
 
@@ -3944,9 +3952,9 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             }}
           >
             {unreadConversationIds.has(contextMenuConversation.id) ? (
-              <><Check size={14} strokeWidth={1.8} /><span>Mark as read</span></>
+              <><Check size={14} strokeWidth={1.8} /><span>{t("app.markAsRead")}</span></>
             ) : (
-              <><Circle size={14} strokeWidth={1.8} /><span>Mark as unread</span></>
+              <><Circle size={14} strokeWidth={1.8} /><span>{t("app.markAsUnread")}</span></>
             )}
           </button>
           <button
@@ -3958,14 +3966,14 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             }}
           >
             <Pin size={14} strokeWidth={1.8} />
-            <span>{contextMenuConversation.pinned_at ? "Unpin" : "Pin"}</span>
+            <span>{contextMenuConversation.pinned_at ? t("app.unpin") : t("app.pin")}</span>
           </button>
           <div className="workspace-action-menu-separator" />
           <button type="button" role="menuitem" disabled={isBusy} onClick={() => {
             setConversationContextMenu(null);
             void forkConversation(contextMenuConversation.id);
           }}>
-            <GitBranch size={14} strokeWidth={1.8} /><span>Fork session</span>
+            <GitBranch size={14} strokeWidth={1.8} /><span>{t("app.forkSession")}</span>
           </button>
           <button
             type="button"
@@ -3976,7 +3984,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             }}
           >
             <SquarePen size={14} strokeWidth={1.8} />
-            <span>Rename</span>
+            <span>{t("app.rename")}</span>
           </button>
           <button
             type="button"
@@ -3987,7 +3995,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             }}
           >
             <Archive size={14} strokeWidth={1.8} />
-            <span>Archive</span>
+            <span>{t("app.archive")}</span>
           </button>
         </div>
       )}
@@ -4005,7 +4013,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         applyDesktopState(state);
         const binding = state.bindings.find((value) => value.daemon_session_id === id);
         if (!binding || !state.conversations.some((value) => value.id === binding.conversation_id)) {
-          throw new Error("The bound session is not available in this host's catalog.");
+          throw new Error(t("app.theBoundSessionIsNotAvailableInThis"));
         }
         if (request !== channelsNavigationRequest.current) return;
         selectConversation(binding.conversation_id, state, !leaveChannels);
@@ -4015,7 +4023,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
 
       <section hidden={channelsOpen && !channelsSessionVisible} className={`conversation ${selectedConversation ? "has-composer" : ""}`}>
         <header className="conversation-titlebar">
-          {kind === "web" && <button ref={webNavigationButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(true)} aria-label="Open navigation" aria-expanded={webNavigationOpen}><PanelLeft size={18} /></button>}
+          {kind === "web" && <button ref={webNavigationButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(true)} aria-label={t("app.openNavigation")} aria-expanded={webNavigationOpen}><PanelLeft size={18} /></button>}
           {selectedConversation ? (
             <>
               <div className="title-with-icon">
@@ -4040,20 +4048,20 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                         cancelConversationTitleEdit();
                       }
                     }}
-                    aria-label="Conversation title"
+                    aria-label={t("app.conversationTitle")}
                   />
                 ) : (
                   <button
                     type="button"
                     className="conversation-title-button"
                     onDoubleClick={beginConversationTitleEdit}
-                    title="Rename conversation"
+                    title={t("app.renameConversation")}
                   >
                     <h1>{selectedConversation.title}</h1>
                   </button>
                 )}
               </div>
-              <button type="button" className="icon-button" aria-label="More actions" disabled title="More actions are not available yet">
+              <button type="button" className="icon-button" aria-label={t("app.moreActions")} disabled title={t("app.moreActionsAreNotAvailableYet")}>
                 <MoreHorizontal size={17} strokeWidth={1.8} />
               </button>
             </>
@@ -4079,8 +4087,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 setEditingReferenceId(reference.id);
               }}
             />}
-            <button type="button" className="icon-button" aria-label="Session details" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((open) => !open)}><ListFilter size={17} /></button>
-            <button type="button" className="icon-button" aria-label="Toggle side panel" title="Toggle side panel (⌘⌥B / Ctrl+Alt+B)" aria-expanded={sidePanelOpen} onClick={() => { setSidePanelOpen((open) => !open); setDetailsOpen(false); }}><PanelRight size={17} /></button>
+            <button type="button" className="icon-button" aria-label={t("app.sessionDetails")} aria-expanded={detailsOpen} onClick={() => setDetailsOpen((open) => !open)}><ListFilter size={17} /></button>
+            <button type="button" className="icon-button" aria-label={t("app.toggleSidePanel")} title={t("app.toggleSidePanelBCtrlAltB")} aria-expanded={sidePanelOpen} onClick={() => { setSidePanelOpen((open) => !open); setDetailsOpen(false); }}><PanelRight size={17} /></button>
           </div>
         </header>
 
@@ -4088,7 +4096,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           ref={conversationScrollRef}
           className={`conversation-scroll ${selectedConversation ? "" : "new-chat-scroll"}`}
           tabIndex={selectedConversation ? 0 : undefined}
-          aria-label={selectedConversation ? "Conversation history" : undefined}
+          aria-label={selectedConversation ? t("app.conversationHistory") : undefined}
           onScroll={handleConversationScroll}
           onWheel={handleConversationWheel}
           onKeyDown={handleConversationKeyDown}
@@ -4097,7 +4105,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           onTouchEnd={handleConversationTouchEnd}
           onTouchCancel={handleConversationTouchEnd}
         >
-          {searchWindow && <div className="search-history-notice">Showing messages near a search result <button type="button" onClick={closeSearchWindow}>Return to conversation</button></div>}
+          {searchWindow && <div className="search-history-notice">{t("app.showingMessagesNearASearchResult")}{" "}<button type="button" onClick={closeSearchWindow}>{t("app.returnToConversation")}</button></div>}
           <article className={`conversation-body${!selectedConversation && newPromptPreview?.draftKey === composerDraftKey ? " has-prompt-preview" : ""}`}>
             {newPromptPreview?.draftKey === composerDraftKey && (
               <>
@@ -4109,9 +4117,9 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 />
                 {newPromptPreview.item.delivery?.state === "failed" && (
                   <div className="message-delivery">
-                    <span>Check sessions before restoring; creation may have succeeded.</span>
-                    <button type="button" onClick={() => newPromptRecovery.current?.restore()}>Restore draft</button>
-                    <button type="button" onClick={() => newPromptRecovery.current?.discard()}>Dismiss</button>
+                    <span>{t("app.checkSessionsBeforeRestoringCreationMayHaveSucceeded")}</span>
+                    <button type="button" onClick={() => newPromptRecovery.current?.restore()}>{t("app.restoreDraft")}</button>
+                    <button type="button" onClick={() => newPromptRecovery.current?.discard()}>{t("app.dismiss")}</button>
                   </div>
                 )}
               </>
@@ -4211,7 +4219,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           <button
             type="button"
             className="scroll-to-bottom-button"
-            aria-label="Scroll to latest message"
+            aria-label={t("app.scrollToLatestMessage")}
             onClick={() => { if (searchWindow) { closeSearchWindow(); requestAnimationFrame(() => scrollConversationToBottom({ smooth: true })); } else scrollConversationToBottom({ smooth: true }); }}
           >
             <ArrowDown size={17} strokeWidth={2} />
@@ -4225,11 +4233,11 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               <div className="runtime-occupied-notice" role="status">
                 <ShieldAlert size={18} strokeWidth={1.9} />
                 <div>
-                  <strong>This task is open in Codex.</strong>
-                  <span>Exit it there and return here to continue, or check again now.</span>
+                  <strong>{t("app.thisTaskIsOpenInCodex")}</strong>
+                  <span>{t("app.exitItThereAndReturnHereToContinue")}</span>
                 </div>
                 <button type="button" onClick={() => void retryRuntimeOccupiedSession()} disabled={isBusy}>
-                  {isBusy ? "Checking..." : "Check again"}
+                  {isBusy ? t("app.checking") : t("app.checkAgain")}
                 </button>
               </div>
             )}
@@ -4260,13 +4268,13 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 onChange={updateActivePrompt}
                 onKeyDown={handleComposerKeyDown}
                 onPaste={handleComposerPaste}
-                placeholder="Ask follow-up changes"
+                placeholder={t("app.askFollowUpChanges")}
               />
               <div className="composer-actions">
                 <div className="composer-actions-left">
                   <AttachmentMenu key={composerDraftKey} onPick={openAttachmentPicker} disabled={isBusy}
                     alternateSend={{
-                      label: defaultSendMode === "steering" ? "Queue for next turn" : "Send as steering",
+                      label: defaultSendMode === "steering" ? t("app.queueForNextTurn") : t("app.sendAsSteering"),
                       disabled: !canSubmitSelectedPrompt,
                       onSend: (form) => {
                         submitModeRef.current = alternateSendMode(defaultSendMode);
@@ -4332,7 +4340,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                     <button
                       type="button"
                       className="send-button stop"
-                      aria-label={pauseRequestedTurnId === selectedActiveTurnId ? "Stop requested" : "Stop running turn"}
+                      aria-label={pauseRequestedTurnId === selectedActiveTurnId ? t("app.stopRequested") : t("app.stopRunningTurn")}
                       disabled={pauseRequestedTurnId === selectedActiveTurnId}
                       onClick={() => void requestStopSelectedTurn()}
                     >
@@ -4343,8 +4351,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                       type="submit"
                       className="send-button"
                       disabled={!canSubmitSelectedPrompt}
-                      aria-label="Send message"
-                      title={defaultSendMode === "steering" ? "Send as steering · ⌘Enter / Ctrl+Enter to queue" : "Queue for next turn · ⌘Enter / Ctrl+Enter to steer"}
+                      aria-label={t("app.sendMessage")}
+                      title={defaultSendMode === "steering" ? t("app.sendAsSteeringEnterCtrlEnterToQueue") : t("app.queueForNextTurnEnterCtrlEnterTo")}
                     >
                       <ArrowUp size={16} strokeWidth={2.2} />
                     </button>
@@ -4370,12 +4378,12 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         )}
       </section>
 
-      {detailsOpen && !channelsOpen && <aside className="inspector" aria-label="Session details">
+      {detailsOpen && !channelsOpen && <aside className="inspector" aria-label={t("app.sessionDetails")}>
         <section className="inspector-card">
           <div className="inspector-heading">
-            <h2>Environment</h2>
-            <button type="button" className="icon-button" aria-label="Close session details" onClick={() => setDetailsOpen(false)}><X size={14} /></button>
-            <button type="button" className="icon-button" aria-label="Refresh environment" onClick={() => void refreshSessions({ syncCodex: true })} disabled={isBusy}>
+            <h2>{t("app.environment")}</h2>
+            <button type="button" className="icon-button" aria-label={t("app.closeSessionDetails")} onClick={() => setDetailsOpen(false)}><X size={14} /></button>
+            <button type="button" className="icon-button" aria-label={t("app.refreshEnvironment")} onClick={() => void refreshSessions({ syncCodex: true })} disabled={isBusy}>
               <RefreshCw size={14} strokeWidth={1.8} />
             </button>
           </div>
@@ -4383,23 +4391,23 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           <div className="env-list">
             <div className="env-row">
               <Server className="env-icon" size={15} strokeWidth={1.8} />
-              <span>Daemon</span>
+              <span>{t("app.daemon")}</span>
               <StatusPill state={connectionState} />
             </div>
             <div className="env-row">
               <Laptop className="env-icon" size={15} strokeWidth={1.8} />
-              <span>{remote ? "Remote host" : "Local host"}</span>
+              <span>{remote ? t("app.remoteHost") : t("app.localHost")}</span>
               <ChevronDown className="env-chevron" size={14} strokeWidth={1.8} />
             </div>
             <div className="env-row">
               <Folder className="env-icon" size={15} strokeWidth={1.8} />
-              <span>{selectedProject?.name ?? "Scratch"}</span>
+              <span>{selectedProject?.name ?? t("app.scratch")}</span>
               {selectedWorkspace?.root_path && (
                 <span className="env-row-actions">
-                  <button type="button" className="icon-button" title="Copy Workspace path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(selectedWorkspace.root_path)}>
+                  <button type="button" className="icon-button" title={t("app.copyWorkspacePath")} aria-label={t("app.copyWorkspacePath")} onClick={() => void copyWorkspacePath(selectedWorkspace.root_path)}>
                     {copiedWorkspacePath === selectedWorkspace.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
                   </button>
-                  <button type="button" className="icon-button" title="Browse workspace files" aria-label="Browse workspace files" onClick={() => browseFiles(selectedWorkspace.root_path)}>
+                  <button type="button" className="icon-button" title={t("app.browseWorkspaceFiles")} aria-label={t("app.browseWorkspaceFiles")} onClick={() => browseFiles(selectedWorkspace.root_path)}>
                     <FolderOpen size={14} />
                   </button>
                 </span>
@@ -4407,7 +4415,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             </div>
             <div className="env-row">
               <GitBranch className="env-icon" size={15} strokeWidth={1.8} />
-              <span>{selectedWorkspace?.title ?? "No Workspace"}</span>
+              <span>{selectedWorkspace?.title ?? t("app.noWorkspace")}</span>
             </div>
           </div>
 
@@ -4416,8 +4424,8 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               <div className="inspector-divider" />
               <button type="button" className="subagent-summary-button" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}>
                 <span>
-                  <strong>Subagents</strong>
-                  <small>{subagentRuns.filter((run) => run.status === "running" || run.status === "waiting_approval").length} active · {subagentRuns.filter((run) => run.status === "completed" || run.status === "failed").length} done</small>
+                  <strong>{t("app.subagents")}</strong>
+                  <small>{t("context.subagentCounts", { active: subagentRuns.filter((run) => run.status === "running" || run.status === "waiting_approval").length, done: subagentRuns.filter((run) => run.status === "completed" || run.status === "failed").length })}</small>
                 </span>
                 <span className="subagent-avatar-stack" aria-hidden="true">
                   {subagentRuns.slice(0, 4).map((run) => <SubagentAvatar key={run.id} run={run} compact />)}
@@ -4431,26 +4439,26 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             <>
               <div className="inspector-divider" />
               <div className="inspector-subheading">
-                <span>Session</span>
-                <button type="button" className="icon-button" onClick={() => void toggleConversationPinned(selectedConversation)} aria-label={selectedConversation.pinned_at ? "Unpin session" : "Pin session"}>
+                <span>{t("app.session")}</span>
+                <button type="button" className="icon-button" onClick={() => void toggleConversationPinned(selectedConversation)} aria-label={selectedConversation.pinned_at ? t("app.unpinSession") : t("app.pinSession")}>
                   <Pin size={14} strokeWidth={1.8} fill={selectedConversation.pinned_at ? "currentColor" : "none"} />
                 </button>
               </div>
               <dl className="detail-list">
               <div>
-                <dt>Conversation</dt>
+                <dt>{t("app.conversation")}</dt>
                 <dd>{selectedConversation.title}</dd>
               </div>
               <div>
-                <dt>Project</dt>
-                <dd>{projectForConversation(selectedConversation, desktopState.projects)?.name ?? "No project"}</dd>
+                <dt>{t("app.project")}</dt>
+                <dd>{projectForConversation(selectedConversation, desktopState.projects)?.name ?? t("app.noProject")}</dd>
               </div>
               <div>
-                <dt>Daemon ID</dt>
-                <dd className="mono">{selectedBinding?.daemon_session_id ?? "Not bound"}</dd>
+                <dt>{t("app.daemonId")}</dt>
+                <dd className="mono">{selectedBinding?.daemon_session_id ?? t("app.notBound")}</dd>
               </div>
               <div>
-                <dt>State</dt>
+                <dt>{t("app.state")}</dt>
                 <dd>
                   {selectedSession ? (
                     <StateBadge
@@ -4461,52 +4469,52 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                       }
                     />
                   ) : (
-                    "Not bound"
+                    t("app.notBound")
                   )}
                 </dd>
               </div>
               <div>
-                <dt>Agent</dt>
-                <dd>{selectedAgent === "codex" ? "Codex" : "Zotigo"}</dd>
+                <dt>{t("app.agent")}</dt>
+                <dd>{selectedAgent === "codex" ? t("app.codex") : t("app.zotigo")}</dd>
               </div>
               {selectedAgent === "codex" ? (
                 <>
                   <div>
-                    <dt>Model</dt>
+                    <dt>{t("app.model")}</dt>
                     <dd>{codexModelLabel(codexModels, selectedCodexModel)}</dd>
                   </div>
                   <div>
-                    <dt>Thinking</dt>
-                    <dd>{selectedCodexReasoningEffort || "Not available"}</dd>
+                    <dt>{t("app.thinking")}</dt>
+                    <dd>{stateLabel(selectedCodexReasoningEffort) || t("app.notAvailable")}</dd>
                   </div>
                 </>
               ) : (
                 <>
                   <div>
-                    <dt>Profile</dt>
-                    <dd>{selectedProfile || "Not available"}</dd>
+                    <dt>{t("app.profile")}</dt>
+                    <dd>{selectedProfile || t("app.notAvailable")}</dd>
                   </div>
                   <div>
-                    <dt>Access</dt>
+                    <dt>{t("app.access")}</dt>
                     <dd>{approvalPolicyLabel(selectedApprovalPolicy)}</dd>
                   </div>
                 </>
               )}
               <div>
-                <dt>Created</dt>
+                <dt>{t("app.created")}</dt>
                 <dd>{selectedSession ? formatDateTime(selectedSession.created_at) : formatDateTime(selectedConversation.created_at)}</dd>
               </div>
               <div>
-                <dt>Started</dt>
-                <dd>{selectedSession?.started_at ? formatDateTime(selectedSession.started_at) : "Not started"}</dd>
+                <dt>{t("app.started")}</dt>
+                <dd>{selectedSession?.started_at ? formatDateTime(selectedSession.started_at) : t("app.notStarted")}</dd>
               </div>
               <div>
-                <dt>Ended</dt>
-                <dd>{selectedSession?.ended_at ? formatDateTime(selectedSession.ended_at) : "Not ended"}</dd>
+                <dt>{t("app.ended")}</dt>
+                <dd>{selectedSession?.ended_at ? formatDateTime(selectedSession.ended_at) : t("app.notEnded")}</dd>
               </div>
               <div>
-                <dt>Error</dt>
-                <dd>{selectedSession?.error || "None"}</dd>
+                <dt>{t("app.error")}</dt>
+                <dd>{selectedSession?.error || t("app.none")}</dd>
               </div>
               </dl>
             </>
@@ -4515,11 +4523,11 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       </aside>}
 
       {(
-        <aside inert={channelsOpen || !sidePanelOpen} aria-hidden={channelsOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label="Side panel">
+        <aside inert={channelsOpen || !sidePanelOpen} aria-hidden={channelsOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label={t("app.sidePanel")}>
           <div
             className="side-panel-resize-handle"
             role="separator"
-            aria-label="Resize side panel"
+            aria-label={t("app.resizeSidePanel")}
             aria-orientation="vertical"
             tabIndex={0}
             onPointerDown={handleSidePanelResizePointerDown}
@@ -4542,31 +4550,31 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             {sidePanelTabs.tabs.map((tab) => {
               const run = tab.kind === "subagent" ? subagentRuns.find((candidate) => candidate.id === tab.runId) : undefined;
               const fileState = tab.kind === "file" ? openFiles[tab.path] : undefined;
-              const label = tab.kind === "subagents" ? "Subagents" : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? "Subagent";
+              const label = tab.kind === "subagents" ? t("app.subagents") : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? t("app.subagent");
               return (
                 <div key={tab.id} className={`subagent-panel-tab ${sidePanelTabs.activeTabId === tab.id ? "active" : ""}`}>
                   <button type="button" className="subagent-panel-tab-select" onClick={() => setSidePanelTabs((state) => openSidePanelTab(state, tab))}>
                     {tab.kind === "file" ? fileState?.kind === "image" ? <Image size={14} strokeWidth={1.8} /> : <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
                     <span>{label}</span>
                   </button>
-                  <button type="button" className="subagent-panel-tab-close" aria-label={`Close ${label}`} onClick={() => void closePanelTab(tab.id)}>
+                  <button type="button" className="subagent-panel-tab-close" aria-label={t("app.close", { p0: label })} onClick={() => void closePanelTab(tab.id)}>
                     <X size={14} strokeWidth={1.9} />
                   </button>
                 </div>
               );
             })}
             </div>
-            {subagentRuns.length > 0 && <button type="button" className="icon-button" aria-label="Subagents" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}><Circle size={16} /></button>}
+            {subagentRuns.length > 0 && <button type="button" className="icon-button" aria-label={t("app.subagents")} onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}><Circle size={16} /></button>}
             <div className="workspace-panel-actions">
-              <button type="button" className="icon-button" title={activeSidePanelTab?.kind === "file" ? "Toggle file tree" : "Browse files"} aria-label={activeSidePanelTab?.kind === "file" ? "Toggle file tree" : "Browse files"} aria-expanded={activeSidePanelTab?.kind === "file" ? treeVisible : undefined} onClick={() => activeSidePanelTab?.kind === "file" ? setTreeVisible((visible) => !visible) : browseFiles()}><FolderOpen size={16} /></button>
-              <button type="button" className="icon-button panel-expand-button" aria-label={sidePanelExpanded ? "Restore split view" : "Expand side panel"} onClick={() => setSidePanelExpanded((expanded) => !expanded)}>{sidePanelExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
-              <button type="button" className="icon-button panel-close-button" aria-label="Close files and return to conversation" onClick={() => setSidePanelOpen(false)}><X size={16} /></button>
+              <button type="button" className="icon-button" title={activeSidePanelTab?.kind === "file" ? t("app.toggleFileTree") : t("app.browseFiles")} aria-label={activeSidePanelTab?.kind === "file" ? t("app.toggleFileTree") : t("app.browseFiles")} aria-expanded={activeSidePanelTab?.kind === "file" ? treeVisible : undefined} onClick={() => activeSidePanelTab?.kind === "file" ? setTreeVisible((visible) => !visible) : browseFiles()}><FolderOpen size={16} /></button>
+              <button type="button" className="icon-button panel-expand-button" aria-label={sidePanelExpanded ? t("app.restoreSplitView") : t("app.expandSidePanel")} onClick={() => setSidePanelExpanded((expanded) => !expanded)}>{sidePanelExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
+              <button type="button" className="icon-button panel-close-button" aria-label={t("app.closeFilesAndReturnToConversation")} onClick={() => setSidePanelOpen(false)}><X size={16} /></button>
             </div>
           </div>
           <div className={`workspace-panel-body ${!activeSidePanelTab ? "file-browser-only" : ""}`}>
           <div className="workspace-panel-content">
           {liveFiles.notice && activeSidePanelTab?.kind === "file" && <div className="file-editor-banner" role="status">{liveFiles.notice}</div>}
-          {fileOpening && <div className="workspace-file-notice" role="status">Opening file…</div>}
+          {fileOpening && <div className="workspace-file-notice" role="status">{t("app.openingFile")}</div>}
           {!activeSidePanelTab ? null : activeSidePanelTab.kind === "subagents" ? (
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
@@ -4576,7 +4584,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               onBack={() => showPanelTab({ id: "subagents", kind: "subagents" })}
             />
           ) : openFiles[activeSidePanelTab.path] ? (
-            <Suspense fallback={<div className="subagent-panel-empty">Loading editor…</div>}>
+            <Suspense fallback={<div className="subagent-panel-empty">{t("app.loadingEditor")}</div>}>
               <OpenWorkspaceFileTab
                 active={sidePanelOpen && !channelsOpen && surfaceActive}
                 state={openFiles[activeSidePanelTab.path]}
@@ -4588,7 +4596,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 onRefresh={() => {
                   const file = openFilesRef.current[activeSidePanelTab.path];
                   if (!file || file.saveStatus === "saving") return;
-                  if (file.kind === "text" && file.draft !== file.file.content && !window.confirm("Discard your unsaved edits and reload this file from disk?")) return;
+                  if (file.kind === "text" && file.draft !== file.file.content && !window.confirm(t("app.discardYourUnsavedEditsAndReloadThisFile"))) return;
                   const timer = fileSaveTimersRef.current.get(activeSidePanelTab.path);
                   if (timer !== undefined) window.clearTimeout(timer);
                   fileSaveTimersRef.current.delete(activeSidePanelTab.path);
@@ -4597,7 +4605,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               />
             </Suspense>
           ) : (
-            <div className="subagent-panel-empty">File is unavailable.</div>
+            <div className="subagent-panel-empty">{t("app.fileIsUnavailable")}</div>
           )}
           </div>
           {sidePanelOpen && (!activeSidePanelTab || (treeVisible && activeSidePanelTab.kind === "file")) && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
@@ -4622,26 +4630,26 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         >
           <form className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="create-project-title" onSubmit={(event) => void createNamedProject(event)}>
             <header>
-              <h2 id="create-project-title">Create project</h2>
-              <button type="button" className="dialog-close" onClick={closeCreateProjectDialog} disabled={isBusy} aria-label="Close">
+              <h2 id="create-project-title">{t("app.createProject")}</h2>
+              <button type="button" className="dialog-close" onClick={closeCreateProjectDialog} disabled={isBusy} aria-label={t("app.close2")}>
                 <X size={15} strokeWidth={1.8} />
               </button>
             </header>
 
             <label className="project-name-field">
-              <span className="sr-only">Project name</span>
+              <span className="sr-only">{t("app.projectName")}</span>
               <Folder size={15} strokeWidth={1.8} />
               <input
                 autoFocus
                 value={newProjectName}
                 onChange={(event) => setNewProjectName(event.target.value)}
-                placeholder="Project name"
+                placeholder={t("app.projectName")}
                 disabled={isBusy}
               />
             </label>
 
             <div className="project-folder-field">
-              <span>Files and repositories <small>(optional)</small></span>
+              <span>{t("app.filesAndRepositories")}{" "}<small>{t("app.optional")}</small></span>
               {newProjectSources.length > 0 && (
                 <div className="project-source-list">
                   {newProjectSources.map((draft) => (
@@ -4649,40 +4657,40 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                       {draft.candidate.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
                       <span><strong>{draft.candidate.name}</strong><small>{draft.candidate.canonicalPath}</small></span>
                       {draft.candidate.kind === "git"
-                        ? <div className="source-mode-actions"><em>Git repository</em></div>
-                        : <div className="source-mode-actions"><em>{folderModeLabel(draft.folderMode)}</em>{draft.folderMode === "direct" ? <><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "copy" } : item))}>Use a copy</button><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "reference" } : item))}>Use as reference</button></> : <button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "direct" } : item))}>Use directly</button>}</div>}
-                      <button type="button" onClick={() => setNewProjectSources((current) => current.filter((item) => item.candidate.selectedPath !== draft.candidate.selectedPath))} aria-label={`Remove ${draft.candidate.name}`}><X size={14} /></button>
-                      {draft.candidate.kind === "folder" && draft.folderMode === "direct" && <small className="source-direct-warning">Workspace changes will appear in the original folder.</small>}
+                        ? <div className="source-mode-actions"><em>{t("app.gitRepository")}</em></div>
+                        : <div className="source-mode-actions"><em>{folderModeLabel(draft.folderMode)}</em>{draft.folderMode === "direct" ? <><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "copy" } : item))}>{t("app.useACopy")}</button><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "reference" } : item))}>{t("app.useAsReference")}</button></> : <button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "direct" } : item))}>{t("app.useDirectly")}</button>}</div>}
+                      <button type="button" onClick={() => setNewProjectSources((current) => current.filter((item) => item.candidate.selectedPath !== draft.candidate.selectedPath))} aria-label={t("app.remove", { p0: draft.candidate.name })}><X size={14} /></button>
+                      {draft.candidate.kind === "folder" && draft.folderMode === "direct" && <small className="source-direct-warning">{t("app.workspaceChangesWillAppearInTheOriginalFolder")}</small>}
                     </div>
                   ))}
                 </div>
               )}
               <button type="button" className="project-folder-picker compact" onClick={() => void chooseNewProjectSources()} disabled={isBusy}>
                 <Plus size={16} strokeWidth={1.8} />
-                <span>Add folder</span>
+                <span>{t("app.addFolder")}</span>
               </button>
-              <small className="project-dialog-help">You can create an empty Project and add Sources later.</small>
+              <small className="project-dialog-help">{t("app.youCanCreateAnEmptyProjectAndAdd")}</small>
             </div>
 
             {message && <p className="dialog-error">{message}</p>}
 
             <footer>
-              <button type="button" className="dialog-cancel" onClick={closeCreateProjectDialog} disabled={isBusy}>Cancel</button>
-              <button type="submit" className="dialog-submit" disabled={isBusy || !newProjectName.trim()}>Create project</button>
+              <button type="button" className="dialog-cancel" onClick={closeCreateProjectDialog} disabled={isBusy}>{t("app.cancel")}</button>
+              <button type="submit" className="dialog-submit" disabled={isBusy || !newProjectName.trim()}>{t("app.createProject")}</button>
             </footer>
           </form>
         </div>
       )}
 
-      {archiveTarget && <ConfirmActionDialog title={`Archive “${archiveTarget.title}”?`} description="History is kept. Any Channel binding will be removed: a shared group creates a new Session on its next mention, and an old topic no longer continues this Session. Unarchiving does not restore the binding." action="Archive Session" busy={archivingSession} error={sidebarActionError} onCancel={() => setArchiveTarget(null)} onConfirm={() => void confirmArchiveSession()} />}
+      {archiveTarget && <ConfirmActionDialog title={t("app.archive2", { p0: archiveTarget.title })} description={t("app.historyIsKeptAnyChannelBindingWillBe")} action={t("app.archiveSessionAction")} busy={archivingSession} error={sidebarActionError} onCancel={() => setArchiveTarget(null)} onConfirm={() => void confirmArchiveSession()} />}
 
       {removeSourceTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setRemoveSourceTarget(null); }} onKeyDown={(event) => { if (event.key === "Escape" && !isBusy) setRemoveSourceTarget(null); }}>
           <div className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="remove-source-title">
-            <header><div><h2 id="remove-source-title">Remove Source from Project?</h2><p>{removeSourceTarget.name}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={() => setRemoveSourceTarget(null)} aria-label="Close"><X size={15} /></button></header>
-            <p className="archive-workspace-copy">This only removes the Source from this Project’s list and from the choices for new Workspaces. Existing Workspaces, their Source bindings, files, worktrees, and all Git branches are kept. The original Source folder is not deleted.</p>
+            <header><div><h2 id="remove-source-title">{t("app.removeSourceFromProject")}</h2><p>{removeSourceTarget.name}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={() => setRemoveSourceTarget(null)} aria-label={t("app.close2")}><X size={15} /></button></header>
+            <p className="archive-workspace-copy">{t("app.thisOnlyRemovesTheSourceFromThisProject")}</p>
             {message && <p className="dialog-error">{message}</p>}
-            <footer><button autoFocus type="button" className="dialog-cancel" disabled={isBusy} onClick={() => setRemoveSourceTarget(null)}>Cancel</button><button type="button" className="dialog-submit" disabled={isBusy} onClick={() => void confirmRemoveSource()}>{isBusy ? "Removing…" : "Remove from Project"}</button></footer>
+            <footer><button autoFocus type="button" className="dialog-cancel" disabled={isBusy} onClick={() => setRemoveSourceTarget(null)}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={isBusy} onClick={() => void confirmRemoveSource()}>{isBusy ? t("app.removing") : t("app.removeFromProject")}</button></footer>
           </div>
         </div>
       )}
@@ -4690,17 +4698,17 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       {addSourcesProjectId && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setAddSourcesProjectId(null); }}>
           <div className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="add-sources-title">
-            <header><div><h2 id="add-sources-title">Add Sources</h2><p>Review each Source before adding it.</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={() => setAddSourcesProjectId(null)}><X size={15} /></button></header>
+            <header><div><h2 id="add-sources-title">{t("app.addSources")}</h2><p>{t("app.reviewEachSourceBeforeAddingIt")}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={() => setAddSourcesProjectId(null)}><X size={15} /></button></header>
             <div className="project-source-list">{newProjectSources.map((draft) => <div className="project-source-row source-choice-row" key={draft.candidate.selectedPath}>
               {draft.candidate.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
               <span><strong>{draft.candidate.name}</strong><small>{draft.candidate.canonicalPath}</small></span>
               {draft.candidate.kind === "git"
-                ? <div className="source-mode-actions"><em>Git repository</em></div>
-                : <div className="source-mode-actions"><em>{folderModeLabel(draft.folderMode)}</em>{draft.folderMode === "direct" ? <><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "copy" } : item))}>Use a copy</button><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "reference" } : item))}>Use as reference</button></> : <button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "direct" } : item))}>Use directly</button>}</div>}
-              {draft.candidate.kind === "folder" && draft.folderMode === "direct" && <small className="source-direct-warning">Workspace changes will appear in the original folder.</small>}
+                ? <div className="source-mode-actions"><em>{t("app.gitRepository")}</em></div>
+                : <div className="source-mode-actions"><em>{folderModeLabel(draft.folderMode)}</em>{draft.folderMode === "direct" ? <><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "copy" } : item))}>{t("app.useACopy")}</button><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "reference" } : item))}>{t("app.useAsReference")}</button></> : <button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "direct" } : item))}>{t("app.useDirectly")}</button>}</div>}
+              {draft.candidate.kind === "folder" && draft.folderMode === "direct" && <small className="source-direct-warning">{t("app.workspaceChangesWillAppearInTheOriginalFolder")}</small>}
             </div>)}</div>
             {message && <p className="dialog-error">{message}</p>}
-            <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={() => setAddSourcesProjectId(null)}>Cancel</button><button type="button" className="dialog-submit" disabled={isBusy} onClick={() => void confirmAddSources()}>Add Sources</button></footer>
+            <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={() => setAddSourcesProjectId(null)}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={isBusy} onClick={() => void confirmAddSources()}>{t("app.addSources")}</button></footer>
           </div>
         </div>
       )}
@@ -4729,48 +4737,48 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           >
             <header>
               <div>
-                <h2 id="create-workspace-title">Create workspace</h2>
+                <h2 id="create-workspace-title">{t("app.createWorkspace")}</h2>
                 <p>{createWorkspaceProject.name}</p>
               </div>
-              <button type="button" className="dialog-close" onClick={closeCreateWorkspaceDialog} disabled={isBusy} aria-label="Close">
+              <button type="button" className="dialog-close" onClick={closeCreateWorkspaceDialog} disabled={isBusy} aria-label={t("app.close2")}>
                 <X size={15} strokeWidth={1.8} />
               </button>
             </header>
 
             <label className="workspace-dialog-field">
-              <span>What are you working on?</span>
+              <span>{t("app.whatAreYouWorkingOn")}</span>
               <input
                 autoFocus
                 value={newWorkspaceTitle}
                 onChange={(event) => updateNewWorkspaceTitle(event.target.value)}
-                placeholder="Fix streaming tool results"
+                placeholder={t("app.fixStreamingToolResults")}
                 disabled={isBusy}
               />
             </label>
 
             {workspaceRepositories.some((draft) => draft.selected) && (
               <label className="workspace-dialog-field">
-                <span>Git branch <small>(optional)</small></span>
+                <span>{t("app.gitBranch")}{" "}<small>{t("app.optional")}</small></span>
                 <input
                   value={newWorkspaceBranchName}
                   onChange={(event) => setNewWorkspaceBranchName(event.target.value)}
-                  placeholder="zotigo/<workspace-slug>-<short-id>"
+                  placeholder={t("workspace.branchExample")}
                   disabled={isBusy}
                 />
-                <small>Leave blank to derive a stable branch from the Workspace name. Later renames will not change it.</small>
+                <small>{t("app.leaveBlankToDeriveAStableBranchFrom")}</small>
               </label>
             )}
 
             <div className="workspace-sources-field">
               <div className="workspace-sources-heading">
-                <span>Sources <small>(optional)</small></span>
+                <span>{t("app.sources")}{" "}<small>{t("app.optional")}</small></span>
                 <div>
-                  <button type="button" disabled={isBusy || !canSelectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(true)}>Select all</button>
-                  <button type="button" disabled={isBusy || !canDeselectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(false)}>Deselect all</button>
+                  <button type="button" disabled={isBusy || !canSelectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(true)}>{t("app.selectAll")}</button>
+                  <button type="button" disabled={isBusy || !canDeselectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(false)}>{t("app.deselectAll")}</button>
                 </div>
               </div>
               {(workspaceRepositories.length > 0 || desktopState.folders.some((folder) => folder.project_id === createWorkspaceProject.id)) && (
-                <small className="workspace-sources-help">Available Sources are selected by default. Uncheck anything this Workspace does not need.</small>
+                <small className="workspace-sources-help">{t("app.availableSourcesAreSelectedByDefaultUncheckAnything")}</small>
               )}
               {workspaceRepositories.map((draft) => (
                 <div className={`workspace-source-card ${draft.selected ? "selected" : ""}`} key={draft.repository.id}>
@@ -4782,18 +4790,18 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                     <GitBranch size={15} />
                     <strong>{draft.repository.name}</strong>
                   </label>
-                  {draft.repository.availability !== "available" && <p className="workspace-dialog-note">Unavailable — reconnect or repair this Source before using it.</p>}
+                  {draft.repository.availability !== "available" && <p className="workspace-dialog-note">{t("app.unavailableReconnectOrRepairThisSourceBeforeUsing")}</p>}
                   {draft.selected && (
                     <details className="workspace-source-settings">
                       <summary>
-                        <span>Git settings</span>
-                        <small>{draft.baseRef} → {newWorkspaceBranchName.trim() || "zotigo/<workspace-slug>-<short-id>"}</small>
+                        <span>{t("app.gitSettings")}</span>
+                        <small>{draft.baseRef} {"→"}{" "}{newWorkspaceBranchName.trim() || "zotigo/<workspace-slug>-<short-id>"}</small>
                       </summary>
                       <div className="workspace-dialog-grid single-column">
                         <label className="workspace-dialog-field">
-                          <span>Start from</span>
+                          <span>{t("app.startFrom")}</span>
                           <input value={draft.baseRef} onChange={(event) => updateRepositoryBaseRef(draft.repository.id, event.target.value)} />
-                          <small>Resolved by zotigod when the Workspace is created</small>
+                          <small>{t("app.resolvedByZotigodWhenTheWorkspaceIsCreated")}</small>
                         </label>
                       </div>
                     </details>
@@ -4803,20 +4811,20 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               {desktopState.folders.filter((folder) => folder.project_id === createWorkspaceProject.id).map((folder) => (
                 <div className={`workspace-source-card ${workspaceFolderModes[folder.id] ? "selected" : ""}`} key={folder.id}>
                   <label className="workspace-source-toggle"><input type="checkbox" checked={Boolean(workspaceFolderModes[folder.id])} disabled={folder.availability !== "available"} onChange={(event) => setWorkspaceFolderModes((current) => ({ ...current, [folder.id]: event.target.checked ? folder.default_mode : "" }))} /><Folder size={15} /><strong>{folder.name}</strong></label>
-                  {folder.availability !== "available" && <p className="workspace-dialog-note">Unavailable — reconnect or repair this Source before using it.</p>}
-                  {workspaceFolderModes[folder.id] === "direct" && <p className="workspace-direct-warning"><ShieldAlert size={14} /> Direct — changes appear immediately in the original folder.</p>}
-                  {workspaceFolderModes[folder.id] === "copy" && <p className="workspace-dialog-note">Independent copy — changes stay inside this Workspace.</p>}
-                  {workspaceFolderModes[folder.id] === "reference" && <p className="workspace-dialog-note">Reference snapshot — a read-only copy is placed under notes.</p>}
+                  {folder.availability !== "available" && <p className="workspace-dialog-note">{t("app.unavailableReconnectOrRepairThisSourceBeforeUsing")}</p>}
+                  {workspaceFolderModes[folder.id] === "direct" && <p className="workspace-direct-warning"><ShieldAlert size={14} /> {t("app.directChangesAppearImmediatelyInTheOriginalFolder")}</p>}
+                  {workspaceFolderModes[folder.id] === "copy" && <p className="workspace-dialog-note">{t("app.independentCopyChangesStayInsideThisWorkspace")}</p>}
+                  {workspaceFolderModes[folder.id] === "reference" && <p className="workspace-dialog-note">{t("app.referenceSnapshotAReadOnlyCopyIsPlaced")}</p>}
                 </div>
               ))}
               {workspaceRepositories.length === 0 && desktopState.folders.every((folder) => folder.project_id !== createWorkspaceProject.id) && (
-                <p className="workspace-dialog-note">This will be an empty Workspace with code, artifacts, and notes folders.</p>
+                <p className="workspace-dialog-note">{t("app.thisWillBeAnEmptyWorkspaceWithCode")}</p>
               )}
             </div>
             {message && <p className="dialog-error">{message}</p>}
 
             <footer>
-              <button type="button" className="dialog-cancel" onClick={closeCreateWorkspaceDialog} disabled={isBusy}>Cancel</button>
+              <button type="button" className="dialog-cancel" onClick={closeCreateWorkspaceDialog} disabled={isBusy}>{t("app.cancel")}</button>
               <button
                 type="submit"
                 className="dialog-submit"
@@ -4824,7 +4832,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                   isBusy || !newWorkspaceTitle.trim() || workspaceRepositories.some((draft) => draft.selected && !draft.baseRef.trim())
                 }
               >
-                {isBusy ? "Creating…" : "Create workspace"}
+                {isBusy ? t("app.creating") : t("app.createWorkspace")}
               </button>
             </footer>
           </form>
@@ -4839,40 +4847,40 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         const selectedFolder = availableFolders.find((source) => source.id === workspaceSourceId);
         return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) closeWorkspaceSources(); }}>
           <div className="create-project-dialog workspace-sources-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-sources-title">
-            <header><div><h2 id="workspace-sources-title">Workspace Sources</h2><p>{workspaceSourcesTarget.title}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={closeWorkspaceSources} aria-label="Close"><X size={15} /></button></header>
+            <header><div><h2 id="workspace-sources-title">{t("app.workspaceSources")}</h2><p>{workspaceSourcesTarget.title}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={closeWorkspaceSources} aria-label={t("app.close2")}><X size={15} /></button></header>
             <section className="workspace-binding-list">
-              <span>Dependencies</span>
-              {workspaceSourcesLoading && <p className="workspace-dialog-note">Loading Workspace Sources…</p>}
-              {!workspaceSourcesLoading && workspaceSourcesLoadError && <div className="workspace-source-load-error"><p>{workspaceSourcesLoadError}</p><button type="button" onClick={() => void loadWorkspaceSources(workspaceSourcesTarget.id)}>Reload</button></div>}
+              <span>{t("app.dependencies")}</span>
+              {workspaceSourcesLoading && <p className="workspace-dialog-note">{t("app.loadingWorkspaceSources")}</p>}
+              {!workspaceSourcesLoading && workspaceSourcesLoadError && <div className="workspace-source-load-error"><p>{workspaceSourcesLoadError}</p><button type="button" onClick={() => void loadWorkspaceSources(workspaceSourcesTarget.id)}>{t("app.reload")}</button></div>}
               {!workspaceSourcesLoading && workspaceSources.map((binding) => <div className="workspace-binding-row" key={binding.source.id}>
                 {binding.source.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
                 <span><strong>{workspaceSourceName(binding)}</strong><small>{binding.source.kind === "git" ? `${binding.base_ref} → ${binding.branch_name}` : `${binding.mode} → ${binding.target_path}`}</small>{binding.error && <small className="error">{binding.error}</small>}</span>
-                <div className="workspace-binding-status"><em className={binding.status === "error" ? "error" : ""}>{binding.status}</em>{binding.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> Retry</button>}</div>
+                <div className="workspace-binding-status"><em className={binding.status === "error" ? "error" : ""}>{stateLabel(binding.status)}</em>{binding.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retry2")}</button>}</div>
               </div>)}
-              {!workspaceSourcesLoading && !workspaceSourcesLoadError && workspaceSources.length === 0 && <p className="workspace-dialog-note">This Workspace has no Sources yet.</p>}
+              {!workspaceSourcesLoading && !workspaceSourcesLoadError && workspaceSources.length === 0 && <p className="workspace-dialog-note">{t("app.thisWorkspaceHasNoSourcesYet")}</p>}
             </section>
             {!workspaceSourcesLoadError && workspaceSourcesTarget.status === "ready" && <section className="workspace-add-source">
-              <span>Add dependency</span>
+              <span>{t("app.addDependency")}</span>
               {!workspaceSourcesLoading && (availableRepositories.length > 0 || availableFolders.length > 0) ? <>
                 <label className="workspace-dialog-field">
-                  <span>Project Source</span>
+                  <span>{t("app.projectSource")}</span>
                   <select value={workspaceSourceId} onChange={(event) => selectWorkspaceSource(event.target.value)}>
-                    <option value="">Choose a Source</option>
-                    {availableRepositories.map((source) => <option value={source.id} key={source.id}>{source.name} — Git</option>)}
-                    {availableFolders.map((source) => <option value={source.id} key={source.id}>{source.name} — Folder</option>)}
+                    <option value="">{t("app.chooseASource")}</option>
+                    {availableRepositories.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.git")}</option>)}
+                    {availableFolders.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.folder")}</option>)}
                   </select>
                 </label>
                 {selectedRepository && <div className="workspace-dialog-grid">
-                  <label className="workspace-dialog-field"><span>Start from</span><input value={workspaceSourceBaseRef} onChange={(event) => setWorkspaceSourceBaseRef(event.target.value)} /></label>
-                  <label className="workspace-dialog-field"><span>Branch <small>(optional)</small></span><input value={workspaceSourceBranchName} onChange={(event) => setWorkspaceSourceBranchName(event.target.value)} placeholder="zotigo/<workspace-slug>-<short-id>" /></label>
+                  <label className="workspace-dialog-field"><span>{t("app.startFrom")}</span><input value={workspaceSourceBaseRef} onChange={(event) => setWorkspaceSourceBaseRef(event.target.value)} /></label>
+                  <label className="workspace-dialog-field"><span>{t("app.branch")}{" "}<small>{t("app.optional")}</small></span><input value={workspaceSourceBranchName} onChange={(event) => setWorkspaceSourceBranchName(event.target.value)} placeholder={t("workspace.branchExample")} /></label>
                 </div>}
-                {selectedFolder && <label className="workspace-dialog-field"><span>Folder mode</span><select value={workspaceSourceMode} onChange={(event) => setWorkspaceSourceMode(event.target.value as FolderSourceMode)}><option value="direct">Direct</option><option value="copy">Copy</option><option value="reference">Reference</option></select></label>}
-              </> : !workspaceSourcesLoading && <p className="workspace-dialog-note">Every Source in this Project is already bound.</p>}
-              <button type="button" className="workspace-add-project-source" onClick={() => { const projectId = workspaceSourcesTarget.project_id; closeWorkspaceSources(); void addSourcesToProject(projectId); }} disabled={isBusy}><FolderPlus size={14} /> Source not listed? Add it to the Project first</button>
+                {selectedFolder && <label className="workspace-dialog-field"><span>{t("app.folderMode")}</span><select value={workspaceSourceMode} onChange={(event) => setWorkspaceSourceMode(event.target.value as FolderSourceMode)}><option value="direct">{t("app.direct")}</option><option value="copy">{t("app.copy")}</option><option value="reference">{t("app.reference")}</option></select></label>}
+              </> : !workspaceSourcesLoading && <p className="workspace-dialog-note">{t("app.everySourceInThisProjectIsAlreadyBound")}</p>}
+              <button type="button" className="workspace-add-project-source" onClick={() => { const projectId = workspaceSourcesTarget.project_id; closeWorkspaceSources(); void addSourcesToProject(projectId); }} disabled={isBusy}><FolderPlus size={14} /> {t("app.sourceNotListedAddItToTheProject")}</button>
             </section>}
-            {!workspaceSourcesLoadError && workspaceSourcesTarget.status !== "ready" && <div className="workspace-source-unavailable"><p>This Workspace is {workspaceSourcesTarget.status}. Sources can only be added when it is ready.</p>{workspaceSourcesTarget.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> Retry Workspace</button>}</div>}
+            {!workspaceSourcesLoadError && workspaceSourcesTarget.status !== "ready" && <div className="workspace-source-unavailable"><p>{t("workspace.unready", { state: stateLabel(workspaceSourcesTarget.status) })}</p>{workspaceSourcesTarget.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retryWorkspace2")}</button>}</div>}
             {message && <p className="dialog-error">{message}</p>}
-            <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={closeWorkspaceSources}>Close</button><button type="button" className="dialog-submit" disabled={isBusy || workspaceSourcesTarget.status !== "ready" || workspaceSourcesLoading || Boolean(workspaceSourcesLoadError) || !workspaceSourceId || Boolean(selectedRepository && !workspaceSourceBaseRef.trim())} onClick={() => void confirmAddWorkspaceSource()}>Add Source</button></footer>
+            <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={closeWorkspaceSources}>{t("app.close2")}</button><button type="button" className="dialog-submit" disabled={isBusy || workspaceSourcesTarget.status !== "ready" || workspaceSourcesLoading || Boolean(workspaceSourcesLoadError) || !workspaceSourceId || Boolean(selectedRepository && !workspaceSourceBaseRef.trim())} onClick={() => void confirmAddWorkspaceSource()}>{t("app.addSource")}</button></footer>
           </div>
         </div>;
       })()}
@@ -4882,32 +4890,32 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           <div className="create-project-dialog archive-workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="archive-workspace-title">
             <header>
               <div>
-                <h2 id="archive-workspace-title">Archive workspace?</h2>
+                <h2 id="archive-workspace-title">{t("app.archiveWorkspace")}</h2>
                 <p>{archiveWorkspaceTarget.title}</p>
               </div>
-              <button type="button" className="dialog-close" onClick={closeArchiveWorkspaceDialog} disabled={isBusy} aria-label="Close"><X size={15} /></button>
+              <button type="button" className="dialog-close" onClick={closeArchiveWorkspaceDialog} disabled={isBusy} aria-label={t("app.close2")}><X size={15} /></button>
             </header>
-            <p className="archive-workspace-copy">Sessions, Git branches, artifacts, and notes are kept. Zotigo will remove linked Git worktrees and hide this Workspace.</p>
+            <p className="archive-workspace-copy">{t("app.sessionsGitBranchesArtifactsAndNotesAreKept")}</p>
             <div className="archive-workspace-path-row">
               <code className="archive-workspace-path">{workspaceArchivePreview.root_path}</code>
-              <button type="button" className="copy-path-button" title="Copy path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(workspaceArchivePreview.root_path)}>
+              <button type="button" className="copy-path-button" title={t("app.copyPath")} aria-label={t("app.copyWorkspacePath")} onClick={() => void copyWorkspacePath(workspaceArchivePreview.root_path)}>
                 {copiedWorkspacePath === workspaceArchivePreview.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
               </button>
-              {<button type="button" onClick={() => { browseFiles(workspaceArchivePreview.root_path); setWorkspaceArchivePreview(null); }}><FolderOpen size={14} strokeWidth={1.8} /><span>Browse files</span></button>}
+              {<button type="button" onClick={() => { browseFiles(workspaceArchivePreview.root_path); setWorkspaceArchivePreview(null); }}><FolderOpen size={14} strokeWidth={1.8} /><span>{t("app.browseFiles")}</span></button>}
             </div>
             {workspaceArchivePreview.worktree_paths.length > 0 && (
               <section className="archive-workspace-summary">
-                <strong>{workspaceArchivePreview.worktree_paths.length} linked {workspaceArchivePreview.worktree_paths.length === 1 ? "worktree" : "worktrees"} will be removed</strong>
+                <strong>{t("workspace.removeWorktrees", { count: workspaceArchivePreview.worktree_paths.length })}</strong>
                 {workspaceArchivePreview.worktree_paths.map((worktreePath) => <small key={worktreePath}>{worktreePath}</small>)}
               </section>
             )}
             {workspaceArchivePreview.dirty_worktree_paths.length > 0 && (
-              <section className="archive-workspace-warning"><ShieldAlert size={16} /><span><strong>Uncommitted changes found</strong><small>Commit or discard changes in these worktrees before archiving.</small>{workspaceArchivePreview.dirty_worktree_paths.map((worktreePath) => <code key={worktreePath}>{worktreePath}</code>)}</span></section>
+              <section className="archive-workspace-warning"><ShieldAlert size={16} /><span><strong>{t("app.uncommittedChangesFound")}</strong><small>{t("app.commitOrDiscardChangesInTheseWorktreesBefore")}</small>{workspaceArchivePreview.dirty_worktree_paths.map((worktreePath) => <code key={worktreePath}>{worktreePath}</code>)}</span></section>
             )}
             {workspaceLifecycleError && <p className="dialog-error">{workspaceLifecycleError}</p>}
             <footer>
-              <button type="button" className="dialog-cancel" onClick={closeArchiveWorkspaceDialog} disabled={isBusy}>Cancel</button>
-              <button type="button" className="dialog-submit destructive" onClick={() => void confirmArchiveWorkspace()} disabled={isBusy || workspaceArchivePreview.dirty_worktree_paths.length > 0}>{isBusy ? "Archiving…" : "Archive workspace"}</button>
+              <button type="button" className="dialog-cancel" onClick={closeArchiveWorkspaceDialog} disabled={isBusy}>{t("app.cancel")}</button>
+              <button type="button" className="dialog-submit destructive" onClick={() => void confirmArchiveWorkspace()} disabled={isBusy || workspaceArchivePreview.dirty_worktree_paths.length > 0}>{isBusy ? t("app.archiving") : t("app.archiveWorkspace2")}</button>
             </footer>
           </div>
         </div>
@@ -4917,27 +4925,27 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteProjectDialog(); }} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDeleteProjectDialog(); } }}>
           <div className="create-project-dialog archive-workspace-dialog delete-workspace-dialog delete-project-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-title">
             <header>
-              <div><h2 id="delete-project-title">Delete project?</h2><p>{deleteProjectTarget.name}</p></div>
-              <button type="button" className="dialog-close" disabled={isBusy} onClick={closeDeleteProjectDialog} aria-label="Close"><X size={15} /></button>
+              <div><h2 id="delete-project-title">{t("app.deleteProject2")}</h2><p>{deleteProjectTarget.name}</p></div>
+              <button type="button" className="dialog-close" disabled={isBusy} onClick={closeDeleteProjectDialog} aria-label={t("app.close2")}><X size={15} /></button>
             </header>
-            <p className="archive-workspace-copy">The Project and its Source registrations will be removed. Sessions in its Workspaces will be archived and unpinned; their history is kept. Original Source directories and all local and remote Git branches are kept.</p>
+            <p className="archive-workspace-copy">{t("app.theProjectAndItsSourceRegistrationsWillBe")}</p>
             <section className="archive-workspace-warning delete-workspace-warning">
               <ShieldAlert size={17} />
               <span>
-                <strong>This cannot be undone</strong>
-                <small>{projectDeletePreview.workspace_ids.length === 0 ? "This Project has no Workspaces. No Workspace files will be deleted." : `${projectDeletePreview.workspace_ids.length} Workspaces, including archived ones, and their managed files will be permanently deleted.`}</small>
-                {projectDeletePreview.dirty_worktree_paths.length > 0 && <small>Uncommitted changes in {projectDeletePreview.dirty_worktree_paths.length} linked worktrees will also be discarded.</small>}
+                <strong>{t("app.thisCannotBeUndone")}</strong>
+                <small>{projectDeletePreview.workspace_ids.length === 0 ? t("app.thisProjectHasNoWorkspacesNoWorkspaceFiles") : t("app.workspacesIncludingArchivedOnesAndTheirManagedFiles", { p0: projectDeletePreview.workspace_ids.length })}</small>
+                {projectDeletePreview.dirty_worktree_paths.length > 0 && <small>{t("workspace.discardChanges", { count: projectDeletePreview.dirty_worktree_paths.length })}</small>}
               </span>
             </section>
-            {projectDeletePreview.workspace_roots.length > 0 && <details><summary>Workspace directories to delete</summary><ul>{projectDeletePreview.workspace_roots.map((path) => <li key={path} style={{ overflowWrap: "anywhere" }}>{path}</li>)}</ul></details>}
+            {projectDeletePreview.workspace_roots.length > 0 && <details><summary>{t("app.workspaceDirectoriesToDelete")}</summary><ul>{projectDeletePreview.workspace_roots.map((path) => <li key={path} style={{ overflowWrap: "anywhere" }}>{path}</li>)}</ul></details>}
             <label className="delete-workspace-confirmation">
-              <span>Type <strong>{deleteProjectTarget.name}</strong> to confirm</span>
+              <span>{t("app.type")}{" "}<strong>{deleteProjectTarget.name}</strong> {t("app.toConfirm")}</span>
               <input value={deleteProjectConfirmation} onChange={(event) => setDeleteProjectConfirmation(event.target.value)} disabled={isBusy} />
             </label>
             {workspaceLifecycleError && <p className="dialog-error" role="alert">{workspaceLifecycleError}</p>}
             <footer>
-              <button autoFocus type="button" className="dialog-cancel" disabled={isBusy} onClick={closeDeleteProjectDialog}>Cancel</button>
-              <button type="button" className="dialog-submit destructive" disabled={isBusy || deleteProjectConfirmation !== deleteProjectTarget.name} onClick={() => void confirmDeleteProject()}>{isBusy ? "Deleting…" : "Delete project"}</button>
+              <button autoFocus type="button" className="dialog-cancel" disabled={isBusy} onClick={closeDeleteProjectDialog}>{t("app.cancel")}</button>
+              <button type="button" className="dialog-submit destructive" disabled={isBusy || deleteProjectConfirmation !== deleteProjectTarget.name} onClick={() => void confirmDeleteProject()}>{isBusy ? t("app.deleting") : t("app.deleteProject")}</button>
             </footer>
           </div>
         </div>
@@ -4948,35 +4956,35 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           <div className="create-project-dialog archive-workspace-dialog delete-workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-workspace-title">
             <header>
               <div>
-                <h2 id="delete-workspace-title">Delete workspace?</h2>
+                <h2 id="delete-workspace-title">{t("app.deleteWorkspace")}</h2>
                 <p>{deleteWorkspaceTarget.title}</p>
               </div>
-              <button type="button" className="dialog-close" onClick={closeDeleteWorkspaceDialog} disabled={isBusy} aria-label="Close"><X size={15} /></button>
+              <button type="button" className="dialog-close" onClick={closeDeleteWorkspaceDialog} disabled={isBusy} aria-label={t("app.close2")}><X size={15} /></button>
             </header>
-            <p className="archive-workspace-copy">Workspace files, copied folders, and linked worktrees will be permanently deleted by zotigod. Its sessions will be archived and unpinned; their history is kept. Original Sources and all local and remote Git branches are kept.</p>
+            <p className="archive-workspace-copy">{t("app.workspaceFilesCopiedFoldersAndLinkedWorktreesWill")}</p>
             <div className="archive-workspace-path-row">
               <code className="archive-workspace-path">{workspaceDeletePreview.root_path}</code>
-              <button type="button" className="copy-path-button" title="Copy path" aria-label="Copy Workspace path" onClick={() => void copyWorkspacePath(workspaceDeletePreview.root_path)}>
+              <button type="button" className="copy-path-button" title={t("app.copyPath")} aria-label={t("app.copyWorkspacePath")} onClick={() => void copyWorkspacePath(workspaceDeletePreview.root_path)}>
                 {copiedWorkspacePath === workspaceDeletePreview.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
               </button>
-              {<button type="button" onClick={() => { browseFiles(workspaceDeletePreview.root_path); setWorkspaceDeletePreview(null); }}><FolderOpen size={14} strokeWidth={1.8} /><span>Browse files</span></button>}
+              {<button type="button" onClick={() => { browseFiles(workspaceDeletePreview.root_path); setWorkspaceDeletePreview(null); }}><FolderOpen size={14} strokeWidth={1.8} /><span>{t("app.browseFiles")}</span></button>}
             </div>
             <section className="archive-workspace-warning delete-workspace-warning">
               <ShieldAlert size={16} />
               <span>
-                <strong>This cannot be undone</strong>
-                <small>All managed Workspace files will be removed. Sessions will leave the sidebar; archived history remains available in zotigod.</small>
-                {workspaceDeletePreview.dirty_worktree_paths.length > 0 && <small>Uncommitted changes in {workspaceDeletePreview.dirty_worktree_paths.length} linked {workspaceDeletePreview.dirty_worktree_paths.length === 1 ? "worktree" : "worktrees"} will also be discarded.</small>}
+                <strong>{t("app.thisCannotBeUndone")}</strong>
+                <small>{t("app.allManagedWorkspaceFilesWillBeRemovedSessions")}</small>
+                {workspaceDeletePreview.dirty_worktree_paths.length > 0 && <small>{t("workspace.discardChanges", { count: workspaceDeletePreview.dirty_worktree_paths.length })}</small>}
               </span>
             </section>
             <label className="delete-workspace-confirmation">
-              <span>Type <strong>{deleteWorkspaceTarget.title}</strong> to confirm</span>
+              <span>{t("app.type")}{" "}<strong>{deleteWorkspaceTarget.title}</strong> {t("app.toConfirm")}</span>
               <input autoFocus value={deleteWorkspaceConfirmation} onChange={(event) => setDeleteWorkspaceConfirmation(event.target.value)} disabled={isBusy} />
             </label>
             {workspaceLifecycleError && <p className="dialog-error">{workspaceLifecycleError}</p>}
             <footer>
-              <button type="button" className="dialog-cancel" onClick={closeDeleteWorkspaceDialog} disabled={isBusy}>Cancel</button>
-              <button type="button" className="dialog-submit destructive" onClick={() => void confirmDeleteWorkspace()} disabled={isBusy || deleteWorkspaceConfirmation !== deleteWorkspaceTarget.title}>{isBusy ? "Deleting…" : "Delete workspace"}</button>
+              <button type="button" className="dialog-cancel" onClick={closeDeleteWorkspaceDialog} disabled={isBusy}>{t("app.cancel")}</button>
+              <button type="button" className="dialog-submit destructive" onClick={() => void confirmDeleteWorkspace()} disabled={isBusy || deleteWorkspaceConfirmation !== deleteWorkspaceTarget.title}>{isBusy ? t("app.deleting") : t("app.deleteWorkspace2")}</button>
             </footer>
           </div>
         </div>
@@ -5006,22 +5014,22 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           >
             <header>
               <div>
-                <h2 id="rename-conversation-title">Rename chat</h2>
-                <p>Keep it short and easy to recognize</p>
+                <h2 id="rename-conversation-title">{t("app.renameChat")}</h2>
+                <p>{t("app.keepItShortAndEasyToRecognize")}</p>
               </div>
               <button
                 type="button"
                 className="dialog-close"
                 onClick={closeRenameConversationDialog}
                 disabled={isSavingConversationTitle}
-                aria-label="Close"
+                aria-label={t("app.close2")}
               >
                 <X size={15} strokeWidth={1.8} />
               </button>
             </header>
 
             <label>
-              <span className="sr-only">Conversation title</span>
+              <span className="sr-only">{t("app.conversationTitle")}</span>
               <input
                 autoFocus
                 value={renameDialogTitleDraft}
@@ -5038,15 +5046,13 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 onClick={closeRenameConversationDialog}
                 disabled={isSavingConversationTitle}
               >
-                Cancel
-              </button>
+                {t("app.cancel")}</button>
               <button
                 type="submit"
                 className="dialog-submit"
                 disabled={isSavingConversationTitle || !renameDialogTitleDraft.trim()}
               >
-                Save
-              </button>
+                {t("app.save")}</button>
             </footer>
           </form>
         </div>
@@ -5072,15 +5078,15 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           >
             <header>
               <div>
-                <h2 id="rename-project-title">Rename project</h2>
-                <p>This changes the display name only</p>
+                <h2 id="rename-project-title">{t("app.renameProject")}</h2>
+                <p>{t("app.thisChangesTheDisplayNameOnly")}</p>
               </div>
-              <button type="button" className="dialog-close" onClick={closeRenameProjectDialog} disabled={isSavingProjectName} aria-label="Close">
+              <button type="button" className="dialog-close" onClick={closeRenameProjectDialog} disabled={isSavingProjectName} aria-label={t("app.close2")}>
                 <X size={15} strokeWidth={1.8} />
               </button>
             </header>
             <label>
-              <span className="sr-only">Project name</span>
+              <span className="sr-only">{t("app.projectName")}</span>
               <input
                 autoFocus
                 value={renameDialogProjectNameDraft}
@@ -5091,9 +5097,9 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             </label>
             {message && <p className="dialog-error">{message}</p>}
             <footer>
-              <button type="button" className="dialog-cancel" onClick={closeRenameProjectDialog} disabled={isSavingProjectName}>Cancel</button>
+              <button type="button" className="dialog-cancel" onClick={closeRenameProjectDialog} disabled={isSavingProjectName}>{t("app.cancel")}</button>
               <button type="submit" className="dialog-submit" disabled={isSavingProjectName || !renameDialogProjectNameDraft.trim()}>
-                {isSavingProjectName ? "Saving…" : "Save"}
+                {isSavingProjectName ? t("app.saving") : t("app.save")}
               </button>
             </footer>
           </form>
@@ -5120,15 +5126,15 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           >
             <header>
               <div>
-                <h2 id="rename-workspace-title">Rename workspace</h2>
-                <p>This changes the display name only</p>
+                <h2 id="rename-workspace-title">{t("app.renameWorkspace")}</h2>
+                <p>{t("app.thisChangesTheDisplayNameOnly")}</p>
               </div>
-              <button type="button" className="dialog-close" onClick={closeRenameWorkspaceDialog} disabled={isSavingWorkspaceTitle} aria-label="Close">
+              <button type="button" className="dialog-close" onClick={closeRenameWorkspaceDialog} disabled={isSavingWorkspaceTitle} aria-label={t("app.close2")}>
                 <X size={15} strokeWidth={1.8} />
               </button>
             </header>
             <label>
-              <span className="sr-only">Workspace name</span>
+              <span className="sr-only">{t("app.workspaceName")}</span>
               <input
                 autoFocus
                 value={renameDialogWorkspaceTitleDraft}
@@ -5139,9 +5145,9 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             </label>
             {message && <p className="dialog-error">{message}</p>}
             <footer>
-              <button type="button" className="dialog-cancel" onClick={closeRenameWorkspaceDialog} disabled={isSavingWorkspaceTitle}>Cancel</button>
+              <button type="button" className="dialog-cancel" onClick={closeRenameWorkspaceDialog} disabled={isSavingWorkspaceTitle}>{t("app.cancel")}</button>
               <button type="submit" className="dialog-submit" disabled={isSavingWorkspaceTitle || !renameDialogWorkspaceTitleDraft.trim()}>
-                {isSavingWorkspaceTitle ? "Saving…" : "Save"}
+                {isSavingWorkspaceTitle ? t("app.saving") : t("app.save")}
               </button>
             </footer>
           </form>
@@ -5175,6 +5181,7 @@ function ConversationNavItem({
   onArchive: () => void;
   sort?: SidebarSortProps;
 }) {
+  useLocale();
   const titleViewportRef = useRef<HTMLSpanElement | null>(null);
   const titleTextRef = useRef<HTMLSpanElement | null>(null);
 
@@ -5217,16 +5224,16 @@ function ConversationNavItem({
           <span ref={titleTextRef}>{conversation.title}</span>
         </span>
       </button>
-      {working && <LoaderCircle className="sidebar-session-spinner" size={13} strokeWidth={1.9} aria-label="Running" />}
-      {!working && unread && <span className="sidebar-session-unread" aria-label="Unread" />}
+      {working && <LoaderCircle className="sidebar-session-spinner" size={13} strokeWidth={1.9} aria-label={t("app.running")} />}
+      {!working && unread && <span className="sidebar-session-unread" aria-label={t("app.unread")} />}
       <div className="sidebar-session-actions">
-        <button className="sidebar-session-touch-menu" type="button" onClick={onContextMenu} aria-label={`More actions for ${conversation.title}`}>
+        <button className="sidebar-session-touch-menu" type="button" onClick={onContextMenu} aria-label={t("app.moreActionsFor", { p0: conversation.title })}>
           <MoreHorizontal size={18} strokeWidth={1.8} />
         </button>
-        <button type="button" onClick={onPin} title={conversation.pinned_at ? "Unpin" : "Pin"} aria-label={`${conversation.pinned_at ? "Unpin" : "Pin"} ${conversation.title}`}>
+        <button type="button" onClick={onPin} title={conversation.pinned_at ? t("app.unpin") : t("app.pin")} aria-label={`${conversation.pinned_at ? t("app.unpin") : t("app.pin")} ${conversation.title}`}>
           <Pin size={12} strokeWidth={1.8} fill={conversation.pinned_at ? "currentColor" : "none"} />
         </button>
-        <button type="button" onClick={onArchive} title="Archive" aria-label={`Archive ${conversation.title}`}>
+        <button type="button" onClick={onArchive} title={t("app.archive")} aria-label={t("app.archive3", { p0: conversation.title })}>
           <Archive size={12} strokeWidth={1.8} />
         </button>
       </div>
@@ -5248,34 +5255,35 @@ function ProjectOverview({
   onManageWorkspaceSources: (workspace: DesktopWorkspace) => void;
   onOpenPath?: (path: string) => void;
 }) {
+  useLocale();
   const repositories = state.repositories.filter((source) => source.project_id === project.id);
   const folders = state.folders.filter((source) => source.project_id === project.id);
   const workspaces = state.workspaces.filter((workspace) => workspace.project_id === project.id);
   return <div className="project-overview">
     <header>
-      <div><FolderOpen size={22} /><span><button type="button" className="project-overview-title" onClick={onRename} title="Rename project"><h2>{project.name}</h2><SquarePen size={14} /></button><p>Sources and Workspaces managed by zotigod</p></span></div>
-      <button type="button" className="dialog-submit" onClick={onCreateWorkspace}><Plus size={14} /> New workspace</button>
+      <div><FolderOpen size={22} /><span><button type="button" className="project-overview-title" onClick={onRename} title={t("app.renameProject")}><h2>{project.name}</h2><SquarePen size={14} /></button><p>{t("app.sourcesAndWorkspacesManagedByZotigod")}</p></span></div>
+      <button type="button" className="dialog-submit" onClick={onCreateWorkspace}><Plus size={14} /> {t("app.newWorkspace")}</button>
     </header>
     {message && <p className="dialog-error">{message}</p>}
     <section className="project-overview-card">
-      <div className="project-overview-heading"><h3>Sources</h3><button type="button" onClick={onAddSources}><Plus size={13} /> Add source</button></div>
+      <div className="project-overview-heading"><h3>{t("app.sources")}</h3><button type="button" onClick={onAddSources}><Plus size={13} /> {t("app.addSource2")}</button></div>
       {repositories.map((source) => <div className="project-source-row" key={source.id}>
-        <GitBranch size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title="Browse files" onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
-        <button type="button" onClick={() => onRemoveSource("git", source.id, source.name)} aria-label={`Remove ${source.name} from Project`}><X size={13} /></button>
+        <GitBranch size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title={t("app.browseFiles")} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
+        <button type="button" onClick={() => onRemoveSource("git", source.id, source.name)} aria-label={t("app.removeFromProject2", { p0: source.name })}><X size={13} /></button>
       </div>)}
       {folders.map((source) => <div className="project-source-row" key={source.id}>
-          <Folder size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title="Browse files" onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
-          <div className="source-row-actions"><em>{folderModeLabel(source.default_mode)}</em></div><button type="button" onClick={() => onRemoveSource("folder", source.id, source.name)} aria-label={`Remove ${source.name} from Project`}><X size={13} /></button>
+          <Folder size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title={t("app.browseFiles")} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
+          <div className="source-row-actions"><em>{folderModeLabel(source.default_mode)}</em></div><button type="button" onClick={() => onRemoveSource("folder", source.id, source.name)} aria-label={t("app.removeFromProject2", { p0: source.name })}><X size={13} /></button>
         </div>)}
-      {repositories.length === 0 && folders.length === 0 && <p className="project-overview-empty">No Sources. Empty Workspaces are supported.</p>}
+      {repositories.length === 0 && folders.length === 0 && <p className="project-overview-empty">{t("app.noSourcesEmptyWorkspacesAreSupported")}</p>}
     </section>
     <section className="project-overview-card">
-      <div className="project-overview-heading"><h3>Workspaces</h3></div>
+      <div className="project-overview-heading"><h3>{t("app.workspaces")}</h3></div>
       {workspaces.map((workspace) => <div className="workspace-overview-row" key={workspace.id}>
         <GitBranch size={15} /><span><strong>{workspace.title}</strong><small>{workspace.root_path}</small></span>
-        <><button type="button" onClick={() => onManageWorkspaceSources(workspace)}>Sources</button>{onOpenPath && <><button type="button" onClick={() => onOpenPath(pathJoinForUi(workspace.root_path, "artifacts"))}>Artifacts</button><button type="button" onClick={() => onOpenPath(pathJoinForUi(workspace.root_path, "notes"))}>Notes</button></>}</>
+        <><button type="button" onClick={() => onManageWorkspaceSources(workspace)}>{t("app.sources")}</button>{onOpenPath && <><button type="button" onClick={() => onOpenPath(pathJoinForUi(workspace.root_path, "artifacts"))}>{t("app.artifacts")}</button><button type="button" onClick={() => onOpenPath(pathJoinForUi(workspace.root_path, "notes"))}>{t("app.notes")}</button></>}</>
       </div>)}
-      {workspaces.length === 0 && <p className="project-overview-empty">No Workspaces yet.</p>}
+      {workspaces.length === 0 && <p className="project-overview-empty">{t("app.noWorkspacesYet")}</p>}
     </section>
   </div>;
 }
@@ -5294,9 +5302,9 @@ function fileNameForPath(filePath: string): string {
 }
 
 function folderModeLabel(mode: FolderSourceMode): string {
-  if (mode === "copy") return "Independent copy by default";
-  if (mode === "reference") return "Reference by default";
-  return "Direct by default";
+  if (mode === "copy") return t("app.independentCopyByDefault");
+  if (mode === "reference") return t("app.referenceByDefault");
+  return t("app.directByDefault");
 }
 
 function projectSourceInput(draft: ProjectSourceDraft): ProjectSourceInput {
@@ -5307,10 +5315,12 @@ function projectSourceInput(draft: ProjectSourceDraft): ProjectSourceInput {
 }
 
 function StateBadge({ state }: { state: ZotigoSession["state"] | "idle" }) {
-  return <span className={`state-badge ${state}`}>{state}</span>;
+  useLocale();
+  return <span className={`state-badge ${state}`}>{stateLabel(state)}</span>;
 }
 
 function StatusPill({ state }: { state: ConnectionState }) {
+  useLocale();
   return (
     <span className={`status-pill ${state}`}>
       <span />
@@ -5321,9 +5331,9 @@ function StatusPill({ state }: { state: ConnectionState }) {
 
 function connectionLabel(state: ConnectionState): string {
   if (state === "checking") {
-    return "Checking";
+    return t("app.checking2");
   }
-  return state === "online" ? "Online" : "Offline";
+  return state === "online" ? t("app.online") : t("app.offline");
 }
 
 function projectForConversation(conversation: DesktopConversation, projects: DesktopProject[]): DesktopProject | null {
@@ -5382,7 +5392,7 @@ function formatDateTime(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return date.toLocaleString([], {
+  return date.toLocaleString(getLocale(), {
     year: "numeric",
     month: "short",
     day: "2-digit",

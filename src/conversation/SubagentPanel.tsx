@@ -1,3 +1,6 @@
+import { stateLabel } from "../../shared/i18n/display";
+import { useLocale } from "../i18n";
+import { t } from "../../shared/i18n/index";
 import { useMemo } from "react";
 import type React from "react";
 import { ArrowLeft, LoaderCircle } from "lucide-react";
@@ -11,7 +14,6 @@ import {
   formatDisplayToolCall,
   formatDisplayToolResult,
   stringValue,
-  toTitleCase,
   UserMessage,
 } from "./ConversationTimeline";
 
@@ -104,12 +106,13 @@ export function buildSubagentRuns(items: DisplayItem[]): SubagentRun[] {
 }
 
 export function SubagentOverview({ runs, onSelect }: { runs: SubagentRun[]; onSelect: (id: string) => void }) {
+  useLocale();
   const active = runs.filter((run) => run.status === "running" || run.status === "waiting_approval");
   const done = runs.filter((run) => run.status === "completed" || run.status === "failed");
   return (
     <div className="subagent-overview">
-      <SubagentSection title="Active" runs={active} empty="No active subagents" onSelect={onSelect} />
-      <SubagentSection title="Done" runs={done} onSelect={onSelect} />
+      <SubagentSection title={t("subagentPanel.active")} runs={active} empty={t("subagentPanel.noActive")} onSelect={onSelect} />
+      <SubagentSection title={t("subagentPanel.done")} runs={done} onSelect={onSelect} />
     </div>
   );
 }
@@ -125,9 +128,10 @@ function SubagentSection({
   empty?: string;
   onSelect: (id: string) => void;
 }) {
+  useLocale();
   return (
     <section className="subagent-section">
-      <h2>{title} · {runs.length}</h2>
+      <h2>{title} {"·"}{" "}{runs.length}</h2>
       {runs.length === 0 ? (
         <p>{empty}</p>
       ) : (
@@ -160,16 +164,17 @@ export function SubagentTranscript({
   workspaceRoot?: string;
   onBack: () => void;
 }) {
+  useLocale();
   const compact = (value?: string) => compactDisplayPaths(value, workspaceRoot) ?? "";
   const items = useMemo(() => subagentHistoryItems(run, workspaceRoot), [run, workspaceRoot]);
   const toolProjection = useMemo(() => buildToolRenderProjection(items), [items]);
   if (!run) {
-    return <div className="subagent-panel-empty">Subagent is unavailable.</div>;
+    return <div className="subagent-panel-empty">{t("subagentPanel.subagentIsUnavailable")}</div>;
   }
   return (
     <div className="subagent-transcript">
       <header>
-        <button type="button" aria-label="Back to subagents" onClick={onBack}><ArrowLeft size={14} strokeWidth={1.9} /></button>
+        <button type="button" aria-label={t("subagentPanel.backToSubagents")} onClick={onBack}><ArrowLeft size={14} strokeWidth={1.9} /></button>
         <SubagentAvatar run={run} />
         <strong>{run.name}</strong>
         <span className={`subagent-list-status ${run.status}`}>
@@ -182,7 +187,7 @@ export function SubagentTranscript({
           {run.description && <p className="subagent-transcript-objective">{run.description}</p>}
           {run.workdir && <code className="subagent-transcript-workdir">{compact(run.workdir)}</code>}
           {items.length === 0 ? (
-            <div className="subagent-panel-empty">{run.status === "running" || run.status === "waiting_approval" ? subagentStatusLabel(run.status) : "No recorded history"}</div>
+            <div className="subagent-panel-empty">{run.status === "running" || run.status === "waiting_approval" ? subagentStatusLabel(run.status) : t("subagentPanel.noRecordedHistory")}</div>
           ) : (
             <div className="display-log subagent-transcript-history">
               {items.map((item) => (
@@ -205,6 +210,7 @@ export function SubagentTranscript({
 }
 
 export function SubagentAvatar({ run, compact = false }: { run: SubagentRun; compact?: boolean }) {
+  useLocale();
   const hue = [...run.id].reduce((value, character) => value + character.charCodeAt(0), 0) % 360;
   return (
     <span className={`subagent-avatar ${compact ? "compact" : ""}`} style={{ "--subagent-hue": hue } as React.CSSProperties}>
@@ -216,12 +222,12 @@ export function SubagentAvatar({ run, compact = false }: { run: SubagentRun; com
 function subagentPreview(run: SubagentRun): string {
   if (run.description?.trim()) return run.description.trim();
   const latest = [...run.history].reverse().find((entry) => entry.role === "assistant" && entry.text.trim());
-  return latest?.text.trim().replace(/\s+/g, " ") || (run.status === "running" ? "Working" : "No summary");
+  return latest?.text.trim().replace(/\s+/g, " ") || (run.status === "running" ? t("subagentPanel.working") : t("subagentPanel.noSummary"));
 }
 
 function subagentStatusLabel(status: SubagentRun["status"]): string {
-  if (status === "waiting_approval") return "Waiting for approval";
-  return status === "completed" ? "Completed" : toTitleCase(status);
+  if (status === "waiting_approval") return t("conversationTimeline.waitingForApproval");
+  return status === "completed" ? t("subagentPanel.completed") : stateLabel(status).replace(/^./, character => character.toUpperCase());
 }
 
 function subagentContentText(content: DisplayContentPart[]): string {

@@ -323,6 +323,7 @@ p {
 }
 
 .app-frame {
+  --sidebar-width: clamp(240px, var(--preferred-sidebar-width, 320px), min(480px, calc(100vw - 420px)));
   --panel-motion-duration: 240ms;
   --panel-motion-easing: ease-in-out;
   --resolved-side-panel-width: clamp(360px, var(--side-panel-width, 520px), calc(100vw - var(--sidebar-width) - 420px));
@@ -343,10 +344,13 @@ p {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--resolved-side-panel-width);
 }
 
-.app-frame.resizing-side-panel { transition: none; }
+.app-frame.resizing-side-panel,
+.app-frame.resizing-sidebar { transition: none; }
 
 .app-frame.resizing-side-panel,
-.app-frame.resizing-side-panel * {
+.app-frame.resizing-side-panel *,
+.app-frame.resizing-sidebar,
+.app-frame.resizing-sidebar * {
   cursor: col-resize !important;
   user-select: none !important;
 }
@@ -356,6 +360,7 @@ p {
 }
 
 .sidebar {
+  position: relative;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   column-gap: 8px;
@@ -5725,3 +5730,28 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .user-message-time { font-size: 12px; margin-inline-end: 8px; white-space: nowrap; opacity: 0; }
 .message-row.user:hover .user-message-time,
 .message-row.user:focus-within .user-message-time { opacity: 1; }
+
+/* Keep the hit target inside the sidebar so it does not cover the conversation. */
+.sidebar-resize-handle {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 6px;
+  z-index: 10;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+.sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 2px;
+  background: var(--blue);
+  opacity: 0;
+}
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:focus-visible::after,
+.resizing-sidebar .sidebar-resize-handle::after { opacity: 0.65; }
+@media (max-width: 900px) {
+  html[data-platform="web"] .sidebar-resize-handle { display: none; }
+}

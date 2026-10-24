@@ -1,9 +1,12 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { ClientApi } from "../shared/clientTypes";
 import type { OpenFileState } from "./openFileState";
 
 export function useLiveFiles(client: ClientApi, files: Record<string, OpenFileState>, filesRef: RefObject<Record<string, OpenFileState>>,
   setFiles: (files: Record<string, OpenFileState>) => void, activePath: string | undefined, switching: RefObject<boolean>) {
+  useLocale();
   const [notice, setNotice] = useState("");
   const stale = useRef(new Set<string>());
   const reading = useRef(new Set<string>());
@@ -33,7 +36,7 @@ export function useLiveFiles(client: ClientApi, files: Record<string, OpenFileSt
         return;
       }
       if (opened.kind !== current.kind) {
-        changed(path, { ...current, refreshError: "File type changed. Close and reopen the file to view it." }); return;
+        changed(path, { ...current, refreshError: t("useLiveFiles.fileTypeChangedCloseAndReopenTheFile") }); return;
       }
       changed(path, opened.kind === "text" && current.kind === "text"
         ? { ...current, file: opened.file, draft: opened.file.content, saveStatus: "clean", saveError: undefined, diskChanged: false, refreshError: undefined }
@@ -42,7 +45,7 @@ export function useLiveFiles(client: ClientApi, files: Record<string, OpenFileSt
       const current = filesRef.current[path];
       if (alive.current && !switching.current && current && current.file === before.file) {
         changed(path, { ...current,
-          refreshError: `Could not refresh file: ${error instanceof Error ? error.message : String(error)}` });
+          refreshError: t("useLiveFiles.couldNotRefreshFile", { p0: error instanceof Error ? error.message : String(error) }) });
       }
     } finally {
       reading.current.delete(path);
@@ -72,14 +75,14 @@ export function useLiveFiles(client: ClientApi, files: Record<string, OpenFileSt
       if (event.subscriptionId !== id) return;
       if (event.type === "changed") invalidate(event.paths);
       if (event.type === "ready") {
-        setNotice(event.paths.length ? "Some files cannot update automatically. Use Refresh to reload them." : watched.length > 64 ? "Live updates support up to 64 open files. Use Refresh for additional files." : "");
+        setNotice(event.paths.length ? t("useLiveFiles.someFilesCannotUpdateAutomaticallyUseRefreshTo") : watched.length > 64 ? t("useLiveFiles.liveUpdatesSupportUpTo64OpenFiles") : "");
         invalidate(watched.map((file) => file.path));
       }
-      if (event.type === "reconnecting") setNotice("Live updates reconnecting. You can still refresh manually.");
-      if (event.type === "unavailable") setNotice("Live updates unavailable. Use Refresh to reload files.");
+      if (event.type === "reconnecting") setNotice(t("useLiveFiles.liveUpdatesReconnectingYouCanStillRefreshManually"));
+      if (event.type === "unavailable") setNotice(t("useLiveFiles.liveUpdatesUnavailableUseRefreshToReloadFiles"));
     });
-    if (watched.length > 64) setNotice("Live updates support up to 64 open files. Use Refresh for additional files.");
-    void client.subscribeFileEvents(id, watched.slice(0, 64)).catch(() => { if (alive.current) setNotice("Live updates unavailable. Use Refresh to reload files."); });
+    if (watched.length > 64) setNotice(t("useLiveFiles.liveUpdatesSupportUpTo64OpenFiles"));
+    void client.subscribeFileEvents(id, watched.slice(0, 64)).catch(() => { if (alive.current) setNotice(t("useLiveFiles.liveUpdatesUnavailableUseRefreshToReloadFiles")); });
     const foreground = () => { if (!document.hidden) invalidate(watched.map((file) => file.path)); };
     window.addEventListener("focus", foreground); document.addEventListener("visibilitychange", foreground);
     return () => {

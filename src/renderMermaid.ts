@@ -1,3 +1,4 @@
+import { t } from "../shared/i18n/index";
 let renderer: Promise<typeof import("mermaid").default> | undefined;
 
 function loadRenderer() {
@@ -33,7 +34,7 @@ function loadRenderer() {
 }
 
 export async function renderMermaid(code: string): Promise<string> {
-  if (code.length > 50_000) throw new Error("Diagram is too large to preview.");
+  if (code.length > 50_000) throw new Error(t("renderMermaid.diagramIsTooLargeToPreview"));
   const mermaid = await loadRenderer();
   const container = document.createElement("div");
   container.className = "mermaid-render-host";
@@ -43,7 +44,7 @@ export async function renderMermaid(code: string): Promise<string> {
     const { svg } = await mermaid.render(`mermaid-${crypto.randomUUID()}`, code, container);
     const document = new DOMParser().parseFromString(svg, "image/svg+xml");
     const element = document.documentElement;
-    if (element.localName !== "svg" || document.querySelector("parsererror")) throw new Error("Could not render diagram.");
+    if (element.localName !== "svg" || document.querySelector("parsererror")) throw new Error(t("renderMermaid.couldNotRenderDiagram"));
     // An SVG used as an image needs intrinsic dimensions for the zoom viewer.
     const viewBox = element.getAttribute("viewBox")?.trim().split(/[\s,]+/).map(Number);
     if (viewBox?.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0) {

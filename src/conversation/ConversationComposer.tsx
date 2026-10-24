@@ -1,3 +1,6 @@
+import { stateLabel } from "../../shared/i18n/display";
+import { useLocale } from "../i18n";
+import { t } from "../../shared/i18n/index";
 import { AttachmentMenu } from "./AttachmentMenu";
 import { AttachmentCard } from "./AttachmentCard";
 import { SkillPromptEditor, type SkillPromptEditorHandle } from "../SkillPromptEditor";
@@ -61,23 +64,24 @@ export function ComposerSkills({
   onSelect: (skill: SkillSummary) => void;
   onHighlight: (index: number) => void;
 }) {
+  useLocale();
   if (!open) return null;
   return (
     <>
       {open && (
-        <div className="skill-command-menu" role="listbox" aria-label="Skills">
+        <div className="skill-command-menu" role="listbox" aria-label={t("conversationComposer.skills")}>
           <div className="skill-command-heading">
             <Blocks size={14} strokeWidth={1.8} />
-            <span>Skills</span>
-            <small>↑↓ navigate · Enter select</small>
+            <span>{t("conversationComposer.skills")}</span>
+            <small>{t("conversationComposer.navigateEnterSelect")}</small>
           </div>
           <div className="skill-command-options">
             {loading ? (
-              <p>Loading skills…</p>
+              <p>{t("conversationComposer.loadingSkills")}</p>
             ) : error ? (
-              <p className="error">Could not load skills · {error}</p>
+              <p className="error">{t("conversationComposer.couldNotLoadSkills")}{" "}{error}</p>
             ) : skills.length === 0 ? (
-              <p>No matching skills</p>
+              <p>{t("conversationComposer.noMatchingSkills")}</p>
             ) : skills.map((skill, index) => (
               <button
                 type="button"
@@ -113,11 +117,12 @@ export function ComposerAttachmentStrip({
   onPreview: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
+  useLocale();
   if (attachments.length === 0) {
     return null;
   }
   return (
-    <div className="composer-attachments" aria-label="Pending attachments">
+    <div className="composer-attachments" aria-label={t("conversationComposer.pendingAttachments")}>
       {attachments.map((attachment) => (
         <AttachmentCard key={attachment.id} attachment={attachment} onPreview={() => onPreview(attachment.id)} onRemove={() => onRemove(attachment.id)} />
       ))}
@@ -222,6 +227,7 @@ export function NewSessionPrompt({
   onSelectApprovalPolicy: (approvalPolicy: ApprovalPolicy) => void;
   runtimeAvailable: boolean;
 }) {
+  useLocale();
   const promptTextareaRef = useRef<SkillPromptEditorHandle | null>(null);
   const projectPickerRef = useRef<HTMLDivElement | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -283,10 +289,10 @@ export function NewSessionPrompt({
             <Folder size={14} strokeWidth={1.8} />
             <span>
               {selectedWorkspace
-                ? `${selectedProject?.name ?? "Project"} / ${selectedWorkspace.title}`
+                ? `${selectedProject?.name ?? t("app.project")} / ${selectedWorkspace.title}`
                 : selectedProject
-                  ? `${selectedProject.name} / Choose Workspace`
-                  : "Scratch"}
+                  ? t("conversationComposer.chooseWorkspace", { p0: selectedProject.name })
+                  : t("app.scratch")}
             </span>
             <ChevronDown size={13} strokeWidth={1.8} />
           </button>
@@ -305,10 +311,10 @@ export function NewSessionPrompt({
                       setProjectMenuOpen(false);
                     }
                   }}
-                  placeholder="Search Workspaces"
+                  placeholder={t("conversationComposer.searchWorkspaces")}
                 />
               </label>
-              <div className="new-chat-project-options" aria-label="Workspace picker">
+              <div className="new-chat-project-options" aria-label={t("conversationComposer.workspacePicker")}>
                 <div className="new-chat-workspace-groups">
                   {workspaceGroups.map(({ project, workspaces: projectWorkspaces }) => (
                     <div className="new-chat-project-option-group" key={project.id}>
@@ -342,12 +348,12 @@ export function NewSessionPrompt({
                           }}
                         >
                           <Plus size={13} strokeWidth={1.8} />
-                          <span>Create Workspace</span>
+                          <span>{t("conversationComposer.createWorkspace")}</span>
                         </button>
                       )}
                     </div>
                   ))}
-                  {projectQuery.trim() && workspaceGroups.length === 0 && <p>No matching Workspaces</p>}
+                  {projectQuery.trim() && workspaceGroups.length === 0 && <p>{t("conversationComposer.noMatchingWorkspaces")}</p>}
                 </div>
                 <div className="new-chat-project-actions">
                   <button
@@ -359,7 +365,7 @@ export function NewSessionPrompt({
                     }}
                   >
                     <Circle size={13} strokeWidth={1.8} />
-                    <span>Scratch — no Project or Workspace</span>
+                    <span>{t("conversationComposer.scratchNoProjectOrWorkspace")}</span>
                     {!selectedProject && <Check size={14} strokeWidth={2} />}
                   </button>
                   <button
@@ -370,7 +376,7 @@ export function NewSessionPrompt({
                     }}
                   >
                     <FolderPlus size={13} strokeWidth={1.8} />
-                    <span>Create Project…</span>
+                    <span>{t("conversationComposer.createProject")}</span>
                   </button>
                 </div>
               </div>
@@ -380,8 +386,7 @@ export function NewSessionPrompt({
 
         {requiresWorkspace && (
           <p className="new-chat-workspace-hint">
-            Choose an existing Workspace or switch to Scratch.
-          </p>
+            {t("conversationComposer.chooseAnExistingWorkspaceOrSwitchToScratch")}</p>
         )}
 
         <div className="new-chat-input">
@@ -409,7 +414,7 @@ export function NewSessionPrompt({
             onChange={onPromptChange}
             onPaste={onPromptPaste}
             onKeyDown={onPromptKeyDown}
-            placeholder="Do anything"
+            placeholder={t("conversationComposer.doAnything")}
             autoFocus
           />
           <button
@@ -424,7 +429,7 @@ export function NewSessionPrompt({
               || !runtimeReady
               || (prompt.trim() === "" && attachments.length === 0)
             }
-            aria-label="Create session"
+            aria-label={t("conversationComposer.createSession")}
           >
             <ArrowUp size={19} strokeWidth={2.2} />
           </button>
@@ -461,7 +466,7 @@ export function NewSessionPrompt({
 }
 
 export function codexModelLabel(models: AgentModel[], modelId: string): string {
-  return models.find((model) => model.id === modelId)?.display_name || modelId || "Codex";
+  return models.find((model) => model.id === modelId)?.display_name || modelId || t("app.codex");
 }
 
 export function compatibleReasoningEffort(efforts: string[], current: string): string {
@@ -482,7 +487,7 @@ export function RuntimeSettingsPicker({
   selectedCodexReasoningEffort,
   onSelectCodexReasoningEffort,
   allowDefaultProfile = false,
-  defaultProfileLabel = "Workspace default",
+  defaultProfileLabel = t("channelsPage.workspaceDefault2"),
   profileDisabled = false,
   codexSettingsDisabled = false,
   agentLocked = false,
@@ -507,6 +512,7 @@ export function RuntimeSettingsPicker({
   agentLocked?: boolean;
   disabled: boolean;
 }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(false);
   const [position, setPosition] = useState({ left: 8, bottom: 8, side: "left" });
@@ -591,12 +597,12 @@ export function RuntimeSettingsPicker({
     return codexSettingsDisabled || !model || !model.supported_reasoning_efforts.includes(item.reasoningEffort);
   }
   function favoriteLabel(item: ModelFavorite) {
-    return item.agent === "codex" ? `${codexModelLabel(codexModels, item.model)} · ${item.reasoningEffort}` : item.profile;
+    return item.agent === "codex" ? `${codexModelLabel(codexModels, item.model)} · ${stateLabel(item.reasoningEffort)}` : item.profile;
   }
 
-  const selectedProfileLabel = selectedProfile || (allowDefaultProfile ? defaultProfileLabel : "Zotigo");
+  const selectedProfileLabel = selectedProfile || (allowDefaultProfile ? defaultProfileLabel : t("app.zotigo"));
   const label = selectedAgent === "codex"
-    ? `${codexModelLabel(codexModels, selectedCodexModel)} · ${selectedCodexReasoningEffort || "Thinking"}`
+    ? `${codexModelLabel(codexModels, selectedCodexModel)} · ${stateLabel(selectedCodexReasoningEffort) || t("app.thinking")}`
     : selectedProfileLabel;
 
   return (
@@ -604,7 +610,7 @@ export function RuntimeSettingsPicker({
       <button
         type="button"
         className="composer-model runtime-settings-trigger"
-        aria-label={`Runtime settings: ${label}`}
+        aria-label={t("conversationComposer.runtimeSettings", { p0: label })}
         title={label}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -619,7 +625,7 @@ export function RuntimeSettingsPicker({
         <ChevronDown size={14} strokeWidth={1.8} />
       </button>
       {open && createPortal(
-        <div style={{ position: "fixed", left: position.left, bottom: position.bottom, right: "auto" }} data-submenu-side={position.side} className="runtime-settings-menu" ref={menuRef} role="menu" aria-label="Runtime settings"
+        <div style={{ position: "fixed", left: position.left, bottom: position.bottom, right: "auto" }} data-submenu-side={position.side} className="runtime-settings-menu" ref={menuRef} role="menu" aria-label={t("conversationComposer.runtimeSettings2")}
           onKeyDown={(event) => {
             if (event.key === "ArrowRight") {
               const target = (document.activeElement as HTMLElement | null)?.dataset.runtimeSection as typeof section;
@@ -649,17 +655,17 @@ export function RuntimeSettingsPicker({
           {!custom ? <>
             <div className="runtime-favorites-list">{favorites.items.map((item) => <div className="runtime-favorite" key={favoriteKey(item)}>
               <button type="button" role="menuitemradio" aria-checked={favoriteKey(item) === favoriteKey(currentFavorite)}
-                disabled={favoriteUnavailable(item)} title={favoriteUnavailable(item) ? "Unavailable for this session or runtime" : favoriteLabel(item)}
+                disabled={favoriteUnavailable(item)} title={favoriteUnavailable(item) ? t("conversationComposer.unavailableForThisSessionOrRuntime") : favoriteLabel(item)}
                 onClick={() => { favorites.select(item); setOpen(false); }}>
-                <span>{favoriteLabel(item)}<small>{item.agent === "codex" ? "Codex" : "Zotigo"}</small></span>
+                <span>{favoriteLabel(item)}<small>{item.agent === "codex" ? t("app.codex") : t("app.zotigo")}</small></span>
                 {favoriteKey(item) === favoriteKey(currentFavorite) && <Check size={15} />}
               </button>
 
             </div>)}</div>
-            {favorites.items.length === 0 && <p className="runtime-favorites-empty">Add favorites in Settings → General.</p>}
-            <button type="button" className="runtime-settings-row" role="menuitem" disabled={disabled} onClick={() => setCustom(true)}><strong>Custom</strong><span /><ChevronRight size={15} /></button>
+            {favorites.items.length === 0 && <p className="runtime-favorites-empty">{t("conversationComposer.addFavoritesInSettingsGeneral")}</p>}
+            <button type="button" className="runtime-settings-row" role="menuitem" disabled={disabled} onClick={() => setCustom(true)}><strong>{t("conversationComposer.custom")}</strong><span /><ChevronRight size={15} /></button>
           </> : <>
-          <button type="button" className="runtime-settings-row" role="menuitem" disabled={disabled} onClick={() => { setCustom(false); setSection(null); }}><strong><ChevronLeft size={14} /> Favorites</strong></button>
+          <button type="button" className="runtime-settings-row" role="menuitem" disabled={disabled} onClick={() => { setCustom(false); setSection(null); }}><strong><ChevronLeft size={14} /> {t("conversationComposer.favorites")}</strong></button>
           <button
             type="button"
             className="runtime-settings-row"
@@ -671,7 +677,7 @@ export function RuntimeSettingsPicker({
             onClick={() => setSection("agent")}
             onPointerEnter={(event) => { if (event.pointerType === "mouse" && !disabled && !agentLocked) setSection("agent"); }}
           >
-            <strong>Agent</strong>
+            <strong>{t("app.agent")}</strong>
             <span>{selectedAgentLabel}</span>
             {!agentLocked && <ChevronRight size={15} strokeWidth={1.8} />}
           </button>
@@ -688,7 +694,7 @@ export function RuntimeSettingsPicker({
                 onClick={() => setSection("model")}
                 onPointerEnter={(event) => { if (event.pointerType === "mouse" && !disabled && !codexSettingsDisabled) setSection("model"); }}
               >
-                <strong>Model</strong>
+                <strong>{t("app.model")}</strong>
                 <span>{codexModelLabel(codexModels, selectedCodexModel)}</span>
                 <ChevronRight size={15} strokeWidth={1.8} />
               </button>
@@ -703,8 +709,8 @@ export function RuntimeSettingsPicker({
                 onClick={() => setSection("thinking")}
                 onPointerEnter={(event) => { if (event.pointerType === "mouse" && !disabled && !codexSettingsDisabled) setSection("thinking"); }}
               >
-                <strong>Thinking</strong>
-                <span>{selectedCodexReasoningEffort}</span>
+                <strong>{t("app.thinking")}</strong>
+                <span>{stateLabel(selectedCodexReasoningEffort)}</span>
                 <ChevronRight size={15} strokeWidth={1.8} />
               </button>
             </>
@@ -720,14 +726,14 @@ export function RuntimeSettingsPicker({
               onClick={() => setSection("profile")}
               onPointerEnter={(event) => { if (event.pointerType === "mouse" && !disabled && !profileDisabled) setSection("profile"); }}
             >
-              <strong>Profile</strong>
+              <strong>{t("app.profile")}</strong>
               <span>{selectedProfileLabel}</span>
               <ChevronRight size={15} strokeWidth={1.8} />
             </button>
           )}
           {section && (
-            <div className="runtime-settings-submenu" style={{ maxHeight: `min(360px, calc(100vh - ${position.bottom + 8}px))` }} ref={submenuRef} role="menu" aria-label={`${section} options`}>
-              {position.side === "inline" && <button type="button" role="menuitem" onClick={() => { const previous = section; setSection(null); focusSectionTrigger(previous); }}><span><ChevronLeft size={14} /> Back</span></button>}
+            <div className="runtime-settings-submenu" style={{ maxHeight: `min(360px, calc(100vh - ${position.bottom + 8}px))` }} ref={submenuRef} role="menu" aria-label={t("conversationComposer.options", { p0: section })}>
+              {position.side === "inline" && <button type="button" role="menuitem" onClick={() => { const previous = section; setSection(null); focusSectionTrigger(previous); }}><span><ChevronLeft size={14} /> {t("channelsPage.back")}</span></button>}
               {section === "agent" && agents.map((agent) => (
                 <button
                   type="button"
@@ -788,7 +794,7 @@ export function RuntimeSettingsPicker({
                   disabled={disabled || codexSettingsDisabled}
                   onClick={() => onSelectCodexReasoningEffort(effort)}
                 >
-                  <span>{effort}</span>
+                  <span>{stateLabel(effort)}</span>
                   {effort === selectedCodexReasoningEffort && <Check size={15} strokeWidth={2} />}
                 </button>
               ))}
@@ -810,6 +816,7 @@ export function ApprovalPolicyPicker({
   onChange: (value: ApprovalPolicy) => void;
   disabled?: boolean;
 }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const isFullAccess = value === "bypass_permissions";
@@ -848,7 +855,7 @@ export function ApprovalPolicyPicker({
       <button
         type="button"
         className={`composer-pill approval-policy-trigger ${isFullAccess ? "full-access" : "auto"}`}
-        aria-label={`Access mode: ${approvalPolicyLabel(value)}`}
+        aria-label={t("conversationComposer.accessMode", { p0: approvalPolicyLabel(value) })}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
@@ -863,12 +870,12 @@ export function ApprovalPolicyPicker({
         <ChevronDown size={14} strokeWidth={1.8} />
       </button>
       {open && (
-        <div className="approval-policy-menu" role="menu" aria-label="Access mode">
+        <div className="approval-policy-menu" role="menu" aria-label={t("conversationComposer.accessMode2")}>
           <button type="button" role="menuitemradio" aria-checked={value === "auto"} onClick={() => choose("auto")}>
             <ShieldCheck size={16} strokeWidth={1.8} />
             <span>
-              <strong>Auto</strong>
-              <small>Use safety checks and request approval when needed</small>
+              <strong>{t("channelsPage.auto")}</strong>
+              <small>{t("conversationComposer.useSafetyChecksAndRequestApprovalWhenNeeded")}</small>
             </span>
             {value === "auto" && <Check size={15} strokeWidth={2} />}
           </button>
@@ -881,8 +888,8 @@ export function ApprovalPolicyPicker({
           >
             <ShieldAlert size={16} strokeWidth={1.8} />
             <span>
-              <strong>Full access</strong>
-              <small>Run tools without safety classification or approval</small>
+              <strong>{t("channelsPage.fullAccess")}</strong>
+              <small>{t("conversationComposer.runToolsWithoutSafetyClassificationOrApproval")}</small>
             </span>
             {value === "bypass_permissions" && <Check size={15} strokeWidth={2} />}
           </button>

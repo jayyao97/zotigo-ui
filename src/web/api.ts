@@ -1,3 +1,4 @@
+import { t } from "../../shared/i18n/index";
 import { readFileEventStream, type FileEventEnvelope } from "../../shared/fileEvents";
 import { createClientApi } from "../../shared/clientApi";
 import { parseMarkdownLink } from "../../shared/markdownLinks";
@@ -17,7 +18,7 @@ export async function webRequest<T>(path: string, body?: unknown, hostId?: strin
   const result = await response.json();
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new Event("zotigo:unauthorized"));
-    throw new WebRequestError(result.error ?? "Web request failed.", response.status);
+    throw new WebRequestError(result.error ?? t("api.webRequestFailed"), response.status);
   }
   return result as T;
 }
@@ -91,9 +92,9 @@ export function createWebClient() {
             if ([400, 401, 403, 404, 405, 413].includes(response.status)) {
               emit({ subscriptionId, type: "unavailable", paths: files.map((file) => file.path) }); return;
             }
-            throw new Error("File event stream unavailable.");
+            throw new Error(t("api.fileEventStreamUnavailable"));
           }
-          if (!response.body) throw new Error("Missing file stream.");
+          if (!response.body) throw new Error(t("api.missingFileStream"));
           await readFileEventStream<FileEventEnvelope>(response.body, (event) => {
             if (event.subscriptionId === subscriptionId) emit(event);
           }, controller.signal);
@@ -112,7 +113,7 @@ export function createWebClient() {
   };
   api.unsubscribeFileEvents = async () => { closeFiles(); };
   api.unsubscribeSessionEvents = async () => { close(); };
-  api.revealPath = async () => { throw new Error("Opening a server folder in Finder requires Desktop."); };
+  api.revealPath = async () => { throw new Error(t("api.openingAServerFolderInFinderRequiresDesktop")); };
   const openLink = api.openMarkdownLink;
   api.openMarkdownLink = async (input) => {
     const link = parseMarkdownLink(input.href);
@@ -125,7 +126,7 @@ export function createWebClient() {
   api.downloadImage = async (value) => {
     const url = new URL(value, location.origin);
     if (url.origin !== location.origin || !/^\/sessions\/[^/]+\/images\/[^/]+$/.test(url.pathname)) {
-      throw new Error("Only session images can be downloaded.");
+      throw new Error(t("api.onlySessionImagesCanBeDownloaded"));
     }
     url.searchParams.set("download", "1");
     const anchor = document.createElement("a");

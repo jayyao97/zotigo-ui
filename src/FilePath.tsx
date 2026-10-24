@@ -1,8 +1,11 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { ArrowLeft, ChevronRight, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { fileBreadcrumbs } from "../shared/fileBreadcrumbs";
 
 export function FilePath({ path, workspaceRoot }: { path: string; workspaceRoot?: string }) {
+  useLocale();
   const segments = fileBreadcrumbs(path, workspaceRoot);
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -55,7 +58,7 @@ export function FilePath({ path, workspaceRoot }: { path: string; workspaceRoot?
     shown = [...prefix, shortName(filename, Math.max(40, width - total(prefix) - 22))];
   }
   return <div ref={container} className="file-path">
-    <button type="button" className="file-path-toggle" title={path} aria-label={`Show full path: ${path}`} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+    <button type="button" className="file-path-toggle" title={path} aria-label={t("filePath.showFullPath", { p0: path })} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
       <span className="file-path-desktop">{shown.map((part, index) => <span key={index}>{index > 0 && <ChevronRight size={14} />}<span>{part}</span></span>)}</span>
       <span className="file-path-mobile">{shortName(filename, Math.max(60, width))}</span>
     </button>
@@ -64,9 +67,10 @@ export function FilePath({ path, workspaceRoot }: { path: string; workspaceRoot?
 }
 
 export function MobileFileNavigation({ path, onBack, onClose }: { path: string; onBack: () => void; onClose: () => void }) {
+  useLocale();
   return <div className="mobile-file-navigation">
-    <button type="button" aria-label="Back to containing folder" onClick={onBack}><ArrowLeft size={20} /></button>
+    <button type="button" aria-label={t("filePath.backToContainingFolder")} onClick={onBack}><ArrowLeft size={20} /></button>
     <FilePath path={path} />
-    <button type="button" aria-label="Close files and return to conversation" onClick={onClose}><X size={20} /></button>
+    <button type="button" aria-label={t("app.closeFilesAndReturnToConversation")} onClick={onClose}><X size={20} /></button>
   </div>;
 }

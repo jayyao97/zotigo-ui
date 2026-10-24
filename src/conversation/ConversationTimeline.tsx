@@ -1,3 +1,5 @@
+import { useLocale } from "../i18n";
+import { getLocale, t } from "../../shared/i18n/index";
 import { messageTimestamp } from "./messageTimestamp";
 import { rehypeSkillTokens } from "../rehypeSkillTokens";
 import { skillTokens } from "../../shared/skillCommands";
@@ -58,19 +60,20 @@ import { initialStreamingTextState, planStreamingTextUpdate } from "../streaming
 import { sessionTurnActions } from "../../shared/sessionFork";
 
 export function TurnActions({ text, disabled, title, onFork }: { text: string; disabled: boolean; title: string; onFork: () => void }) {
+  useLocale();
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   return <div className="turn-actions">
-    <button type="button" aria-label="Copy response" disabled={!text} title={copyStatus ?? "Copy response"} onClick={() => {
-      if (!navigator.clipboard) { setCopyStatus("Clipboard unavailable"); return; }
-      void navigator.clipboard.writeText(text).then(() => setCopyStatus("Copied"), () => setCopyStatus("Could not copy response"));
+    <button type="button" aria-label={t("conversationTimeline.copyResponse")} disabled={!text} title={copyStatus ?? t("conversationTimeline.copyResponse")} onClick={() => {
+      if (!navigator.clipboard) { setCopyStatus(t("conversationTimeline.clipboardUnavailable")); return; }
+      void navigator.clipboard.writeText(text).then(() => setCopyStatus(t("markdownCodeBlock.copied")), () => setCopyStatus(t("conversationTimeline.couldNotCopyResponse")));
     }}><Copy size={16} strokeWidth={1.8} /></button>
-    <button type="button" aria-label="Fork from this turn" title={title} disabled={disabled} onClick={onFork}><GitBranch size={16} strokeWidth={1.8} /></button>
+    <button type="button" aria-label={t("conversationTimeline.forkFromThisTurn")} title={title} disabled={disabled} onClick={onFork}><GitBranch size={16} strokeWidth={1.8} /></button>
     {copyStatus && <span role="status">{copyStatus}</span>}
   </div>;
 }
 
 export function formatCompactTokenCount(tokens: number): string {
-  if (tokens < 1_000) return tokens.toLocaleString();
+  if (tokens < 1_000) return tokens.toLocaleString(getLocale());
   if (tokens < 1_000_000) return `${Math.round(tokens / 1_000)}k`;
   return `${(tokens / 1_000_000).toFixed(tokens < 10_000_000 ? 1 : 0)}m`;
 }
@@ -122,6 +125,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   onRestorePrompt?: (id: string) => void;
   onDismissPrompt?: (id: string) => void;
 }) {
+  useLocale();
   const compactedItemCacheRef = useRef(new WeakMap<DisplayItem, { workspaceRoot: string; item: DisplayItem }>());
   const displayItems = useMemo(
     () => compactWorkspaceItemPaths(items, session?.working_directory, compactedItemCacheRef.current),
@@ -159,14 +163,14 @@ export const SessionTimeline = memo(function SessionTimeline({
           {session?.forked_from && <div className="assistant-note fork-lineage">
             <GitBranch size={14} />
             <button type="button" disabled={!onOpenForkSource}
-              title={`${forkSourceTitle || session.forked_from.session_id}\n${session.forked_from.session_id} · ${session.forked_from.through_turn_id}${onOpenForkSource ? "" : "\nSource conversation unavailable"}`}
+              title={`${forkSourceTitle || session.forked_from.session_id}\n${session.forked_from.session_id} · ${session.forked_from.through_turn_id}${onOpenForkSource ? "" : t("timeline.sourceUnavailable")}`}
               onClick={() => onOpenForkSource?.(session.forked_from!.session_id)}>
-              Forked from {forkSourceTitle || session.forked_from.session_id}
+              {t("conversationTimeline.forkedFrom")}{" "}{forkSourceTitle || session.forked_from.session_id}
             </button>
           </div>}
           {itemsLoading && visibleItems.length === 0 ? (
             <div className="assistant-note">
-              <p>Loading display history...</p>
+              <p>{t("conversationTimeline.loadingDisplayHistory")}</p>
             </div>
           ) : itemsError && visibleItems.length === 0 ? (
             <div className="assistant-note warning">
@@ -174,7 +178,7 @@ export const SessionTimeline = memo(function SessionTimeline({
             </div>
           ) : visibleItems.length === 0 ? (
             <div className="assistant-note">
-              <p>No display items returned by zotigod yet.</p>
+              <p>{t("conversationTimeline.noDisplayItemsReturnedByZotigodYet")}</p>
             </div>
           ) : (
             <>
@@ -208,7 +212,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                   return <div key={item.id} className={`turn-response ${action.latest ? "is-latest" : ""}`}>
                     {rendered}
                     <TurnActions text={action.text} disabled={!itemsAuthoritative || forkBusy}
-                      title="Fork from this turn"
+                      title={t("conversationTimeline.forkFromThisTurn")}
                       onFork={() => onFork(action.turnId)} />
                   </div>;
                 };
@@ -240,7 +244,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                 return renderItem(group.item);
               })}
               {activeTurn && !activeToolCall && (session?.active_tool || showThinking) && (
-                <ThinkingStatus label={session?.active_tool ? `Running ${session.active_tool}` : "Thinking"} />
+                <ThinkingStatus label={session?.active_tool ? t("conversationTimeline.running", { p0: session.active_tool }) : t("app.thinking")} />
               )}
             </>
           )}
@@ -248,7 +252,7 @@ export const SessionTimeline = memo(function SessionTimeline({
       ) : (
         <div className="assistant-note">
           {items.filter(item => item.delivery).map(item => <UserMessage key={item.id} messageId={item.id} text={displayContentText(item.content)} delivery={item.delivery} onRetry={onRetryPrompt ? () => onRetryPrompt(item.id) : undefined} onRestore={onRestorePrompt ? () => onRestorePrompt(item.id) : undefined} onDismiss={onDismissPrompt ? () => onDismissPrompt(item.id) : undefined} />)}
-          <p>This conversation is local until a zotigod session is created.</p>
+          <p>{t("conversationTimeline.thisConversationIsLocalUntilAZotigodSession")}</p>
         </div>
       )}
 
@@ -406,9 +410,10 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   onRestorePrompt?: (id: string) => void;
   onDismissPrompt?: (id: string) => void;
 }) {
+  useLocale();
   if (item.type === "profile_changed" || item.type === "profile_change_failed") {
     const target = item.profile?.to ?? "profile";
-    const label = item.type === "profile_changed" ? `Profile changed to ${target}` : `Profile change to ${target} failed`;
+    const label = item.type === "profile_changed" ? t("conversationTimeline.profileChangedTo", { p0: target }) : t("conversationTimeline.profileChangeToFailed", { p0: target });
     return (
       <div className="timeline-divider">
         <span>{item.error ? `${label} · ${item.error}` : label}</span>
@@ -419,7 +424,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   if (item.type === "approval_policy_changed") {
     return (
       <div className="timeline-divider">
-        <span>Access changed to {approvalPolicyLabel(item.approval_policy?.to ?? null)}</span>
+        <span>{t("conversationTimeline.accessChangedTo")}{" "}{approvalPolicyLabel(item.approval_policy?.to ?? null)}</span>
       </div>
     );
   }
@@ -427,8 +432,8 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   if (item.type === "context_compacted") {
     const compaction = item.context_compaction;
     const label = compaction
-      ? `Context compacted · ${formatCompactTokenCount(compaction.original_tokens)} → ${formatCompactTokenCount(compaction.compressed_tokens)}`
-      : "Context compacted";
+      ? t("conversationTimeline.contextCompacted", { p0: formatCompactTokenCount(compaction.original_tokens), p1: formatCompactTokenCount(compaction.compressed_tokens) })
+      : t("conversationTimeline.contextCompacted2");
     return (
       <div className="timeline-divider">
         <span>{label}</span>
@@ -437,7 +442,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   }
 
   if (item.type === "turn_failed") {
-    return <DisplayErrorItem error={item.error || item.turn?.reason || "This turn failed. Please try again."} />;
+    return <DisplayErrorItem error={item.error || item.turn?.reason || t("conversationTimeline.thisTurnFailedPleaseTryAgain")} />;
   }
 
   if (item.type === "error") {
@@ -476,8 +481,8 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
     const imageSummary = formatImageAttachmentSummary(hiddenImageCount);
     const originKicker = formatChannelOrigin(item.command?.request_context);
     return (
-      <UserMessage delivery={item.delivery} onRetry={onRetryPrompt ? () => onRetryPrompt(item.id) : undefined} onRestore={onRestorePrompt ? () => onRestorePrompt(item.id) : undefined} onDismiss={onDismissPrompt ? () => onDismissPrompt(item.id) : undefined} createdAt={item.created_at} messageId={item.id} skills={skills} text={text || (images.length === 0 ? "(No content)" : "")} kicker={pendingSteering ? "Steering · Pending" : item.type === "steering_message" ? "Steering" : originKicker || undefined} attachments={images.length > 0 ? (
-        <div className="message-image-grid" aria-label="Attached images">
+      <UserMessage delivery={item.delivery} onRetry={onRetryPrompt ? () => onRetryPrompt(item.id) : undefined} onRestore={onRestorePrompt ? () => onRestorePrompt(item.id) : undefined} onDismiss={onDismissPrompt ? () => onDismissPrompt(item.id) : undefined} createdAt={item.created_at} messageId={item.id} skills={skills} text={text || (images.length === 0 ? t("conversationTimeline.noContent") : "")} kicker={pendingSteering ? t("conversationTimeline.steeringPending") : item.type === "steering_message" ? t("settingsPage.steering") : originKicker || undefined} attachments={images.length > 0 ? (
+        <div className="message-image-grid" aria-label={t("conversationTimeline.attachedImages")}>
           {images.map((image) => <PreviewImage key={image.id} src={image.url} alt={image.name} />)}
         </div>
       ) : undefined}>
@@ -534,10 +539,11 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
 });
 
 function DisplayErrorItem({ error }: { error?: string }) {
-  const message = error?.trim() || "Session error";
+  useLocale();
+  const message = error?.trim() || t("conversationTimeline.sessionError");
   return (
     <div className="display-error" role="status">
-      <strong>Session error</strong>
+      <strong>{t("conversationTimeline.sessionError")}</strong>
       <p>{message}</p>
     </div>
   );
@@ -554,6 +560,7 @@ function ApprovalItem({
   submitting: boolean;
   onSubmit: (approvalId: string, decisions: ApprovalDecisionInput[]) => Promise<void>;
 }) {
+  useLocale();
   const [denyReason, setDenyReason] = useState("");
   const [denying, setDenying] = useState(false);
   const [submittingDecision, setSubmittingDecision] = useState<"approve" | "deny" | null>(null);
@@ -565,13 +572,13 @@ function ApprovalItem({
     return deniedCount > 0 ? (
       <div className="tool-process-line approval-denied-line">
         <X size={12} strokeWidth={1.8} />
-        <span>{deniedCount === 1 ? "Tool call denied" : `${deniedCount} tool calls denied`}{decisions.find((decision) => !decision.approved)?.reason ? ` · ${decisions.find((decision) => !decision.approved)?.reason}` : ""}</span>
+        <span>{deniedCount === 1 ? t("conversationTimeline.toolCallDenied") : t("conversationTimeline.toolCallsDenied", { p0: deniedCount })}{decisions.find((decision) => !decision.approved)?.reason ? ` · ${decisions.find((decision) => !decision.approved)?.reason}` : ""}</span>
       </div>
     ) : null;
   }
   const heading = pending
-    ? "Approval required"
-    : "Approval request";
+    ? t("conversationTimeline.approvalRequired")
+    : t("conversationTimeline.approvalRequest");
   const decide = async (approved: boolean) => {
     if (!approval?.id || submitting || submittingDecision) return;
     const reason = denyReason.trim();
@@ -602,16 +609,15 @@ function ApprovalItem({
       ))}
       {pending && pendingItems.length > 0 && (
         <div className="approval-card-actions-wrap">
-          {denying && <textarea value={denyReason} onChange={(event) => setDenyReason(event.target.value)} placeholder="Reason for denying (optional)" aria-label="Reason for denying" autoFocus />}
+          {denying && <textarea value={denyReason} onChange={(event) => setDenyReason(event.target.value)} placeholder={t("conversationTimeline.reasonForDenyingOptional")} aria-label={t("conversationTimeline.reasonForDenying")} autoFocus />}
           <div className="approval-card-actions">
             <button type="button" className="secondary" disabled={submitting || submittingDecision !== null} onClick={() => denying ? void decide(false) : setDenying(true)}>
               {submittingDecision === "deny" && <LoaderCircle className="spin" size={14} strokeWidth={2} />}
-              {denying ? "Confirm deny" : "Deny"}
+              {denying ? t("conversationTimeline.confirmDeny") : t("conversationTimeline.deny")}
             </button>
             <button type="button" className="primary" disabled={submitting || submittingDecision !== null} onClick={() => void decide(true)}>
               {submittingDecision === "approve" ? <LoaderCircle className="spin" size={14} strokeWidth={2} /> : <Check size={14} strokeWidth={2} />}
-              Approve
-            </button>
+              {t("conversationTimeline.approve")}</button>
           </div>
         </div>
       )}
@@ -620,9 +626,9 @@ function ApprovalItem({
 }
 
 function formatApprovalSource(source: string): string {
-  if (source.startsWith("subagent:")) return `Requested by subagent ${source.slice("subagent:".length)}`;
-  if (source.startsWith("codex_subagent:")) return "Requested by a Codex subagent";
-  return source === "codex" ? "Requested by Codex" : `Requested by ${source}`;
+  if (source.startsWith("subagent:")) return t("conversationTimeline.requestedBySubagent", { p0: source.slice("subagent:".length) });
+  if (source.startsWith("codex_subagent:")) return t("conversationTimeline.requestedByACodexSubagent");
+  return source === "codex" ? t("conversationTimeline.requestedByCodex") : t("conversationTimeline.requestedBy", { p0: source });
 }
 
 function UserInputItem({ item, pending, submitting, onSubmit }: {
@@ -631,15 +637,16 @@ function UserInputItem({ item, pending, submitting, onSubmit }: {
   submitting: boolean;
   onSubmit: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
 }) {
+  useLocale();
   const interaction = item.interaction;
   const questions = interaction?.questions ?? [];
   const [answers, setAnswers] = useState<InteractionDrafts>({});
   const [confirmUnanswered, setConfirmUnanswered] = useState(false);
   if (!interaction) return null;
   if (item.type === "interaction_response") {
-    return <div className="tool-process-line"><Check size={12} strokeWidth={1.8} /><span>{interaction.status === "expired" ? "Question expired" : "Answered question"}</span></div>;
+    return <div className="tool-process-line"><Check size={12} strokeWidth={1.8} /><span>{interaction.status === "expired" ? t("conversationTimeline.questionExpired") : t("conversationTimeline.answeredQuestion")}</span></div>;
   }
-  const requester = interaction.requester?.name ? `${interaction.requester.name} asks` : "Input required";
+  const requester = interaction.requester?.name ? t("conversationTimeline.asks", { p0: interaction.requester.name }) : t("conversationTimeline.inputRequired");
   const complete = interactionAnswersComplete(questions, answers);
   return (
     <form className={`tool-card interaction-card ${pending ? "pending" : "resolved"}`} onSubmit={(event) => {
@@ -664,18 +671,18 @@ function UserInputItem({ item, pending, submitting, onSubmit }: {
           {question.is_other && (question.options?.length ?? 0) > 0 && (
             <label className="interaction-option">
               <input type="radio" name={question.id} checked={answers[question.id]?.otherSelected === true} onChange={() => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], otherSelected: true } })); }} />
-              <span><strong>None of the above</strong></span>
+              <span><strong>{t("conversationTimeline.noneOfTheAbove")}</strong></span>
             </label>
           )}
           {((question.options?.length ?? 0) === 0 || answers[question.id]?.selected || answers[question.id]?.otherSelected) && (
-            <input type={question.is_secret ? "password" : "text"} value={answers[question.id]?.value ?? ""} onChange={(event) => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], value: event.target.value } })); }} placeholder={(question.options?.length ?? 0) > 0 ? "Add an optional note" : "Type your answer"} aria-label={question.question} autoComplete={question.is_secret ? "new-password" : "off"} data-1p-ignore={question.is_secret ? "true" : undefined} data-lpignore={question.is_secret ? "true" : undefined} />
+            <input type={question.is_secret ? "password" : "text"} value={answers[question.id]?.value ?? ""} onChange={(event) => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], value: event.target.value } })); }} placeholder={(question.options?.length ?? 0) > 0 ? t("conversationTimeline.addAnOptionalNote") : t("conversationTimeline.typeYourAnswer")} aria-label={question.question} autoComplete={question.is_secret ? "new-password" : "off"} data-1p-ignore={question.is_secret ? "true" : undefined} data-lpignore={question.is_secret ? "true" : undefined} />
           )}
         </fieldset>
       ))}
-      {pending && confirmUnanswered && <p className="interaction-unanswered-warning">Some questions are unanswered. Submit anyway?</p>}
+      {pending && confirmUnanswered && <p className="interaction-unanswered-warning">{t("conversationTimeline.someQuestionsAreUnansweredSubmitAnyway")}</p>}
       {pending && <div className="approval-card-actions">
-        {confirmUnanswered && <button type="button" className="secondary" disabled={submitting} onClick={() => setConfirmUnanswered(false)}>Cancel</button>}
-        <button type="submit" className="primary" disabled={submitting}>{submitting && <LoaderCircle className="spin" size={14} />}{confirmUnanswered ? "Submit anyway" : "Submit answer"}</button>
+        {confirmUnanswered && <button type="button" className="secondary" disabled={submitting} onClick={() => setConfirmUnanswered(false)}>{t("app.cancel")}</button>}
+        <button type="submit" className="primary" disabled={submitting}>{submitting && <LoaderCircle className="spin" size={14} />}{confirmUnanswered ? t("conversationTimeline.submitAnyway") : t("conversationTimeline.submitAnswer")}</button>
       </div>}
     </form>
   );
@@ -689,22 +696,22 @@ function formatApprovalTool(name?: string, argumentsValue?: string): string {
 function formatSessionCommand(item: DisplayItem): string {
   const command = item.command;
   if (!command?.type) {
-    return "Session command";
+    return t("conversationTimeline.sessionCommand");
   }
   if (command.type === "message") {
-    return "Message queued";
+    return t("conversationTimeline.messageQueued");
   }
   if (command.type === "pause") {
-    return command.reason ? `Pause requested · ${command.reason}` : "Pause requested";
+    return command.reason ? t("conversationTimeline.pauseRequested", { p0: command.reason }) : t("conversationTimeline.pauseRequested2");
   }
-  return `Session command · ${command.type}`;
+  return t("conversationTimeline.sessionCommand2", { p0: command.type });
 }
 
 function formatImageAttachmentSummary(count: number): string | null {
   if (count <= 0) {
     return null;
   }
-  return count === 1 ? "1 image attached" : `${count} images attached`;
+  return count === 1 ? t("conversationTimeline.1ImageAttached") : t("conversationTimeline.imagesAttached", { p0: count });
 }
 
 function displayItemImages(
@@ -728,7 +735,7 @@ function displayItemImages(
     seen.add(url);
     images.push({
       id: `${item.id}-${index}-${url}`,
-      name: `Attached image ${index + 1}`,
+      name: t("conversationTimeline.attachedImage", { p0: index + 1 }),
       url,
     });
   });
@@ -753,17 +760,18 @@ function resolveDaemonImageUrl(daemonUrl: string, imageUrl: string | undefined):
 }
 
 function TurnItem({ item, turnEnd, terminalAt, stopped, paused }: { item: DisplayItem; turnEnd: DisplayItem | null; terminalAt?: string; stopped: boolean; paused: boolean }) {
+  useLocale();
   if (item.type === "turn_started") {
     const endedAt = turnEnd?.created_at ?? terminalAt;
     return (
       <div className="work-divider">
         <span>
           {endedAt
-            ? `Worked for ${formatElapsedBetween(item.created_at, endedAt)}`
+            ? t("conversationTimeline.workedFor", { p0: formatElapsedBetween(item.created_at, endedAt) })
             : paused
-              ? "Waiting for approval"
+              ? t("conversationTimeline.waitingForApproval")
               : stopped
-                ? "Stopped"
+                ? t("conversationTimeline.stopped")
                 : <ActiveTurnElapsed startedAt={item.created_at} />}
         </span>
       </div>
@@ -783,15 +791,17 @@ function TurnItem({ item, turnEnd, terminalAt, stopped, paused }: { item: Displa
 }
 
 function ActiveTurnElapsed({ startedAt }: { startedAt: string }) {
+  useLocale();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, []);
-  return <>Working for {formatElapsed(startedAt, now)}</>;
+  return <>{t("conversationTimeline.workingFor")}{" "}{formatElapsed(startedAt, now)}</>;
 }
 
-function ThinkingStatus({ label = "Thinking" }: { label?: string }) {
+function ThinkingStatus({ label = t("app.thinking") }: { label?: string }) {
+  useLocale();
   return <div className="thinking-status">{label}</div>;
 }
 
@@ -812,6 +822,7 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   streamingItemIds: ReadonlySet<string>;
   smoothStreaming: boolean;
 }) {
+  useLocale();
   const toolProjection = useMemo(() => buildToolRenderProjection(items), [items]);
   const renderActivityItem = (item: DisplayItem) => (
     <AssistantContentView
@@ -854,6 +865,7 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
 ));
 
 function ThinkingDisclosure({ children, mode, latest = false }: { children: ReactNode; mode?: ThinkingDisplayMode; latest?: boolean }) {
+  useLocale();
   const automaticKey = mode === "latest" ? `${mode}:${latest}` : mode;
   const automaticOpen = mode === undefined ? false : defaultThinkingDisclosureOpen(mode, latest);
   const [manualOpen, setManualOpen] = useState<{ key: string | undefined; open: boolean } | null>(null);
@@ -862,7 +874,7 @@ function ThinkingDisclosure({ children, mode, latest = false }: { children: Reac
   return (
     <TimelineDisclosure
       className="reasoning-group"
-      label="Thinking"
+      label={t("app.thinking")}
       icon={<Sparkles size={12} strokeWidth={1.8} />}
       open={open}
       onOpenChange={(nextOpen) => setManualOpen({ key: automaticKey, open: nextOpen })}
@@ -873,6 +885,7 @@ function ThinkingDisclosure({ children, mode, latest = false }: { children: Reac
 }
 
 function TimelineDisclosure({ className, label, icon, children, active = false, open: controlledOpen, onOpenChange }: { className: string; label: string; icon?: ReactNode; children: ReactNode; active?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void }) {
+  useLocale();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(active);
   const open = controlledOpen ?? uncontrolledOpen;
 
@@ -906,6 +919,7 @@ function TimelineDisclosure({ className, label, icon, children, active = false, 
 }
 
 function DisclosureMotion({ open, className = "", children }: { open: boolean; className?: string; children: ReactNode }) {
+  useLocale();
   const [present, setPresent] = useState(open);
 
   useLayoutEffect(() => {
@@ -940,17 +954,16 @@ function historicalToolSummary(items: DisplayItem[]): string {
     }
   }
   const labels: string[] = [];
-  const append = (category: string, singular: string, plural: string) => {
+  const activityKeys = {
+    read: "timeline.activity.read", search: "timeline.activity.search",
+    edit: "timeline.activity.edit", command: "timeline.activity.command",
+    subagent: "timeline.activity.subagent", tool: "timeline.activity.tool",
+  } as const;
+  for (const [category, key] of Object.entries(activityKeys)) {
     const count = counts.get(category) ?? 0;
-    if (count > 0) labels.push(`${singular} ${count} ${count === 1 ? plural.replace(/s$/, "") : plural}`);
-  };
-  append("read", "Read", "files");
-  append("search", "Searched", "times");
-  append("edit", "Edited", "files");
-  append("command", "Ran", "commands");
-  append("subagent", "Started", "subagents");
-  append("tool", "Used", "tools");
-  return labels.join(" · ") || "Tool activity";
+    if (count > 0) labels.push(t(key, { count }));
+  }
+  return labels.join(" · ") || t("conversationTimeline.toolActivity");
 }
 
 export function AssistantContentView({
@@ -968,6 +981,7 @@ export function AssistantContentView({
   daemonUrl?: string;
   smoothStreaming?: boolean;
 }) {
+  useLocale();
   const consumed = new Set<number>();
 
   return (
@@ -1006,6 +1020,7 @@ export function AssistantContentView({
 }
 
 function DisplayContentPartView({ part, daemonUrl, smoothStreaming }: { part: DisplayContentPart; daemonUrl: string; smoothStreaming: boolean }) {
+  useLocale();
   if (part.type === "text") {
     return part.text ? <MarkdownContent text={part.text} smoothStreaming={smoothStreaming} /> : null;
   }
@@ -1024,7 +1039,7 @@ function DisplayContentPartView({ part, daemonUrl, smoothStreaming }: { part: Di
       <figure className="assistant-image">
         <PreviewImage
           src={url}
-          alt="Generated image"
+          alt={t("conversationTimeline.generatedImage")}
           width={part.image?.width}
           height={part.image?.height}
         />
@@ -1053,6 +1068,7 @@ function DisplayContentPartView({ part, daemonUrl, smoothStreaming }: { part: Di
 }
 
 function ToolProcess({ call, result, progress, active = false }: { call: DisplayToolCall | undefined; result?: DisplayToolResult; progress?: string; active?: boolean }) {
+  useLocale();
   const running = !result && (active || Boolean(progress));
   const summary = running ? formatRunningToolCall(call) : formatToolCallProcess(call);
   const isFailure = isToolResultFailure(result);
@@ -1067,8 +1083,8 @@ function ToolProcess({ call, result, progress, active = false }: { call: Display
   return (
     <ToolDisclosure
       summary={summary}
-      detail={detail || "Waiting for output…"}
-      language={language}
+      detail={detail || t("conversationTimeline.waitingForOutput")}
+      language={language === "Shell" ? t("markdownCodeBlock.shell") : t("markdownCodeBlock.plaintext")}
       title={toolDetailTitle(call, language, summary)}
       command={toolResultCommand(call, language)}
       showStatus={language === "Shell" || isFailure}
@@ -1079,6 +1095,7 @@ function ToolProcess({ call, result, progress, active = false }: { call: Display
 }
 
 function ToolProcessLine({ summary, isError = false, running = false }: { summary: string; isError?: boolean; running?: boolean }) {
+  useLocale();
   return (
     <div className={`tool-process-line ${isError ? "error" : ""} ${running ? "running" : ""}`}>
       <span className="process-icon" aria-hidden="true"><SquareTerminal size={13} strokeWidth={1.75} /></span>
@@ -1088,6 +1105,7 @@ function ToolProcessLine({ summary, isError = false, running = false }: { summar
 }
 
 function MarkdownContent({ text, smoothStreaming = false }: { text: string; smoothStreaming?: boolean }) {
+  useLocale();
   return (
     <div className="assistant-copy markdown-copy">
       <SmoothStreamingMarkdownBody text={text} streaming={smoothStreaming} />
@@ -1098,6 +1116,7 @@ function MarkdownContent({ text, smoothStreaming = false }: { text: string; smoo
 const userMessageCollapsedLines = 20;
 
 export function UserMessage({ messageId, createdAt, text, skills = [], kicker, children, attachments, delivery, onRetry, onRestore, onDismiss }: { messageId?: string; createdAt?: string; text: string; skills?: string[]; kicker?: string; children?: ReactNode; attachments?: ReactNode; delivery?: DisplayItem["delivery"]; onRetry?: () => void; onRestore?: () => void; onDismiss?: () => void }) {
+  useLocale();
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const timestamp = messageTimestamp(createdAt);
   const mentioned = new Set(skillTokens(text, skills).map(token => token.name));
@@ -1137,18 +1156,18 @@ export function UserMessage({ messageId, createdAt, text, skills = [], kicker, c
             </div>
           )}
           {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}
-          {legacySkills.length > 0 && <div className="message-skills" aria-label="Selected skills">{legacySkills.map(name => <span key={name}><Sparkles size={11} />{name}</span>)}</div>}
+          {legacySkills.length > 0 && <div className="message-skills" aria-label={t("conversationTimeline.selectedSkills")}>{legacySkills.map(name => <span key={name}><Sparkles size={11} />{name}</span>)}</div>}
           {children}
         </div>}
         {delivery && <div className="message-delivery" role="status">
-          {delivery.state === "sending" ? <><LoaderCircle size={13} className="spinning" />Sending…</> : delivery.state === "rejected" ? <><span>{delivery.error || "Message was not sent"}</span>{onRestore && <button type="button" onClick={onRestore}>Restore draft</button>}{onDismiss && <button type="button" onClick={onDismiss}>Delete</button>}</> : <><span title={delivery.error}>Could not confirm delivery</span>{onRetry && <button type="button" onClick={onRetry}>Retry</button>}</>}
+          {delivery.state === "sending" ? <><LoaderCircle size={13} className="spinning" />{t("conversationTimeline.sending")}</> : delivery.state === "rejected" ? <><span>{delivery.error || t("conversationTimeline.messageWasNotSent")}</span>{onRestore && <button type="button" onClick={onRestore}>{t("app.restoreDraft")}</button>}{onDismiss && <button type="button" onClick={onDismiss}>{t("app.delete")}</button>}</> : <><span title={delivery.error}>{t("conversationTimeline.couldNotConfirmDelivery")}</span>{onRetry && <button type="button" onClick={onRetry}>{t("app.retry2")}</button>}</>}
         </div>}
         {(text || timestamp) && <div className="turn-actions user-message-actions">
           {timestamp && <time className="user-message-time" dateTime={createdAt} title={timestamp.full}>{timestamp.label}</time>}
           {copyStatus && <span role="status">{copyStatus}</span>}
-          {text && <button type="button" aria-label="Copy message" title={copyStatus ?? "Copy message"} onClick={() => {
-            if (!navigator.clipboard) { setCopyStatus("Clipboard unavailable"); return; }
-            void navigator.clipboard.writeText(text).then(() => setCopyStatus("Copied"), () => setCopyStatus("Could not copy message"));
+          {text && <button type="button" aria-label={t("conversationTimeline.copyMessage")} title={copyStatus ?? t("conversationTimeline.copyMessage")} onClick={() => {
+            if (!navigator.clipboard) { setCopyStatus(t("conversationTimeline.clipboardUnavailable")); return; }
+            void navigator.clipboard.writeText(text).then(() => setCopyStatus(t("markdownCodeBlock.copied")), () => setCopyStatus(t("conversationTimeline.couldNotCopyMessage")));
           }}><Copy size={16} strokeWidth={1.8} /></button>}
         </div>}
         {collapsible && (
@@ -1158,7 +1177,7 @@ export function UserMessage({ messageId, createdAt, text, skills = [], kicker, c
             aria-expanded={expanded}
             onClick={() => setExpanded((value) => !value)}
           >
-            {expanded ? "Show less" : "Show more"}
+            {expanded ? t("conversationTimeline.showLess") : t("conversationTimeline.showMore")}
             <ChevronDown size={12} strokeWidth={2} className={expanded ? "expanded" : ""} />
           </button>
         )}
@@ -1174,6 +1193,7 @@ const userMarkdownComponents = {
 } as const;
 
 const MarkdownBody = memo(function MarkdownBody({ text, userMessage = false, skills = [] }: { text: string; userMessage?: boolean; skills?: string[] }) {
+  useLocale();
   return (
     <ReactMarkdown
       components={userMessage ? userMarkdownComponents : { pre: MarkdownCodeBlock, img: MarkdownImage }}
@@ -1187,6 +1207,7 @@ const MarkdownBody = memo(function MarkdownBody({ text, userMessage = false, ski
 });
 
 function SmoothStreamingMarkdownBody({ text, streaming }: { text: string; streaming: boolean }) {
+  useLocale();
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const [state, setState] = useState(() => initialStreamingTextState(text, streaming, reduceMotion));
 
@@ -1223,6 +1244,7 @@ function ToolDisclosure({
   isError?: boolean;
   running?: boolean;
 }) {
+  useLocale();
   const detailRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const wasRunningRef = useRef(running);
@@ -1270,8 +1292,8 @@ function ToolDisclosure({
             <button
               type="button"
               className="tool-copy-button"
-              aria-label="Copy tool result"
-              title="Copy result"
+              aria-label={t("conversationTimeline.copyToolResult")}
+              title={t("conversationTimeline.copyResult")}
               onClick={() => void navigator.clipboard.writeText(detail)}
             >
               <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
@@ -1283,7 +1305,7 @@ function ToolDisclosure({
           {showStatus && (
             <div className={`tool-detail-status ${isError ? "failed" : running ? "running" : ""}`}>
               <span aria-hidden="true">{isError ? "×" : running ? "•" : "✓"}</span>
-              {isError ? "Failed" : running ? "Running" : "Success"}
+              {isError ? t("conversationTimeline.failed") : running ? t("app.running") : t("conversationTimeline.success")}
             </div>
           )}
         </div>
@@ -1293,22 +1315,23 @@ function ToolDisclosure({
 }
 
 function ShellCommandPreview({ command }: { command: string }) {
+  useLocale();
   const [expanded, setExpanded] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
   return <div className="shell-command-preview">
     <div className="shell-command-heading">
-      <span className="tool-detail-language">Shell</span>
+      <span className="tool-detail-language">{t("markdownCodeBlock.shell")}</span>
       <div className="shell-command-actions">
         <button
           ref={toggle}
           type="button"
           className="tool-copy-button shell-command-disclosure"
-          aria-label={expanded ? "Collapse command" : "Expand command"}
-          title={expanded ? "Collapse command" : "Expand command"}
+          aria-label={expanded ? t("conversationTimeline.collapseCommand") : t("conversationTimeline.expandCommand")}
+          title={expanded ? t("conversationTimeline.collapseCommand") : t("conversationTimeline.expandCommand")}
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         ><ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" /></button>
-        <button type="button" className="tool-copy-button" aria-label="Copy command" title="Copy command" onClick={() => void navigator.clipboard.writeText(command)}>
+        <button type="button" className="tool-copy-button" aria-label={t("conversationTimeline.copyCommand")} title={t("conversationTimeline.copyCommand")} onClick={() => void navigator.clipboard.writeText(command)}>
           <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </div>
@@ -1316,7 +1339,7 @@ function ShellCommandPreview({ command }: { command: string }) {
     {expanded ? <pre className="shell-command-full">{`$ ${command}`}</pre> : <button
       type="button"
       className="tool-detail-title shell-command-toggle"
-      aria-label="Expand full command"
+      aria-label={t("conversationTimeline.expandFullCommand")}
       aria-expanded={false}
       onClick={() => { toggle.current?.focus({ preventScroll: true }); setExpanded(true); }}
     >{`$ ${command}`}</button>}
@@ -1342,7 +1365,7 @@ export function displayContentText(content: DisplayContentPart[] | undefined): s
 function formatElapsed(startedAt: string, now: number): string {
   const started = Date.parse(startedAt);
   if (Number.isNaN(started)) {
-    return "0s";
+    return t("time.seconds", { count: 0 });
   }
   return formatDurationSeconds(Math.max(0, Math.floor((now - started) / 1000)));
 }
@@ -1351,18 +1374,18 @@ function formatElapsedBetween(startedAt: string, endedAt: string): string {
   const started = Date.parse(startedAt);
   const ended = Date.parse(endedAt);
   if (Number.isNaN(started) || Number.isNaN(ended)) {
-    return "0s";
+    return t("time.seconds", { count: 0 });
   }
   return formatDurationSeconds(Math.max(0, Math.floor((ended - started) / 1000)));
 }
 
 function formatDurationSeconds(totalSeconds: number): string {
   if (totalSeconds < 60) {
-    return `${totalSeconds}s`;
+    return t("time.seconds", { count: totalSeconds });
   }
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+  return seconds === 0 ? t("time.minutes", { count: minutes }) : t("conversationTimeline.mS", { p0: minutes, p1: seconds });
 }
 
 function findToolResultIndex(content: DisplayContentPart[], call: DisplayToolCall | undefined, startIndex: number): number {
@@ -1434,7 +1457,7 @@ function toolDetailTitle(call: DisplayToolCall | undefined, language: string, su
 
 function formatToolCallProcess(call: DisplayToolCall | undefined): string {
   if (!call?.name) {
-    return "Called a tool";
+    return t("conversationTimeline.calledATool");
   }
   const action = humanizeToolName(call.name);
   const target = call.arguments ? formatToolTarget(call.name, call.arguments) : "";
@@ -1442,45 +1465,45 @@ function formatToolCallProcess(call: DisplayToolCall | undefined): string {
 }
 
 function formatRunningToolCall(call: DisplayToolCall | undefined): string {
-  if (!call?.name) return "Running tool";
+  if (!call?.name) return t("conversationTimeline.runningTool");
   const target = call.arguments ? formatToolTarget(call.name, call.arguments) : "";
-  return target ? `Running ${call.name} · ${target}` : `Running ${call.name}`;
+  return target ? t("conversationTimeline.running2", { p0: call.name, p1: target }) : t("conversationTimeline.running", { p0: call.name });
 }
 
 function formatToolResultSummary(result: DisplayToolResult | undefined): string {
   if (!result) {
-    return "Tool finished";
+    return t("conversationTimeline.toolFinished");
   }
   if (isToolResultError(result)) {
-    return "Tool failed";
+    return t("conversationTimeline.toolFailed");
   }
-  const output = formatDisplayToolResult(result);
-  return !output || output === "(No output)" ? "Tool finished" : "Tool returned output";
+  const hasOutput = Boolean(result.text || jsonText(result.json) || result.content?.some(part => part.text || part.image));
+  return hasOutput ? t("conversationTimeline.toolReturnedOutput") : t("conversationTimeline.toolFinished");
 }
 
 function formatFullToolResult(result: DisplayToolResult | undefined): string {
   if (!result) {
-    return "(No output)";
+    return t("conversationTimeline.noOutput");
   }
 
   if (result.result_type === "execution-denied") {
-    return `Denied: ${result.reason?.trim() || "permission denied"}`;
+    return t("conversationTimeline.denied", { p0: result.reason?.trim() || t("timeline.permissionDenied") });
   }
 
   const contentText = (result.content ?? [])
-    .map((part) => part.text || (part.image ? `[image ${part.image.media_type || part.image.url || part.image.file_id || ""}]` : ""))
+    .map((part) => part.text || (part.image ? t("conversationTimeline.image", { p0: part.image.media_type || part.image.url || part.image.file_id || "" }) : ""))
     .filter(Boolean)
     .join("\n");
   const text = result.text || jsonText(result.json) || contentText;
   if (isToolResultError(result)) {
-    return `Error: ${text || "tool failed"}`;
+    return t("conversationTimeline.error", { p0: text || t("timeline.toolFailed") });
   }
-  return text || "(No output)";
+  return text || t("conversationTimeline.noOutput");
 }
 
 export function formatDisplayToolCall(call: DisplayToolCall | undefined): string {
   if (!call) {
-    return "Tool call";
+    return t("conversationTimeline.toolCall");
   }
 
   const name = toTitleCase(call.name || "tool");
@@ -1490,23 +1513,23 @@ export function formatDisplayToolCall(call: DisplayToolCall | undefined): string
 
 export function formatDisplayToolResult(result: DisplayToolResult | undefined): string {
   if (!result) {
-    return "(No output)";
+    return t("conversationTimeline.noOutput");
   }
 
   if (result.result_type === "execution-denied") {
-    return `Denied: ${result.reason?.trim() || "permission denied"}`;
+    return t("conversationTimeline.denied", { p0: result.reason?.trim() || t("timeline.permissionDenied") });
   }
 
   if (isToolResultError(result)) {
-    return `Error: ${truncate(result.text || jsonText(result.json), 200) || "tool failed"}`;
+    return t("conversationTimeline.error", { p0: truncate(result.text || jsonText(result.json), 200) || t("timeline.toolFailed") });
   }
 
   const contentText = (result.content ?? [])
-    .map((part) => part.text || (part.image ? `[image ${part.image.media_type || part.image.url || part.image.file_id || ""}]` : ""))
+    .map((part) => part.text || (part.image ? t("conversationTimeline.image", { p0: part.image.media_type || part.image.url || part.image.file_id || "" }) : ""))
     .filter(Boolean)
     .join("\n");
   const text = result.text || jsonText(result.json) || contentText;
-  return truncate(text || "(No output)", 300);
+  return truncate(text || t("conversationTimeline.noOutput"), 300);
 }
 
 function isToolResultError(result: DisplayToolResult | undefined): boolean {
@@ -1568,7 +1591,7 @@ function formatToolTarget(name: string, raw: string): string {
     const pattern = stringValue(parsed.pattern);
     const path = stringValue(parsed.path);
     if (pattern && path) {
-      return `${pattern} in ${truncate(path, 72)}`;
+      return t("conversationTimeline.in", { p0: pattern, p1: truncate(path, 72) });
     }
   }
 
@@ -1611,16 +1634,15 @@ function humanizeToolName(value: string): string {
     .split(/\s+/)
     .filter(Boolean);
   if (words.length === 0) {
-    return "Called a tool";
+    return t("conversationTimeline.calledATool");
   }
 
   const first = words[0].toLowerCase();
   const rest = words.slice(1).join(" ");
-  const verb =
-    first === "read" || first === "open" || first === "search" || first === "list" || first === "run"
-      ? `${first[0].toUpperCase()}${first.slice(1)}`
-      : `Ran ${first}`;
-  return rest ? `${verb} ${rest}` : verb;
+  if (first === "read" || first === "open" || first === "search" || first === "list" || first === "run") {
+    return t(`timeline.action.${first}`, { target: rest }).trim();
+  }
+  return t("conversationTimeline.ran2", { p0: value });
 }
 
 export function toTitleCase(value: string): string {

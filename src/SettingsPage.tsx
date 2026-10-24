@@ -1,3 +1,5 @@
+import { changeLanguage, useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import type { TranslationLanguage } from "./translationLanguage";
 import type { SendMode } from "./sendMode";
 import { TranslationProfileSettings } from "./TranslationProfileSettings";
@@ -41,66 +43,80 @@ export function SettingsPage({
   onManageHosts: () => void;
   onBack: () => void;
 }) {
+  const locale = useLocale();
   return (
     <main className="settings-page">
       <aside className="settings-sidebar">
         <div className="settings-sidebar-chrome" />
         <button type="button" className="settings-back" onClick={onBack}>
           <ArrowLeft size={16} />
-          <span>Back to Zotigo</span>
+          <span>{t("settingsPage.backToZotigo")}</span>
         </button>
-        <nav aria-label="Settings">
+        <nav aria-label={t("hostShell.settings")}>
           <button type="button" className="settings-nav-item is-active" aria-current="page">
             <Settings size={16} />
-            <span>General</span>
+            <span>{t("settingsPage.general")}</span>
           </button>
         </nav>
       </aside>
 
       <section className="settings-main">
         <div className="settings-content">
-          <h1>General</h1>
+          <h1>{t("settingsPage.general")}</h1>
 
-          <section className="settings-section" aria-labelledby="conversation-settings-heading">
-            <h2 id="conversation-settings-heading">Conversation</h2>
+          <section className="settings-section" aria-labelledby="language-settings-heading">
+            <h2 id="language-settings-heading">{t("settings.language")}</h2>
             <div className="settings-card">
               <label className="settings-row">
-                <span><strong>Default send mode</strong><small>⌘Enter / Ctrl+Enter uses the other mode.</small></span>
-                <select aria-label="Default send mode" value={defaultSendMode} onChange={event => onDefaultSendModeChange?.(event.target.value as SendMode)}>
-                  <option value="steering">Steering</option><option value="queue">Queue for next turn</option>
+                <span><strong>{t("settings.language")}</strong><small>{t("settings.languageHelp")}</small></span>
+                <select aria-label={t("settings.language")} value={locale} onChange={event => changeLanguage(event.target.value === "zh-CN" ? "zh-CN" : "en")}>
+                  <option value="en">{t("language.english")}</option>
+                  <option value="zh-CN">{t("language.chinese")}</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="settings-section" aria-labelledby="conversation-settings-heading">
+            <h2 id="conversation-settings-heading">{t("app.conversation")}</h2>
+            <div className="settings-card">
+              <label className="settings-row">
+                <span><strong>{t("settingsPage.defaultSendMode")}</strong><small>{t("settingsPage.enterCtrlEnterUsesTheOtherMode")}</small></span>
+                <select aria-label={t("settingsPage.defaultSendMode")} value={defaultSendMode} onChange={event => onDefaultSendModeChange?.(event.target.value as SendMode)}>
+                  <option value="steering">{t("settingsPage.steering")}</option><option value="queue">{t("app.queueForNextTurn")}</option>
                 </select>
               </label>
               <label className="settings-row">
-                <span><strong>Translation language</strong><small>Translate selected conversation text into this language.</small></span>
-                <select aria-label="Translation language" value={translationLanguage} onChange={event => onTranslationLanguageChange(event.target.value as TranslationLanguage)}>
-                  <option value="zh-CN">Chinese</option><option value="en">English</option>
+                <span><strong>{t("settingsPage.translationLanguage")}</strong><small>{t("settingsPage.translateSelectedConversationTextIntoThisLanguage")}</small></span>
+                <select aria-label={t("settingsPage.translationLanguage")} value={translationLanguage} onChange={event => onTranslationLanguageChange(event.target.value as TranslationLanguage)}>
+                  <option value="zh-CN">{t("settingsPage.chinese")}</option><option value="en">{t("settingsPage.english")}</option>
                 </select>
               </label>
               <TranslationProfileSettings value={translationProfile} onChange={onTranslationProfileChange} />
               <label className="settings-row">
                 <span>
-                  <strong>Thinking display</strong>
-                  <small>Controls Gemini and custom API sessions. Codex reasoning follows Codex events.</small>
+                  <strong>{t("settingsPage.thinkingDisplay")}</strong>
+                  <small>{t("settingsPage.controlsGeminiAndCustomApiSessionsCodexReasoning")}</small>
                 </span>
                 <select
                   value={thinkingDisplay}
                   onChange={(event) => onThinkingDisplayChange(event.target.value as ThinkingDisplayMode)}
                 >
-                  <option value="expanded">Always expanded</option>
-                  <option value="collapsed">Always collapsed</option>
-                  <option value="latest">Collapse on next Thinking</option>
+                  <option value="expanded">{t("settingsPage.alwaysExpanded")}</option>
+                  <option value="collapsed">{t("settingsPage.alwaysCollapsed")}</option>
+                  <option value="latest">{t("settingsPage.collapseOnNextThinking")}</option>
                 </select>
               </label>
             </div>
           </section>
 
           <section className="settings-section" aria-labelledby="sync-settings-heading">
-            <h2 id="sync-settings-heading">Sessions</h2>
+            <h2 id="sync-settings-heading">{t("searchPalette.sessions")}</h2>
             <div className="settings-card">
               <div className="settings-row">
-                <span><strong>Sync sessions</strong><small>Import the latest Codex sessions from {hostName}.</small></span>
+                <span><strong>{t("settingsPage.syncSessions")}</strong><small>{t("settings.syncHelp", { host: hostName })}</small></span>
                 <button type="button" className="settings-secondary-button" onClick={onSync} disabled={syncing}>
-                  <RefreshCw size={15} />{syncing ? "Syncing…" : "Sync"}
+                  <RefreshCw size={15} />{syncing ? t("settingsPage.syncing") : t("settingsPage.sync")}
                 </button>
               </div>
             </div>
@@ -111,17 +127,16 @@ export function SettingsPage({
           <FavoriteModelSettings hostName={hostName} onCodexRefresh={onCodexRefresh} />
 
           <section className="settings-section" aria-labelledby="connection-settings-heading">
-            <h2 id="connection-settings-heading">Connections</h2>
+            <h2 id="connection-settings-heading">{t("settingsPage.connections")}</h2>
             <div className="settings-card">
               <div className="settings-row">
                 <span>
-                  <strong>Hosts</strong>
-                  <small>Manage local and remote Zotigo daemon connections.</small>
+                  <strong>{t("hostShell.hosts")}</strong>
+                  <small>{t("settingsPage.manageLocalAndRemoteZotigoDaemonConnections")}</small>
                 </span>
                 <button type="button" className="settings-secondary-button" onClick={onManageHosts}>
                   <Server size={15} />
-                  Manage
-                </button>
+                  {t("settingsPage.manage")}</button>
               </div>
             </div>
           </section>

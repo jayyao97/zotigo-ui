@@ -1,6 +1,7 @@
+import { getLocale } from "../../shared/i18n";
 // Keep recent timestamps compact; old messages include a date so a weekday
 // cannot be mistaken for the current week. All times use the viewer's timezone.
-export function messageTimestamp(value?: string, now = new Date(), locale?: string): { label: string; full: string } | null {
+export function messageTimestamp(value?: string, now = new Date(), locale: string = getLocale()): { label: string; full: string } | null {
   if (!value) return null;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;

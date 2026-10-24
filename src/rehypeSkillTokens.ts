@@ -1,3 +1,4 @@
+import { t } from "../shared/i18n/index";
 import { skillTokens } from "../shared/skillCommands";
 
 type HtmlNode = {
@@ -21,7 +22,7 @@ export function rehypeSkillTokens({ skills }: { skills: string[] }) {
         let from = 0;
         for (const token of matches) {
           if (token.from > from) parts.push({ type: "text", value: child.value.slice(from, token.from) });
-          parts.push({ type: "element", tagName: "span", properties: { className: ["inline-skill-token"], ariaLabel: `Skill: ${token.name}` },
+          parts.push({ type: "element", tagName: "span", properties: { className: ["inline-skill-token"], ariaLabel: t("skillPromptEditor.skill", { p0: token.name }) },
             children: [
               { type: "element", tagName: "span", properties: { ariaHidden: "true" }, children: [{ type: "text", value: "✧ " }] },
               { type: "element", tagName: "span", properties: { className: ["inline-skill-name"] }, children: [{ type: "text", value: token.name }] },

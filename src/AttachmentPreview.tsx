@@ -1,9 +1,12 @@
+import { useLocale } from "./i18n";
+import { t } from "../shared/i18n/index";
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type { ComposerAttachment } from "./conversation/ConversationComposer";
 
 export function AttachmentPreview({ attachment, onClose }: { attachment: ComposerAttachment; onClose(): void }) {
+  useLocale();
   const dialog = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
     const node = dialog.current!;
@@ -13,10 +16,10 @@ export function AttachmentPreview({ attachment, onClose }: { attachment: Compose
   return createPortal(
     <dialog ref={dialog} className="attachment-file-preview" aria-label={attachment.name} onCancel={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section>
-        <header><span>{attachment.name}</span><button type="button" autoFocus aria-label="Close preview" onClick={onClose}><X size={18} /></button></header>
+        <header><span>{attachment.name}</span><button type="button" autoFocus aria-label={t("attachmentPreview.closePreview")} onClick={onClose}><X size={18} /></button></header>
         {attachment.kind === "video"
           ? <video src={attachment.url} controls playsInline preload="metadata" />
-          : <p>File attached · {Math.ceil(attachment.file.size / 1024)} KiB</p>}
+          : <p>{t("attachmentPreview.fileAttached")}{" "}{Math.ceil(attachment.file.size / 1024)} {t("attachmentPreview.kib")}</p>}
       </section>
     </dialog>, document.body,
   );
