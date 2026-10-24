@@ -32,7 +32,12 @@ import {
   SourcePickerScreen,
 } from "./screens/CatalogScreens";
 import { FilesScreen } from "./screens/FilesScreen";
-import { SettingsScreen, ModelsScreen } from "./screens/SettingsScreen";
+import {
+  SettingsScreen,
+  ModelsScreen,
+  ConversationPreferencesScreen,
+  TranslationPreferencesScreen,
+} from "./screens/SettingsScreen";
 import { ChannelsScreen } from "./screens/ChannelsScreen";
 import { NewSessionScreen } from "./screens/NewSessionScreen";
 import { ConversationScreen } from "./screens/ConversationScreen";
@@ -337,7 +342,33 @@ export default function App() {
             <Stack.Screen
               name="Models"
               component={ModelsScreen}
-              options={{ title: "Models and runtimes" }}
+              options={{ title: "Models and favorites" }}
+            />
+            <Stack.Screen
+              name="ConversationPreferences"
+              options={{ title: "Conversation" }}
+            >
+              {() => <ConversationPreferencesScreen connected={!!client} />}
+            </Stack.Screen>
+            <Stack.Screen
+              name="TranslationPreferences"
+              component={TranslationPreferencesScreen}
+              options={{ title: "Translation" }}
+            />
+            <Stack.Screen
+              name="RuntimeSettings"
+              component={ModelsScreen}
+              options={{ title: "Runtimes and connection" }}
+            />
+            <Stack.Screen
+              name="ModelCatalog"
+              component={ModelsScreen}
+              options={{ title: "Codex models" }}
+            />
+            <Stack.Screen
+              name="Profiles"
+              component={ModelsScreen}
+              options={{ title: "Zotigo profiles" }}
             />
             <Stack.Screen name="Devices" options={{ title: "Devices" }}>
               {({ route, navigation }) => (
