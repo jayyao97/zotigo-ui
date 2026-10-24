@@ -103,3 +103,38 @@ test("releasing at the bottom with velocity cannot start a correction before mom
     assert.equal(follow.endMomentum(), false);
   }
 });
+
+test("touching and bouncing at the latest message does not show the jump button", () => {
+  const follow = new TimelineFollow();
+  follow.beginDrag();
+  assert.equal(follow.following, false);
+  assert.equal(follow.showJump, false);
+  for (const distance of [0, -12, -40, -10, 0, 3, 0]) {
+    follow.observeDistance(distance);
+    assert.equal(follow.showJump, false);
+  }
+  follow.endDrag(1);
+  follow.beginMomentum();
+  follow.observeDistance(0);
+  follow.endMomentum();
+  assert.equal(follow.showJump, false);
+  assert.equal(follow.following, true);
+});
+
+test("jump visibility follows distance with hysteresis independently of follow intent", () => {
+  const follow = new TimelineFollow();
+  follow.beginDrag();
+  follow.observeDistance(80);
+  assert.equal(follow.showJump, true);
+  for (const distance of [45, 50, 30, 17]) {
+    follow.observeDistance(distance);
+    assert.equal(follow.showJump, true);
+  }
+  follow.observeDistance(16);
+  assert.equal(follow.showJump, false);
+  assert.equal(follow.following, false);
+  follow.observeDistance(100);
+  follow.jump();
+  follow.observeDistance(100);
+  assert.equal(follow.showJump, false);
+});

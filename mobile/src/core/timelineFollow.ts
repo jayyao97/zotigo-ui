@@ -1,6 +1,7 @@
 // Measured distance during a programmatic jump is not a change in user intent.
 export class TimelineFollow {
   following = true;
+  showJump = false;
   private userScrolling = false;
   private awaitingMomentum = false;
   private distance = Infinity;
@@ -8,6 +9,7 @@ export class TimelineFollow {
     this.userScrolling = false;
     this.awaitingMomentum = false;
     this.following = true;
+    this.showJump = false;
   }
   leaveLatest() {
     this.userScrolling = false;
@@ -42,6 +44,12 @@ export class TimelineFollow {
     return this.following;
   }
   observeDistance(distance: number) {
+    // Follow intent pauses on touch; the button only reflects actual distance.
+    // Separate thresholds keep bottom bounce/measurement noise from flashing it.
+    if (!this.following) {
+      if (distance > 48) this.showJump = true;
+      else if (distance <= 16) this.showJump = false;
+    }
     if (this.userScrolling) this.distance = distance;
     return this.following;
   }
