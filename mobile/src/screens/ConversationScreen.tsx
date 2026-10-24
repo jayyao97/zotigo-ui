@@ -84,7 +84,7 @@ import type {
   DisplayItem,
   ProfilesResponse,
 } from "@zotigo/shared/zotigod";
-import { pendingHumanRequestIDs } from "@zotigo/shared/sessionDisplay";
+import { acknowledgeOptimisticPrompt, anchorPromptTimeline, capturePromptTimelineAnchor, optimisticPromptDisplayItem, type PromptTimelineAnchor, orderDisplayInputs, pendingHumanRequestIDs } from "@zotigo/shared/sessionDisplay";
 import {
   maxMessageImageCount,
   messageImageSizeError,
@@ -160,6 +160,8 @@ function ConversationContent() {
   const [caret, setCaret] = useState(0);
   const [saved, setSaved] = useState<ComposerState>({ draft: emptyDraft() });
   const draftRef = useRef(saved);
+  const [promptPreviews, setPromptPreviews] = useState<DisplayItem[]>([]);
+  const promptAnchors = useRef(new Map<string, PromptTimelineAnchor>());
   const [loaded, setLoaded] = useState(false);
   const revision = useRef(0);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -421,14 +423,28 @@ function ConversationContent() {
       mode === "steering" && !!activeTurn(timeline.snapshot().items),
       mode === "queue" ? "queue" : undefined,
     );
+    const promptId = attempt.client_message_id;
+    if (attempt.mode !== "queue" && !promptAnchors.current.has(promptId)) {
+      const snapshot = timeline.snapshot();
+      promptAnchors.current.set(promptId, capturePromptTimelineAnchor(
+        snapshot.items.at(-1)?.sequence ?? 0, snapshot.previews.map(item => item.id), promptAnchors.current,
+      ));
+    }
+    const preview = optimisticPromptDisplayItem({
+      id: promptId, text: attempt.text, skills: attempt.skills,
+      steering: attempt.steer, createdAt: new Date().toISOString(),
+      images: attempt.images?.map(image => ({ url: `data:${image.mime_type};base64,${image.data_base64}` })),
+    });
+    preview.queuedPreview = attempt.mode === "queue";
     const pending = { draft: current.draft, attempt };
     draftRef.current = pending;
     setSaved(pending);
     revision.current++;
     await composer.write(pending); // Persist exact payload/id before dispatch so a timeout is retryable.
+    if (alive.current) setPromptPreviews(items => [...items.filter(item => item.id !== promptId), preview]);
     if (alive.current) setSendCanLeave(true);
     try {
-      await client.send(
+      const command = await client.send(
         id,
         {
           text: attempt.text,
@@ -441,6 +457,11 @@ function ConversationContent() {
       // A reopened screen owns the persisted attempt now. Do not let this old
       // request overwrite its draft; retrying the saved ID is idempotent.
       if (!alive.current) return;
+      const acknowledged = acknowledgeOptimisticPrompt(preview, command, timeline.snapshot().items);
+      const anchor = promptAnchors.current.get(promptId);
+      promptAnchors.current.delete(promptId);
+      if (anchor && acknowledged) promptAnchors.current.set(command.id, anchor);
+      setPromptPreviews(items => [...items.filter(item => item.id !== promptId), ...(acknowledged ? [{ ...acknowledged, queuedPreview: preview.queuedPreview, queueConfirmed: preview.queuedPreview }] : [])]);
       setQueueRevision((value) => value + 1);
       const empty = { draft: emptyDraft() };
       const persisted = composer.transition(draftRef, empty);
@@ -448,6 +469,7 @@ function ConversationContent() {
       await persisted;
     } catch (e) {
       if (!alive.current) return;
+      setPromptPreviews(items => items.map(item => item.id === promptId ? { ...item, delivery: { state: "failed", error: "Delivery not confirmed. Retry uses the same request ID." } } : item));
       // Validation is definitely rejected; network/5xx remains uncertain and retains the same id.
       if (
         e instanceof ApiError &&
@@ -455,6 +477,8 @@ function ConversationContent() {
         e.status < 500 &&
         e.code !== "command_id_conflict"
       ) {
+        setPromptPreviews(items => items.filter(item => item.id !== promptId));
+        promptAnchors.current.delete(promptId);
         const restored = { draft: current.draft };
         const persisted = composer.transition(draftRef, restored);
         if (alive.current) setSaved(restored);
@@ -511,10 +535,18 @@ function ConversationContent() {
       ),
     [state.items, pending],
   );
+  useEffect(() => {
+    const durable = new Set(state.items.map(item => item.id));
+    setPromptPreviews(items => items.some(item => durable.has(item.id)) ? items.filter(item => !durable.has(item.id)) : items);
+    for (const id of durable) promptAnchors.current.delete(id);
+  }, [state.items]);
   const thinking = useThinkingDisplay();
   const ordered = useMemo(
-    () => orderLateTurnItems([...state.items, ...state.previews]),
-    [state.items, state.previews],
+    () => orderDisplayInputs(anchorPromptTimeline(orderLateTurnItems([
+      ...state.items, ...state.previews,
+      ...promptPreviews.filter(item => !item.queuedPreview && !state.items.some(durable => durable.id === item.id)),
+    ]), promptAnchors.current)),
+    [state.items, state.previews, promptPreviews],
   );
   const previewIds = useMemo(
     () => new Set(state.previews.map((i) => i.id)),
@@ -971,7 +1003,9 @@ function ConversationContent() {
           backgroundColor: colors.background,
         }}
       >
-        <InputQueue sessionId={id} refresh={queueRevision} />
+        <InputQueue sessionId={id} refresh={queueRevision}
+          pending={promptPreviews.filter(item => item.queuedPreview)}
+          onReconciled={ids => setPromptPreviews(items => items.filter(item => !ids.includes(item.id)))} />
         <Notice text={defaultSendMode.error} error />
         {!!draft.references?.length && (
           <View style={{ maxHeight: 136 }}>
@@ -1171,6 +1205,11 @@ function ConversationContent() {
                     style: "destructive",
                     onPress: () =>
                       void run(async () => {
+                        const promptId = draftRef.current.attempt?.client_message_id;
+                        if (promptId) {
+                          setPromptPreviews(items => items.filter(item => item.id !== promptId));
+                          promptAnchors.current.delete(promptId);
+                        }
                         const next = { draft: emptyDraft() };
                         const persisted = composer.transition(draftRef, next);
                         setSaved(next);
@@ -1217,8 +1256,11 @@ function ConversationContent() {
                 % used
               </Text>
               <Text style={styles.muted}>
-                {state.session.context_usage.tokens.toLocaleString()} /{" "}
+                {["estimate", "provider_estimate"].includes(state.session.context_usage.source ?? "") ? "≈ " : ""}{state.session.context_usage.tokens.toLocaleString()} /{" "}
                 {state.session.context_usage.window.toLocaleString()} tokens
+                {state.session.context_usage.tokens > state.session.context_usage.window ? " · over limit" : ""}
+                {state.session.context_usage.cached ? " · last known usage" : ""}
+                {state.session.context_usage.source === "provider_estimate" ? " · API input + estimated additions" : state.session.context_usage.source === "estimate" ? " · Local estimate" : ""}
               </Text>
             </View>
           )}

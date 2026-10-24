@@ -410,6 +410,7 @@ export const MessageCard = memo(function MessageCard({
               />
             </View>
           )}
+          {item.delivery && <Text style={styles.muted}>{item.delivery.state === "sending" ? "Sending…" : item.delivery.error}</Text>}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             {timestamp && (
               <Text accessibilityLabel={timestamp.full} style={styles.muted}>
