@@ -388,10 +388,11 @@ addWorkspaceSourceToCatalog,
   handle("sessions:queue-list", id => listQueuedInputs(assertNonEmptyString(id, "sessionId")));
   handle("sessions:queue-resume", id => resumeInputQueue(assertNonEmptyString(id, "sessionId")));
   for (const operation of ["edit", "delete", "send"] as const) {
-    handle(`sessions:queue-${operation}`, (id, itemId, revision, text) => {
+    handle(`sessions:queue-${operation}`, (id, itemId, revision, text, imageIndices) => {
       if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1) throw new Error("Invalid queue revision");
       if (operation === "send") return sendQueuedInput(assertNonEmptyString(id, "sessionId"), assertNonEmptyString(itemId, "itemId"), revision);
-      return changeQueuedInput(assertNonEmptyString(id, "sessionId"), assertNonEmptyString(itemId, "itemId"), revision, operation === "edit" ? assertString(text, "text") : undefined);
+      if (imageIndices !== undefined && (!Array.isArray(imageIndices) || !imageIndices.every(index => typeof index === "number" && Number.isSafeInteger(index) && index >= 0))) throw new Error("Invalid image indices");
+      return changeQueuedInput(assertNonEmptyString(id, "sessionId"), assertNonEmptyString(itemId, "itemId"), revision, operation === "edit" ? assertString(text, "text") : undefined, imageIndices as number[] | undefined);
     });
   }
   handle("desktop:suggest-conversation-title", async (conversationId) => {

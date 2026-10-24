@@ -1,3 +1,4 @@
+import { retainSessionContextUsage } from "./sessionContextCache";
 import { referencePrompt } from "../shared/conversationReferences";
 import { InputQueue } from "./conversation/InputQueue";
 import { alternateSendMode, type SendMode } from "./sendMode";
@@ -993,7 +994,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     () => orderDisplayInputs(anchorPromptTimeline([
       ...sessionItems,
       ...ephemeralDisplayItems(ephemeralBlocks),
-      ...reconcileOptimisticSteering(optimisticPromptItems, sessionItems),
+      ...reconcileOptimisticSteering(optimisticPromptItems.filter(item => !item.queuedPreview), sessionItems),
     ], promptAnchors.current)),
     [ephemeralBlocks, optimisticPromptItems, sessionItems],
   );
@@ -1138,6 +1139,11 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
 
     return () => window.clearInterval(interval);
   }, [selectedBinding?.daemon_session_id, sessionItemsLoadedForSessionId]);
+
+  useEffect(() => {
+    // Fetch usage on selection rather than waiting for the polling interval.
+    if (selectedBinding) void refreshSessions({ quiet: true });
+  }, [selectedBinding?.daemon_session_id]);
 
   useEffect(() => {
     const historyRequestId = ++sessionHistoryLoadRequestRef.current;
@@ -1455,19 +1461,12 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               return null;
             })
         : Promise.resolve(null);
-      const [listedSessions, nextDesktopState] = await Promise.all([
+      const [listedSessions, nextDesktopState, selectedSessionDetail] = await Promise.all([
         client.listSessions(),
         desktopStatePromise,
+        selectedBinding ? client.getSession(selectedBinding.daemon_session_id).catch(() => null) : Promise.resolve(null),
       ]);
-      let nextSessions = listedSessions;
-      if (selectedBinding) {
-        try {
-          const selectedSessionDetail = await client.getSession(selectedBinding.daemon_session_id);
-          nextSessions = upsertSession(nextSessions, selectedSessionDetail);
-        } catch {
-          // The list remains usable if the selected session disappears between requests.
-        }
-      }
+      const nextSessions = selectedSessionDetail ? upsertSession(listedSessions, selectedSessionDetail) : listedSessions;
       if (requestId < latestAppliedSessionRefreshIdRef.current) {
         return;
       }
@@ -1481,7 +1480,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
         setDesktopState((current) => sameJsonValue(current, nextDesktopState) ? current : nextDesktopState);
       }
       setSessions((current) => {
-        const merged = mergeSessionReadStates(current, nextSessions);
+        const merged = mergeSessionReadStates(current, retainSessionContextUsage(current, nextSessions, selectedSessionDetail?.id));
         return sameJsonValue(current, merged) ? current : merged;
       });
       setApprovalPolicyOverrides((current) => clearResolvedApprovalPolicyOverrides(current, nextSessions));
@@ -2512,6 +2511,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       skills: submittedSkills,
       createdAt: new Date().toISOString(),
     });
+    optimisticItem.queuedPreview = mode === "queue";
     const revokeSubmittedAttachments = () => {
       for (const attachment of submittedAttachments) {
         if (attachment.url) URL.revokeObjectURL(attachment.url);
@@ -2521,7 +2521,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     setStickToBottom(true);
     setIsBusy(true);
     setMessage(null);
-    promptAnchors.current.set(optimisticId, capturePromptTimelineAnchor(
+    if (mode !== "queue") promptAnchors.current.set(optimisticId, capturePromptTimelineAnchor(
       sessionItems.reduce((max, item) => Math.max(max, item.sequence), 0),
       ephemeralBlocks.map(block => block.id),
       promptAnchors.current,
@@ -2575,12 +2575,9 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             setMessage(result.error);
           }
         } else if (result.command?.type === "queued") {
-          setOptimisticPromptItems(current => current.filter(item => item.id !== optimisticId));
+          setOptimisticPromptItems(current => current.map(item => item.id === optimisticId ? { ...item, queueConfirmed: true } : item));
           promptRetries.current.delete(optimisticId);
-          promptRecovery.current.delete(optimisticId);
-          promptAnchors.current.delete(optimisticId);
           setQueueRefresh(value => value + 1);
-          requestAnimationFrame(revokeSubmittedAttachments);
         } else {
           const command = result.command;
           if (!command) {
@@ -4101,7 +4098,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
           onTouchCancel={handleConversationTouchEnd}
         >
           {searchWindow && <div className="search-history-notice">Showing messages near a search result <button type="button" onClick={closeSearchWindow}>Return to conversation</button></div>}
-          <article className="conversation-body">
+          <article className={`conversation-body${!selectedConversation && newPromptPreview?.draftKey === composerDraftKey ? " has-prompt-preview" : ""}`}>
             {newPromptPreview?.draftKey === composerDraftKey && (
               <>
                 <UserMessage
@@ -4223,7 +4220,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
 
         {selectedConversation && (
           <div className="composer-shell">
-            {selectedBinding && <InputQueue key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} refresh={queueRefresh} active={surfaceActive} />}
+            {selectedBinding && <InputQueue onReconciled={(ids) => { setOptimisticPromptItems(current => current.filter(item => !ids.includes(item.id))); for (const id of ids) { promptRetries.current.delete(id); promptRecovery.current.get(id)?.release(); promptRecovery.current.delete(id); } }} pending={optimisticPromptItems.filter(item => item.queuedPreview)} onRetry={(id) => { if (!isBusy) void promptRetries.current.get(id)?.(); }} onRestore={(id) => { if (!isBusy) promptRecovery.current.get(id)?.restore(); }} onDismiss={(id) => { if (!isBusy) promptRecovery.current.get(id)?.discard(); }} daemonUrl={daemonUrl} key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} refresh={queueRefresh} active={surfaceActive} />}
             {runtimeOccupied && (
               <div className="runtime-occupied-notice" role="status">
                 <ShieldAlert size={18} strokeWidth={1.9} />

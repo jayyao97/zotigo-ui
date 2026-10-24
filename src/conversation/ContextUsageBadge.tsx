@@ -11,7 +11,7 @@ export function ContextUsageBadge({ usage }: { usage: NonNullable<ZotigoSession[
       <span className="context-usage-ring" style={{ "--context-used": `${Math.min(1, ratio) * 360}deg` } as CSSProperties} />
       {percent}%
       <span className="context-usage-tooltip" role="tooltip">
-        <span>Context window:</span>
+        <span>{usage.cached ? "Context window · last known usage:" : "Context window:"}</span>
         <strong>{percent}% used{ratio > 1 ? " · over limit" : ""}</strong>
         <small>{estimate ? "≈ " : ""}{formatCompactTokenCount(usage.tokens)} tokens used, {formatCompactTokenCount(usage.window)} total</small>
         {estimate && <small>{usage.source === "provider_estimate" ? "API input + estimated additions" : "Local estimate"}</small>}

@@ -1344,6 +1344,20 @@ p {
   gap: 10px;
 }
 
+/* The sending preview and composer share the viewport, not two full heights. */
+.new-chat-scroll .conversation-body.has-prompt-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(690px, calc(100% - 64px));
+  padding-top: 42px;
+}
+
+.has-prompt-preview > .new-chat {
+  flex: 1 0 auto;
+  min-height: 0;
+  padding-top: 24px;
+}
+
 .new-chat-composer {
   position: relative;
   overflow: visible;
@@ -5699,6 +5713,10 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .queue-editor { flex: 1; min-width: 0; }
 .queue-editor textarea { width: 100%; min-height: 64px; max-height: 140px; padding: 8px; resize: none; border: 1px solid var(--border-heavy); border-radius: var(--radius-md); background: var(--app-bg); color: var(--text); font: inherit; line-height: 1.5; }
 .queue-editor > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.queue-images, .queue-editor > .queue-images { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; margin-top: 6px; }
+.queue-image { position: relative; }
+.queue-images .image-preview-trigger img { display: block; width: 64px; height: 64px; object-fit: cover; border-radius: var(--radius-md); }
+.queue-image > .icon-button { position: absolute; top: 0; right: 0; background: var(--surface); }
 .input-queue button { font-size: 12px; }
 .input-queue p { color: var(--text-muted); font-size: 12px; }
 @media (max-width: 600px) { .queue-editor textarea { font-size: 16px; } }

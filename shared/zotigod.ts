@@ -39,6 +39,8 @@ export interface ZotigoSession {
   channel_tools_eligible?: boolean;
   forked_from?: { session_id: string; through_turn_id: string };
   context_usage?: {
+    /** Client-only: retained while fresh session details are loading. */
+    cached?: boolean;
     tokens: number;
     window: number;
     source?: string;
@@ -260,6 +262,9 @@ export interface DisplayContextCompaction {
 export interface DisplayItem {
   before_input_id?: string;
   /** Client-only delivery state; never submitted to the daemon. */
+  /** Client-only preview awaiting queue admission. */
+  queuedPreview?: boolean;
+  queueConfirmed?: boolean;
   delivery?: { state: "sending" | "failed" | "rejected"; error?: string };
   id: string;
   sequence: number;
@@ -540,6 +545,7 @@ export interface SessionCommandResponse {
 }
 
 export interface QueuedInput extends SessionCommandResponse {
+  image_editing_supported?: boolean;
   state: "queued" | "paused" | "sending";
   revision: number;
   editable: boolean;
