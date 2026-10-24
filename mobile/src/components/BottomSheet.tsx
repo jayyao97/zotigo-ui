@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react-native";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -25,6 +26,7 @@ export function BottomSheet({
   children,
   disabled = false,
   scroll = true,
+  anchorRef,
 }: {
   visible: boolean;
   title: string;
@@ -33,9 +35,39 @@ export function BottomSheet({
   children: ReactNode;
   disabled?: boolean;
   scroll?: boolean;
+  anchorRef?: RefObject<View | null>;
 }) {
   const insets = useSafeAreaInsets();
-  const wide = useWindowDimensions().width >= 768;
+  const { width, height } = useWindowDimensions();
+  const wide = width >= 768;
+  const [anchor, setAnchor] = useState<{
+    x: number;
+    width: number;
+  }>();
+  useEffect(() => {
+    // Native Modal keeps its content mounted during the dismiss animation.
+    if (!visible) return;
+    if (!wide || !anchorRef) {
+      setAnchor(undefined);
+      return;
+    }
+    let active = true;
+    const measure = () =>
+      anchorRef.current?.measureInWindow((x, _y, w) => {
+        if (active && w > 0) setAnchor({ x, width: w });
+      });
+    const frame = requestAnimationFrame(measure);
+    const keyboard = Keyboard.addListener("keyboardDidHide", measure);
+    return () => {
+      active = false;
+      cancelAnimationFrame(frame);
+      keyboard.remove();
+    };
+  }, [visible, wide, width, height, anchorRef]);
+  const anchored = wide && anchor && (!visible || anchorRef);
+  const panelWidth = anchored
+    ? Math.min(anchor.width, width - 24)
+    : undefined;
   return (
     <Modal
       visible={visible}
@@ -64,12 +96,23 @@ export function BottomSheet({
         <View
           accessibilityViewIsModal
           style={{
-            width: "100%",
-            maxWidth: wide ? 560 : undefined,
+            position: anchored ? "absolute" : undefined,
+            left: anchored
+              ? Math.max(
+                  12,
+                  Math.min(
+                    width - panelWidth! - 12,
+                    anchor.x + anchor.width - panelWidth!,
+                  ),
+                )
+              : undefined,
+            bottom: anchored ? 0 : undefined,
+            width: panelWidth ?? "100%",
+            maxWidth: wide && !anchored ? 560 : undefined,
             alignSelf: "center",
-            marginBottom: wide ? Math.max(insets.bottom, 24) : 0,
-            borderBottomLeftRadius: wide ? 26 : 0,
-            borderBottomRightRadius: wide ? 26 : 0,
+            marginBottom: anchored ? 0 : wide ? Math.max(insets.bottom, 24) : 0,
+            borderBottomLeftRadius: wide && !anchored ? 26 : 0,
+            borderBottomRightRadius: wide && !anchored ? 26 : 0,
             maxHeight: "75%",
             backgroundColor: colors.surface,
             borderTopLeftRadius: 26,

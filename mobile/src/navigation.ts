@@ -7,6 +7,11 @@ export type Routes = {
   Files: { path?: string; sessionId?: string; open?: boolean };
   Settings: undefined;
   Models: undefined;
+  ConversationPreferences: undefined;
+  TranslationPreferences: undefined;
+  RuntimeSettings: undefined;
+  ModelCatalog: undefined;
+  Profiles: undefined;
   Devices: { add?: boolean } | undefined;
   Channels: undefined;
   Sources: { projectId: string; title: string };

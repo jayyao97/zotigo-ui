@@ -12,7 +12,7 @@ import ArrowUp from "lucide-react-native/icons/arrow-up";
 import Shield from "lucide-react-native/icons/shield";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { Pressable } from "react-native";
+import { Keyboard, Pressable } from "react-native";
 import { randomUUID } from "expo-crypto";
 import {
   ComposerStore,
@@ -21,7 +21,6 @@ import {
   prepareAttachments,
 } from "../core/composer";
 import { storage } from "../platform/storage";
-import { ProfilePicker } from "../components/ProfilePicker";
 import {
   approvalPolicyLabel,
   approvalPolicyDescription,
@@ -31,7 +30,7 @@ import { useEffect, useRef, useState } from "react";
 import Folder from "lucide-react-native/icons/folder";
 import { Alert, FlatList, Text, View } from "react-native";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
-import { ModelPicker } from "../components/ModelPicker";
+import { RuntimePicker } from "../components/RuntimePicker";
 import {
   useNavigation,
   useRoute,
@@ -72,10 +71,16 @@ export function NewSessionScreen() {
   const [workspaceLoading, setWorkspaceLoading] = useState(
     !!route.params.workspaceId,
   );
-  const [panel, setPanel] = useState<
-    "workspace" | "agent" | "model" | "policy" | null
-  >(null);
-  const choosing = panel === "workspace";
+  const [panel, setPanelValue] = useState<"workspace" | "model" | "policy" | null>(
+    null,
+  );
+  const [panelVisible, setPanelVisible] = useState(false);
+  // Retain the pane content until the native dismissal animation completes.
+  const setPanel = (next: typeof panel) => {
+    if (next !== null) setPanelValue(next);
+    setPanelVisible(next !== null);
+  };
+  const choosing = panelVisible && panel === "workspace";
   const [search, setSearch] = useState("");
   const [projects, setProjects] = useState<CatalogProject[]>([]);
   const [projectId, setProjectId] = useState<string>();
@@ -102,6 +107,7 @@ export function NewSessionScreen() {
   const [busy, setBusy] = useState(false);
   const [createdSession, setCreatedSession] = useState<string>();
   const contextLocked = busy || !!createdSession;
+  const composerAnchor = useRef<View>(null);
   const completed = useRef(false);
   const lock = useRef(false),
     mounted = useRef(true);
@@ -229,16 +235,17 @@ export function NewSessionScreen() {
     };
   }, [client, workspace, profileRevision]);
   const selected = catalog?.agents.find((a) => a.id === agent);
+  const codex = catalog?.agents.find((a) => a.id === "codex");
   useEffect(() => {
     const m =
-      selected?.models?.find((m) => m.id === model) ??
-      selected?.models?.find((m) => m.is_default) ??
-      selected?.models?.[0];
+      codex?.models?.find((m) => m.id === model) ??
+      codex?.models?.find((m) => m.is_default) ??
+      codex?.models?.[0];
     setModel(m?.id ?? "");
     setEffort((current) =>
       compatibleReasoningEffort(m?.supported_reasoning_efforts ?? [], current),
     );
-  }, [selected]);
+  }, [codex]);
   async function create() {
     if (
       lock.current ||
@@ -403,7 +410,7 @@ export function NewSessionScreen() {
         />
         <Pressable
           accessibilityRole="button"
-          onPress={() => setPanel("agent")}
+          onPress={() => { Keyboard.dismiss(); setPanel("model"); }}
           disabled={contextLocked || !catalog}
           style={{
             minHeight: 44,
@@ -431,6 +438,8 @@ export function NewSessionScreen() {
           />
         )}
         <View
+          ref={composerAnchor}
+          collapsable={false}
           style={{
             backgroundColor: colors.surface,
             borderWidth: 1,
@@ -488,7 +497,7 @@ export function NewSessionScreen() {
               outlined
               label="Model and reasoning"
               disabled={contextLocked}
-              onPress={() => setPanel("model")}
+              onPress={() => { Keyboard.dismiss(); setPanel("model"); }}
             />
             <IconButton
               icon={ArrowUp}
@@ -517,21 +526,18 @@ export function NewSessionScreen() {
         </View>
       </View>
       <BottomSheet
-        visible={panel !== null}
-        scroll={panel !== "workspace"}
+        anchorRef={panel === "model" ? composerAnchor : undefined}
+        visible={panelVisible}
+        scroll={panel !== "workspace" && panel !== "model"}
         disabled={busy}
         title={
           panel === "workspace"
             ? projectId
               ? (projects.find((p) => p.id === projectId)?.name ?? "Workspaces")
               : "Projects"
-            : panel === "agent"
-              ? "Runtime"
-              : panel === "policy"
-                ? "Permissions"
-                : agent === "codex"
-                  ? "Model and reasoning"
-                  : "Profile"
+            : panel === "policy"
+              ? "Permissions"
+              : "Runtime and model"
         }
         onClose={() => setPanel(null)}
       >
@@ -620,60 +626,34 @@ export function NewSessionScreen() {
             )}
           </>
         )}
-        {panel === "agent" &&
-          catalog?.agents.map((a) => (
-            <ChoiceRow
-              key={a.id}
-              title={a.label}
-              subtitle={a.availability}
-              selected={a.id === agent}
-              onPress={() => {
-                setAgent(a.id);
+        {panel === "model" && (
+          <>
+            <Notice text={profileError} error />
+            {profileError && (
+              <Action
+                label="Reload profiles"
+                onPress={() => setProfileRevision((v) => v + 1)}
+              />
+            )}
+            <RuntimePicker
+              agents={catalog?.agents ?? []}
+              profiles={profiles}
+              profilesLoading={!profiles && !profileError}
+              value={
+                agent === "codex"
+                  ? { agent, model, reasoningEffort: effort }
+                  : { agent: "zotigo", profile }
+              }
+              disabled={contextLocked}
+              onConfirm={(choice) => {
+                setAgent(choice.agent);
+                if (choice.agent === "codex") {
+                  setModel(choice.model);
+                  setEffort(choice.reasoningEffort);
+                } else setProfile(choice.profile);
                 setPanel(null);
               }}
             />
-          ))}
-        {panel === "model" && (
-          <>
-            <Notice
-              text={`Current: ${agent === "codex" ? [model || "Loading…", effort].filter(Boolean).join(" · ") : profile || "Choose profile"}`}
-            />
-            {agent === "codex" ? (
-              <ModelPicker
-                models={selected?.models ?? []}
-                model={model}
-                effort={effort}
-                disabled={busy}
-                onConfirm={(m, e) => {
-                  setModel(m);
-                  setEffort(e);
-                  setPanel(null);
-                }}
-              />
-            ) : (
-              <>
-                <Notice text={profileError} error />
-                {profileError && (
-                  <Action
-                    label="Reload profiles"
-                    disabled={busy}
-                    onPress={() => setProfileRevision((value) => value + 1)}
-                  />
-                )}
-                {!profiles && !profileError && <Loading />}
-                {profiles && (
-                  <ProfilePicker
-                    profiles={profiles.profiles}
-                    selected={profile}
-                    disabled={busy}
-                    onSelect={(name) => {
-                      setProfile(name);
-                      setPanel(null);
-                    }}
-                  />
-                )}
-              </>
-            )}
           </>
         )}
         {panel === "policy" && (

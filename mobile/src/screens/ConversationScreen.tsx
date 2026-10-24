@@ -17,7 +17,6 @@ import { SelectionSheet } from "../components/SelectionSheet";
 import { DiagramProvider } from "../components/DiagramProvider";
 import { ImagePreviewProvider } from "../components/ImagePreviewProvider";
 import { ContextUsage } from "../components/ContextUsage";
-import { ProfilePicker } from "../components/ProfilePicker";
 import { TurnStatus } from "../components/TurnStatus";
 import { useThinkingDisplay } from "../platform/preferences";
 import {
@@ -28,7 +27,8 @@ import {
   approvalPolicyLabel,
   approvalPolicyDescription,
 } from "@zotigo/shared/approvalPolicy";
-import { ModelPicker } from "../components/ModelPicker";
+import { RuntimePicker } from "../components/RuntimePicker";
+import { Keyboard } from "react-native";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
 import { useLayoutTransition } from "../components/useLayoutTransition";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
@@ -159,6 +159,7 @@ function ConversationContent() {
   );
   const [caret, setCaret] = useState(0);
   const [saved, setSaved] = useState<ComposerState>({ draft: emptyDraft() });
+  const composerAnchor = useRef<View>(null);
   const draftRef = useRef(saved);
   const [promptPreviews, setPromptPreviews] = useState<DisplayItem[]>([]);
   const promptAnchors = useRef(new Map<string, PromptTimelineAnchor>());
@@ -199,6 +200,7 @@ function ConversationContent() {
   const [pinned, setPinned] = useState<boolean | null>(null);
   const [agents, setAgents] = useState<AgentCatalogResponse>();
   const [profiles, setProfiles] = useState<ProfilesResponse>();
+  const [modelRevision, setModelRevision] = useState(0);
   const [title, setTitle] = useState(route.params.title);
   useConversationTitle(id, state.items, (value) => {
     setTitle(value);
@@ -760,7 +762,7 @@ function ConversationContent() {
   }, [
     client,
     id,
-    options,
+    modelRevision, options,
     optionPane,
     state.session?.agent,
     state.session?.working_directory,
@@ -1096,6 +1098,8 @@ function ConversationContent() {
           }}
         />
         <View
+          ref={composerAnchor}
+          collapsable={false}
           style={{
             backgroundColor: colors.surface,
             borderRadius: 24,
@@ -1153,6 +1157,7 @@ function ConversationContent() {
               outlined
               label="Model and reasoning"
               onPress={() => {
+                Keyboard.dismiss();
                 setOptionPane("model");
                 setOptions(true);
               }}
@@ -1233,7 +1238,9 @@ function ConversationContent() {
         )}
       </View>
       <BottomSheet
+        anchorRef={optionPane === "model" ? composerAnchor : undefined}
         visible={options}
+        scroll={optionPane !== "model"}
         disabled={busy}
         title={
           optionPane === "model"
@@ -1360,59 +1367,64 @@ function ConversationContent() {
               />
             </Section>
           )}
-          {optionPane === "model" &&
-            (state.session?.agent === "codex" ? (
-              <View style={{ gap: 8 }}>
-                {!agents && !error && <Loading />}
-                {error && (
-                  <Action
-                    label="Retry loading models"
-                    onPress={() =>
-                      void run(async () =>
-                        setAgents(await client.modelCatalog()),
-                      )
-                    }
-                  />
-                )}
-                <Notice
-                  text={
-                    turn
-                      ? "Stop the current response before changing models."
-                      : ""
-                  }
+          {optionPane === "model" && state.session && (
+            <>
+              {error && (
+                <Action
+                  label="Retry loading models"
+                  disabled={busy}
+                  onPress={() => {
+                    setError("");
+                    setModelRevision((v) => v + 1);
+                  }}
                 />
-                <ModelPicker
-                  models={
-                    agents?.agents.find((a) => a.id === "codex")?.models ?? []
-                  }
-                  model={state.session?.model ?? ""}
-                  effort={state.session?.reasoning_effort ?? ""}
-                  disabled={busy || !!turn}
-                  onConfirm={(model, effort) =>
-                    void run(
-                      () => client.changeModel(id, model, effort),
-                      () => setOptions(false),
-                    )
-                  }
-                />
-              </View>
-            ) : (
-              <Section title="Profile">
-                {profiles && (
-                  <ProfilePicker
-                    profiles={profiles.profiles}
-                    selected={state.session?.profile}
-                    disabled={busy || !!turn}
-                    onSelect={(name) =>
-                      void run(
-                        () => client.changeProfile(id, name),
-                        () => setOptions(false),
-                      )
-                    }
-                  />
-                )}
-              </Section>
-            ))}
+              )}
+              {state.session.agent === "codex" && !agents && !error && (
+                <Loading />
+              )}
+              <Notice
+                text={
+                  turn
+                    ? "Stop the current response before changing models."
+                    : ""
+                }
+              />
+              <RuntimePicker
+                key={`${state.session.agent}:${state.session.model}:${state.session.profile}:${state.session.reasoning_effort}`}
+                agents={
+                  agents?.agents ?? [
+                    { id: "zotigo", label: "Zotigo", models: [] },
+                  ]
+                }
+                profiles={profiles}
+                profilesLoading={!profiles && !error}
+                fixedAgent={state.session.agent}
+                value={
+                  state.session.agent === "codex"
+                    ? {
+                        agent: "codex",
+                        model: state.session.model ?? "",
+                        reasoningEffort: state.session.reasoning_effort ?? "",
+                      }
+                    : { agent: "zotigo", profile: state.session.profile ?? "" }
+                }
+                disabled={busy || !!turn}
+                onConfirm={(choice) =>
+                  void run(
+                    () =>
+                      choice.agent === "codex"
+                        ? client.changeModel(
+                            id,
+                            choice.model,
+                            choice.reasoningEffort,
+                          )
+                        : client.changeProfile(id, choice.profile),
+                    () => setOptions(false),
+                  )
+                }
+              />
+            </>
+          )}
           {optionPane === "policy" && (
             <View style={{ gap: 8 }}>
               <ChoiceRow

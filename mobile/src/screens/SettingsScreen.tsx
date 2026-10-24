@@ -1,6 +1,5 @@
 import { useSendMode } from "../platform/preferences";
-import { ModelPicker } from "../components/ModelPicker";
-import { ProfilePicker } from "../components/ProfilePicker";
+import { RuntimePicker } from "../components/RuntimePicker";
 import {
   useThinkingDisplay,
   useModelFavorites,
@@ -8,11 +7,20 @@ import {
 } from "../platform/preferences";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
 import { favoriteKey } from "@zotigo/shared/modelFavorites";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { Routes } from "../navigation";
 import { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { View, Text, ScrollView } from "react-native";
+import type { ReactNode } from "react";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
+import Star from "lucide-react-native/icons/star";
+import Monitor from "lucide-react-native/icons/monitor";
+import Gauge from "lucide-react-native/icons/gauge";
+import MessageCircle from "lucide-react-native/icons/message-circle";
+import Languages from "lucide-react-native/icons/languages";
+import Terminal from "lucide-react-native/icons/terminal";
+import { colors, styles, IconButton } from "../components/ui";
 import type {
   AgentCatalogResponse,
   HealthResponse,
@@ -26,40 +34,189 @@ import {
   Row,
   Section,
   errorText,
-  Screen,
 } from "../components/ui";
 
+function SettingsPage({ children }: { children: ReactNode }) {
+  return (
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+    >
+      <View
+        style={{ width: "100%", maxWidth: 640, alignSelf: "center", gap: 20 }}
+      >
+        {children}
+      </View>
+    </ScrollView>
+  );
+}
+function SettingsGroup({ children }: { children: ReactNode }) {
+  return (
+    <View
+      style={{
+        backgroundColor: colors.surface,
+        borderRadius: 16,
+        paddingHorizontal: 12,
+        overflow: "hidden",
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+const arrow = <ChevronRight size={18} color={colors.muted} />;
 export function SettingsScreen({ connected = true }: { connected?: boolean }) {
-  const navigation = useNavigation<NativeStackNavigationProp<Routes>>();
-  const thinking = useThinkingDisplay();
-  const [showThinking, setShowThinking] = useState(false);
-  const devices = (
+  return (
+    <SettingsPage>
+      <Section title="Devices">
+        <SettingsGroup>
+          <DeviceSettingsRow connected={connected} />
+        </SettingsGroup>
+      </Section>
+      <Section title="Preferences">
+        <SettingsGroup>
+          {connected && <ConnectedPreferenceRows />}
+          {!connected && <ConversationSettingsRow />}
+        </SettingsGroup>
+      </Section>
+      {connected && <DeviceActions />}
+    </SettingsPage>
+  );
+}
+function DeviceSettingsRow({ connected }: { connected: boolean }) {
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
+  return connected ? (
+    <ConnectedDeviceRow />
+  ) : (
     <Row
       title="Devices"
       subtitle="Add, edit and test connections"
-      onPress={() => navigation.navigate("Devices")}
+      leading={<Monitor size={20} color={colors.muted} />}
+      right={arrow}
+      onPress={() => nav.navigate("Devices")}
     />
   );
+}
+function ConnectedDeviceRow() {
+  const client = useDaemon();
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
   return (
-    <Screen>
-      <Section title="Conversation">
+    <Row
+      title={client.connection.name}
+      subtitle="Current device · Manage connections"
+      leading={<Monitor size={20} color={colors.muted} />}
+      right={arrow}
+      onPress={() => nav.navigate("Devices")}
+    />
+  );
+}
+function ConversationSettingsRow() {
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
+  return (
+    <Row
+      title="Conversation"
+      leading={<MessageCircle size={20} color={colors.muted} />}
+      right={arrow}
+      onPress={() => nav.navigate("ConversationPreferences")}
+    />
+  );
+}
+function ConnectedPreferenceRows() {
+  const client = useDaemon();
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
+  const favorites = useModelFavorites(client.connection.id);
+  const translation = useTranslationSettings(client.connection.id);
+  const send = useSendMode(client.connection.id);
+  return (
+    <>
+      <Row
+        title="Models and favorites"
+        leading={<Gauge size={20} color={colors.muted} />}
+        right={
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={styles.muted}>{favorites.items.length} favorites</Text>
+            {arrow}
+          </View>
+        }
+        onPress={() => nav.navigate("Models")}
+      />
+      <Row
+        title="Conversation"
+        leading={<MessageCircle size={20} color={colors.muted} />}
+        right={
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={styles.muted}>
+              {send.mode === "queue" ? "Queue" : "Steer"}
+            </Text>
+            {arrow}
+          </View>
+        }
+        onPress={() => nav.navigate("ConversationPreferences")}
+      />
+      <Row
+        title="Translation"
+        leading={<Languages size={20} color={colors.muted} />}
+        right={
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={styles.muted}>
+              {translation.language === "zh-CN" ? "Chinese" : "English"}
+            </Text>
+            {arrow}
+          </View>
+        }
+        onPress={() => nav.navigate("TranslationPreferences")}
+      />
+    </>
+  );
+}
+function DeviceActions() {
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
+  return (
+    <Section title="Current device">
+      <SettingsGroup>
+        <SessionSync />
         <Row
-          title="Thinking display"
-          subtitle={
-            {
-              expanded: "Always expanded",
-              collapsed: "Always collapsed",
-              latest: "Collapse on next Thinking",
-            }[thinking.mode]
-          }
-          onPress={() => setShowThinking(true)}
+          title="Runtimes and connection"
+          leading={<Terminal size={20} color={colors.muted} />}
+          right={arrow}
+          onPress={() => nav.navigate("RuntimeSettings")}
         />
-        <Notice text="Controls Gemini and custom API sessions. Codex reasoning follows Codex events." />
-        <Notice text={thinking.error} error />
-      </Section>
-      {connected && <SendModeSettings />}
-      {connected && <TranslationSettings />}
-      {devices}
+      </SettingsGroup>
+      <Notice text="Model favorites, translation and sending preferences are saved per device." />
+    </Section>
+  );
+}
+export function ConversationPreferencesScreen({
+  connected = true,
+}: {
+  connected?: boolean;
+}) {
+  const thinking = useThinkingDisplay();
+  const [showThinking, setShowThinking] = useState(false);
+  return (
+    <SettingsPage>
+      <SettingsGroup>
+        <Section title="Conversation">
+          <Row
+            title="Thinking display"
+            subtitle={
+              {
+                expanded: "Always expanded",
+                collapsed: "Always collapsed",
+                latest: "Collapse on next Thinking",
+              }[thinking.mode]
+            }
+            onPress={() => setShowThinking(true)}
+          />
+          <Notice text="Controls Gemini and custom API sessions. Codex reasoning follows Codex events." />
+          <Notice text={thinking.error} error />
+        </Section>
+      </SettingsGroup>
+      {connected && (
+        <SettingsGroup>
+          <SendModeSettings />
+        </SettingsGroup>
+      )}
       <BottomSheet
         visible={showThinking}
         title="Thinking display"
@@ -84,23 +241,26 @@ export function SettingsScreen({ connected = true }: { connected?: boolean }) {
           />
         ))}
       </BottomSheet>
-      {connected && <SessionSync />}
-      {connected && (
-        <Row
-          title="Models and runtimes"
-          subtitle="Runtime status, profiles and Codex models"
-          onPress={() => navigation.navigate("Models")}
-        />
-      )}
-    </Screen>
+    </SettingsPage>
+  );
+}
+export function TranslationPreferencesScreen() {
+  return (
+    <SettingsPage>
+      <SettingsGroup>
+        <TranslationSettings />
+      </SettingsGroup>
+    </SettingsPage>
   );
 }
 
 export function ModelsScreen() {
   const client = useDaemon();
+  const route = useRoute();
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
+  const section = route.name;
   const favorites = useModelFavorites(client.connection.id);
   const [adding, setAdding] = useState(false);
-  const [runtime, setRuntime] = useState<"codex" | "zotigo">("codex");
   const [health, setHealth] = useState<HealthResponse>();
   const [agents, setAgents] = useState<AgentCatalogResponse>();
   const [profiles, setProfiles] = useState<ProfilesResponse>();
@@ -156,91 +316,115 @@ export function ModelsScreen() {
     void run(true);
   }
   return (
-    <Screen>
+    <SettingsPage>
       <View style={{ gap: 16 }}>
-        <Section title="Connected device">
-          <Row
-            title={client.connection.name}
-            subtitle={client.connection.baseUrl}
-          />
-          {health && (
-            <Notice
-              text={`${health.status} · Protocol ${health.protocol_version}`}
+        {section === "RuntimeSettings" && (
+          <Section title="Connected device">
+            <Row
+              title={client.connection.name}
+              subtitle={client.connection.baseUrl}
             />
-          )}
-          <Action label="Refresh" disabled={busy} onPress={() => void run()} />
-        </Section>
+            {health && (
+              <Notice
+                text={`${health.status} · Protocol ${health.protocol_version}`}
+              />
+            )}
+            <Action
+              label="Refresh"
+              disabled={busy}
+              onPress={() => void run()}
+            />
+          </Section>
+        )}
         {busy && <Loading />}
         {errors.map((error) => (
           <Notice key={error} text={error} error />
         ))}
-        <Section title="Favorite models">
-          <Notice
-            text={`Shown first in the model picker. Saved locally for ${client.connection.name}.`}
-          />
-          <Notice text={favorites.error} error />
-          {!favorites.items.length && <Notice text="No favorite models yet." />}
-          {favorites.items.map((f) => (
-            <Action
-              key={favoriteKey(f)}
-              secondary
-              label={`Remove ${f.agent === "codex" ? f.model + " · " + f.reasoningEffort : f.profile}`}
-              onPress={() => void favorites.toggle(f)}
-            />
-          ))}
-          <Action
-            label="Add favorite"
-            disabled={busy || !agents || !favorites.ready}
-            onPress={() => setAdding(true)}
-          />
-          <Action label="Refresh models" disabled={busy} onPress={prepare} />
-          <Notice text="Reload models from Codex on this device. Does not install or update Codex." />
-        </Section>
+        {section === "Models" && (
+          <>
+            <Notice text={client.connection.name} />
+            <Section title="Favorites">
+              <SettingsGroup>
+                <Notice
+                  text={`Shown first in the model picker. Saved locally for ${client.connection.name}.`}
+                />
+                <Notice text={favorites.error} error />
+                {!favorites.items.length && (
+                  <Notice text="No favorite models yet." />
+                )}
+                {favorites.items.map((f) => (
+                  <Row
+                    key={favoriteKey(f)}
+                    title={f.agent === "codex" ? f.model : f.profile}
+                    subtitle={
+                      f.agent === "codex"
+                        ? `Codex · ${f.reasoningEffort}`
+                        : `Zotigo · ${profiles?.profiles.find((p) => p.name === f.profile)?.model ?? "Unavailable"}`
+                    }
+                    right={
+                      <IconButton
+                        icon={Star}
+                        label={`Remove favorite ${f.agent === "codex" ? f.model : f.profile}`}
+                        disabled={!favorites.ready}
+                        onPress={() => void favorites.toggle(f)}
+                      />
+                    }
+                  />
+                ))}
+                <Action
+                  label="Add favorite"
+                  disabled={busy || !agents || !favorites.ready}
+                  onPress={() => setAdding(true)}
+                />
+              </SettingsGroup>
+            </Section>
+            <Section title="Model catalog">
+              <SettingsGroup>
+                <Row
+                  title="Codex models"
+                  subtitle="Loads automatically"
+                  right={arrow}
+                  onPress={() => nav.navigate("ModelCatalog")}
+                />
+                <Row
+                  title="Zotigo profiles"
+                  right={arrow}
+                  onPress={() => nav.navigate("Profiles")}
+                />
+              </SettingsGroup>
+            </Section>
+          </>
+        )}
+        {section === "ModelCatalog" && (
+          <Section title="Codex models">
+            <Action label="Refresh" disabled={busy} onPress={prepare} />
+            <SettingsGroup>
+              {agents?.agents
+                .find((a) => a.id === "codex")
+                ?.models?.map((m) => (
+                  <Row
+                    key={m.id}
+                    title={m.display_name}
+                    subtitle={m.supported_reasoning_efforts.join(" · ")}
+                  />
+                ))}
+            </SettingsGroup>
+          </Section>
+        )}
         <BottomSheet
           visible={adding}
           title="Add favorite"
+          scroll={false}
           onClose={() => setAdding(false)}
         >
-          <ChoiceRow
-            title="Codex"
-            selected={runtime === "codex"}
-            onPress={() => setRuntime("codex")}
-          />
-          <ChoiceRow
-            title="Zotigo"
-            selected={runtime === "zotigo"}
-            onPress={() => setRuntime("zotigo")}
-          />
-          {runtime === "codex" ? (
-            <ModelPicker
-              models={
-                agents?.agents.find((a) => a.id === "codex")?.models ?? []
-              }
-              model=""
-              effort="medium"
+          {adding && (
+            <RuntimePicker
+              agents={agents?.agents ?? []}
+              profiles={profiles}
+              value={{ agent: "codex", model: "", reasoningEffort: "medium" }}
               disabled={!favorites.ready || busy}
               confirmLabel="Add favorite"
-              onConfirm={(model, reasoningEffort) => {
-                const favorite = {
-                  agent: "codex" as const,
-                  model,
-                  reasoningEffort,
-                };
-                if (
-                  !favorites.items.some(
-                    (f) => favoriteKey(f) === favoriteKey(favorite),
-                  )
-                )
-                  void favorites.toggle(favorite);
-                setAdding(false);
-              }}
-            />
-          ) : (
-            <ProfilePicker
-              profiles={profiles?.profiles ?? []}
-              disabled={!favorites.ready || busy}
-              onSelect={(profile) => {
-                const favorite = { agent: "zotigo" as const, profile };
+              onConfirm={(favorite) => {
                 if (
                   !favorites.items.some(
                     (f) => favoriteKey(f) === favoriteKey(favorite),
@@ -252,36 +436,44 @@ export function ModelsScreen() {
             />
           )}
         </BottomSheet>
-        <Section title="Agents">
-          {agents?.agents.map((agent) => (
-            <Row
-              key={agent.id}
-              title={agent.label}
-              subtitle={`${agent.availability}${agent.version ? ` · ${agent.version}` : ""}${agent.id === agents.default_agent ? " · Default" : ""}`}
-            />
-          ))}
-          {agents && agents.agents.length === 0 && (
-            <Notice text="No agents available." />
-          )}
-        </Section>
-        <Section title="Runtime profiles">
-          {profiles?.profiles.map((profile) => (
-            <Row
-              key={profile.name}
-              title={
-                profile.name +
-                (profile.name === profiles.default_profile ? " · Default" : "")
-              }
-              subtitle={`${profile.provider} · ${profile.model}${profile.thinking_level ? " · " + profile.thinking_level : ""}`}
-            />
-          ))}
-          {profiles && profiles.profiles.length === 0 && (
-            <Notice text="No runtime profiles configured." />
-          )}
-          <Notice text="Choose a profile or model when creating or configuring a session. Edit daemon profile definitions on its host." />
-        </Section>
+        {section === "RuntimeSettings" && (
+          <>
+            <Section title="Agents">
+              {agents?.agents.map((agent) => (
+                <Row
+                  key={agent.id}
+                  title={agent.label}
+                  subtitle={`${agent.availability}${agent.version ? ` · ${agent.version}` : ""}${agent.id === agents.default_agent ? " · Default" : ""}`}
+                />
+              ))}
+              {agents && agents.agents.length === 0 && (
+                <Notice text="No agents available." />
+              )}
+            </Section>
+          </>
+        )}
+        {section === "Profiles" && (
+          <Section title="Runtime profiles">
+            {profiles?.profiles.map((profile) => (
+              <Row
+                key={profile.name}
+                title={
+                  profile.name +
+                  (profile.name === profiles.default_profile
+                    ? " · Default"
+                    : "")
+                }
+                subtitle={`${profile.provider} · ${profile.model}${profile.thinking_level ? " · " + profile.thinking_level : ""}`}
+              />
+            ))}
+            {profiles && profiles.profiles.length === 0 && (
+              <Notice text="No runtime profiles configured." />
+            )}
+            <Notice text="Edit daemon profile definitions on its host." />
+          </Section>
+        )}
       </View>
-    </Screen>
+    </SettingsPage>
   );
 }
 
@@ -291,12 +483,9 @@ function SessionSync() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   return (
-    <Section title="Sessions">
-      <Notice
-        text={`Import the latest Codex sessions from ${client.connection.name}.`}
-      />
+    <View>
       <Action
-        label={busy ? "Syncing…" : "Sync sessions"}
+        label={busy ? "Syncing…" : "Sync Codex sessions"}
         disabled={busy}
         onPress={() => {
           setBusy(true);
@@ -311,7 +500,7 @@ function SessionSync() {
       />
       <Notice text={status} />
       <Notice text={error} error />
-    </Section>
+    </View>
   );
 }
 
