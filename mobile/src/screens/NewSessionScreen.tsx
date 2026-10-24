@@ -439,14 +439,16 @@ export function NewSessionScreen() {
             padding: 8,
           }}
         >
-          <SkillInput
-            value={message}
-            skills={skillNames}
-            editable={!busy}
-            caret={caret}
-            onCaret={setCaret}
-            onChange={setMessage}
-          />
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <SkillInput
+              value={message}
+              skills={skillNames}
+              editable={!busy}
+              caret={caret}
+              onCaret={setCaret}
+              onChange={setMessage}
+            />
+          </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <IconButton
               icon={Plus}
