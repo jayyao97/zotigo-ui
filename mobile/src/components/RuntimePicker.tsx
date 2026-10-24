@@ -1,3 +1,6 @@
+import { stateLabel } from "@zotigo/shared/i18n/display";
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   Pressable,
@@ -38,6 +41,7 @@ export function RuntimePicker({
   onConfirm: (value: ModelFavorite) => void;
   confirmLabel?: string;
 }) {
+  useLocale();
   const client = useDaemon();
   const favorites = useModelFavorites(client.connection.id);
   const [tab, setTab] = useState<"favorites" | AgentKind>(
@@ -93,26 +97,26 @@ export function RuntimePicker({
           borderRadius: 12,
         }}
       >
-        {tabs.map((t) => (
+        {tabs.map((tabValue) => (
           <Pressable
-            key={t}
+            key={tabValue}
             accessibilityRole="tab"
-            accessibilityState={{ selected: tab === t }}
+            accessibilityState={{ selected: tab === tabValue }}
             disabled={disabled}
-            onPress={() => selectTab(t)}
+            onPress={() => selectTab(tabValue)}
             style={{
               flex: 1,
               minHeight: 44,
               justifyContent: "center",
               alignItems: "center",
               borderRadius: 10,
-              backgroundColor: tab === t ? colors.selected : "transparent",
+              backgroundColor: tab === tabValue ? colors.selected : "transparent",
             }}
           >
             <Text style={styles.text}>
-              {t === "favorites"
-                ? "Favorites"
-                : agents.find((a) => a.id === t)?.label}
+              {tabValue === "favorites"
+                ? t("conversationComposer.favorites")
+                : agents.find((a) => a.id === tabValue)?.label}
             </Text>
           </Pressable>
         ))}
@@ -126,7 +130,7 @@ export function RuntimePicker({
         {tab === "favorites" && (
           <>
             {!saved.length && (
-              <Notice text="No available favorites. Manage favorites in Settings → Models and favorites." />
+              <Notice text={t("mobile.noAvailableFavoritesManageFavoritesInSettingsModelsAndFavorites")} />
             )}
             {saved.map((f) => (
               <ChoiceRow
@@ -146,7 +150,7 @@ export function RuntimePicker({
         )}
         {tab === "codex" && (
           <>
-            {!models.length && <Notice text="No models available." />}
+            {!models.length && <Notice text={t("mobile.noModelsAvailable")} />}
             {models.map((m) => (
               <ChoiceRow
                 key={m.id}
@@ -173,7 +177,7 @@ export function RuntimePicker({
           <>
             {profilesLoading && <Loading />}
             {profiles?.profiles.length === 0 && (
-              <Notice text="No profiles configured." />
+              <Notice text={t("mobile.noProfilesConfigured")} />
             )}
             {profiles?.profiles.map((p) => (
               <ChoiceRow
@@ -183,9 +187,9 @@ export function RuntimePicker({
                   p.model,
                   p.thinking_level &&
                     (p.thinking_level === "disabled"
-                      ? "Thinking off"
-                      : p.thinking_level),
-                  p.name === profiles.default_profile && "Default",
+                      ? t("mobile.thinkingOff")
+                      : stateLabel(p.thinking_level)),
+                  p.name === profiles.default_profile && t("mobile.default"),
                 ]
                   .filter(Boolean)
                   .join(" · ")}
@@ -202,11 +206,11 @@ export function RuntimePicker({
         picked.agent === "codex" &&
         !!model?.supported_reasoning_efforts.length && (
           <View style={{ gap: 4 }}>
-            <Text style={styles.muted}>Reasoning effort</Text>
+            <Text style={styles.muted}>{t("mobile.reasoningEffort")}</Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
               {model.supported_reasoning_efforts.map((e) => (
                 <Pressable
-                  key={e}
+                  key={stateLabel(e)}
                   accessibilityRole="radio"
                   accessibilityState={{
                     checked: picked.reasoningEffort === e,
@@ -233,7 +237,7 @@ export function RuntimePicker({
                           : colors.text,
                     }}
                   >
-                    {e}
+                    {stateLabel(e)}
                   </Text>
                 </Pressable>
               ))}
@@ -261,7 +265,7 @@ export function RuntimePicker({
           style={{ color: colors.background, fontWeight: "500" }}
         >
           {confirmLabel ??
-            `Use ${picked.agent === "codex" ? picked.model : picked.profile}`}
+            t("mobile.useValue", {p0: picked.agent === "codex" ? picked.model : picked.profile})}
         </Text>
       </Pressable>
     </View>

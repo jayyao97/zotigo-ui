@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -29,6 +31,7 @@ export function HostsScreen({
   onClose?: () => void;
   onChanged?: (id: string) => void;
 }) {
+  useLocale();
   const [list, setList] = useState<Host[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
@@ -118,11 +121,11 @@ export function HostsScreen({
       <Screen>
         {!addOnly && (
           <>
-            <Text style={styles.title}>Devices</Text>
-            <Notice text="Choose where you want to work." />
+            <Text style={styles.title}>{t("mobile.devices")}</Text>
+            <Notice text={t("mobile.chooseWhereYouWantToWork")} />
             {!ready && <Loading />}
             <Notice text={error} error />
-            <Section title="DAEMONS">
+            <Section title={t("mobile.dAEMONS")}>
               {list.map((host) => (
                 <View key={host.id} style={{ gap: 4 }}>
                   <Row
@@ -134,24 +137,24 @@ export function HostsScreen({
                   />
                   <View style={{ flexDirection: "row" }}>
                     <Action
-                      label="Edit"
+                      label={t("mobile.edit")}
                       secondary
                       disabled={busy}
                       onPress={() => edit(host)}
                     />
                     <Action
-                      label="Remove"
+                      label={t("favoriteModelSettings.remove")}
                       secondary
                       danger
                       disabled={busy}
                       onPress={() =>
                         Alert.alert(
-                          "Remove device?",
-                          "Projects and sessions on the daemon are kept.",
+                          t("mobile.removeDevice"),
+                          t("mobile.projectsAndSessionsOnTheDaemonAreKept"),
                           [
-                            { text: "Cancel", style: "cancel" },
+                            { text: t("app.cancel"), style: "cancel" },
                             {
-                              text: "Remove",
+                              text: t("favoriteModelSettings.remove"),
                               style: "destructive",
                               onPress: () =>
                                 void run(async () => {
@@ -169,10 +172,10 @@ export function HostsScreen({
               ))}
             </Section>
             {ready && !list.length && (
-              <Notice text="Add your first device using its daemon address and token." />
+              <Notice text={t("mobile.addYourFirstDeviceUsingItsDaemonAddressAndToken")} />
             )}
             <Action
-              label={busy ? "Connecting…" : "Add device"}
+              label={busy ? t("webApp.connecting") : t("mobile.addDevice")}
               disabled={busy}
               onPress={() => edit(null)}
             />
@@ -192,33 +195,33 @@ export function HostsScreen({
           <SafeAreaView style={styles.screen}>
             <Screen>
               <Text style={styles.title}>
-                {editing ? "Edit device" : "Add device"}
+                {editing ? t("mobile.editDevice") : t("mobile.addDevice")}
               </Text>
               <TextField
-                label="Name"
+                label={t("hostShell.name")}
                 value={name}
                 onChangeText={setName}
-                placeholder="Home Mac / Work devbox"
+                placeholder={t("mobile.homeMacWorkDevbox")}
               />
               <TextField
-                label="Daemon address"
+                label={t("hostShell.daemonAddress")}
                 value={address}
                 onChangeText={setAddress}
                 placeholder="http://100.64.0.1:8766"
                 keyboardType="url"
               />
               <TextField
-                label="Daemon token"
+                label={t("hostShell.daemonToken")}
                 value={token}
                 onChangeText={setToken}
                 secureTextEntry
               />
               <Notice text={error} error />
               {editing && editing.baseUrl !== address && (
-                <Notice text="Changing the address adds a separate device. The old device and its drafts are kept." />
+                <Notice text={t("mobile.changingTheAddressAddsASeparateDeviceTheOldDeviceAndItsDraftsAreKept")} />
               )}
               <Action
-                label="Test connection"
+                label={t("mobile.testConnection")}
                 disabled={busy || !address.trim()}
                 onPress={() =>
                   void run(async () => {
@@ -240,7 +243,7 @@ export function HostsScreen({
                 }
               />
               <Action
-                label="Save device"
+                label={t("mobile.saveDevice")}
                 disabled={busy || !name.trim() || !address.trim()}
                 onPress={() =>
                   void run(async () => {
@@ -263,7 +266,7 @@ export function HostsScreen({
                 }
               />
               <Action
-                label="Cancel"
+                label={t("app.cancel")}
                 secondary
                 disabled={busy}
                 onPress={() => {

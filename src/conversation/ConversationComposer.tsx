@@ -884,7 +884,7 @@ export function ApprovalPolicyPicker({
             <ShieldCheck size={16} strokeWidth={1.8} />
             <span>
               <strong>{t("channelsPage.auto")}</strong>
-              <small>{t("conversationComposer.useSafetyChecksAndRequestApprovalWhenNeeded")}</small>
+              <small>{approvalPolicyDescription("auto")}</small>
             </span>
             {value === "auto" && <Check size={15} strokeWidth={2} />}
           </button>
@@ -898,7 +898,7 @@ export function ApprovalPolicyPicker({
             <ShieldAlert size={16} strokeWidth={1.8} />
             <span>
               <strong>{t("channelsPage.fullAccess")}</strong>
-              <small>{t("conversationComposer.runToolsWithoutSafetyClassificationOrApproval")}</small>
+              <small>{approvalPolicyDescription("bypass_permissions")}</small>
             </span>
             {value === "bypass_permissions" && <Check size={15} strokeWidth={2} />}
           </button>

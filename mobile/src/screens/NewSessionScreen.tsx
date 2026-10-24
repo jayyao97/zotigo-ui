@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { KeyboardFrameView } from "../components/KeyboardFrameView";
 import { DraftImages } from "../components/DraftImages";
 import { SkillInput } from "../components/SkillInput";
@@ -62,6 +64,7 @@ import {
 } from "../components/ui";
 
 export function NewSessionScreen() {
+  useLocale();
   const client = useDaemon(),
     nav = useNavigation<NativeStackNavigationProp<Routes>>(),
     route = useRoute<RouteProp<Routes, "NewSession">>();
@@ -117,19 +120,19 @@ export function NewSessionScreen() {
       if (completed.current) nav.dispatch(data.action);
       else if (!lock.current)
         Alert.alert(
-          "Discard message?",
-          "Your unsent message will be discarded.",
+          t("mobile.discardMessage"),
+          t("mobile.yourUnsentMessageWillBeDiscarded"),
           [
-            { text: "Keep editing", style: "cancel" },
+            { text: t("mobile.keepEditing"), style: "cancel" },
             {
-              text: "Discard",
+              text: t("mobile.discard"),
               style: "destructive",
               onPress: () => nav.dispatch(data.action),
             },
           ],
         );
       else
-        Alert.alert("Please wait", "The session is being prepared or created.");
+        Alert.alert(t("mobile.pleaseWait"), t("mobile.theSessionIsBeingPreparedOrCreated"));
     },
   );
   useEffect(() => {
@@ -161,7 +164,7 @@ export function NewSessionScreen() {
         if (!active) return;
         if (value.status !== "ready")
           throw new Error(
-            "This workspace is not ready. Choose another workspace.",
+            t("mobile.thisWorkspaceIsNotReadyChooseAnotherWorkspace"),
           );
         setWorkspace(value);
       })
@@ -318,9 +321,8 @@ export function NewSessionScreen() {
         await composer.write({ draft: emptyDraft() });
       } catch (e) {
         Alert.alert(
-          "Session created",
-          "Your message needs attention. Open the conversation to retry with the same request ID. " +
-            errorText(e),
+          t("mobile.sessionCreated"),
+          t("mobile.createdNeedsAttention", { error: errorText(e) }),
         );
       }
       completed.current = true;
@@ -329,7 +331,7 @@ export function NewSessionScreen() {
       if (mounted.current && !client.signal.aborted)
         nav.replace("Conversation", {
           id: session.id,
-          title: "New session",
+          title: t("app.newSession"),
         });
     } catch (e) {
       if (mounted.current) setError(errorText(e));
@@ -358,7 +360,7 @@ export function NewSessionScreen() {
           gap: 8,
         }}
       >
-        <Text style={styles.title}>What are we working on?</Text>
+        <Text style={styles.title}>{t("mobile.whatAreWeWorkingOn")}</Text>
         <Text style={styles.muted}>{client.connection.name}</Text>
       </View>
       <View
@@ -370,7 +372,7 @@ export function NewSessionScreen() {
       >
         <Notice text={error || profileError} error />
         {createdSession && !busy && (
-          <Notice text="Session created. Retry to finish uploading and send to this session. Session settings can be changed after opening the conversation." />
+          <Notice text={t("mobile.sessionCreatedRetryToFinishUploadingAndSendToThisSessionSessionSettingsCanBeChangedAfterOpeningTheConversation")} />
         )}
         <AttachmentFiles
           files={files}
@@ -399,8 +401,8 @@ export function NewSessionScreen() {
         />
         <ChoiceRow
           icon={Folder}
-          title={workspace?.title ?? (scratch ? "Scratch" : "Choose workspace")}
-          subtitle={workspace?.root_path ?? "No project or workspace"}
+          title={workspace?.title ?? (scratch ? t("app.scratch") : t("mobile.chooseWorkspace"))}
+          subtitle={workspace?.root_path ?? t("mobile.noProjectOrWorkspace")}
           disabled={contextLocked || workspaceLoading}
           onPress={() => {
             setProjectId(undefined);
@@ -419,12 +421,11 @@ export function NewSessionScreen() {
           }}
         >
           <Text style={styles.muted}>
-            {selected?.label ?? "Loading models…"} · Runtime
-          </Text>
+            {selected?.label ?? t("favoriteModelSettings.loadingModels")} {t("mobile.undefinedRuntime")}</Text>
         </Pressable>
         {!catalog && error && (
           <Action
-            label="Retry loading models"
+            label={t("mobile.retryLoadingModels")}
             onPress={() => {
               setError("");
               void client
@@ -461,7 +462,7 @@ export function NewSessionScreen() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <IconButton
               icon={Plus}
-              label="Add attachment"
+              label={t("attachmentMenu.addAttachment")}
               disabled={busy || files.length + images.length >= 5}
               onPress={() => {
                 if (lock.current) return;
@@ -495,13 +496,13 @@ export function NewSessionScreen() {
             <IconButton
               icon={Gauge}
               outlined
-              label="Model and reasoning"
+              label={t("mobile.modelAndReasoning")}
               disabled={contextLocked}
               onPress={() => { Keyboard.dismiss(); setPanel("model"); }}
             />
             <IconButton
               icon={ArrowUp}
-              label={busy ? "Creating…" : "Create session and send"}
+              label={busy ? t("app.creating") : t("mobile.createSessionAndSend")}
               disabled={
                 busy ||
                 (!message.trim() && !files.length && !images.length) ||
@@ -533,11 +534,11 @@ export function NewSessionScreen() {
         title={
           panel === "workspace"
             ? projectId
-              ? (projects.find((p) => p.id === projectId)?.name ?? "Workspaces")
-              : "Projects"
+              ? (projects.find((p) => p.id === projectId)?.name ?? t("app.workspaces"))
+              : t("app.projects")
             : panel === "policy"
-              ? "Permissions"
-              : "Runtime and model"
+              ? t("channelsPage.permissions")
+              : t("mobile.runtimeAndModel")
         }
         onClose={() => setPanel(null)}
       >
@@ -546,8 +547,8 @@ export function NewSessionScreen() {
           <>
             {!projectId && (
               <ChoiceRow
-                title="Scratch"
-                subtitle="Work without a project or workspace"
+                title={t("app.scratch")}
+                subtitle={t("mobile.workWithoutAProjectOrWorkspace")}
                 selected={scratch}
                 onPress={() => {
                   setWorkspace(undefined);
@@ -558,7 +559,7 @@ export function NewSessionScreen() {
             )}
             {projectId && (
               <Action
-                label="All projects"
+                label={t("mobile.allProjects")}
                 secondary
                 onPress={() => {
                   setProjectId(undefined);
@@ -567,7 +568,7 @@ export function NewSessionScreen() {
               />
             )}
             <TextField
-              label={projectId ? "Search workspaces" : "Search projects"}
+              label={projectId ? t("mobile.searchWorkspaces") : t("mobile.searchProjects")}
               value={search}
               onChangeText={setSearch}
             />
@@ -597,10 +598,10 @@ export function NewSessionScreen() {
                   <Notice
                     text={
                       search
-                        ? "No matches."
+                        ? t("mobile.noMatches")
                         : projectId
-                          ? "No ready workspaces in this project."
-                          : "No projects. Use Scratch or create a project from Home."
+                          ? t("mobile.noReadyWorkspacesInThisProject")
+                          : t("mobile.noProjectsUseScratchOrCreateAProjectFromHome")
                     }
                   />
                 }
@@ -631,7 +632,7 @@ export function NewSessionScreen() {
             <Notice text={profileError} error />
             {profileError && (
               <Action
-                label="Reload profiles"
+                label={t("mobile.reloadProfiles")}
                 onPress={() => setProfileRevision((v) => v + 1)}
               />
             )}
@@ -658,9 +659,9 @@ export function NewSessionScreen() {
         )}
         {panel === "policy" && (
           <>
-            <Section title="Permissions">
+            <Section title={t("channelsPage.permissions")}>
               {selected?.capabilities.approvals === false && (
-                <Notice text="This runtime does not support approval requests. Explicitly enable bypass approvals to create a session." />
+                <Notice text={t("mobile.thisRuntimeDoesNotSupportApprovalRequestsExplicitlyEnableBypassApprovalsToCreateASession")} />
               )}
               <ChoiceRow
                 title={approvalPolicyLabel("auto")}
@@ -679,12 +680,12 @@ export function NewSessionScreen() {
                 disabled={busy}
                 onPress={() =>
                   Alert.alert(
-                    "Bypass approvals?",
-                    "Tools can run without asking you for approval.",
+                    t("mobile.bypassApprovals"),
+                    t("mobile.toolsCanRunWithoutAskingYouForApproval"),
                     [
-                      { text: "Cancel", style: "cancel" },
+                      { text: t("app.cancel"), style: "cancel" },
                       {
-                        text: "Enable",
+                        text: t("mobile.enable"),
                         style: "destructive",
                         onPress: () => {
                           setPolicy("bypass_permissions");

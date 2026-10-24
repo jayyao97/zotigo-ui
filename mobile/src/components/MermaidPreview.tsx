@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useEffect, useState } from "react";
 import { Modal, View, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,6 +14,7 @@ export default function MermaidPreview({
   source: string;
   onClose: () => void;
 }) {
+  useLocale();
   const [document, setDocument] = useState({ html: "", error: "" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -33,18 +36,18 @@ export default function MermaidPreview({
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
         <View style={{ paddingHorizontal: 12 }}>
-          <Action label="Close diagram" onPress={onClose} />
+          <Action label={t("mobile.closeDiagram")} onPress={onClose} />
         </View>
         {document.error ? (
           <View>
             <Text style={styles.muted}>{document.error}</Text>
             <Action
-              label="Retry diagram"
+              label={t("mermaidCodeBlock.retryDiagram")}
               onPress={() => setAttempt((n) => n + 1)}
             />
           </View>
         ) : !document.html ? (
-          <Text style={styles.muted}>Loading diagram…</Text>
+          <Text style={styles.muted}>{t("mobile.loadingDiagram")}</Text>
         ) : (
           <MermaidSurface html={document.html} />
         )}

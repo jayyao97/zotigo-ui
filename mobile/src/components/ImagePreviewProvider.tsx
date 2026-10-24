@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import {
   createContext,
   useCallback,
@@ -19,6 +21,7 @@ import { IconButton, colors, styles } from "./ui";
 const ImagePreviewContext = createContext<((uri: string) => void) | null>(null);
 /** Retain the selected URI even when its virtualized message leaves the list. */
 export function ImagePreviewProvider({ children }: { children: ReactNode }) {
+  useLocale();
   const [uri, setUri] = useState<string>();
   const [error, setError] = useState(false);
   const { width, height } = useWindowDimensions();
@@ -47,12 +50,12 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
             <View style={{ alignItems: "flex-end", paddingHorizontal: 12 }}>
               <IconButton
                 icon={X}
-                label="Close image preview"
+                label={t("imagePreview.closeImagePreview")}
                 onPress={() => setUri(undefined)}
               />
             </View>
             {error ? (
-              <Text style={styles.muted}>Image could not be loaded.</Text>
+              <Text style={styles.muted}>{t("imagePreview.imageCouldNotBeLoaded")}</Text>
             ) : (
               <ScrollView
                 maximumZoomScale={4}
@@ -71,7 +74,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
                     width,
                     height: height - insets.top - insets.bottom - 60,
                   }}
-                  accessibilityLabel="Expanded conversation attachment"
+                  accessibilityLabel={t("mobile.expandedConversationAttachment")}
                 />
               </ScrollView>
             )}

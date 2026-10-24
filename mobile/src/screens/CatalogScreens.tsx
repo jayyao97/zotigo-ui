@@ -1,3 +1,6 @@
+import { stateLabel } from "@zotigo/shared/i18n/display";
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import LoaderCircle from "lucide-react-native/icons/loader-circle";
 import SquarePen from "lucide-react-native/icons/square-pen";
 import { useLayoutTransition } from "../components/useLayoutTransition";
@@ -195,6 +198,7 @@ function useMutation() {
   return { busy, error, run, isCurrent };
 }
 function Footer({ children }: { children: ReactNode }) {
+  useLocale();
   const insets = useSafeAreaInsets();
   return (
     <View style={[css.footer, { paddingBottom: Math.max(16, insets.bottom) }]}>
@@ -203,6 +207,7 @@ function Footer({ children }: { children: ReactNode }) {
   );
 }
 function RunningIndicator() {
+  useLocale();
   const rotation = useRef(new Animated.Value(0)).current;
   useFocusEffect(
     useCallback(() => {
@@ -223,7 +228,7 @@ function RunningIndicator() {
   return (
     <Animated.View
       accessible
-      accessibilityLabel="Running"
+      accessibilityLabel={t("app.running")}
       style={{ transform: [{ rotate: rotation.interpolate({
         inputRange: [0, 1], outputRange: ["0deg", "360deg"],
       }) }] }}
@@ -233,6 +238,7 @@ function RunningIndicator() {
   );
 }
 function SessionRow({ item }: { item: CatalogSessionProjection }) {
+  useLocale();
   const nav = useNavigation<Nav>();
   return (
     <Row
@@ -243,7 +249,7 @@ function SessionRow({ item }: { item: CatalogSessionProjection }) {
         ) : item.runtime?.read_state?.unread ? (
           <View
             accessible
-            accessibilityLabel="Unread"
+            accessibilityLabel={t("app.unread")}
             style={{
               width: 7,
               height: 7,
@@ -263,6 +269,7 @@ function SessionRow({ item }: { item: CatalogSessionProjection }) {
   );
 }
 export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
+  const locale = useLocale();
   const insets = useSafeAreaInsets();
   const daemon = useDaemon();
   const nav = useNavigation<Nav>();
@@ -317,7 +324,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
         load.data?.navigation.pinned,
         load.data?.navigation,
       ),
-    [load.data, query, collapsed, expanded],
+    [load.data, query, collapsed, expanded, locale],
   );
   const layouts = useRef(new Map<string, CatalogLayout>());
   const offset = useRef(0);
@@ -387,7 +394,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
         <View style={{ paddingLeft: (item.depth ?? 2) * 18 }}>
           <Action
             secondary
-            label={item.expanded ? "Show less" : `Show ${item.remaining} more`}
+            label={item.expanded ? t("conversationTimeline.showLess") : t("mobile.showValueMore", {p0: item.remaining})}
             onPress={() => {
               animateLayout();
               setExpanded((previous) => {
@@ -405,7 +412,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
       return (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${item.open ? "Collapse" : "Expand"} ${item.title}`}
+          accessibilityLabel={`${item.open ? t("common.collapse") : t("common.expand")} ${item.title}`}
           accessibilityState={{ expanded: item.open }}
           onPress={() => toggle(item.key)}
           style={[
@@ -439,7 +446,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${item.open ? "Collapse" : "Expand"} ${title}`}
+          accessibilityLabel={`${item.open ? t("common.collapse") : t("common.expand")} ${title}`}
           accessibilityState={{ expanded: item.open }}
           onLongPress={() =>
             nav.navigate(project ? "Project" : "Workspace", {
@@ -447,7 +454,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
               title,
             })
           }
-          accessibilityHint="Long press to manage"
+          accessibilityHint={t("mobile.longPressManage")}
           onPress={() => toggle(item.key)}
           style={[
             css.line,
@@ -469,7 +476,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
         </Pressable>
         <IconButton
           icon={project ? Ellipsis : SquarePen}
-          label={project ? `Manage ${title}` : `New session in ${title}`}
+          label={project ? t("mobile.manageValue", {p0: title}) : t("app.newSessionIn", {p0: title})}
           onPress={() =>
             project
               ? nav.navigate("Project", { id: item.value.id, title })
@@ -508,8 +515,8 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
               <View style={[css.toolbar, { gap: 8 }]}>
                 <View style={{ flex: 1 }}>
                   <TextInput
-                    accessibilityLabel="Search sessions and projects"
-                    placeholder="Search sessions and projects"
+                    accessibilityLabel={t("mobile.searchSessionsAndProjects")}
+                    placeholder={t("mobile.searchSessionsAndProjects")}
                     placeholderTextColor="#898989"
                     value={query}
                     onChangeText={setQuery}
@@ -527,7 +534,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
                 </View>
                 <IconButton
                   icon={Ellipsis}
-                  label="More options"
+                  label={t("mobile.moreOptions")}
                   disabled={action.busy}
                   onPress={() => setPanel("menu")}
                 />
@@ -537,7 +544,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
           }
           ListEmptyComponent={
             <Notice
-              text={load.loading ? "Loading…" : "No sessions or projects."}
+              text={load.loading ? t("markdownImage.loading") : t("mobile.noSessionsOrProjects")}
             />
           }
         />
@@ -578,10 +585,10 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
           >
             <View style={css.toolbar}>
               <Text style={css.title}>
-                {panel === "project" ? "New project" : "More"}
+                {panel === "project" ? t("searchPalette.newProject") : "More"}
               </Text>
               <Action
-                label="Done"
+                label={t("subagentPanel.done")}
                 secondary
                 disabled={action.busy}
                 onPress={() => setPanel(null)}
@@ -590,13 +597,13 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
             {panel === "project" ? (
               <>
                 <TextField
-                  label="Project name"
+                  label={t("app.projectName")}
                   value={name}
                   onChangeText={setName}
                 />
                 <Notice text={action.error} error />
                 <Action
-                  label="Create project"
+                  label={t("app.createProject")}
                   disabled={action.busy || !name.trim()}
                   onPress={() =>
                     void action.run(async () => {
@@ -615,11 +622,11 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
             ) : (
               <>
                 <Row
-                  title="New project"
+                  title={t("searchPalette.newProject")}
                   onPress={action.busy ? undefined : () => setPanel("project")}
                 />
                 <Row
-                  title="Files"
+                  title={t("mobile.files")}
                   onPress={
                     action.busy
                       ? undefined
@@ -630,7 +637,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
                   }
                 />
                 <Row
-                  title="Channels"
+                  title={t("app.channels")}
                   onPress={
                     action.busy
                       ? undefined
@@ -641,7 +648,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
                   }
                 />
                 <Row
-                  title="Settings"
+                  title={t("hostShell.settings")}
                   onPress={
                     action.busy
                       ? undefined
@@ -652,7 +659,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
                   }
                 />
                 <Action
-                  label={action.busy ? "Syncing…" : "Sync Codex sessions"}
+                  label={action.busy ? t("settingsPage.syncing") : t("mobile.syncCodexSessions")}
                   secondary
                   disabled={action.busy}
                   onPress={() =>
@@ -681,12 +688,13 @@ function SourceOptions({
   value?: CatalogWorkspaceSourceInput;
   onChange: (value?: CatalogWorkspaceSourceInput) => void;
 }) {
+  useLocale();
   return (
     <View>
       <View style={css.line}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Source details: ${source.canonical_path}`}
+          accessibilityLabel={t("mobile.sourceDetailsValue", {p0: source.canonical_path})}
           onPress={() => Alert.alert("Source", source.canonical_path)}
           style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
         >
@@ -695,7 +703,7 @@ function SourceOptions({
           </Text>
         </Pressable>
         <Switch
-          accessibilityLabel={`Include ${source.canonical_path}`}
+          accessibilityLabel={t("mobile.includeValue", {p0: source.canonical_path})}
           value={!!value}
           onValueChange={(checked) =>
             onChange(
@@ -715,14 +723,14 @@ function SourceOptions({
         (source.kind === "git" ? (
           <>
             <TextField
-              label="Base ref (optional)"
+              label={t("mobile.baseRefOptional")}
               value={value.base_ref ?? ""}
               onChangeText={(v) =>
                 onChange({ ...value, base_ref: v || undefined })
               }
             />
             <TextField
-              label="Branch name (optional)"
+              label={t("mobile.branchNameOptional")}
               value={value.branch_name ?? ""}
               onChangeText={(v) =>
                 onChange({ ...value, branch_name: v || undefined })
@@ -745,17 +753,18 @@ function ModeSelector({
   value: FolderSourceMode;
   onChange: (mode: FolderSourceMode) => void;
 }) {
+  useLocale();
   return (
     <View>
       {(["reference", "copy", "direct"] as const).map((mode) => (
         <Action
           key={mode}
-          label={`${value === mode ? "Selected: " : ""}${mode}`}
+          label={`${value === mode ? t("mobile.selected") : ""}${mode}`}
           secondary
           onPress={() => onChange(mode)}
         />
       ))}
-      <Notice text="Reference links the original folder; copy creates a workspace copy; direct uses the original folder." />
+      <Notice text={t("mobile.referenceLinksTheOriginalFolderCopyCreatesAWorkspaceCopyDirectUsesTheOriginalFolder")} />
     </View>
   );
 }
@@ -768,6 +777,7 @@ function WorkspaceForm({
   close: () => void;
   created: (id: string, title: string) => void;
 }) {
+  useLocale();
   const daemon = useDaemon();
   const mutation = useMutation();
   const [title, setTitle] = useState("");
@@ -797,20 +807,20 @@ function WorkspaceForm({
         )}
         ListHeaderComponent={
           <>
-            <Text style={css.title}>New workspace</Text>
+            <Text style={css.title}>{t("app.newWorkspace")}</Text>
             <TextField
-              label="Workspace title"
+              label={t("mobile.workspaceTitle")}
               value={title}
               onChangeText={setTitle}
             />
-            <Notice text="Choose sources to include, or create an empty workspace." />
+            <Notice text={t("mobile.chooseSourcesToIncludeOrCreateAnEmptyWorkspace")} />
           </>
         }
         ListFooterComponent={
           <>
             <Notice text={mutation.error} error />
             <Action
-              label="Create workspace"
+              label={t("app.createWorkspace")}
               disabled={mutation.busy || !title.trim()}
               onPress={() =>
                 void mutation.run(async () => {
@@ -825,7 +835,7 @@ function WorkspaceForm({
               }
             />
             <Action
-              label="Cancel"
+              label={t("app.cancel")}
               secondary
               disabled={mutation.busy}
               onPress={close}
@@ -837,6 +847,7 @@ function WorkspaceForm({
   );
 }
 export function ProjectScreen() {
+  useLocale();
   const { params } = useRoute<RouteProp<Routes, "Project">>();
   const daemon = useDaemon();
   const nav = useNavigation<Nav>();
@@ -866,7 +877,7 @@ export function ProjectScreen() {
         renderItem={({ item }) => (
           <Row
             title={item.title}
-            subtitle={item.status === "ready" ? undefined : item.status}
+            subtitle={item.status === "ready" ? undefined : stateLabel(item.status)}
             onPress={() =>
               nav.navigate("Workspace", { id: item.id, title: item.title })
             }
@@ -875,9 +886,9 @@ export function ProjectScreen() {
         ListHeaderComponent={
           <>
             <View style={css.toolbar}>
-              <Text style={css.muted}>Workspaces</Text>
+              <Text style={css.muted}>{t("app.workspaces")}</Text>
               <Action
-                label="Manage"
+                label={t("settingsPage.manage")}
                 secondary
                 onPress={() => {
                   setName(load.data?.project.name ?? params.title);
@@ -889,12 +900,12 @@ export function ProjectScreen() {
           </>
         }
         ListEmptyComponent={
-          <Notice text={load.loading ? "Loading…" : "No workspaces yet."} />
+          <Notice text={load.loading ? t("markdownImage.loading") : t("mobile.noWorkspacesYet")} />
         }
       />
       <Footer>
         <Action
-          label="New workspace"
+          label={t("app.newWorkspace")}
           disabled={!load.data || action.busy}
           onPress={() => setPanel("create")}
         />
@@ -922,16 +933,16 @@ export function ProjectScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={css.toolbar}>
-                <Text style={css.title}>Project</Text>
+                <Text style={css.title}>{t("app.project")}</Text>
                 <Action
-                  label="Done"
+                  label={t("subagentPanel.done")}
                   secondary
                   disabled={action.busy}
                   onPress={() => setPanel(null)}
                 />
               </View>
               <Row
-                title="Project sources"
+                title={t("mobile.projectSources")}
                 onPress={
                   action.busy
                     ? undefined
@@ -945,13 +956,13 @@ export function ProjectScreen() {
                 }
               />
               <TextField
-                label="Project name"
+                label={t("app.projectName")}
                 value={name}
                 onChangeText={setName}
               />
               <Notice text={action.error} error />
               <Action
-                label="Save name"
+                label={t("mobile.saveName")}
                 secondary
                 disabled={action.busy || !name.trim()}
                 onPress={() =>
@@ -985,6 +996,7 @@ function AttachSourceForm({
   close: () => void;
   attached: () => void;
 }) {
+  useLocale();
   const daemon = useDaemon();
   const mutation = useMutation();
   const [selected, setSelected] = useState<CatalogWorkspaceSourceInput>();
@@ -1001,14 +1013,14 @@ function AttachSourceForm({
         data={available}
         keyExtractor={(source) => source.id}
         ListHeaderComponent={
-          <Text style={css.title}>Add workspace source</Text>
+          <Text style={css.title}>{t("mobile.addWorkspaceSource")}</Text>
         }
         ListEmptyComponent={
           <Notice
             text={
               load.loading
-                ? "Loading sources…"
-                : "No unused sources. Add a source to the project first."
+                ? t("mobile.loadingSources")
+                : t("mobile.noUnusedSourcesAddASourceToTheProjectFirst")
             }
           />
         }
@@ -1023,7 +1035,7 @@ function AttachSourceForm({
           <>
             <Notice text={load.error || mutation.error} error />
             <Action
-              label="Add selected source"
+              label={t("mobile.addSelectedSource")}
               disabled={mutation.busy || !selected}
               onPress={() =>
                 void mutation.run(async () => {
@@ -1035,7 +1047,7 @@ function AttachSourceForm({
               }
             />
             <Action
-              label="Cancel"
+              label={t("app.cancel")}
               secondary
               disabled={mutation.busy}
               onPress={close}
@@ -1047,6 +1059,7 @@ function AttachSourceForm({
   );
 }
 export function WorkspaceScreen() {
+  useLocale();
   const { params } = useRoute<RouteProp<Routes, "Workspace">>();
   const daemon = useDaemon();
   const nav = useNavigation<Nav>();
@@ -1074,16 +1087,15 @@ export function WorkspaceScreen() {
       if (daemon.signal.aborted || !action.isCurrent()) return;
       if (preview.dirty_worktree_paths.length)
         throw new Error(
-          "Commit or discard changes before archiving:\n" +
-            preview.dirty_worktree_paths.join("\n"),
+          t("mobile.archiveDirty", { paths: preview.dirty_worktree_paths.join("\n") }),
         );
       Alert.alert(
-        "Archive workspace?",
-        `${preview.workspace_title}\n${preview.root_path}\n${preview.worktree_paths.length} worktrees\n${preview.dirty_worktree_paths.length ? "Uncommitted changes:\n" + preview.dirty_worktree_paths.join("\n") : "No dirty worktrees reported."}`,
+        t("app.archiveWorkspace"),
+        t("mobile.archiveSummary", { title: preview.workspace_title, path: preview.root_path, count: preview.worktree_paths.length, changes: t("mobile.noDirtyWorktreesReported") }),
         [
-          { text: "Cancel", style: "cancel" },
+          { text: t("app.cancel"), style: "cancel" },
           {
-            text: "Archive",
+            text: t("app.archive"),
             style: "destructive",
             onPress: () =>
               void action.run(async () => {
@@ -1112,8 +1124,8 @@ export function WorkspaceScreen() {
                 load.data?.navigation.pinned.some(
                   (p) => p.kind === "workspace" && p.id === params.id,
                 )
-                  ? "Unpin workspace"
-                  : "Pin workspace"
+                  ? t("app.unpinWorkspace")
+                  : t("app.pinWorkspace")
               }
               disabled={action.busy || !load.data}
               onPress={() =>
@@ -1131,12 +1143,12 @@ export function WorkspaceScreen() {
             <View style={css.toolbar}>
               <Text style={css.muted}>
                 {workspace?.status === "ready"
-                  ? "Conversations"
-                  : (workspace?.status ?? "Loading…")}
+                  ? t("mobile.conversations")
+                  : (workspace?.status ? stateLabel(workspace.status) : t("markdownImage.loading"))}
               </Text>
               <View style={{ flexDirection: "row" }}>
                 <Action
-                  label="Files"
+                  label={t("mobile.files")}
                   secondary
                   disabled={!workspace?.root_path || action.busy}
                   onPress={() =>
@@ -1144,7 +1156,7 @@ export function WorkspaceScreen() {
                   }
                 />
                 <Action
-                  label="Manage"
+                  label={t("settingsPage.manage")}
                   secondary
                   onPress={() => {
                     setTitle(workspace?.title ?? params.title);
@@ -1161,13 +1173,13 @@ export function WorkspaceScreen() {
         }
         ListEmptyComponent={
           <Notice
-            text={load.loading ? "Loading…" : "No active conversations."}
+            text={load.loading ? t("markdownImage.loading") : t("mobile.noActiveConversations")}
           />
         }
       />
       <Footer>
         <Action
-          label="New session"
+          label={t("app.newSession")}
           disabled={workspace?.status !== "ready" || action.busy}
           onPress={() =>
             nav.navigate("NewSession", {
@@ -1202,9 +1214,9 @@ export function WorkspaceScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={css.toolbar}>
-                <Text style={css.title}>Workspace</Text>
+                <Text style={css.title}>{t("channelsPage.workspace")}</Text>
                 <Action
-                  label="Done"
+                  label={t("subagentPanel.done")}
                   secondary
                   disabled={action.busy}
                   onPress={() => setPanel(null)}
@@ -1213,7 +1225,7 @@ export function WorkspaceScreen() {
               <Text selectable style={css.muted}>
                 {workspace?.root_path}
               </Text>
-              <Section title="Sources">
+              <Section title={t("app.sources")}>
                 {load.data?.sources.map((item) => (
                   <Row
                     key={item.source.id}
@@ -1239,18 +1251,18 @@ export function WorkspaceScreen() {
                 ))}
               </Section>
               <Action
-                label="Add source"
+                label={t("app.addSource2")}
                 secondary
                 disabled={workspace?.status !== "ready" || action.busy}
                 onPress={() => setPanel("add")}
               />
               <TextField
-                label="Workspace name"
+                label={t("app.workspaceName")}
                 value={title}
                 onChangeText={setTitle}
               />
               <Action
-                label="Save name"
+                label={t("mobile.saveName")}
                 secondary
                 disabled={action.busy || !title.trim()}
                 onPress={() =>
@@ -1266,7 +1278,7 @@ export function WorkspaceScreen() {
               />
               {workspace?.status === "error" && (
                 <Action
-                  label="Retry provisioning"
+                  label={t("mobile.retryProvisioning")}
                   secondary
                   disabled={action.busy}
                   onPress={() =>
@@ -1278,7 +1290,7 @@ export function WorkspaceScreen() {
                 />
               )}
               <Action
-                label="Review archive"
+                label={t("mobile.reviewArchive")}
                 danger
                 secondary
                 disabled={
@@ -1297,6 +1309,7 @@ export function WorkspaceScreen() {
   );
 }
 export function SourcesScreen() {
+  useLocale();
   const { params } = useRoute<RouteProp<Routes, "Sources">>();
   const daemon = useDaemon();
   const nav = useNavigation<Nav>();
@@ -1320,7 +1333,7 @@ export function SourcesScreen() {
       ListHeaderComponent={
         <>
           <Action
-            label="Add source"
+            label={t("app.addSource2")}
             disabled={action.busy}
             onPress={() =>
               nav.navigate("SourcePicker", { projectId: params.projectId })
@@ -1329,7 +1342,7 @@ export function SourcesScreen() {
           <Notice text={load.error || action.error} error />
         </>
       }
-      ListEmptyComponent={<Notice text="No project sources." />}
+      ListEmptyComponent={<Notice text={t("mobile.noProjectSources")} />}
       renderItem={({ item }) => (
         <Section title={item.kind}>
           <Row
@@ -1340,17 +1353,17 @@ export function SourcesScreen() {
             {item.canonical_path}
           </Text>
           <Action
-            label="Remove from project"
+            label={t("mobile.removeFromProject")}
             danger
             disabled={action.busy}
             onPress={() =>
               Alert.alert(
-                "Remove source?",
-                `Remove ${item.canonical_path} from this project? Existing workspace bindings and files are preserved.`,
+                t("mobile.removeSource"),
+                t("mobile.removeValueFromThisProjectExistingWorkspaceBindingsAndFilesArePreserved", {p0: item.canonical_path}),
                 [
-                  { text: "Cancel", style: "cancel" },
+                  { text: t("app.cancel"), style: "cancel" },
                   {
-                    text: "Remove",
+                    text: t("favoriteModelSettings.remove"),
                     style: "destructive",
                     onPress: () =>
                       void action.run(async () => {
@@ -1368,6 +1381,7 @@ export function SourcesScreen() {
   );
 }
 export function SourcePickerScreen() {
+  useLocale();
   const { params } = useRoute<RouteProp<Routes, "SourcePicker">>();
   const daemon = useDaemon();
   const nav = useNavigation<Nav>();
@@ -1406,7 +1420,7 @@ export function SourcePickerScreen() {
       ListHeaderComponent={
         <>
           <TextField
-            label="Directory on daemon"
+            label={t("mobile.directoryOnDaemon")}
             value={path}
             onChangeText={(value) => {
               pathRevision.current++;
@@ -1415,20 +1429,20 @@ export function SourcePickerScreen() {
             }}
           />
           <Action
-            label="Browse"
+            label={t("mobile.browse")}
             disabled={action.busy}
             onPress={() => browse(path)}
           />
           {listing?.parentPath && (
             <Action
-              label="Parent directory"
+              label={t("directoryBrowser.parentDirectory")}
               secondary
               disabled={action.busy}
               onPress={() => browse(listing.parentPath!)}
             />
           )}
           <Action
-            label="Inspect selected directory"
+            label={t("mobile.inspectSelectedDirectory")}
             disabled={action.busy || !path.trim()}
             onPress={() => {
               const target = path;
@@ -1454,7 +1468,7 @@ export function SourcePickerScreen() {
                 <ModeSelector value={mode} onChange={setMode} />
               )}
               <Action
-                label="Add inspected source"
+                label={t("mobile.addInspectedSource")}
                 disabled={action.busy}
                 onPress={() =>
                   void action.run(async () => {
@@ -1472,7 +1486,7 @@ export function SourcePickerScreen() {
           )}
           <Notice text={action.error} error />
           {listing?.truncated && (
-            <Notice text="Directory listing truncated. Enter a more specific path." />
+            <Notice text={t("mobile.directoryListingTruncatedEnterAMoreSpecificPath")} />
           )}
         </>
       }

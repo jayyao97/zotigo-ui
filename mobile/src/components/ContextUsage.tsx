@@ -1,3 +1,5 @@
+import { useLocale } from "../platform/i18n";
+import { t } from "@zotigo/shared/i18n/index";
 import { Pressable, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { colors } from "./ui";
@@ -10,6 +12,7 @@ export function ContextUsage({
   window: number;
   onPress: () => void;
 }) {
+  useLocale();
   const ratio = window > 0 ? Math.max(0, tokens / window) : 0;
   const color =
     ratio >= 0.9 ? colors.danger : ratio >= 0.75 ? "#ffb454" : colors.accent;
@@ -17,7 +20,7 @@ export function ContextUsage({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Context usage ${Math.round(ratio * 100)}%`}
+      accessibilityLabel={t("mobile.contextUsageValue", {p0: Math.round(ratio * 100)})}
       onPress={onPress}
       style={{
         minWidth: 44,

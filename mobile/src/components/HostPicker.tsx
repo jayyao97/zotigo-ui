@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -17,6 +19,7 @@ export function HostPicker({
   onAdd: () => void;
   onConnect: (client: DaemonClient) => void;
 }) {
+  useLocale();
   const [list, setList] = useState<Host[]>([]);
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState<string>();
@@ -99,7 +102,7 @@ export function HostPicker({
               <Pressable
                 key={host.id}
                 accessibilityRole="button"
-                accessibilityLabel={`Switch device: ${host.name}`}
+                accessibilityLabel={t("mobile.switchDeviceValue", {p0: host.name})}
                 accessibilityState={{ selected, disabled: !!connecting }}
                 disabled={!!connecting}
                 onPress={() => void select(host)}
@@ -125,14 +128,14 @@ export function HostPicker({
                     fontSize: 15,
                   }}
                 >
-                  {connecting === host.id ? "Connecting…" : host.name}
+                  {connecting === host.id ? t("webApp.connecting") : host.name}
                 </Text>
               </Pressable>
             );
           })}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Add device"
+            accessibilityLabel={t("mobile.addDevice")}
             onPress={onAdd}
             style={{
               flexDirection: "row",
@@ -144,8 +147,7 @@ export function HostPicker({
           >
             <Plus size={18} color={colors.muted} />
             <Text style={{ color: colors.muted, fontSize: 14 }}>
-              Add device
-            </Text>
+              {t("mobile.addDevice")}</Text>
           </Pressable>
         </ScrollView>
       </View>

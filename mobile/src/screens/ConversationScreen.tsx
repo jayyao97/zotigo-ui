@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { KeyboardFrameView } from "../components/KeyboardFrameView";
 import { canAcknowledgeSession } from "@zotigo/shared/sessionReadState";
 import { DraftImages } from "../components/DraftImages";
@@ -134,6 +136,7 @@ type TimelineRow =
     }
   | { kind: "activity"; key: string; label: string; open: boolean };
 export function ConversationScreen() {
+  useLocale();
   return (
     <DiagramProvider>
       <ImagePreviewProvider>
@@ -144,6 +147,7 @@ export function ConversationScreen() {
 }
 
 function ConversationContent() {
+  const locale = useLocale();
   const animateLayout = useLayoutTransition();
   const client = useDaemon(),
     route = useRoute<RouteProp<Routes, "Conversation">>(),
@@ -178,8 +182,8 @@ function ConversationContent() {
     if (!lock.current) nav.dispatch(data.action);
     else
       Alert.alert(
-        "Please wait",
-        "Your request and draft are still being saved.",
+        t("mobile.pleaseWait"),
+        t("mobile.yourRequestAndDraftAreStillBeingSaved"),
       );
   });
   const [options, setOptions] = useState(false);
@@ -354,7 +358,7 @@ function ConversationContent() {
         draftTimer.current = undefined;
         void composer.write(draftRef.current).catch((e) => {
           if (alive.current)
-            setError("Draft could not be saved: " + errorText(e));
+            setError(t("mobile.draftSaveFailed", { error: errorText(e) }));
         });
       }, 300);
     },
@@ -472,7 +476,7 @@ function ConversationContent() {
       await persisted;
     } catch (e) {
       if (!alive.current) return;
-      setPromptPreviews(items => items.map(item => item.id === promptId ? { ...item, delivery: { state: "failed", error: "Delivery not confirmed. Retry uses the same request ID." } } : item));
+      setPromptPreviews(items => items.map(item => item.id === promptId ? { ...item, delivery: { state: "failed", error: t("mobile.deliveryUnknown") } } : item));
       // Validation is definitely rejected; network/5xx remains uncertain and retains the same id.
       if (
         e instanceof ApiError &&
@@ -493,7 +497,7 @@ function ConversationContent() {
         [404, 405].includes(e.status)
       )
         throw new Error(
-          "This daemon does not support queued messages yet. Update the daemon or switch to Steer.",
+          t("mobile.thisDaemonDoesNotSupportQueuedMessagesYetUpdateTheDaemonOrSwitchToSteer"),
         );
       throw e;
     }
@@ -593,7 +597,7 @@ function ConversationContent() {
           label:
             group.kind === "tools"
               ? historicalToolSummary(group.items)
-              : "Thinking",
+              : t("app.thinking"),
           open,
         },
         ...(open
@@ -607,6 +611,7 @@ function ConversationContent() {
       ];
     });
   }, [
+    locale,
     ordered,
     state.items,
     state.session?.agent,
@@ -844,12 +849,12 @@ function ConversationContent() {
         </Text>
         <IconButton
           icon={Search}
-          label="Search conversation"
+          label={t("conversationFind.searchConversation")}
           onPress={() => setHistory({})}
         />
         <IconButton
           icon={Ellipsis}
-          label="Conversation details"
+          label={t("mobile.conversationDetails")}
           onPress={() => {
             setOptionPane("session");
             setOptions(true);
@@ -862,7 +867,7 @@ function ConversationContent() {
           <Notice text={state.error} error />
           {!!state.error && (
             <Action
-              label="Reconnect"
+              label={t("mobile.reconnect")}
               secondary
               disabled={busy}
               onPress={() => {
@@ -986,8 +991,8 @@ function ConversationContent() {
             <Notice
               text={
                 state.status === "loading"
-                  ? "Loading conversation…"
-                  : "Start a conversation in this workspace."
+                  ? t("mobile.loadingConversation")
+                  : t("mobile.startAConversationInThisWorkspace")
               }
             />
           </View>
@@ -1000,7 +1005,7 @@ function ConversationContent() {
           <View style={{ borderRadius: 22, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }}>
           <IconButton
             icon={ArrowDown}
-            label="Jump to latest"
+            label={t("mobile.jumpToLatest")}
             onPress={scrollToBottom}
           />
           </View>
@@ -1039,7 +1044,7 @@ function ConversationContent() {
                 >
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`Edit reference ${index + 1}`}
+                    accessibilityLabel={t("mobile.editReferenceValue", {p0: index + 1})}
                     disabled={busy || !!saved.attempt}
                     style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
                     onPress={() => setEditingReference(reference.id)}
@@ -1055,7 +1060,7 @@ function ConversationContent() {
                   </Pressable>
                   <IconButton
                     icon={X}
-                    label={`Remove reference ${index + 1}`}
+                    label={t("mobile.removeReferenceValue", {p0: index + 1})}
                     disabled={busy || !!saved.attempt}
                     onPress={() =>
                       update({
@@ -1128,18 +1133,18 @@ function ConversationContent() {
           >
             <IconButton
               icon={Plus}
-              label="More composer actions"
+              label={t("attachmentMenu.moreComposerActions")}
               disabled={!canSend || !!saved.attempt}
               onPress={() => setAttachmentMenu(true)}
             />
             <IconButton
               icon={AccessIcon}
-              label="Permissions"
+              label={t("channelsPage.permissions")}
               outlined
               hint={
                 state.session?.approval_policy === "bypass_permissions"
-                  ? "Full access"
-                  : "Auto"
+                  ? t("channelsPage.fullAccess")
+                  : t("channelsPage.auto")
               }
               color={
                 state.session?.approval_policy === "bypass_permissions"
@@ -1155,7 +1160,7 @@ function ConversationContent() {
             <IconButton
               icon={Gauge}
               outlined
-              label="Model and reasoning"
+              label={t("mobile.modelAndReasoning")}
               onPress={() => {
                 Keyboard.dismiss();
                 setOptionPane("model");
@@ -1182,7 +1187,7 @@ function ConversationContent() {
               <IconButton
                 filled
                 icon={Square}
-                label="Stop response"
+                label={t("mobile.stopResponse")}
                 disabled={busy || !state.session?.live}
                 onPress={() => void run(() => client.pause(id, turn))}
               />
@@ -1190,7 +1195,7 @@ function ConversationContent() {
               <IconButton
                 icon={ArrowUp}
                 filled
-                label={busy ? "Working…" : saved.attempt ? "Retry" : "Send"}
+                label={busy ? t("confirmActionDialog.working") : saved.attempt ? t("app.retry2") : t("mobile.send")}
                 disabled={
                   !canSend ||
                   (!draft.text.trim() &&
@@ -1205,18 +1210,18 @@ function ConversationContent() {
         </View>
         {saved.attempt && !busy && (
           <Action
-            label="Discard pending submission"
+            label={t("mobile.discardPendingSubmission")}
             danger
             secondary
             disabled={busy}
             onPress={() =>
               Alert.alert(
-                "Discard pending submission?",
-                "The daemon may already have received it. Check history before sending again.",
+                t("mobile.discardPendingSubmission"),
+                t("mobile.theDaemonMayAlreadyHaveReceivedItCheckHistoryBeforeSendingAgain"),
                 [
-                  { text: "Cancel", style: "cancel" },
+                  { text: t("app.cancel"), style: "cancel" },
                   {
-                    text: "Discard",
+                    text: t("mobile.discard"),
                     style: "destructive",
                     onPress: () =>
                       void run(async () => {
@@ -1244,12 +1249,12 @@ function ConversationContent() {
         disabled={busy}
         title={
           optionPane === "model"
-            ? "Model and reasoning"
+            ? t("mobile.modelAndReasoning")
             : optionPane === "policy"
-              ? "Permissions"
+              ? t("channelsPage.permissions")
               : optionPane === "context"
-                ? "Context usage"
-                : "Conversation"
+                ? t("mobile.contextUsage")
+                : t("app.conversation")
         }
         onClose={() => {
           setOptions(false);
@@ -1258,7 +1263,7 @@ function ConversationContent() {
         <Notice text={error} error />
         {optionPane === "model" && (
           <Notice
-            text={`Current: ${[state.session?.model || state.session?.profile || "Unavailable", state.session?.reasoning_effort].filter(Boolean).join(" · ")}`}
+            text={t("mobile.currentValue", {p0: [state.session?.model || state.session?.profile || t("directoryBrowser.unavailable"), state.session?.reasoning_effort].filter(Boolean).join(" · ")})}
           />
         )}
         <>
@@ -1270,19 +1275,17 @@ function ConversationContent() {
                     state.session.context_usage.window) *
                     100,
                 )}
-                % used
-              </Text>
+                {t("contextUsageBadge.used")}</Text>
               <Text style={styles.muted}>
                 {["estimate", "provider_estimate"].includes(state.session.context_usage.source ?? "") ? "≈ " : ""}{state.session.context_usage.tokens.toLocaleString()} /{" "}
-                {state.session.context_usage.window.toLocaleString()} tokens
-                {state.session.context_usage.tokens > state.session.context_usage.window ? " · over limit" : ""}
+                {state.session.context_usage.window.toLocaleString()} {t("mobile.tokens")}{state.session.context_usage.tokens > state.session.context_usage.window ? t("contextUsageBadge.overLimit") : ""}
                 {state.session.context_usage.cached ? " · last known usage" : ""}
                 {state.session.context_usage.source === "provider_estimate" ? " · API input + estimated additions" : state.session.context_usage.source === "estimate" ? " · Local estimate" : ""}
               </Text>
             </View>
           )}
           {optionPane === "session" && (
-            <Section title="Session">
+            <Section title={t("app.session")}>
               <Text selectable style={styles.muted}>
                 {id}
                 {"\n"}
@@ -1290,12 +1293,12 @@ function ConversationContent() {
                 {"\n"}
                 {state.session?.state} ·{" "}
                 {state.session?.context_usage
-                  ? `${state.session.context_usage.tokens} / ${state.session.context_usage.window} tokens`
+                  ? t("mobile.valueValueTokens", {p0: state.session.context_usage.tokens, p1: state.session.context_usage.window})
                   : ""}
               </Text>
-              <TextField label="Title" value={title} onChangeText={setTitle} />
+              <TextField label={t("mobile.title")} value={title} onChangeText={setTitle} />
               <Action
-                label="Rename"
+                label={t("app.rename")}
                 disabled={busy || !title.trim()}
                 onPress={() =>
                   void run(async () => {
@@ -1305,7 +1308,7 @@ function ConversationContent() {
                 }
               />
               <Action
-                label={pinned ? "Unpin session" : "Pin session"}
+                label={pinned ? t("app.unpinSession") : t("app.pinSession")}
                 disabled={busy || pinned === null}
                 onPress={() =>
                   void run(async () => {
@@ -1315,7 +1318,7 @@ function ConversationContent() {
                 }
               />
               <Action
-                label="Files"
+                label={t("mobile.files")}
                 disabled={busy}
                 onPress={() => {
                   setOptions(false);
@@ -1329,8 +1332,8 @@ function ConversationContent() {
                 <Action
                   label={
                     state.session.read_state.unread
-                      ? "Mark as read"
-                      : "Mark as unread"
+                      ? t("app.markAsRead")
+                      : t("app.markAsUnread")
                   }
                   disabled={busy}
                   onPress={() =>
@@ -1345,12 +1348,12 @@ function ConversationContent() {
                 />
               )}
               <Action
-                label="Resume runtime"
+                label={t("mobile.resumeRuntime")}
                 disabled={busy || state.session?.live}
                 onPress={() => void run(() => client.start(id))}
               />
               <Action
-                label="Fork session"
+                label={t("app.forkSession")}
                 disabled={busy || !!turn}
                 onPress={() =>
                   void run(async () => {
@@ -1371,7 +1374,7 @@ function ConversationContent() {
             <>
               {error && (
                 <Action
-                  label="Retry loading models"
+                  label={t("mobile.retryLoadingModels")}
                   disabled={busy}
                   onPress={() => {
                     setError("");
@@ -1385,7 +1388,7 @@ function ConversationContent() {
               <Notice
                 text={
                   turn
-                    ? "Stop the current response before changing models."
+                    ? t("mobile.stopTheCurrentResponseBeforeChangingModels")
                     : ""
                 }
               />
@@ -1393,7 +1396,7 @@ function ConversationContent() {
                 key={`${state.session.agent}:${state.session.model}:${state.session.profile}:${state.session.reasoning_effort}`}
                 agents={
                   agents?.agents ?? [
-                    { id: "zotigo", label: "Zotigo", models: [] },
+                    { id: "zotigo", label: t("app.zotigo"), models: [] },
                   ]
                 }
                 profiles={profiles}
@@ -1448,12 +1451,12 @@ function ConversationContent() {
                 disabled={busy}
                 onPress={() =>
                   Alert.alert(
-                    "Bypass approvals?",
-                    "Tools may run without asking you.",
+                    t("mobile.bypassApprovals"),
+                    t("mobile.toolsMayRunWithoutAskingYou"),
                     [
-                      { text: "Cancel", style: "cancel" },
+                      { text: t("app.cancel"), style: "cancel" },
                       {
-                        text: "Enable",
+                        text: t("mobile.enable"),
                         style: "destructive",
                         onPress: () =>
                           void run(
@@ -1469,17 +1472,17 @@ function ConversationContent() {
           )}
           {optionPane === "session" && (
             <Action
-              label="Archive session"
+              label={t("mobile.archiveSession")}
               danger
               disabled={busy}
               onPress={() =>
                 Alert.alert(
-                  "Archive session?",
-                  "This hides the session from active lists. History is retained.",
+                  t("mobile.archiveSession"),
+                  t("mobile.thisHidesTheSessionFromActiveListsHistoryIsRetained"),
                   [
-                    { text: "Cancel", style: "cancel" },
+                    { text: t("app.cancel"), style: "cancel" },
                     {
-                      text: "Archive",
+                      text: t("app.archive"),
                       style: "destructive",
                       onPress: () =>
                         void run(
@@ -1499,7 +1502,7 @@ function ConversationContent() {
       </BottomSheet>
       <BottomSheet
         visible={attachmentMenu}
-        title="Composer actions"
+        title={t("attachmentMenu.composerActions")}
         onClose={() => setAttachmentMenu(false)}
         onDismiss={() => {
           const open = pendingAttachmentPicker.current;
@@ -1508,7 +1511,7 @@ function ConversationContent() {
         }}
       >
         <ChoiceRow
-          title="Photo library"
+          title={t("mobile.photoLibrary")}
           disabled={
             !canSend ||
             draft.images.length + (draft.files?.length ?? 0) >=
@@ -1519,7 +1522,7 @@ function ConversationContent() {
           }}
         />
         <ChoiceRow
-          title="Choose file"
+          title={t("mobile.chooseFile")}
           disabled={
             !canSend ||
             draft.images.length + (draft.files?.length ?? 0) >=
@@ -1538,8 +1541,8 @@ function ConversationContent() {
         <ChoiceRow
           title={
             defaultSendMode.mode === "steering"
-              ? "Queue for next turn"
-              : "Send as steering"
+              ? t("app.queueForNextTurn")
+              : t("app.sendAsSteering")
           }
           disabled={
             !canSend ||

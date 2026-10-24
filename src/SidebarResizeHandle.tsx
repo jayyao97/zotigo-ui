@@ -1,10 +1,8 @@
+import { sidebarMinWidth as minWidth, sidebarDefaultWidth as defaultWidth, sidebarMaxWidth as maxWidth, clampSidebarWidth } from "../shared/sidebarWidth";
 import { useLocale } from "./i18n";
 import { t } from "../shared/i18n/index";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
-const minWidth = 240;
-const defaultWidth = 320;
-const maxWidth = 480;
 const storageKey = "zotigo:sidebar-width";
 
 // Read before the frame's first render so CSS cannot animate from the default.
@@ -37,7 +35,7 @@ export function SidebarResizeHandle({ frameRef, width, onWidth, onResizing }: {
     return () => observer.disconnect();
   }, [frameRef]);
   function update(value: number) {
-    const next = Math.round(Math.max(minWidth, Math.min(limit, value)));
+    const next = clampSidebarWidth(value, limit + 420);
     latestWidth.current = next;
     onWidth(next);
   }

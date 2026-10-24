@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import { useImagePreview } from "./ImagePreviewProvider";
@@ -14,6 +16,7 @@ export function MessageImage({
   sessionId: string;
   thumbnail?: boolean;
 }) {
+  useLocale();
   const client = useDaemon();
   const [uri, setUri] = useState("");
   const [error, setError] = useState("");
@@ -61,15 +64,15 @@ export function MessageImage({
       {uri && !error ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Preview image"
+          accessibilityLabel={t("mobile.previewImage")}
           disabled={!openImage}
           onPress={() => openImage?.(uri)}
         >
           <Image
             source={{ uri }}
             resizeMode="contain"
-            accessibilityLabel="Conversation attachment"
-            onError={() => setError("Image could not be loaded.")}
+            accessibilityLabel={t("mobile.conversationAttachment")}
+            onError={() => setError(t("imagePreview.imageCouldNotBeLoaded"))}
             style={{
               width: "100%",
               height: thumbnail ? 80 : Math.min(400, width / ratio),
@@ -81,10 +84,10 @@ export function MessageImage({
       ) : error || confirm ? (
         <View>
           <Text style={styles.muted}>
-            {confirm ? "Image outside workspace" : error}
+            {confirm ? t("mobile.imageOutsideWorkspace") : error}
           </Text>
           <Action
-            label={confirm ? "Allow image preview" : "Retry image"}
+            label={confirm ? t("mobile.allowImagePreview") : t("mobile.retryImage")}
             onPress={() => {
               if (confirm) setApproved(url);
               else setAttempt((n) => n + 1);
@@ -97,7 +100,7 @@ export function MessageImage({
         >
           <ActivityIndicator
             color={colors.muted}
-            accessibilityLabel="Loading image"
+            accessibilityLabel={t("mobile.loadingImage")}
           />
         </View>
       )}

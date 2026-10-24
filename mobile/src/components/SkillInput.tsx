@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { TextInput } from "react-native";
 import { colors, styles } from "./ui";
 export type SkillInputProps = {
@@ -15,15 +17,16 @@ export function SkillInput({
   onChange,
   onCaret,
 }: SkillInputProps) {
+  useLocale();
   return (
     <TextInput
-      accessibilityLabel="Message"
+      accessibilityLabel={t("mobile.message")}
       multiline
       editable={editable}
       value={value}
       onChangeText={onChange}
       onSelectionChange={(event) => onCaret(event.nativeEvent.selection.end)}
-      placeholder="Ask Zotigo…"
+      placeholder={t("mobile.askZotigo")}
       placeholderTextColor={colors.muted}
       style={[
         styles.input,

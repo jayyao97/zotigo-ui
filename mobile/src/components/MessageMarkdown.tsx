@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { highlightParts } from "../core/conversationSearch";
 import { SelectableText } from "./SelectableText";
 import { selectionRuns, type SelectionAction } from "../core/selectionRuns";
@@ -48,6 +50,7 @@ const Code = memo(function Code({
   language?: string;
   highlight?: string;
 }) {
+  useLocale();
   const [wrap, setWrap] = useState(false);
   const openDiagram = useDiagram();
   const preview = text.slice(0, 20000);
@@ -99,7 +102,7 @@ const Code = memo(function Code({
           paddingLeft: 12,
         }}
       >
-        <Text style={styles.muted}>{language || "Code"}</Text>
+        <Text style={styles.muted}>{language || t("markdownCodeBlock.code")}</Text>
         <View style={{ flexDirection: "row" }}>
           <Action
             label={wrap ? "Unwrap" : "Wrap"}
@@ -108,10 +111,10 @@ const Code = memo(function Code({
           />
           <IconButton
             icon={Copy}
-            label="Copy code"
+            label={t("markdownCodeBlock.copyCode")}
             onPress={() =>
               void Clipboard.setStringAsync(text).catch((e) =>
-                Alert.alert("Copy failed", errorText(e)),
+                Alert.alert(t("mobile.copyFailed"), errorText(e)),
               )
             }
           />
@@ -119,7 +122,7 @@ const Code = memo(function Code({
       </View>
       {mermaid && (
         <Action
-          label="View diagram"
+          label={t("mobile.viewDiagram")}
           disabled={text.length > 50000 || !openDiagram}
           onPress={() => openDiagram?.(text)}
         />
@@ -136,8 +139,7 @@ const Code = memo(function Code({
       )}
       {text.length > preview.length && (
         <Text style={{ ...styles.muted, padding: 12 }}>
-          Preview limited to 20,000 characters. Copy includes the complete code.
-        </Text>
+          {t("mobile.previewLimitedTo20000CharactersCopyIncludesTheCompleteCode")}</Text>
       )}
     </View>
   );
@@ -159,6 +161,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   onSelection?: (action: SelectionAction) => void;
   onSelecting?: () => void;
 }) {
+  useLocale();
   const ast = useMemo(() => {
     let nodes: ASTNode[] = [];
     parser(
@@ -309,6 +312,7 @@ function MarkdownTable({
   columns: number;
   children: ReactNode;
 }) {
+  useLocale();
   const [width, setWidth] = useState(0);
   return (
     <ScrollView

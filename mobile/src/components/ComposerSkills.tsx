@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useEffect, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import {
@@ -25,6 +27,7 @@ export function ComposerSkills({
   disabled: boolean;
   onChange: (text: string, skills: string[]) => void;
 }) {
+  useLocale();
   const client = useDaemon();
   const command = skillCommandQuery(text.slice(0, caret));
   const [skills, setSkills] = useState<SkillSummary[]>();
@@ -75,9 +78,9 @@ export function ComposerSkills({
               justifyContent: "space-between",
             }}
           >
-            <Text style={styles.muted}>Skills</Text>
+            <Text style={styles.muted}>{t("conversationComposer.skills")}</Text>
             <Action
-              label="Dismiss"
+              label={t("app.dismiss")}
               secondary
               onPress={() => setDismissed(true)}
             />
@@ -86,22 +89,22 @@ export function ComposerSkills({
             <>
               <Notice text={error} error />
               <Action
-                label="Retry skills"
+                label={t("mobile.retrySkills")}
                 onPress={() => setRetry((value) => value + 1)}
               />
             </>
           ) : !skills ? (
-            <Notice text="Loading skills…" />
+            <Notice text={t("conversationComposer.loadingSkills")} />
           ) : (
             <FlatList
               keyboardShouldPersistTaps="handled"
               data={matches}
               keyExtractor={(skill) => skill.name}
-              ListEmptyComponent={<Notice text="No matching skills" />}
+              ListEmptyComponent={<Notice text={t("conversationComposer.noMatchingSkills")} />}
               renderItem={({ item }) => (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Select skill ${item.name}`}
+                  accessibilityLabel={t("mobile.selectSkillValue", {p0: item.name})}
                   onPress={() => {
                     if (command)
                       onChange(

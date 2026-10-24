@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useCallback, useRef, useState } from "react";
 import { AppState, FlatList, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -22,6 +24,7 @@ export function InputQueue({
   pending?: DisplayItem[];
   onReconciled?: (ids: string[]) => void;
 }) {
+  useLocale();
   const client = useDaemon();
   const reconciliation = useRef({ pending, onReconciled });
   reconciliation.current = { pending, onReconciled };
@@ -100,8 +103,8 @@ export function InputQueue({
   function images(item: QueuedInput, indices: number[], removable = false) {
     return <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{indices.map(index => (
       <View key={index}>
-        {item.images?.[index]?.url ? <MessageImage url={item.images[index].url!} sessionId={sessionId} thumbnail /> : <Text style={styles.muted}>Image {index + 1} · Preview unavailable</Text>}
-        {removable && <IconButton icon={X} label={`Remove image ${index + 1}`} disabled={busy} onPress={() => setEditing(value => value && ({ ...value, imageIndices: value.imageIndices.filter(i => i !== index) }))} />}
+        {item.images?.[index]?.url ? <MessageImage url={item.images[index].url!} sessionId={sessionId} thumbnail /> : <Text style={styles.muted}>{t("markdownImage.image")}{index + 1} {t("inputQueue.previewUnavailable")}</Text>}
+        {removable && <IconButton icon={X} label={t("inputQueue.removeImage", {p0: index + 1})} disabled={busy} onPress={() => setEditing(value => value && ({ ...value, imageIndices: value.imageIndices.filter(i => i !== index) }))} />}
       </View>
     ))}</View>;
   }
@@ -111,11 +114,11 @@ export function InputQueue({
     <View style={{ gap: 4 }}>
       <View style={{ flexDirection: "row", alignItems: "center" }}>
         <Text style={[styles.muted, { flex: 1 }]}>
-          Next turn · {items.length + previews.length}
+          {t("mobile.nextTurnundefined")}{items.length + previews.length}
         </Text>
         {items.some((item) => item.state === "paused") && (
           <Action
-            label="Resume queue"
+            label={t("inputQueue.resumeQueue")}
             disabled={busy}
             onPress={() => void change(() => client.resumeQueue(sessionId))}
           />
@@ -124,8 +127,8 @@ export function InputQueue({
       <FlatList
         style={{ maxHeight: 144 }}
         ListFooterComponent={<View>{previews.map(item => <View key={item.id}>
-        <Text numberOfLines={2} style={styles.text}>{item.content?.map(part => part.text ?? "").join("") || "Image attachment"}</Text>
-        <Text style={styles.muted}>{item.queueConfirmed ? "Queued" : item.delivery?.state === "sending" ? "Adding to queue…" : "Could not confirm queue submission. Retry uses the same request ID."}</Text>
+        <Text numberOfLines={2} style={styles.text}>{item.content?.map(part => part.text ?? "").join("") || t("inputQueue.imageAttachment")}</Text>
+        <Text style={styles.muted}>{item.queueConfirmed ? t("inputQueue.queued") : item.delivery?.state === "sending" ? t("inputQueue.addingToQueue") : t("mobile.couldNotConfirmQueueSubmissionRetryUsesTheSameRequestID")}</Text>
       </View>)}</View>}
         data={items}
         keyExtractor={(item) => item.id}
@@ -134,21 +137,21 @@ export function InputQueue({
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={{ flex: 1 }}>
             <Text numberOfLines={2} style={[styles.muted, { flex: 1 }]}>
-              {item.text || "Image attachment"}
+              {item.text || t("inputQueue.imageAttachment")}
               {item.state !== "queued" ? ` · ${item.state}` : ""}
             </Text>
             {images(item, (item.images ?? []).map((_, index) => index))}
             </View>
-            <IconButton icon={ArrowUp} label="Send now" disabled={busy || !item.editable} onPress={() => void change(() => client.sendQueuedInput(sessionId, item.id, item.revision))} />
+            <IconButton icon={ArrowUp} label={t("inputQueue.sendNow")} disabled={busy || !item.editable} onPress={() => void change(() => client.sendQueuedInput(sessionId, item.id, item.revision))} />
             <IconButton
               icon={Pencil}
-              label="Edit queued message"
+              label={t("inputQueue.editQueuedMessage")}
               disabled={busy || !item.editable}
               onPress={() => setEditing({ item, text: item.text ?? "", imageIndices: (item.images ?? []).map((_, index) => index) })}
             />
             <IconButton
               icon={Trash}
-              label="Delete queued message"
+              label={t("inputQueue.deleteQueuedMessage")}
               disabled={busy || !item.editable}
               onPress={() =>
                 void change(() =>
@@ -163,12 +166,12 @@ export function InputQueue({
       <Notice text={error || pollError} error />
       <BottomSheet
         visible={!!editing}
-        title="Edit queued message"
+        title={t("inputQueue.editQueuedMessage")}
         disabled={busy}
         onClose={() => setEditing(undefined)}
       >
         <TextField
-          label="Queued message"
+          label={t("mobile.queuedMessage")}
           multiline
           value={editing?.text ?? ""}
           onChangeText={(text) =>
@@ -176,10 +179,10 @@ export function InputQueue({
           }
         />
         {editing && images(editing.item, editing.imageIndices, editing.item.image_editing_supported === true)}
-        {!!editing?.item.images?.length && !editing.item.image_editing_supported && <Text style={styles.muted}>Images will be kept. Update the connected daemon to remove them.</Text>}
+        {!!editing?.item.images?.length && !editing.item.image_editing_supported && <Text style={styles.muted}>{t("inputQueue.imagesWillBeKeptUpdateTheConnectedDaemon")}</Text>}
         <Notice text={error || pollError} error />
         <Action
-          label="Save"
+          label={t("app.save")}
           disabled={
             busy ||
             !editing ||

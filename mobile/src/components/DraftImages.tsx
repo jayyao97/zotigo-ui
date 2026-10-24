@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useState } from "react";
 import { Image, Pressable, View } from "react-native";
 import X from "lucide-react-native/icons/x";
@@ -13,6 +15,7 @@ export function DraftImages({
   disabled: boolean;
   onRemove: (index: number) => void;
 }) {
+  useLocale();
   const [preview, setPreview] = useState<MessageImageInput>();
   return (
     <>
@@ -21,7 +24,7 @@ export function DraftImages({
           <View key={index}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Preview draft image ${index + 1}`}
+              accessibilityLabel={t("mobile.previewDraftImageValue", {p0: index + 1})}
               onPress={() => setPreview(image)}
             >
               <Image
@@ -33,7 +36,7 @@ export function DraftImages({
             </Pressable>
             <IconButton
               icon={X}
-              label={`Remove image ${index + 1}`}
+              label={t("inputQueue.removeImage", {p0: index + 1})}
               disabled={disabled}
               onPress={() => onRemove(index)}
             />
@@ -42,7 +45,7 @@ export function DraftImages({
       </View>
       <BottomSheet
         visible={!!preview}
-        title="Image preview"
+        title={t("mobile.imagePreview")}
         onClose={() => setPreview(undefined)}
       >
         {preview && (

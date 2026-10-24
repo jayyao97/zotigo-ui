@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import type { LucideIcon } from "lucide-react-native";
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import {
@@ -37,6 +39,7 @@ export function BottomSheet({
   scroll?: boolean;
   anchorRef?: RefObject<View | null>;
 }) {
+  useLocale();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const wide = width >= 768;
@@ -84,7 +87,7 @@ export function BottomSheet({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Dismiss sheet"
+          accessibilityLabel={t("mobile.dismissSheet")}
           disabled={disabled}
           onPress={onClose}
           style={{
@@ -140,7 +143,7 @@ export function BottomSheet({
             </Text>
             <IconButton
               icon={X}
-              label="Close sheet"
+              label={t("mobile.closeSheet")}
               disabled={disabled}
               onPress={onClose}
             />
@@ -186,6 +189,7 @@ export function ChoiceRow({
   disabled?: boolean;
   icon?: LucideIcon;
 }) {
+  useLocale();
   return (
     <Pressable
       accessibilityRole={selected === undefined ? "button" : "radio"}
