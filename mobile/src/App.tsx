@@ -1,3 +1,8 @@
+import { clampSidebarWidth } from "@zotigo/shared/sidebarWidth";
+import { useSidebarWidth } from "./platform/preferences";
+import { SidebarResizeHandle } from "./components/SidebarResizeHandle";
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale, initializeLanguage } from "./platform/i18n";
 import { Text, View, useWindowDimensions } from "react-native";
 import Plus from "lucide-react-native/icons/plus";
 import Settings from "lucide-react-native/icons/settings";
@@ -60,6 +65,7 @@ function TabletSidebar({
   client: DaemonClient | null;
   connect: (client: DaemonClient) => void;
 }) {
+  useLocale();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<Routes>>();
   // Sidebar destinations replace the detail stack so existing unsaved-edit
@@ -112,6 +118,7 @@ function SidebarContent({
   client: DaemonClient | null;
   connect: (client: DaemonClient) => void;
 }) {
+  useLocale();
   const navigation = useNavigation<NativeStackNavigationProp<Routes>>();
   const state = navigation.getState();
   const canSwitchHost =
@@ -126,7 +133,7 @@ function SidebarContent({
     <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
       <Action
         label={
-          client ? `Switch device · ${client.connection.name}` : "Select device"
+          client ? t("mobile.switchDeviceValue", {p0: client.connection.name}) : t("mobile.selectDevice")
         }
         secondary
         onPress={() => navigation.popTo("Home")}
@@ -145,7 +152,7 @@ function SidebarContent({
       >
         <IconButton
           icon={Settings}
-          label="Settings"
+          label={t("hostShell.settings")}
           onPress={() => navigation.navigate("Settings")}
         />
         <Text
@@ -156,11 +163,10 @@ function SidebarContent({
             fontWeight: "600",
           }}
         >
-          Zotigo
-        </Text>
+          {t("app.zotigo")}</Text>
         <IconButton
           icon={Plus}
-          label="New session"
+          label={t("app.newSession")}
           disabled={!client}
           onPress={() => navigation.navigate("NewSession", {})}
         />
@@ -171,7 +177,7 @@ function SidebarContent({
         <>
           {picker}
           <Screen>
-            <Notice text="Select a device to connect." />
+            <Notice text={t("mobile.selectADeviceToConnect")} />
           </Screen>
         </>
       )}
@@ -179,9 +185,15 @@ function SidebarContent({
   );
 }
 export default function App() {
+  useEffect(() => { void initializeLanguage().catch(() => {}); }, []);
+  useLocale();
   const { width } = useWindowDimensions();
   const wide = width >= 768;
   const [client, setClient] = useState<DaemonClient | null>(null);
+  const sidebar = useSidebarWidth(client?.connection.id ?? "no-device");
+  const [dragWidth, setDragWidth] = useState<number>();
+  useEffect(() => setDragWidth(undefined), [client?.connection.id, sidebar.width]);
+  const sidebarWidth = clampSidebarWidth(dragWidth ?? sidebar.width, width);
   useEffect(() => () => client?.dispose(), [client]);
   const connect = (next: DaemonClient) => {
     client?.dispose();
@@ -201,7 +213,8 @@ export default function App() {
                 <View
                   key="sidebar"
                   style={{
-                    width: wide ? 280 : 0,
+                    width: wide ? sidebarWidth : 0,
+                    zIndex: 1,
                     display: wide ? "flex" : "none",
                   }}
                 >
@@ -214,6 +227,9 @@ export default function App() {
                       <TabletSidebar client={client} connect={connect} />
                     </NavigationContext.Provider>
                   )}
+                  {wide && <SidebarResizeHandle key={client?.connection.id ?? "no-device"}
+                    width={sidebarWidth} frameWidth={width} onWidth={setDragWidth}
+                    onCommit={value => { void sidebar.setWidth(value); }} />}
                 </View>
                 <View key="detail" style={{ flex: 1, minWidth: 0 }}>
                   {children}
@@ -231,12 +247,12 @@ export default function App() {
             <Stack.Screen
               name="Home"
               options={({ navigation }) => ({
-                title: wide ? "Conversations" : "Zotigo",
+                title: wide ? t("mobile.conversations") : t("app.zotigo"),
                 headerLeft: () =>
                   wide ? null : (
                     <IconButton
                       icon={Settings}
-                      label="Settings"
+                      label={t("hostShell.settings")}
                       onPress={() => navigation.navigate("Settings")}
                     />
                   ),
@@ -244,7 +260,7 @@ export default function App() {
                   wide ? null : (
                     <IconButton
                       icon={Plus}
-                      label="New session"
+                      label={t("app.newSession")}
                       disabled={!client}
                       onPress={() => navigation.navigate("NewSession", {})}
                     />
@@ -270,12 +286,11 @@ export default function App() {
                           marginBottom: 12,
                         }}
                       >
-                        Your conversations
-                      </Text>
-                      <Notice text="Select a conversation from the sidebar, or start a new one." />
+                        {t("mobile.yourConversations")}</Text>
+                      <Notice text={t("mobile.selectAConversationFromTheSidebarOrStartANewOne")} />
                       <IconButton
                         icon={Plus}
-                        label="New conversation"
+                        label={t("mobile.newConversation")}
                         disabled={!client}
                         onPress={() => navigation.navigate("NewSession", {})}
                       />
@@ -294,7 +309,7 @@ export default function App() {
                   <View style={{ flex: 1 }}>
                     {picker}
                     <Screen>
-                      <Notice text="Your projects and conversations will appear here. Select a device to connect." />
+                      <Notice text={t("mobile.yourProjectsAndConversationsWillAppearHereSelectADeviceToConnect")} />
                     </Screen>
                   </View>
                 );
@@ -313,12 +328,12 @@ export default function App() {
             <Stack.Screen
               name="Sources"
               component={SourcesScreen}
-              options={{ title: "Project sources" }}
+              options={{ title: t("mobile.projectSources") }}
             />
             <Stack.Screen
               name="SourcePicker"
               component={SourcePickerScreen}
-              options={{ title: "Add source" }}
+              options={{ title: t("app.addSource2") }}
             />
             <Stack.Screen
               name="Conversation"
@@ -329,48 +344,48 @@ export default function App() {
             <Stack.Screen
               name="NewSession"
               component={NewSessionScreen}
-              options={{ title: "New session" }}
+              options={{ title: t("app.newSession") }}
             />
             <Stack.Screen
               name="Files"
               component={FilesScreen}
-              options={{ title: "Files" }}
+              options={{ title: t("mobile.files") }}
             />
-            <Stack.Screen name="Settings" options={{ title: "Settings" }}>
+            <Stack.Screen name="Settings" options={{ title: t("hostShell.settings") }}>
               {() => <SettingsScreen connected={!!client} />}
             </Stack.Screen>
             <Stack.Screen
               name="Models"
               component={ModelsScreen}
-              options={{ title: "Models and favorites" }}
+              options={{ title: t("mobile.modelsAndFavorites") }}
             />
             <Stack.Screen
               name="ConversationPreferences"
-              options={{ title: "Conversation" }}
+              options={{ title: t("app.conversation") }}
             >
               {() => <ConversationPreferencesScreen connected={!!client} />}
             </Stack.Screen>
             <Stack.Screen
               name="TranslationPreferences"
               component={TranslationPreferencesScreen}
-              options={{ title: "Translation" }}
+              options={{ title: t("mobile.translation") }}
             />
             <Stack.Screen
               name="RuntimeSettings"
               component={ModelsScreen}
-              options={{ title: "Runtimes and connection" }}
+              options={{ title: t("mobile.runtimesAndConnection") }}
             />
             <Stack.Screen
               name="ModelCatalog"
               component={ModelsScreen}
-              options={{ title: "Codex models" }}
+              options={{ title: t("favoriteModelSettings.codexModels") }}
             />
             <Stack.Screen
               name="Profiles"
               component={ModelsScreen}
-              options={{ title: "Zotigo profiles" }}
+              options={{ title: t("mobile.zotigoProfiles") }}
             />
-            <Stack.Screen name="Devices" options={{ title: "Devices" }}>
+            <Stack.Screen name="Devices" options={{ title: t("mobile.devices") }}>
               {({ route, navigation }) => (
                 <HostsScreen
                   onConnect={connect}
@@ -388,7 +403,7 @@ export default function App() {
             <Stack.Screen
               name="Channels"
               component={ChannelsScreen}
-              options={{ title: "Channels" }}
+              options={{ title: t("app.channels") }}
             />
           </Stack.Navigator>
         </NavigationContainer>

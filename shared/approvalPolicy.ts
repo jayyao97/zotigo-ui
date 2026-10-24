@@ -8,5 +8,5 @@ export function approvalPolicyLabel(policy: ApprovalPolicy | null): string {
 }
 
 export function approvalPolicyDescription(policy: ApprovalPolicy): string {
-  return policy === "auto" ? "Use safety checks and request approval when needed" : "Run tools without safety classification or approval";
+  return policy === "auto" ? t("conversationComposer.useSafetyChecksAndRequestApprovalWhenNeeded") : t("conversationComposer.runToolsWithoutSafetyClassificationOrApproval");
 }

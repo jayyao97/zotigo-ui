@@ -1,3 +1,4 @@
+import { t } from "@zotigo/shared/i18n/index";
 import { orderSidebarItems } from "@zotigo/shared/sidebarOrdering";
 import type {
   CatalogProject,
@@ -163,7 +164,7 @@ export function catalogRows(
     rows.push({
       kind: "heading",
       key: "pinned",
-      title: "Pinned",
+      title: t("app.pinned"),
       open: open("pinned"),
     });
   }
@@ -221,7 +222,7 @@ export function catalogRows(
       result.push({
         kind: "notice",
         key: `${workspaceKey}:empty`,
-        title: "No conversations yet",
+        title: t("mobile.noActiveConversations"),
         depth: depth + 1,
       });
     return result;
@@ -294,7 +295,7 @@ export function catalogRows(
       projectRows.push({
         kind: "notice",
         key: `${key}:empty`,
-        title: "No workspaces yet",
+        title: t("mobile.noWorkspacesYet"),
       });
     for (const workspace of matchingChildren) {
       if (!pinnedWorkspaceIds.has(workspace.id))
@@ -305,7 +306,7 @@ export function catalogRows(
     rows.push({
       kind: "heading",
       key: "projects",
-      title: "Projects",
+      title: t("app.projects"),
       open: open("projects"),
     });
     if (open("projects")) rows.push(...projectRows);
@@ -325,7 +326,7 @@ export function catalogRows(
     rows.push({
       kind: "heading",
       key: "recent",
-      title: "Recent",
+      title: t("searchPalette.recentSessions"),
       open: open("recent"),
     });
     if (open("recent")) addSessions(recent, "recent", false);

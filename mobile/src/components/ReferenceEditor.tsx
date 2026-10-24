@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useState } from "react";
 import { Text } from "react-native";
 import type { ConversationReference } from "../core/conversationReferences";
@@ -14,20 +16,21 @@ export function ReferenceEditor({
   onLocate: () => void;
   onClose: () => void;
 }) {
+  useLocale();
   const [comment, setComment] = useState(reference.comment);
   return (
-    <BottomSheet visible title="Reference" onClose={onClose}>
+    <BottomSheet visible title={t("app.reference")} onClose={onClose}>
       <Text selectable style={styles.text}>
         {reference.text}
       </Text>
       <TextField
-        label="Comment"
+        label={t("mobile.comment")}
         multiline
         value={comment}
         onChangeText={setComment}
       />
-      <Action label="Save comment" onPress={() => onSave(comment)} />
-      <Action secondary label="Show original message" onPress={onLocate} />
+      <Action label={t("mobile.saveComment")} onPress={() => onSave(comment)} />
+      <Action secondary label={t("mobile.showOriginalMessage")} onPress={onLocate} />
     </BottomSheet>
   );
 }

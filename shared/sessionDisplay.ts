@@ -1,4 +1,5 @@
 import { isCompletionTriggerCall } from "./completionTriggerDisplay";
+import { t } from "./i18n/index";
 import type { CommandImageMetadata, DisplayDelta, DisplayItem, DisplaySubagent, DisplayToolCall, DisplayToolResult, SessionCommandResponse, SessionState, ZotigoSession } from "./zotigod";
 import type { DaemonSessionBinding } from "./clientTypes";
 
@@ -721,15 +722,14 @@ export function historicalToolSummary(items: DisplayItem[]): string {
     }
   }
   const labels: string[] = [];
-  const append = (category: string, singular: string, plural: string) => {
+  const keys = {
+    read: "timeline.activity.read", search: "timeline.activity.search",
+    edit: "timeline.activity.edit", command: "timeline.activity.command",
+    subagent: "timeline.activity.subagent", tool: "timeline.activity.tool",
+  } as const;
+  for (const [category, key] of Object.entries(keys)) {
     const count = counts.get(category) ?? 0;
-    if (count > 0) labels.push(`${singular} ${count} ${count === 1 ? plural.replace(/s$/, "") : plural}`);
-  };
-  append("read", "Read", "files");
-  append("search", "Searched", "times");
-  append("edit", "Edited", "files");
-  append("command", "Ran", "commands");
-  append("subagent", "Started", "subagents");
-  append("tool", "Used", "tools");
-  return labels.join(" · ") || "Tool activity";
+    if (count > 0) labels.push(t(key, { count }));
+  }
+  return labels.join(" · ") || t("conversationTimeline.toolActivity");
 }

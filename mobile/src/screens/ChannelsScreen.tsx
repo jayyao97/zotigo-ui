@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
 import {
   connectionPermissions,
@@ -27,6 +29,7 @@ import {
 export function ChannelsScreen({
   navigation,
 }: NativeStackScreenProps<Routes, "Channels">) {
+  useLocale();
   const client = useDaemon();
   const [connections, setConnections] = useState<ChannelConnection[]>([]);
   const [conversations, setConversations] = useState<ChannelConversation[]>([]);
@@ -86,19 +89,19 @@ export function ChannelsScreen({
   const permissionSheet = (
     <BottomSheet
       visible={!!permissionTarget}
-      title="Permissions"
+      title={t("channelsPage.permissions")}
       disabled={busy}
       onClose={() => setPermissionTarget(undefined)}
     >
       <Notice text={error} error />
-      <Notice text="Full access skips tool approval. Changes apply to existing sessions at their next idle turn." />
+      <Notice text={t("mobile.fullAccessSkipsToolApprovalChangesApplyToExistingSessionsAtTheirNextIdleTurn")} />
       {(permissionTarget?.kind === "conversation"
         ? (["", "auto", "bypass_permissions"] as const)
         : (["auto", "bypass_permissions"] as const)
       ).map((policy) => (
         <ChoiceRow
           key={policy}
-          title={policy ? channelPermissionLabel(policy) : "Inherit connection"}
+          title={policy ? channelPermissionLabel(policy) : t("channelsPage.inheritConnection")}
           selected={
             (target?.approval_policy ||
               (permissionTarget?.kind === "connection" ? "auto" : "")) ===
@@ -114,7 +117,7 @@ export function ChannelsScreen({
                 );
                 if (!latest || !policy)
                   throw new Error(
-                    "Connection unavailable. Refresh and try again.",
+                    t("mobile.connectionUnavailableRefreshAndTryAgain"),
                   );
                 await client.updateConnection(
                   latest.id,
@@ -126,7 +129,7 @@ export function ChannelsScreen({
                 );
                 if (!latest)
                   throw new Error(
-                    "Conversation unavailable. Refresh and try again.",
+                    t("mobile.conversationUnavailableRefreshAndTryAgain"),
                   );
                 const saved = await client.updateChannelConversation(
                   latest.id,
@@ -164,7 +167,7 @@ export function ChannelsScreen({
           <View style={{ gap: 12 }}>
             {permissionSheet}
             <Action
-              label="All channel conversations"
+              label={t("mobile.allChannelConversations")}
               secondary
               disabled={busy}
               onPress={() => {
@@ -177,14 +180,14 @@ export function ChannelsScreen({
               {selected.display_name || selected.chat_name || selected.chat_id}
             </Text>
             <Notice
-              text={`${selected.enabled ? "Enabled" : "Disabled"} · ${selected.agent} · ${selected.session_strategy}`}
+              text={`${selected.enabled ? t("channelsPage.enabled") : t("channelsPage.disabled")} · ${selected.agent} · ${selected.session_strategy}`}
             />
             <Row
-              title="Permissions"
+              title={t("channelsPage.permissions")}
               subtitle={
                 selected.approval_policy
                   ? channelPermissionLabel(selected.approval_policy)
-                  : `Inherit connection · ${channelPermissionLabel(connections.find((value) => value.id === selected.connection_id)?.approval_policy)}`
+                  : t("mobile.inheritConnectionValue", {p0: channelPermissionLabel(connections.find((value) => value.id === selected.connection_id)?.approval_policy)})
               }
               onPress={() =>
                 setPermissionTarget({ kind: "conversation", id: selected.id })
@@ -192,22 +195,22 @@ export function ChannelsScreen({
             />
             {selected.session_id ? (
               <Action
-                label="Open linked session"
+                label={t("mobile.openLinkedSession")}
                 onPress={() =>
                   navigation.navigate("Conversation", {
                     id: selected.session_id!,
                     title:
                       selected.display_name ||
                       selected.chat_name ||
-                      "Channel session",
+                      t("mobile.channelSession"),
                   })
                 }
               />
             ) : (
-              <Notice text="No linked session." />
+              <Notice text={t("mobile.noLinkedSession")} />
             )}
             <Action
-              label="Refresh messages"
+              label={t("mobile.refreshMessages")}
               disabled={busy}
               onPress={() => void run(() => open(selected))}
             />
@@ -216,7 +219,7 @@ export function ChannelsScreen({
         }
         ListEmptyComponent={
           !busy && !error ? (
-            <Notice text="No recorded channel messages." />
+            <Notice text={t("mobile.noRecordedChannelMessages")} />
           ) : null
         }
         renderItem={({ item }) => (
@@ -252,38 +255,38 @@ export function ChannelsScreen({
       ListHeaderComponent={
         <View style={{ gap: 12 }}>
           {permissionSheet}
-          <Notice text="View connections, channel messages and linked sessions. Manage channel credentials and routing in Desktop or Web." />
+          <Notice text={t("mobile.viewConnectionsChannelMessagesAndLinkedSessionsManageChannelCredentialsAndRoutingInDesktopOrWeb")} />
           <Action
-            label="Refresh channels"
+            label={t("mobile.refreshChannels")}
             disabled={busy}
             onPress={() => void run(load)}
           />
           {status}
-          <Section title="Connections">
+          <Section title={t("settingsPage.connections")}>
             {connections.map((connection) => (
               <Row
                 key={connection.id}
                 title={connection.name}
-                subtitle={`${connection.enabled ? connection.status : "Disabled"}${connection.last_error ? " · " + connection.last_error : ""} · ${channelPermissionLabel(connection.approval_policy)}`}
+                subtitle={`${connection.enabled ? connection.status : t("channelsPage.disabled")}${connection.last_error ? " · " + connection.last_error : ""} · ${channelPermissionLabel(connection.approval_policy)}`}
                 onPress={() =>
                   setPermissionTarget({ kind: "connection", id: connection.id })
                 }
               />
             ))}
             {!busy && !error && connections.length === 0 && (
-              <Notice text="No channel connections configured." />
+              <Notice text={t("mobile.noChannelConnectionsConfigured")} />
             )}
           </Section>
-          <Text style={styles.muted}>Channel conversations</Text>
+          <Text style={styles.muted}>{t("mobile.channelConversations")}</Text>
         </View>
       }
       ListEmptyComponent={
-        !busy && !error ? <Notice text="No channel conversations." /> : null
+        !busy && !error ? <Notice text={t("mobile.noChannelConversations")} /> : null
       }
       renderItem={({ item }) => (
         <Row
           title={item.display_name || item.chat_name || item.chat_id}
-          subtitle={`${item.chat_type} · ${item.enabled ? item.agent : "Disabled"} · ${connections.find((connection) => connection.id === item.connection_id)?.name ?? item.connection_id}`}
+          subtitle={`${item.chat_type} · ${item.enabled ? item.agent : t("channelsPage.disabled")} · ${connections.find((connection) => connection.id === item.connection_id)?.name ?? item.connection_id}`}
           onPress={busy ? undefined : () => void run(() => open(item))}
         />
       )}

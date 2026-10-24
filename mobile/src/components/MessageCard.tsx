@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { messageTimestamp } from "@zotigo/shared/messageTimestamp";
 import { highlightParts } from "../core/conversationSearch";
 import { parseMarkdownLink } from "@zotigo/shared/markdownLinks";
@@ -61,6 +63,7 @@ function Detail({
   onSelection?: (action: SelectionAction) => void;
   onSelecting?: () => void;
 }) {
+  useLocale();
   const animateLayout = useLayoutTransition();
   const [open, setOpen] = useState(!!highlight);
   const [limit, setLimit] = useState(8000);
@@ -117,7 +120,7 @@ function Detail({
             {command && (
               <IconButton
                 icon={commandExpanded ? ChevronDown : ChevronRight}
-                label={commandExpanded ? "Collapse command" : "Expand command"}
+                label={commandExpanded ? t("conversationTimeline.collapseCommand") : t("conversationTimeline.expandCommand")}
                 onPress={() => {
                   animateLayout();
                   setCommandExpanded(!commandExpanded);
@@ -126,10 +129,10 @@ function Detail({
             )}
             <IconButton
               icon={Copy}
-              label={command ? "Copy command" : "Copy tool result"}
+              label={command ? t("conversationTimeline.copyCommand") : t("conversationTimeline.copyToolResult")}
               onPress={() =>
                 void Clipboard.setStringAsync(command ?? text).catch((e) =>
-                  Alert.alert("Copy failed", errorText(e)),
+                  Alert.alert(t("mobile.copyFailed"), errorText(e)),
                 )
               }
             />
@@ -141,8 +144,8 @@ function Detail({
               accessibilityLabel={
                 command
                   ? commandExpanded
-                    ? "Collapse full command"
-                    : "Expand full command"
+                    ? t("mobile.collapseFullCommand")
+                    : t("conversationTimeline.expandFullCommand")
                   : undefined
               }
               onPress={() => {
@@ -175,10 +178,10 @@ function Detail({
             >
               <IconButton
                 icon={Copy}
-                label="Copy tool result"
+                label={t("conversationTimeline.copyToolResult")}
                 onPress={() =>
                   void Clipboard.setStringAsync(text).catch((e) =>
-                    Alert.alert("Copy failed", errorText(e)),
+                    Alert.alert(t("mobile.copyFailed"), errorText(e)),
                   )
                 }
               />
@@ -234,7 +237,7 @@ function Detail({
           </OutputContainer>
           {text.length > limit && (
             <Action
-              label="Show more"
+              label={t("conversationTimeline.showMore")}
               onPress={() => setLimit((x) => x + 16000)}
             />
           )}
@@ -292,6 +295,7 @@ export const MessageCard = memo(function MessageCard({
   onSelectText?: (selection: SelectionAction & { messageId: string }) => void;
   onSelecting?: () => void;
 }) {
+  useLocale();
   const client = useDaemon();
   const [copied, setCopied] = useState(false);
   function link(href: string) {
@@ -300,19 +304,19 @@ export const MessageCard = memo(function MessageCard({
       if (target.kind === "anchor" && target.anchor.startsWith("message-")) {
         onLocateMessage?.(decodeURIComponent(target.anchor.slice(8)));
       } else if (target.kind === "external") {
-        Alert.alert("Open external link?", target.url, [
-          { text: "Cancel", style: "cancel" },
+        Alert.alert(t("mobile.openExternalLink"), target.url, [
+          { text: t("app.cancel"), style: "cancel" },
           {
             text: "Open",
             onPress: () =>
               void Linking.openURL(target.url).catch((e) =>
-                Alert.alert("Cannot open link", errorText(e)),
+                Alert.alert(t("mobile.cannotOpenLink"), errorText(e)),
               ),
           },
         ]);
       } else if (target.kind === "local") openFile(target.path);
     } catch (e) {
-      Alert.alert("Cannot open link", errorText(e));
+      Alert.alert(t("mobile.cannotOpenLink"), errorText(e));
     }
     return false;
   }
@@ -358,11 +362,11 @@ export const MessageCard = memo(function MessageCard({
       }}
     >
       {item.type === "steering_message" && (
-        <Text style={styles.muted}>Steering</Text>
+        <Text style={styles.muted}>{t("settingsPage.steering")}</Text>
       )}
       {item.subagent && (
         <Text style={[styles.muted, { color: colors.accent }]}>
-          {item.subagent.name ?? "Subagent"} ·{" "}
+          {item.subagent.name ?? t("app.subagent")} ·{" "}
           {item.subagent.status ?? "working"}
         </Text>
       )}
@@ -410,7 +414,7 @@ export const MessageCard = memo(function MessageCard({
               />
             </View>
           )}
-          {item.delivery && <Text style={styles.muted}>{item.delivery.state === "sending" ? "Sending…" : item.delivery.error}</Text>}
+          {item.delivery && <Text style={styles.muted}>{item.delivery.state === "sending" ? t("conversationTimeline.sending") : item.delivery.error}</Text>}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             {timestamp && (
               <Text accessibilityLabel={timestamp.full} style={styles.muted}>
@@ -420,11 +424,11 @@ export const MessageCard = memo(function MessageCard({
             {!!userText && (
               <IconButton
                 icon={copied ? Check : Copy}
-                label={copied ? "Copied message" : "Copy message"}
+                label={copied ? t("mobile.copiedMessage") : t("conversationTimeline.copyMessage")}
                 onPress={() =>
                   void Clipboard.setStringAsync(userText)
                     .then(() => setCopied(true))
-                    .catch((e) => Alert.alert("Copy failed", errorText(e)))
+                    .catch((e) => Alert.alert(t("mobile.copyFailed"), errorText(e)))
                 }
               />
             )}
@@ -467,7 +471,7 @@ export const MessageCard = memo(function MessageCard({
           ) : (
             <Detail
               key={index}
-              label="reasoning"
+              label={t("mobile.reasoning")}
               allowReference={false}
               text={p.text ?? ""}
               onSelection={(selection) =>
@@ -558,16 +562,16 @@ export const MessageCard = memo(function MessageCard({
         <View style={{ flexDirection: "row" }}>
           <IconButton
             icon={copied ? Check : Copy}
-            label={copied ? "Copied" : "Copy response"}
+            label={copied ? t("markdownCodeBlock.copied") : t("conversationTimeline.copyResponse")}
             onPress={() =>
               void Clipboard.setStringAsync(turnAction.text)
                 .then(() => setCopied(true))
-                .catch((e) => Alert.alert("Copy failed", errorText(e)))
+                .catch((e) => Alert.alert(t("mobile.copyFailed"), errorText(e)))
             }
           />
           <IconButton
             icon={GitBranch}
-            label="Fork from this turn"
+            label={t("conversationTimeline.forkFromThisTurn")}
             disabled={forkDisabled}
             onPress={() => onFork?.(turnAction.turnId)}
           />

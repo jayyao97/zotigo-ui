@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useEffect, useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import type { DisplayItem, SessionSearchHit } from "@zotigo/shared/zotigod";
@@ -31,6 +33,7 @@ export function ConversationHistory({
   openFile: (path: string) => void;
   onSelection: (value: SelectionAction & { messageId: string }) => void;
 }) {
+  useLocale();
   const client = useDaemon();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SessionSearchHit[]>([]);
@@ -49,7 +52,7 @@ export function ConversationHistory({
     setBusy(false);
     if (selected || !query.trim()) return () => controller.abort();
     if ([...query].length > 256) {
-      setError("Use up to 256 characters.");
+      setError(t("conversationFind.useUpTo256Characters"));
       return;
     }
     setHits(localSearch(items, query));
@@ -92,7 +95,7 @@ export function ConversationHistory({
           (item) => item.content?.length || item.command?.text,
         );
         const position = rows.findIndex((item) => item.id === selected);
-        if (position < 0) throw new Error("Message is no longer available.");
+        if (position < 0) throw new Error(t("mobile.messageIsNoLongerAvailable"));
         setWindow(rows);
         setIndex(position);
       })
@@ -108,24 +111,24 @@ export function ConversationHistory({
   return (
     <BottomSheet
       visible
-      title={selected ? "Message context" : "Search conversation"}
+      title={selected ? t("mobile.messageContext") : t("conversationFind.searchConversation")}
       onClose={onClose}
       scroll={!!selected}
     >
       {!selected && (
         <TextField
-          label="Search messages"
+          label={t("mobile.searchMessages")}
           value={query}
           onChangeText={setQuery}
           autoFocus
         />
       )}
-      {busy && <Notice text="Loading…" />}
+      {busy && <Notice text={t("markdownImage.loading")} />}
       <Notice text={error} error />
       {!!error && (
-        <Action label="Retry" onPress={() => setRetry((value) => value + 1)} />
+        <Action label={t("app.retry2")} onPress={() => setRetry((value) => value + 1)} />
       )}
-      {truncated && <Notice text="More matches exist. Refine your search." />}
+      {truncated && <Notice text={t("mobile.moreMatchesExistRefineYourSearch")} />}
       {!selected && (
         <FlatList
           style={{ maxHeight: 400 }}
@@ -134,17 +137,17 @@ export function ConversationHistory({
           keyExtractor={(hit) => hit.id}
           ListEmptyComponent={
             !busy && query.trim() && !error ? (
-              <Notice text="No matches" />
+              <Notice text={t("mobile.noMatches")} />
             ) : null
           }
           renderItem={({ item: hit }) => (
             <Row
-              title={`Message ${hit.sequence}`}
+              title={t("mobile.messageValue", {p0: hit.sequence})}
               subtitle={
                 messageText(items.find((item) => item.id === hit.id)).slice(
                   0,
                   150,
-                ) || "Open matching historical message"
+                ) || t("mobile.openMatchingHistoricalMessage")
               }
               onPress={() => setSelected(hit.id)}
             />
@@ -154,7 +157,7 @@ export function ConversationHistory({
       {selected && (
         <Action
           secondary
-          label="Back to search"
+          label={t("mobile.backToSearch")}
           onPress={() => setSelected(undefined)}
         />
       )}
@@ -165,19 +168,19 @@ export function ConversationHistory({
           >
             <Action
               secondary
-              label="Previous message"
+              label={t("mobile.previousMessage")}
               disabled={index === 0}
               onPress={() => setIndex((value) => value - 1)}
             />
             <Action
               secondary
-              label="Next message"
+              label={t("mobile.nextMessage")}
               disabled={index === window.length - 1}
               onPress={() => setIndex((value) => value + 1)}
             />
           </View>
           <Text style={styles.muted}>
-            Message {item.sequence} · {index + 1} / {window.length}
+            {t("mobile.historyPosition", { sequence: item.sequence, index: index + 1, total: window.length })}
           </Text>
           <MessageCard
             key={item.id}

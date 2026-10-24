@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useDaemon } from "../platform/context";
@@ -15,6 +17,7 @@ export function SelectionSheet({
   sessionId: string;
   onClose: () => void;
 }) {
+  useLocale();
   const client = useDaemon();
   const {
     language,
@@ -59,7 +62,7 @@ export function SelectionSheet({
     <BottomSheet
       visible
       title={
-        language === "zh-CN" ? "Chinese translation" : "English translation"
+        language === "zh-CN" ? t("mobile.chineseTranslation") : t("mobile.englishTranslation")
       }
       onClose={onClose}
     >
@@ -67,11 +70,11 @@ export function SelectionSheet({
         {text}
       </Text>
       <Notice text={preferenceError || error} error />
-      {pending && !preferenceError && <Notice text="Translating…" />}
+      {pending && !preferenceError && <Notice text={t("conversationTools.translating")} />}
       {!!error && (
         <Action
           secondary
-          label="Retry translation"
+          label={t("mobile.retryTranslation")}
           onPress={() => setRetry((value) => value + 1)}
         />
       )}

@@ -1,3 +1,5 @@
+import { useLocale } from "../platform/i18n";
+import { t } from "@zotigo/shared/i18n/index";
 import type { LucideIcon } from "lucide-react-native";
 import type { ReactNode } from "react";
 import {
@@ -61,6 +63,7 @@ export const styles = StyleSheet.create({
   section: { gap: 4 },
 });
 export function Screen({ children }: { children: ReactNode }) {
+  useLocale();
   return (
     <ScrollView
       style={styles.screen}
@@ -76,6 +79,7 @@ export function TextField({
   label,
   ...props
 }: TextInputProps & { label: string }) {
+  useLocale();
   return (
     <View style={{ gap: 6 }}>
       <Text style={styles.muted}>{label}</Text>
@@ -107,6 +111,7 @@ export function Action({
   danger?: boolean;
   secondary?: boolean;
 }) {
+  useLocale();
   return (
     <Pressable
       accessibilityRole="button"
@@ -138,6 +143,7 @@ export function Row({
   right?: ReactNode;
   leading?: ReactNode;
 }) {
+  useLocale();
   return (
     <Pressable
       onPress={onPress}
@@ -160,6 +166,7 @@ export function Row({
   );
 }
 export function Notice({ text, error }: { text: string; error?: boolean }) {
+  useLocale();
   return text ? (
     <Text
       accessibilityRole={error ? "alert" : undefined}
@@ -180,6 +187,7 @@ export function Section({
   title: string;
   children: ReactNode;
 }) {
+  useLocale();
   return (
     <View style={styles.section}>
       <Text style={[styles.muted, { fontWeight: "600", marginTop: 8 }]}>
@@ -190,10 +198,11 @@ export function Section({
   );
 }
 export function Loading() {
+  useLocale();
   return <ActivityIndicator color={colors.accent} style={{ padding: 24 }} />;
 }
 export function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
+  return error instanceof Error ? error.message : t("mobile.somethingWentWrong");
 }
 
 export function IconButton({
@@ -215,6 +224,7 @@ export function IconButton({
   color?: string;
   hint?: string;
 }) {
+  useLocale();
   return (
     <Pressable
       accessibilityRole="button"

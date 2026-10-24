@@ -1,3 +1,5 @@
+import { useLocale } from "../platform/i18n";
+import { t } from "@zotigo/shared/i18n/index";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
 import type { DisplayItem } from "@zotigo/shared/zotigod";
@@ -17,6 +19,7 @@ export function TurnStatus({
   paused: boolean;
   terminalAt?: string;
 }) {
+  useLocale();
   const end = items.find(
     (i) =>
       i.sequence > item.sequence &&
@@ -30,12 +33,12 @@ export function TurnStatus({
     return () => clearInterval(timer);
   }, [endedAt, active, paused]);
   const label = endedAt
-    ? `Worked for ${formatElapsed(item.created_at, Date.parse(endedAt))}`
+    ? t("conversationTimeline.workedFor", {p0: formatElapsed(item.created_at, Date.parse(endedAt))})
     : paused && active
-      ? "Waiting for approval"
+      ? t("conversationTimeline.waitingForApproval")
       : !active
-        ? "Stopped"
-        : `Working for ${formatElapsed(item.created_at, now)}`;
+        ? t("conversationTimeline.stopped")
+        : t("mobile.workingForValue", {p0: formatElapsed(item.created_at, now)});
   return (
     <Text
       style={[styles.muted, { paddingHorizontal: 18, paddingVertical: 16 }]}

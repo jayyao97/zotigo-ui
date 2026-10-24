@@ -1,3 +1,4 @@
+import { t } from "@zotigo/shared/i18n/index";
 import { useEffect, useState } from "react";
 import { storage } from "./storage";
 import {
@@ -32,7 +33,7 @@ function usePreference(key: string) {
           }
         })
         .catch(() => {
-          if (active) setError("Could not load preferences.");
+          if (active) setError(t("mobile.couldNotLoadPreferences"));
         });
     };
     const callbacks = listeners.get(key) ?? new Set<() => void>();
@@ -52,7 +53,7 @@ function usePreference(key: string) {
       setValue(next);
       listeners.get(key)?.forEach((read) => read());
     } catch {
-      setError("Could not save preferences. Please try again.");
+      setError(t("mobile.couldNotSavePreferences"));
     } finally {
       setSaving(false);
     }
@@ -106,4 +107,10 @@ export function useSendMode(host: string) {
     mode: pref.value === "queue" ? ("queue" as const) : ("steering" as const),
     setMode: (mode: "queue" | "steering") => pref.save(mode),
   };
+}
+
+export function useSidebarWidth(host: string) {
+  const pref = usePreference(`zotigo:sidebar-width:${host}`);
+  const parsed = pref.value === null ? NaN : Number(pref.value);
+  return { ...pref, width: Number.isFinite(parsed) ? parsed : 320, setWidth: (width: number) => pref.save(String(width)) };
 }

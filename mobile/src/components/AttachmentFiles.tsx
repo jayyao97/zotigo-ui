@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useState } from "react";
 import { FlatList, Image, Text, View } from "react-native";
 import FileIcon from "lucide-react-native/icons/file";
@@ -16,6 +18,7 @@ export function AttachmentFiles({
   disabled: boolean;
   onRemove: (index: number) => void;
 }) {
+  useLocale();
   const [preview, setPreview] = useState<DraftFile>();
   if (!files.length) return null;
   const mediaType =
@@ -48,13 +51,13 @@ export function AttachmentFiles({
             <View style={{ flex: 1 }}>
               <Row
                 title={item.name}
-                subtitle={`${Math.ceil(decodedBase64Size(item.data_base64) / 1024)} KiB · ${item.path ? "Uploaded" : "Ready to upload"}`}
+                subtitle={`${Math.ceil(decodedBase64Size(item.data_base64) / 1024)} KiB · ${item.path ? t("mobile.uploaded") : t("mobile.readyToUpload")}`}
                 onPress={() => setPreview(item)}
               />
             </View>
             <IconButton
               icon={X}
-              label={`Remove ${item.name}`}
+              label={t("app.remove", {p0: item.name})}
               disabled={disabled}
               onPress={() => onRemove(index)}
             />
@@ -83,7 +86,7 @@ export function AttachmentFiles({
               {text}
             </Text>
           ) : (
-            <Notice text="This file can be attached; a preview is not available." />
+            <Notice text={t("mobile.thisFileCanBeAttachedAPreviewIsNotAvailable")} />
           ))}
       </BottomSheet>
     </>

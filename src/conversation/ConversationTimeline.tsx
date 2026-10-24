@@ -1,6 +1,6 @@
 import { CompletionTriggerNavigation, createdCompletionTrigger } from "./CompletionTriggerNavigation";
 import { useLocale } from "../i18n";
-import { getLocale, t } from "../../shared/i18n/index";
+import { t } from "../../shared/i18n/index";
 import { messageTimestamp } from "./messageTimestamp";
 import { rehypeSkillTokens } from "../rehypeSkillTokens";
 import { skillTokens } from "../../shared/skillCommands";

@@ -1,3 +1,6 @@
+import { stateLabel } from "@zotigo/shared/i18n/display";
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale, changeLanguage } from "../platform/i18n";
 import { useSendMode } from "../platform/preferences";
 import { RuntimePicker } from "../components/RuntimePicker";
 import {
@@ -37,6 +40,7 @@ import {
 } from "../components/ui";
 
 function SettingsPage({ children }: { children: ReactNode }) {
+  useLocale();
   return (
     <ScrollView
       style={styles.screen}
@@ -51,6 +55,7 @@ function SettingsPage({ children }: { children: ReactNode }) {
   );
 }
 function SettingsGroup({ children }: { children: ReactNode }) {
+  useLocale();
   return (
     <View
       style={{
@@ -66,14 +71,16 @@ function SettingsGroup({ children }: { children: ReactNode }) {
 }
 const arrow = <ChevronRight size={18} color={colors.muted} />;
 export function SettingsScreen({ connected = true }: { connected?: boolean }) {
+  useLocale();
   return (
     <SettingsPage>
-      <Section title="Devices">
+      <LanguageSettings />
+      <Section title={t("mobile.devices")}>
         <SettingsGroup>
           <DeviceSettingsRow connected={connected} />
         </SettingsGroup>
       </Section>
-      <Section title="Preferences">
+      <Section title={t("mobile.preferences")}>
         <SettingsGroup>
           {connected && <ConnectedPreferenceRows />}
           {!connected && <ConversationSettingsRow />}
@@ -84,13 +91,14 @@ export function SettingsScreen({ connected = true }: { connected?: boolean }) {
   );
 }
 function DeviceSettingsRow({ connected }: { connected: boolean }) {
+  useLocale();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
   return connected ? (
     <ConnectedDeviceRow />
   ) : (
     <Row
-      title="Devices"
-      subtitle="Add, edit and test connections"
+      title={t("mobile.devices")}
+      subtitle={t("mobile.addEditAndTestConnections")}
       leading={<Monitor size={20} color={colors.muted} />}
       right={arrow}
       onPress={() => nav.navigate("Devices")}
@@ -98,12 +106,13 @@ function DeviceSettingsRow({ connected }: { connected: boolean }) {
   );
 }
 function ConnectedDeviceRow() {
+  useLocale();
   const client = useDaemon();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
   return (
     <Row
       title={client.connection.name}
-      subtitle="Current device · Manage connections"
+      subtitle={t("mobile.currentDeviceManageConnections")}
       leading={<Monitor size={20} color={colors.muted} />}
       right={arrow}
       onPress={() => nav.navigate("Devices")}
@@ -111,10 +120,11 @@ function ConnectedDeviceRow() {
   );
 }
 function ConversationSettingsRow() {
+  useLocale();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
   return (
     <Row
-      title="Conversation"
+      title={t("app.conversation")}
       leading={<MessageCircle size={20} color={colors.muted} />}
       right={arrow}
       onPress={() => nav.navigate("ConversationPreferences")}
@@ -122,6 +132,7 @@ function ConversationSettingsRow() {
   );
 }
 function ConnectedPreferenceRows() {
+  useLocale();
   const client = useDaemon();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
   const favorites = useModelFavorites(client.connection.id);
@@ -130,23 +141,23 @@ function ConnectedPreferenceRows() {
   return (
     <>
       <Row
-        title="Models and favorites"
+        title={t("mobile.modelsAndFavorites")}
         leading={<Gauge size={20} color={colors.muted} />}
         right={
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={styles.muted}>{favorites.items.length} favorites</Text>
+            <Text style={styles.muted}>{t("mobile.favoriteCount", { count: favorites.items.length })}</Text>
             {arrow}
           </View>
         }
         onPress={() => nav.navigate("Models")}
       />
       <Row
-        title="Conversation"
+        title={t("app.conversation")}
         leading={<MessageCircle size={20} color={colors.muted} />}
         right={
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Text style={styles.muted}>
-              {send.mode === "queue" ? "Queue" : "Steer"}
+              {send.mode === "queue" ? t("mobile.queue") : t("mobile.steer")}
             </Text>
             {arrow}
           </View>
@@ -154,12 +165,12 @@ function ConnectedPreferenceRows() {
         onPress={() => nav.navigate("ConversationPreferences")}
       />
       <Row
-        title="Translation"
+        title={t("mobile.translation")}
         leading={<Languages size={20} color={colors.muted} />}
         right={
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Text style={styles.muted}>
-              {translation.language === "zh-CN" ? "Chinese" : "English"}
+              {translation.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")}
             </Text>
             {arrow}
           </View>
@@ -170,19 +181,20 @@ function ConnectedPreferenceRows() {
   );
 }
 function DeviceActions() {
+  useLocale();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
   return (
-    <Section title="Current device">
+    <Section title={t("mobile.currentDevice")}>
       <SettingsGroup>
         <SessionSync />
         <Row
-          title="Runtimes and connection"
+          title={t("mobile.runtimesAndConnection")}
           leading={<Terminal size={20} color={colors.muted} />}
           right={arrow}
           onPress={() => nav.navigate("RuntimeSettings")}
         />
       </SettingsGroup>
-      <Notice text="Model favorites, translation and sending preferences are saved per device." />
+      <Notice text={t("mobile.modelFavoritesTranslationAndSendingPreferencesAreSavedPerDevice")} />
     </Section>
   );
 }
@@ -191,24 +203,25 @@ export function ConversationPreferencesScreen({
 }: {
   connected?: boolean;
 }) {
+  useLocale();
   const thinking = useThinkingDisplay();
   const [showThinking, setShowThinking] = useState(false);
   return (
     <SettingsPage>
       <SettingsGroup>
-        <Section title="Conversation">
+        <Section title={t("app.conversation")}>
           <Row
-            title="Thinking display"
+            title={t("settingsPage.thinkingDisplay")}
             subtitle={
               {
-                expanded: "Always expanded",
-                collapsed: "Always collapsed",
-                latest: "Collapse on next Thinking",
+                expanded: t("settingsPage.alwaysExpanded"),
+                collapsed: t("settingsPage.alwaysCollapsed"),
+                latest: t("settingsPage.collapseOnNextThinking"),
               }[thinking.mode]
             }
             onPress={() => setShowThinking(true)}
           />
-          <Notice text="Controls Gemini and custom API sessions. Codex reasoning follows Codex events." />
+          <Notice text={t("settingsPage.controlsGeminiAndCustomApiSessionsCodexReasoning")} />
           <Notice text={thinking.error} error />
         </Section>
       </SettingsGroup>
@@ -219,7 +232,7 @@ export function ConversationPreferencesScreen({
       )}
       <BottomSheet
         visible={showThinking}
-        title="Thinking display"
+        title={t("settingsPage.thinkingDisplay")}
         onClose={() => setShowThinking(false)}
       >
         {(["expanded", "collapsed", "latest"] as const).map((mode) => (
@@ -227,9 +240,9 @@ export function ConversationPreferencesScreen({
             key={mode}
             title={
               {
-                expanded: "Always expanded",
-                collapsed: "Always collapsed",
-                latest: "Collapse on next Thinking",
+                expanded: t("settingsPage.alwaysExpanded"),
+                collapsed: t("settingsPage.alwaysCollapsed"),
+                latest: t("settingsPage.collapseOnNextThinking"),
               }[mode]
             }
             selected={thinking.mode === mode}
@@ -245,6 +258,7 @@ export function ConversationPreferencesScreen({
   );
 }
 export function TranslationPreferencesScreen() {
+  useLocale();
   return (
     <SettingsPage>
       <SettingsGroup>
@@ -255,6 +269,7 @@ export function TranslationPreferencesScreen() {
 }
 
 export function ModelsScreen() {
+  useLocale();
   const client = useDaemon();
   const route = useRoute();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
@@ -319,18 +334,18 @@ export function ModelsScreen() {
     <SettingsPage>
       <View style={{ gap: 16 }}>
         {section === "RuntimeSettings" && (
-          <Section title="Connected device">
+          <Section title={t("mobile.connectedDevice")}>
             <Row
               title={client.connection.name}
               subtitle={client.connection.baseUrl}
             />
             {health && (
               <Notice
-                text={`${health.status} · Protocol ${health.protocol_version}`}
+                text={t("mobile.valueProtocolValue", {p0: stateLabel(health.status), p1: health.protocol_version})}
               />
             )}
             <Action
-              label="Refresh"
+              label={t("mobile.refresh")}
               disabled={busy}
               onPress={() => void run()}
             />
@@ -343,14 +358,14 @@ export function ModelsScreen() {
         {section === "Models" && (
           <>
             <Notice text={client.connection.name} />
-            <Section title="Favorites">
+            <Section title={t("conversationComposer.favorites")}>
               <SettingsGroup>
                 <Notice
-                  text={`Shown first in the model picker. Saved locally for ${client.connection.name}.`}
+                  text={t("mobile.shownFirstInTheModelPickerSavedLocallyForValue", {p0: client.connection.name})}
                 />
                 <Notice text={favorites.error} error />
                 {!favorites.items.length && (
-                  <Notice text="No favorite models yet." />
+                  <Notice text={t("favoriteModelSettings.noFavoriteModelsYet")} />
                 )}
                 {favorites.items.map((f) => (
                   <Row
@@ -359,12 +374,12 @@ export function ModelsScreen() {
                     subtitle={
                       f.agent === "codex"
                         ? `Codex · ${f.reasoningEffort}`
-                        : `Zotigo · ${profiles?.profiles.find((p) => p.name === f.profile)?.model ?? "Unavailable"}`
+                        : `Zotigo · ${profiles?.profiles.find((p) => p.name === f.profile)?.model ?? t("directoryBrowser.unavailable")}`
                     }
                     right={
                       <IconButton
                         icon={Star}
-                        label={`Remove favorite ${f.agent === "codex" ? f.model : f.profile}`}
+                        label={t("favoriteModelSettings.removeFavorite", {p0: f.agent === "codex" ? f.model : f.profile})}
                         disabled={!favorites.ready}
                         onPress={() => void favorites.toggle(f)}
                       />
@@ -372,22 +387,22 @@ export function ModelsScreen() {
                   />
                 ))}
                 <Action
-                  label="Add favorite"
+                  label={t("favoriteModelSettings.addFavorite")}
                   disabled={busy || !agents || !favorites.ready}
                   onPress={() => setAdding(true)}
                 />
               </SettingsGroup>
             </Section>
-            <Section title="Model catalog">
+            <Section title={t("mobile.modelCatalog")}>
               <SettingsGroup>
                 <Row
-                  title="Codex models"
-                  subtitle="Loads automatically"
+                  title={t("favoriteModelSettings.codexModels")}
+                  subtitle={t("mobile.loadsAutomatically")}
                   right={arrow}
                   onPress={() => nav.navigate("ModelCatalog")}
                 />
                 <Row
-                  title="Zotigo profiles"
+                  title={t("mobile.zotigoProfiles")}
                   right={arrow}
                   onPress={() => nav.navigate("Profiles")}
                 />
@@ -396,8 +411,8 @@ export function ModelsScreen() {
           </>
         )}
         {section === "ModelCatalog" && (
-          <Section title="Codex models">
-            <Action label="Refresh" disabled={busy} onPress={prepare} />
+          <Section title={t("favoriteModelSettings.codexModels")}>
+            <Action label={t("mobile.refresh")} disabled={busy} onPress={prepare} />
             <SettingsGroup>
               {agents?.agents
                 .find((a) => a.id === "codex")
@@ -413,7 +428,7 @@ export function ModelsScreen() {
         )}
         <BottomSheet
           visible={adding}
-          title="Add favorite"
+          title={t("favoriteModelSettings.addFavorite")}
           scroll={false}
           onClose={() => setAdding(false)}
         >
@@ -438,38 +453,38 @@ export function ModelsScreen() {
         </BottomSheet>
         {section === "RuntimeSettings" && (
           <>
-            <Section title="Agents">
+            <Section title={t("mobile.agents")}>
               {agents?.agents.map((agent) => (
                 <Row
                   key={agent.id}
                   title={agent.label}
-                  subtitle={`${agent.availability}${agent.version ? ` · ${agent.version}` : ""}${agent.id === agents.default_agent ? " · Default" : ""}`}
+                  subtitle={`${stateLabel(agent.availability)}${agent.version ? ` · ${agent.version}` : ""}${agent.id === agents.default_agent ? " · " + t("mobile.default") : ""}`}
                 />
               ))}
               {agents && agents.agents.length === 0 && (
-                <Notice text="No agents available." />
+                <Notice text={t("mobile.noAgentsAvailable")} />
               )}
             </Section>
           </>
         )}
         {section === "Profiles" && (
-          <Section title="Runtime profiles">
+          <Section title={t("mobile.runtimeProfiles")}>
             {profiles?.profiles.map((profile) => (
               <Row
                 key={profile.name}
                 title={
                   profile.name +
                   (profile.name === profiles.default_profile
-                    ? " · Default"
+                    ? " · " + t("mobile.default")
                     : "")
                 }
-                subtitle={`${profile.provider} · ${profile.model}${profile.thinking_level ? " · " + profile.thinking_level : ""}`}
+                subtitle={`${profile.provider} · ${profile.model}${profile.thinking_level ? " · " + stateLabel(profile.thinking_level) : ""}`}
               />
             ))}
             {profiles && profiles.profiles.length === 0 && (
-              <Notice text="No runtime profiles configured." />
+              <Notice text={t("mobile.noRuntimeProfilesConfigured")} />
             )}
-            <Notice text="Edit daemon profile definitions on its host." />
+            <Notice text={t("mobile.editDaemonProfileDefinitionsOnItsHost")} />
           </Section>
         )}
       </View>
@@ -478,6 +493,7 @@ export function ModelsScreen() {
 }
 
 function SessionSync() {
+  useLocale();
   const client = useDaemon();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -485,7 +501,7 @@ function SessionSync() {
   return (
     <View>
       <Action
-        label={busy ? "Syncing…" : "Sync Codex sessions"}
+        label={busy ? t("settingsPage.syncing") : t("mobile.syncCodexSessions")}
         disabled={busy}
         onPress={() => {
           setBusy(true);
@@ -493,7 +509,7 @@ function SessionSync() {
           setStatus("");
           void client
             .catalog(true)
-            .then(() => setStatus("Sessions synced."))
+            .then(() => setStatus(t("hostShell.sessionsSynced")))
             .catch((e) => setError(errorText(e)))
             .finally(() => setBusy(false));
         }}
@@ -505,6 +521,7 @@ function SessionSync() {
 }
 
 function TranslationSettings() {
+  useLocale();
   const client = useDaemon();
   const settings = useTranslationSettings(client.connection.id);
   const [pane, setPane] = useState<"language" | "profile">();
@@ -528,23 +545,23 @@ function TranslationSettings() {
     };
   }, [client, retry]);
   return (
-    <Section title="Translation">
+    <Section title={t("mobile.translation")}>
       <Row
-        title="Translation language"
-        subtitle={settings.language === "zh-CN" ? "Chinese" : "English"}
+        title={t("settingsPage.translationLanguage")}
+        subtitle={settings.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")}
         onPress={() => setPane("language")}
       />
       <Row
-        title="Translation profile"
-        subtitle={settings.profile || "Use session profile"}
+        title={t("translationProfileSettings.translationProfile")}
+        subtitle={settings.profile || t("translationProfileSettings.useSessionProfile")}
         onPress={() => setPane("profile")}
       />
-      <Notice text="Use a custom API profile for translation. A fast model with thinking disabled is usually best." />
+      <Notice text={t("translationProfileSettings.useACustomApiProfileForTranslationA")} />
       <Notice text={settings.error} error />
       <BottomSheet
         visible={!!pane}
         title={
-          pane === "language" ? "Translation language" : "Translation profile"
+          pane === "language" ? t("settingsPage.translationLanguage") : t("translationProfileSettings.translationProfile")
         }
         onClose={() => setPane(undefined)}
       >
@@ -552,7 +569,7 @@ function TranslationSettings() {
           (["zh-CN", "en"] as const).map((language) => (
             <ChoiceRow
               key={language}
-              title={language === "zh-CN" ? "Chinese" : "English"}
+              title={language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")}
               selected={settings.language === language}
               disabled={!settings.ready}
               onPress={() => {
@@ -564,7 +581,7 @@ function TranslationSettings() {
         ) : (
           <>
             <ChoiceRow
-              title="Use session profile"
+              title={t("translationProfileSettings.useSessionProfile")}
               selected={!settings.profile}
               disabled={!settings.ready}
               onPress={() => {
@@ -576,7 +593,7 @@ function TranslationSettings() {
             <Notice text={error} error />
             {!!error && (
               <Action
-                label="Retry"
+                label={t("app.retry2")}
                 onPress={() => setRetry((value) => value + 1)}
               />
             )}
@@ -584,7 +601,7 @@ function TranslationSettings() {
               profiles &&
               !profiles.profiles.some(
                 (profile) => profile.name === settings.profile,
-              ) && <Notice text={`${settings.profile} (unavailable)`} />}
+              ) && <Notice text={t("mobile.valueUnavailable", {p0: settings.profile})} />}
             {profiles?.profiles.map((profile) => (
               <ChoiceRow
                 key={profile.name}
@@ -606,34 +623,35 @@ function TranslationSettings() {
 }
 
 function SendModeSettings() {
+  useLocale();
   const client = useDaemon();
   const pref = useSendMode(client.connection.id);
   const [open, setOpen] = useState(false);
   return (
-    <Section title="Sending">
+    <Section title={t("mobile.sending")}>
       <Row
-        title="Default send mode"
+        title={t("settingsPage.defaultSendMode")}
         subtitle={
           pref.mode === "queue"
-            ? "Queue for next turn"
-            : "Steer the current turn"
+            ? t("app.queueForNextTurn")
+            : t("mobile.steerTheCurrentTurn")
         }
         onPress={() => setOpen(true)}
       />
       <Notice text={pref.error} error />
       <BottomSheet
         visible={open}
-        title="Default send mode"
+        title={t("settingsPage.defaultSendMode")}
         onClose={() => setOpen(false)}
       >
         {(["steering", "queue"] as const).map((mode) => (
           <ChoiceRow
             key={mode}
-            title={mode === "queue" ? "Queue" : "Steering"}
+            title={mode === "queue" ? t("mobile.queue") : t("settingsPage.steering")}
             subtitle={
               mode === "queue"
-                ? "Wait until the current turn finishes"
-                : "Send guidance during the current turn"
+                ? t("mobile.waitUntilTheCurrentTurnFinishes")
+                : t("mobile.sendGuidanceDuringTheCurrentTurn")
             }
             selected={pref.mode === mode}
             disabled={!pref.ready}
@@ -646,4 +664,24 @@ function SendModeSettings() {
       </BottomSheet>
     </Section>
   );
+}
+
+function LanguageSettings() {
+  useLocale();
+  const locale = useLocale();
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  return <Section title={t("settings.language")}>
+    <SettingsGroup>
+      {(["en", "zh-CN"] as const).map(value => <ChoiceRow
+        key={value} title={value === "en" ? t("settingsPage.english") : "简体中文"}
+        selected={locale === value} disabled={saving}
+        onPress={() => {
+          setSaving(true);
+          void changeLanguage(value).catch(e => setError(errorText(e))).finally(() => setSaving(false));
+        }}
+      />)}
+    </SettingsGroup>
+    <Notice text={error} error />
+  </Section>;
 }

@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useEffect, useState } from "react";
 import { AppState, Platform, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
@@ -8,6 +10,7 @@ import { maxAttachmentBytes } from "@zotigo/shared/messageFiles";
 import { decodedBase64Size } from "@zotigo/shared/messageImages";
 import { Notice, errorText } from "./ui";
 function Player({ uri }: { uri: string }) {
+  useLocale();
   const focused = useIsFocused();
   const player = useVideoPlayer(uri);
   const [error, setError] = useState("");
@@ -18,7 +21,7 @@ function Player({ uri }: { uri: string }) {
     });
     const status = player.addListener("statusChange", (event) => {
       if (event.status === "error")
-        setError("This video's encoding cannot be played on this device.");
+        setError(t("mobile.thisVideosEncodingCannotBePlayedOnThisDevice"));
     });
     return () => {
       subscription.remove();
@@ -44,6 +47,7 @@ export function VideoPreview({
   data: string;
   mediaType: string;
 }) {
+  useLocale();
   const [uri, setUri] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
@@ -54,11 +58,11 @@ export function VideoPreview({
         mediaType,
       )
     ) {
-      setError("Unsupported video format.");
+      setError(t("mobile.unsupportedVideoFormat"));
       return;
     }
     if (decodedBase64Size(data) > maxAttachmentBytes) {
-      setError("Video preview is limited to 20 MiB.");
+      setError(t("mobile.videoPreviewIsLimitedTo20MiB"));
       return;
     }
     if (Platform.OS === "web") {
@@ -91,7 +95,7 @@ export function VideoPreview({
       {uri ? (
         <Player key={uri} uri={uri} />
       ) : (
-        !error && <Notice text="Loading video…" />
+        !error && <Notice text={t("mobile.loadingVideo")} />
       )}
     </View>
   );

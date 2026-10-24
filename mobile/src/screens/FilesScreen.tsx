@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { VideoPreview } from "../components/VideoPreview";
 import type { VideoFileSnapshot } from "@zotigo/shared/clientTypes";
 import { useEffect, useRef, useState } from "react";
@@ -34,6 +36,7 @@ type Capabilities = {
   image?: boolean;
 };
 export function FilesScreen({ route, navigation }: Props) {
+  useLocale();
   const client = useDaemon();
   const headerHeight = useHeaderHeight();
   const sessionId = route.params?.sessionId;
@@ -59,16 +62,16 @@ export function FilesScreen({ route, navigation }: Props) {
   }, []);
   usePreventRemove(dirty || busy, ({ data }) => {
     if (locked.current) {
-      Alert.alert("Please wait", "Wait for the current operation to finish.");
+      Alert.alert(t("mobile.pleaseWait"), t("mobile.waitForTheCurrentOperationToFinish"));
       return;
     }
     Alert.alert(
-      "Discard unsaved changes?",
-      "Your edits have not been saved to the daemon.",
+      t("mobile.discardUnsavedChanges"),
+      t("mobile.yourEditsHaveNotBeenSavedToTheDaemon"),
       [
-        { text: "Keep editing", style: "cancel" },
+        { text: t("mobile.keepEditing"), style: "cancel" },
         {
-          text: "Discard",
+          text: t("mobile.discard"),
           style: "destructive",
           onPress: () => navigation.dispatch(data.action),
         },
@@ -96,11 +99,11 @@ export function FilesScreen({ route, navigation }: Props) {
       return;
     }
     Alert.alert(
-      "Discard unsaved changes?",
-      "Loading another file or directory will discard your edits.",
+      t("mobile.discardUnsavedChanges"),
+      t("mobile.loadingAnotherFileOrDirectoryWillDiscardYourEdits"),
       [
-        { text: "Keep editing", style: "cancel" },
-        { text: "Discard", style: "destructive", onPress: work },
+        { text: t("mobile.keepEditing"), style: "cancel" },
+        { text: t("mobile.discard"), style: "destructive", onPress: work },
       ],
     );
   }
@@ -118,32 +121,32 @@ export function FilesScreen({ route, navigation }: Props) {
   }
   async function open(target: string, explicit = true, caps = capabilities) {
     if (!caps?.read)
-      throw new Error("File reading is unavailable on this daemon.");
+      throw new Error(t("mobile.fileReadingIsUnavailableOnThisDaemon"));
     const remotePath = daemonPath(target);
     const absolute =
       remotePath.startsWith("/") || /^[A-Za-z]:[\\/]/.test(remotePath);
     let base: { basePath: string; baseKind: "directory" } | undefined;
     if (!absolute) {
       if (!sessionId)
-        throw new Error("Relative paths require a session working directory.");
+        throw new Error(t("mobile.relativePathsRequireASessionWorkingDirectory"));
       const session = await client.session(sessionId);
       if (!session.working_directory)
-        throw new Error("This session has no working directory.");
+        throw new Error(t("mobile.thisSessionHasNoWorkingDirectory"));
       base = { basePath: session.working_directory, baseKind: "directory" };
     }
     const result = await client.openFile(remotePath, sessionId, explicit, base);
     if (!alive.current) return;
     if (result.kind === "directory") {
-      if (!caps.list) throw new Error("Directory browsing is unavailable.");
+      if (!caps.list) throw new Error(t("mobile.directoryBrowsingIsUnavailable"));
       await list(result.path);
       return;
     }
     if (result.kind === "system")
       throw new Error(
-        "This binary or oversized file cannot be opened on mobile.",
+        t("mobile.thisBinaryOrOversizedFileCannotBeOpenedOnMobile"),
       );
     if (result.kind === "requires_confirmation")
-      throw new Error("This file requires an explicit open action.");
+      throw new Error(t("mobile.thisFileRequiresAnExplicitOpenAction"));
     setVideo(undefined);
     if (result.kind === "video") {
       setVideo(result.file);
@@ -153,7 +156,7 @@ export function FilesScreen({ route, navigation }: Props) {
       setPath(result.file.path);
     } else if (result.kind === "image") {
       if (!caps.image)
-        throw new Error("Image previews are unavailable on this daemon.");
+        throw new Error(t("mobile.imagePreviewsAreUnavailableOnThisDaemon"));
       const uri = imagePreviewUri(result.file);
       setImage(uri);
       setFile(undefined);
@@ -183,7 +186,7 @@ export function FilesScreen({ route, navigation }: Props) {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active" && file)
         setNotice(
-          "The file may have changed while away. Reload to check; unsaved edits are kept until you confirm.",
+          t("mobile.theFileMayHaveChangedWhileAwayReloadToCheckUnsavedEditsAreKeptUntilYouConfirm"),
         );
     });
     return () => subscription.remove();
@@ -197,13 +200,13 @@ export function FilesScreen({ route, navigation }: Props) {
         if (alive.current) {
           setFile(saved);
           setDraft(saved.content);
-          setNotice("Saved to daemon.");
+          setNotice(t("mobile.savedToDaemon"));
         }
       } catch (e) {
         if (e instanceof ApiError && e.status === 409 && alive.current) {
           setConflict(true);
           setNotice(
-            "The remote file changed. Your draft is preserved. Copy your edits before reloading the remote version.",
+            t("mobile.theRemoteFileChangedYourDraftIsPreservedCopyYourEditsBeforeReloadingTheRemoteVersion"),
           );
         }
         throw e;
@@ -223,24 +226,24 @@ export function FilesScreen({ route, navigation }: Props) {
     >
       <View style={s.controls}>
         <TextField
-          label="Daemon path"
+          label={t("mobile.daemonPath")}
           value={path}
           onChangeText={setPath}
-          placeholder="Empty path lists registered roots"
+          placeholder={t("mobile.emptyPathListsRegisteredRoots")}
         />
         <View style={s.actions}>
           <Action
-            label="Browse"
+            label={t("mobile.browse")}
             disabled={busy || !capabilities?.list}
             onPress={() => discardThen(() => void run(() => list(path)))}
           />
           <Action
-            label="Open file"
+            label={t("mobile.openFile")}
             disabled={busy || !capabilities?.read || !path.trim()}
             onPress={() => discardThen(() => void run(() => open(path)))}
           />
           <Action
-            label="Roots"
+            label={t("mobile.roots")}
             secondary
             disabled={busy || !capabilities?.list}
             onPress={() => discardThen(() => void run(() => list("")))}
@@ -249,11 +252,11 @@ export function FilesScreen({ route, navigation }: Props) {
         {!!error && <Notice text={error} error />}
         {!!notice && <Notice text={notice} />}
         {!capabilities && !busy && (
-          <Action label="Retry capabilities" onPress={initialize} />
+          <Action label={t("mobile.retryCapabilities")} onPress={initialize} />
         )}
-        {busy && <Notice text="Loading…" />}
+        {busy && <Notice text={t("markdownImage.loading")} />}
         {capabilities && !capabilities.read && !capabilities.list && (
-          <Notice text="This daemon does not support remote files." />
+          <Notice text={t("mobile.thisDaemonDoesNotSupportRemoteFiles")} />
         )}
       </View>
       {file ? (
@@ -266,16 +269,16 @@ export function FilesScreen({ route, navigation }: Props) {
             <Notice
               text={
                 file.readOnly || !capabilities?.write
-                  ? "Read-only file"
-                  : "Large file preview: mobile editing is limited to 256 KiB."
+                  ? t("mobile.readonlyFile")
+                  : t("mobile.largeFilePreviewMobileEditingIsLimitedTo256KiB")
               }
             />
           )}
           {!editable && draft.length > 128 * 1024 && (
-            <Notice text="Preview shows the first 131,072 characters." />
+            <Notice text={t("mobile.previewShowsTheFirst131072Characters")} />
           )}
           <TextInput
-            accessibilityLabel="File content"
+            accessibilityLabel={t("mobile.fileContent")}
             style={s.input}
             multiline
             value={editable ? draft : draft.slice(0, 128 * 1024)}
@@ -288,12 +291,12 @@ export function FilesScreen({ route, navigation }: Props) {
           />
           <View style={s.actions}>
             <Action
-              label="Save"
+              label={t("app.save")}
               disabled={!editable || !dirty || busy || conflict}
               onPress={save}
             />
             <Action
-              label="Reload remote"
+              label={t("mobile.reloadRemote")}
               secondary
               disabled={busy}
               onPress={() => discardThen(() => void run(() => open(file.path)))}
@@ -305,7 +308,7 @@ export function FilesScreen({ route, navigation }: Props) {
       ) : image ? (
         <View style={s.editor}>
           <Image
-            accessibilityLabel="Remote file preview"
+            accessibilityLabel={t("mobile.remoteFilePreview")}
             source={{ uri: image }}
             style={s.image}
             resizeMode="contain"
@@ -323,7 +326,7 @@ export function FilesScreen({ route, navigation }: Props) {
           ListHeaderComponent={
             directory?.parentPath ? (
               <Action
-                label="Parent directory"
+                label={t("directoryBrowser.parentDirectory")}
                 secondary
                 disabled={busy}
                 onPress={() => void run(() => list(directory.parentPath!))}
@@ -332,12 +335,12 @@ export function FilesScreen({ route, navigation }: Props) {
           }
           ListEmptyComponent={
             !busy && capabilities?.list ? (
-              <Notice text="No files in this directory." />
+              <Notice text={t("mobile.noFilesInThisDirectory")} />
             ) : null
           }
           ListFooterComponent={
             directory?.truncated ? (
-              <Notice text="Directory listing is limited. Enter a more specific path to find other files." />
+              <Notice text={t("mobile.directoryListingIsLimitedEnterAMoreSpecificPathToFindOtherFiles")} />
             ) : null
           }
           renderItem={({ item }) => (

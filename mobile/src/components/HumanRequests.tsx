@@ -1,3 +1,5 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import type { DisplayItem } from "@zotigo/shared/zotigod";
@@ -22,6 +24,7 @@ export function HumanRequest({
   run: (action: () => Promise<unknown>) => void;
   disabled: boolean;
 }) {
+  useLocale();
   const [answers, setAnswers] = useState<InteractionDrafts>({});
   const [confirmUnanswered, setConfirmUnanswered] = useState(false);
   const [denying, setDenying] = useState(false);
@@ -72,7 +75,7 @@ export function HumanRequest({
     >
       {approval?.id && (
         <>
-          <Text style={styles.text}>Approval required</Text>
+          <Text style={styles.text}>{t("conversationTimeline.approvalRequired")}</Text>
           {approval.pending?.map((p) => (
             <View key={p.tool_call_id}>
               <Text style={styles.text}>{p.description ?? p.tool_name}</Text>
@@ -86,7 +89,7 @@ export function HumanRequest({
           ))}
           {denying && (
             <TextField
-              label="Reason for denying (optional)"
+              label={t("conversationTimeline.reasonForDenyingOptional")}
               value={denyReason}
               onChangeText={setDenyReason}
               editable={!disabled}
@@ -94,13 +97,13 @@ export function HumanRequest({
           )}
           <View style={{ flexDirection: "row", gap: 12 }}>
             <Action
-              label={denying ? "Confirm deny" : "Deny"}
+              label={denying ? t("conversationTimeline.confirmDeny") : t("conversationTimeline.deny")}
               disabled={disabled || !approval.pending?.length}
               danger
               onPress={() => (denying ? decide(false) : setDenying(true))}
             />
             <Action
-              label="Approve"
+              label={t("conversationTimeline.approve")}
               disabled={disabled || !approval.pending?.length}
               onPress={() => decide(true)}
             />
@@ -111,8 +114,8 @@ export function HumanRequest({
         <>
           <Text style={styles.text}>
             {interaction.requester?.name
-              ? `${interaction.requester.name} asks`
-              : "Input required"}
+              ? t("conversationTimeline.asks", {p0: interaction.requester.name})
+              : t("conversationTimeline.inputRequired")}
           </Text>
           {interaction.questions?.map((q) => (
             <View key={q.id} style={{ gap: 8 }}>
@@ -143,7 +146,7 @@ export function HumanRequest({
               ))}
               {q.is_other && !!q.options?.length && (
                 <ChoiceRow
-                  title="None of the above"
+                  title={t("conversationTimeline.noneOfTheAbove")}
                   disabled={disabled}
                   selected={answers[q.id]?.otherSelected === true}
                   onPress={() => {
@@ -165,8 +168,8 @@ export function HumanRequest({
                 <TextField
                   label={
                     q.options?.length
-                      ? "Add an optional note"
-                      : "Type your answer"
+                      ? t("conversationTimeline.addAnOptionalNote")
+                      : t("conversationTimeline.typeYourAnswer")
                   }
                   value={answers[q.id]?.value ?? ""}
                   secureTextEntry={q.is_secret}
@@ -183,19 +186,19 @@ export function HumanRequest({
             </View>
           ))}
           {confirmUnanswered && (
-            <Notice text="Some questions are unanswered. Submit anyway?" />
+            <Notice text={t("conversationTimeline.someQuestionsAreUnansweredSubmitAnyway")} />
           )}
           <View style={{ flexDirection: "row", gap: 12 }}>
             {confirmUnanswered && (
               <Action
-                label="Cancel"
+                label={t("app.cancel")}
                 secondary
                 disabled={disabled}
                 onPress={() => setConfirmUnanswered(false)}
               />
             )}
             <Action
-              label={confirmUnanswered ? "Submit anyway" : "Submit answer"}
+              label={confirmUnanswered ? t("conversationTimeline.submitAnyway") : t("conversationTimeline.submitAnswer")}
               disabled={disabled}
               onPress={submit}
             />
