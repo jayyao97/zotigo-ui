@@ -12,7 +12,7 @@ import ArrowUp from "lucide-react-native/icons/arrow-up";
 import Shield from "lucide-react-native/icons/shield";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { Platform, Pressable } from "react-native";
+import { Pressable } from "react-native";
 import { randomUUID } from "expo-crypto";
 import {
   ComposerStore,
@@ -474,6 +474,8 @@ export function NewSessionScreen() {
             />
             <IconButton
               icon={Shield}
+              outlined
+              color={policy === "bypass_permissions" ? "#ff8549" : colors.text}
               label={approvalPolicyLabel(policy)}
               disabled={contextLocked}
               onPress={() => setPanel("policy")}
@@ -481,6 +483,7 @@ export function NewSessionScreen() {
             <View style={{ flex: 1 }} />
             <IconButton
               icon={Gauge}
+              outlined
               label="Model and reasoning"
               disabled={contextLocked}
               onPress={() => setPanel("model")}

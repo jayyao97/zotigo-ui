@@ -13,7 +13,7 @@ export function ContextUsage({
   const ratio = window > 0 ? Math.max(0, Math.min(1, tokens / window)) : 0;
   const color =
     ratio >= 0.9 ? colors.danger : ratio >= 0.75 ? "#ffb454" : colors.accent;
-  const circumference = 2 * Math.PI * 17;
+  const circumference = 2 * Math.PI * 15;
   return (
     <Pressable
       accessibilityRole="button"
@@ -26,26 +26,26 @@ export function ContextUsage({
         justifyContent: "center",
       }}
     >
-      <Svg width={40} height={40} viewBox="0 0 40 40">
+      <Svg width={36} height={36} viewBox="0 0 36 36">
         <Circle
-          cx={20}
-          cy={20}
-          r={17}
+          cx={18}
+          cy={18}
+          r={15}
           fill="none"
           stroke={colors.border}
-          strokeWidth={3}
+          strokeWidth={2.5}
         />
         <Circle
-          cx={20}
-          cy={20}
-          r={17}
+          cx={18}
+          cy={18}
+          r={15}
           fill="none"
           stroke={color}
-          strokeWidth={3}
+          strokeWidth={2.5}
           strokeDasharray={`${circumference} ${circumference}`}
           strokeDashoffset={circumference * (1 - ratio)}
           rotation={-90}
-          origin="20,20"
+          origin="18,18"
           strokeLinecap="round"
         />
       </Svg>
