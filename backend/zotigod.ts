@@ -511,13 +511,19 @@ export async function listQueuedInputs(id: string): Promise<import("../shared/zo
     const row = expectRecord(value, "queued input");
     if (row.state !== "queued" && row.state !== "paused" && row.state !== "sending") throw new Error("Invalid queue state");
     if (typeof row.editable !== "boolean") throw new Error("Invalid queue editable flag");
-    return { ...parseSessionCommandResponse(value, "queued input"), state: row.state, revision: expectNumber(row.revision, "revision"), editable: row.editable };
+    return { ...parseSessionCommandResponse(value, "queued input"), state: row.state, revision: expectNumber(row.revision, "revision"), editable: row.editable, image_editing_supported: row.image_editing_supported === true };
   });
 }
 
-export async function changeQueuedInput(id: string, itemId: string, revision: number, text?: string): Promise<void> {
+export async function changeQueuedInput(id: string, itemId: string, revision: number, text?: string, imageIndices?: number[]): Promise<void> {
+  if (imageIndices !== undefined) {
+    const items = await listQueuedInputs(id);
+    if (!items?.find(item => item.id === itemId)?.image_editing_supported) {
+      throw new Error("Update the connected daemon to remove queued images. No changes were saved.");
+    }
+  }
   await requestJSON(`/sessions/${encodeURIComponent(id)}/queue/${encodeURIComponent(itemId)}`, {
-    method: text === undefined ? "DELETE" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision, text }),
+    method: text === undefined ? "DELETE" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision, text, image_indices: imageIndices }),
   });
 }
 

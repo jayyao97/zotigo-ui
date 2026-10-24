@@ -348,7 +348,7 @@ export interface ClientApi {
   startConversationSession(conversationId: string): Promise<DesktopActionResult>;
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
   listQueuedInputs(id: string): Promise<import("./zotigod").QueuedInput[] | null>;
-  editQueuedInput(id: string, itemId: string, revision: number, text: string): Promise<void>;
+  editQueuedInput(id: string, itemId: string, revision: number, text: string, imageIndices?: number[]): Promise<void>;
   deleteQueuedInput(id: string, itemId: string, revision: number): Promise<void>;
   resumeInputQueue(id: string): Promise<void>;
   sendQueuedInput(id: string, itemId: string, revision: number): Promise<void>;
