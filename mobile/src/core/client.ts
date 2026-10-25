@@ -150,13 +150,14 @@ export class DaemonClient {
     body?: unknown,
     signal?: AbortSignal,
     timeout = 30000,
+    headers: Record<string, string> = {},
   ): Promise<T> {
     return this.response(
       path,
       {
         method,
         signal,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...headers },
         body: body === undefined ? undefined : JSON.stringify(body),
       },
       async (response) => {
@@ -461,6 +462,8 @@ export class DaemonClient {
       "GET",
       undefined,
       signal,
+      30000,
+      { "X-Zotigo-Runtime-Updates": "true" },
     );
   send = (
     id: string,
@@ -620,6 +623,7 @@ export class DaemonClient {
       {
         headers: {
           Accept: "text/event-stream",
+          "X-Zotigo-Runtime-Updates": "true",
           ...(this.connection.token
             ? { Authorization: `Bearer ${this.connection.token}` }
             : {}),

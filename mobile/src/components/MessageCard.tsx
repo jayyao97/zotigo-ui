@@ -1,3 +1,4 @@
+import { RequestRetryStatus } from "./RequestRetryStatus";
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
 import { messageTimestamp } from "@zotigo/shared/messageTimestamp";
@@ -338,6 +339,9 @@ export const MessageCard = memo(function MessageCard({
   const images = user
     ? userImages(item, client.connection.baseUrl, sessionId)
     : [];
+
+  if (item.type === "model_usage_updated") return null;
+  if (item.type === "request_retry" && item.retry) return <RequestRetryStatus item={item} />;
 
   if (
     item.type === "assistant_message" &&

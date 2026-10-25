@@ -211,6 +211,9 @@ function history(work: boolean): DisplayItem[] {
         ],
       },
     }),
+    display(40, "request_retry", { retry: { request_id: "preview-retry", status: "waiting", attempt: 1, delay_ms: 3000 } }),
+    display(41, "request_retry", { retry: { request_id: "preview-retry", status: "recovered", attempt: 1, delay_ms: 0 } }),
+    display(42, "model_usage_updated", { context_usage: { tokens: 12000, window: 100000 } }),
   ];
 }
 function makeHost(work: boolean): HostState {

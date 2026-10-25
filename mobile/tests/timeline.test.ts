@@ -380,3 +380,59 @@ test("steering boundaries retain streamed output order without changing durable 
   anchors.set("steer", capturePromptTimelineAnchor(1, ["answer"], anchors));
   assert.deepEqual(anchorPromptTimeline([input, ...previews], anchors).map(item => item.id), ["answer", "steer"]);
 });
+
+test("runtime updates are negotiated and live usage updates without an extra session fetch", async () => {
+  const stream = streamBody();
+  let sessionReads = 0;
+  const client = new DaemonClient(connection, async (url, init) => {
+    if (url.includes("/items?") || url.includes("/events?")) {
+      assert.equal(new Headers(init?.headers).get("X-Zotigo-Runtime-Updates"), "true");
+    }
+    if (url.includes("/items?")) return json(page([item(10)]));
+    if (url.includes("/events?")) return stream.response();
+    sessionReads++;
+    return json(session);
+  });
+  const timeline = new Timeline(client, "s");
+  const running = timeline.start();
+  try {
+    await waitFor(timeline, s => s.status === "connected");
+    const baseline = sessionReads;
+    stream.emit("item", { ...item(11, "model_usage_updated"), context_usage: { tokens: 12000, window: 100000 } });
+    await waitFor(timeline, s => s.session?.context_usage?.tokens === 12000);
+    assert.equal(sessionReads, baseline);
+    timeline.accept({ type: "item", item: { ...item(9, "model_usage_updated"), context_usage: { tokens: 100, window: 100000 } } });
+    assert.equal(timeline.snapshot().session?.context_usage?.tokens, 12000);
+  } finally {
+    timeline.stop();
+    await running;
+  }
+});
+
+test("an in-flight session refresh cannot overwrite a newer usage event, including compaction", async () => {
+  const stream = streamBody();
+  let release: (() => void) | undefined;
+  let defer = false;
+  const client = new DaemonClient(connection, async url => {
+    if (url.includes("/items?")) return json(page([item(10)]));
+    if (url.includes("/events?")) return stream.response();
+    if (defer) await new Promise<void>(resolve => { release = resolve; });
+    return json({ ...session, model: "fresh-model", context_usage: { tokens: 90000, window: 100000 } });
+  });
+  const timeline = new Timeline(client, "s");
+  const running = timeline.start();
+  try {
+    await waitFor(timeline, s => s.status === "connected");
+    defer = true;
+    const refresh = timeline.refreshSession();
+    timeline.accept({ type: "item", item: { ...item(11, "model_usage_updated"), context_usage: { tokens: 10000, window: 100000 } } });
+    release!();
+    await refresh;
+    assert.equal(timeline.snapshot().session?.context_usage?.tokens, 10000);
+    assert.equal(timeline.snapshot().session?.model, "fresh-model");
+  } finally {
+    release?.();
+    timeline.stop();
+    await running;
+  }
+});
