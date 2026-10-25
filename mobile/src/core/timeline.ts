@@ -53,6 +53,7 @@ export class Timeline {
   private reader?: ReadableStreamDefaultReader<Uint8Array>;
   private sequence = 0;
   private refreshing = false;
+  private usageRevision = 0;
   constructor(
     readonly client: DaemonClient,
     readonly id: string,
@@ -261,9 +262,15 @@ export class Timeline {
   }
   accept(event: SessionDisplayEvent) {
     if (event.type === "item") {
+      const newer = event.item.sequence > this.sequence;
       this.sequence = Math.max(this.sequence, event.item.sequence);
+      const updatesUsage = newer && event.item.type === "model_usage_updated" && !!event.item.context_usage && !!this.state.session;
+      if (updatesUsage) this.usageRevision++;
       this.previews = reconcileDisplayPreviews(this.previews, event.item);
       this.publish({
+        ...(updatesUsage && this.state.session
+          ? { session: { ...this.state.session, context_usage: event.item.context_usage } }
+          : {}),
         items: mergeDisplayItems(this.state.items, [event.item]),
         previews: ephemeralDisplayItems(this.previews),
       });
@@ -356,6 +363,7 @@ export class Timeline {
     if (this.refreshing) return;
     this.refreshing = true;
     const controller = this.controller;
+    const usageRevision = this.usageRevision;
     try {
       const session = await this.client.session(this.id);
       if (
@@ -363,7 +371,9 @@ export class Timeline {
         !controller?.signal.aborted &&
         !this.client.signal.aborted
       )
-        this.publish({ session });
+        this.publish({ session: usageRevision === this.usageRevision
+          ? session
+          : { ...session, context_usage: this.state.session?.context_usage } });
     } finally {
       this.refreshing = false;
     }

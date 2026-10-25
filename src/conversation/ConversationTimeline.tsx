@@ -1,4 +1,5 @@
 import { CompletionTriggerNavigation, createdCompletionTrigger } from "./CompletionTriggerNavigation";
+import { requestRetryLabel } from "../../shared/requestRetry";
 import { useLocale } from "../i18n";
 import { t } from "../../shared/i18n/index";
 import { messageTimestamp } from "./messageTimestamp";
@@ -573,14 +574,7 @@ function RequestRetryStatus({ item }: { item: DisplayItem }) {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [waiting, item.created_at, retry.attempt]);
-  const seconds = Math.max(0, Math.ceil((Date.parse(item.created_at) + retry.delay_ms - now) / 1000));
-  const label = waiting && seconds > 0
-    ? t("conversationTimeline.requestRetry", { attempt: retry.attempt, seconds })
-    : retry.status === "recovered" ? t("retry.recovered", { attempt: retry.attempt, count: retry.attempt })
-    : retry.status === "failed" ? t("retry.failed", { attempt: retry.attempt, count: retry.attempt })
-    : retry.status === "context_recovery" ? t("retry.contextRecovery")
-    : retry.status === "canceled" ? t("retry.canceled")
-    : t("retry.running", { attempt: retry.attempt });
+  const label = requestRetryLabel(item, now);
   return <div className="timeline-divider" role="status"><span>{label}</span></div>;
 }
 
