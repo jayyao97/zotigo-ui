@@ -365,6 +365,7 @@ function hasDisplayActivityAfter(items: DisplayItem[], sequence: number): boolea
     (item) =>
       item.sequence > sequence &&
       (item.type === "assistant_message" ||
+        item.type === "request_retry" ||
         item.type === "error" ||
         item.type === "approval_request" ||
         item.type === "approval_decision"),
@@ -439,6 +440,11 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
         <span>{label}</span>
       </div>
     );
+  }
+
+  if (item.type === "model_usage_updated") return null;
+  if (item.type === "request_retry" && item.retry) {
+    return <RequestRetryStatus item={item} />;
   }
 
   if (item.type === "turn_failed") {
@@ -547,6 +553,27 @@ function DisplayErrorItem({ error }: { error?: string }) {
       <p>{message}</p>
     </div>
   );
+}
+
+function RequestRetryStatus({ item }: { item: DisplayItem }) {
+  const retry = item.retry!;
+  const [now, setNow] = useState(Date.now);
+  const waiting = !retry.status || retry.status === "waiting";
+  useEffect(() => {
+    setNow(Date.now());
+    if (!waiting) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [waiting, item.created_at, retry.attempt]);
+  const seconds = Math.max(0, Math.ceil((Date.parse(item.created_at) + retry.delay_ms - now) / 1000));
+  const label = waiting && seconds > 0
+    ? t("conversationTimeline.requestRetry", { attempt: retry.attempt, seconds })
+    : retry.status === "recovered" ? t("retry.recovered", { attempt: retry.attempt, count: retry.attempt })
+    : retry.status === "failed" ? t("retry.failed", { attempt: retry.attempt, count: retry.attempt })
+    : retry.status === "context_recovery" ? t("retry.contextRecovery")
+    : retry.status === "canceled" ? t("retry.canceled")
+    : t("retry.running", { attempt: retry.attempt });
+  return <div className="timeline-divider" role="status"><span>{label}</span></div>;
 }
 
 function ApprovalItem({

@@ -14,6 +14,7 @@ const catalogWorkspaceStatuses = new Set<WorkspaceStatus>([
   "provisioning", "ready", "error", "archiving", "archived", "deleting", "deleted",
 ]);
 const displayItemTypes = new Set<DisplayItemType>([
+  "request_retry", "model_usage_updated",
   "user_message",
   "steering_message",
   "session_command",
@@ -561,7 +562,7 @@ export function listSessionItems(id: string, query: SessionItemsQuery = {}): Pro
 
   const search = params.toString();
   const path = `/sessions/${encodeURIComponent(id)}/items${search ? `?${search}` : ""}`;
-  return requestJSON(path).then((value) => parseSessionItemsResponse(value, "session items response"));
+  return requestJSON(path, { headers: { "X-Zotigo-Runtime-Updates": "true" } }).then((value) => parseSessionItemsResponse(value, "session items response"));
 }
 
 export async function streamSessionEvents(
@@ -578,7 +579,7 @@ export async function streamSessionEvents(
   const search = params.toString();
   const path = `/sessions/${encodeURIComponent(id)}/events${search ? `?${search}` : ""}`;
   const response = await fetchDaemon(`${getDaemonConfig().baseUrl}${path}`, {
-    headers: { Accept: "text/event-stream" },
+    headers: { Accept: "text/event-stream", "X-Zotigo-Runtime-Updates": "true" },
     signal,
   });
   if (response.status === 404 || response.status === 405) {
@@ -1214,6 +1215,8 @@ function parseDisplayItem(value: unknown, context: string): DisplayItem {
   }
 
   return {
+    context_usage: parseOptionalContextUsage(record.context_usage, `${context} context_usage`),
+    retry: record.retry == null ? undefined : parseRequestRetry(record.retry, context),
     ...(record.before_input_id === undefined ? {} : { before_input_id: expectOptionalString(record.before_input_id, `${context} before_input_id`) }),
     id: expectString(record.id, `${context} id`),
     sequence: expectNumber(record.sequence, `${context} sequence`),
@@ -1252,6 +1255,13 @@ function parseDisplayItem(value: unknown, context: string): DisplayItem {
     error: expectOptionalString(record.error, `${context} error`),
     created_at: expectString(record.created_at, `${context} created_at`),
   };
+}
+
+function parseRequestRetry(value: unknown, context: string): NonNullable<DisplayItem["retry"]> {
+  const record = expectRecord(value, `${context} retry`);
+  const status = expectOptionalString(record.status, `${context} retry status`);
+  if (status !== undefined && status !== "waiting" && status !== "retrying" && status !== "recovered" && status !== "failed" && status !== "canceled" && status !== "context_recovery") throw new Error(`${context} invalid retry status`);
+  return { ...(record.request_id === undefined ? {} : { request_id: expectString(record.request_id, `${context} retry request ID`) }), ...(status === undefined ? {} : { status }), attempt: expectNumber(record.attempt, `${context} retry attempt`), delay_ms: expectNumber(record.delay_ms, `${context} retry delay`) };
 }
 
 function parseDisplaySubagent(value: unknown, context: string): DisplaySubagent {

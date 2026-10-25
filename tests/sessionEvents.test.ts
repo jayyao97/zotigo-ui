@@ -124,6 +124,19 @@ test("parses volatile shell progress with its tool call identity", () => {
   });
 });
 
+test("parses durable model usage and retry progress", () => {
+  for (const item of [
+    { type: "model_usage_updated", context_usage: { tokens: 527163, window: 512000, status: "available", source: "provider_estimate" } },
+    { type: "request_retry", retry: { request_id: "request-1", status: "waiting", attempt: 1, delay_ms: 1500 } },
+  ]) {
+    const event = parseSessionEventFrame({ event: "item", id: "2", data: [JSON.stringify({ ...item, id: "progress", sequence: 2, created_at: "2026-10-25T00:00:00Z" })] });
+    assert.equal(event?.type, "item");
+    if (event?.type !== "item") throw new Error("missing item");
+    if (item.retry) assert.deepEqual(event.item.retry, item.retry);
+    else assert.equal(event.item.context_usage?.tokens, 527163);
+  }
+});
+
 test("preserves daemon ordering boundaries in streaming and durable events", () => {
   const delta = parseSessionEventFrame({
     event: "delta", id: "",

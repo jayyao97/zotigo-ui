@@ -1,5 +1,11 @@
 export type Message = string | { one: string; other: string };
 export const en = {
+  "retry.running": "Retrying model request · {attempt}/2 · waiting for response",
+  "retry.recovered": { one: "Model response resumed · after {attempt} retry", other: "Model response resumed · after {attempt} retries" },
+  "retry.failed": { one: "Model request failed after {attempt} retry", other: "Model request failed after {attempt} retries" },
+  "retry.contextRecovery": "Request retry stopped · switched to context recovery",
+  "retry.canceled": "Model retry stopped",
+  "conversationTimeline.requestRetry": "Temporary provider error · retry {attempt}/2 after {seconds}s",
   "app.archiveSessionAction": "Archive Session",
   "channels.deleteConnectionAction": "Delete connection",
   "subagentPanel.noActive": "No active subagents",
