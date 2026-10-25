@@ -170,6 +170,26 @@ export function mergeDisplayItems(current: DisplayItem[], incoming: DisplayItem[
 }
 
 export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
+  // Keep the first row's identity and position while replacing its status.
+  // The durable log retains all attempts; replay and live rendering agree.
+  const retryGroups = new Map<string, { first: DisplayItem; latest: DisplayItem }>();
+  const pendingRetries = new Set<string>();
+  for (const item of items) {
+    if (item.type === "turn_started") pendingRetries.clear();
+    if (isTurnTerminalItem(item)) {
+      for (const id of pendingRetries) {
+        const group = retryGroups.get(id)!;
+        const status = item.type === "turn_failed" ? "failed" : item.type === "turn_completed" ? "recovered" : "canceled";
+        group.latest = { ...group.latest, retry: { ...group.latest.retry!, status } };
+      }
+      pendingRetries.clear();
+    }
+    if (item.type !== "request_retry" || !item.retry?.request_id) continue;
+    const previous = retryGroups.get(item.retry.request_id);
+    retryGroups.set(item.retry.request_id, { first: previous?.first ?? item, latest: item });
+    if (!item.retry.status || item.retry.status === "waiting" || item.retry.status === "retrying") pendingRetries.add(item.retry.request_id);
+    else pendingRetries.delete(item.retry.request_id);
+  }
   const resolvedApprovalIds = new Set(
     items
       .filter((item) => item.type === "approval_decision")
@@ -187,6 +207,8 @@ export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
   const visibleErrors = new Set<string>();
 
   return items.filter((item) => {
+    if (item.type === "request_retry" && item.retry?.request_id && retryGroups.get(item.retry.request_id)?.first !== item) return false;
+    if (item.type === "model_usage_updated") return false;
     if (item.subagent) return false;
     if (duplicateSyncedUserIDs.has(item.id)) return false;
     if (item.type === "turn_started") visibleErrors.clear();
@@ -208,6 +230,9 @@ export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
       return false;
     }
     return true;
+  }).map(item => {
+    const latest = item.type === "request_retry" && item.retry?.request_id ? retryGroups.get(item.retry.request_id)?.latest : undefined;
+    return latest && latest !== item ? { ...item, retry: latest.retry, created_at: latest.created_at } : item;
   });
 }
 

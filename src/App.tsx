@@ -1206,6 +1206,9 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
       if (sessionEvent?.type === "item") {
         flushPendingSessionDeltas();
         const item = sessionEvent.item;
+        if (item.type === "model_usage_updated" && item.context_usage) {
+          setSessions(current => current.map(session => session.id === sessionId ? { ...session, context_usage: item.context_usage } : session));
+        }
         promptAnchors.current.delete(item.id);
         mergeCachedSessionHistory(sessionId, [item]);
         setEphemeralBlocks(current => reconcileDisplayPreviews(current, item));

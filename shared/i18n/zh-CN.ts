@@ -1,5 +1,11 @@
 import type { Message, MessageKey } from "./en";
 export const zhCN: Record<MessageKey, Message> = {
+  "retry.running": "正在第 {attempt}/2 次重试 · 等待模型响应",
+  "retry.recovered": "模型已恢复响应 · 重试了 {attempt} 次",
+  "retry.failed": "重试 {attempt} 次后仍失败",
+  "retry.canceled": "模型请求重试已停止",
+  "retry.contextRecovery": "请求重试已结束 · 已转入上下文压缩恢复",
+  "conversationTimeline.requestRetry": "模型服务暂时出错 · {seconds} 秒后第 {attempt}/2 次重试",
   "app.archiveSessionAction": "归档会话",
   "channels.deleteConnectionAction": "删除连接",
   "subagentPanel.noActive": "没有活跃的子 Agent",

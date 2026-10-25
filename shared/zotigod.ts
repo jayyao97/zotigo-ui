@@ -52,6 +52,8 @@ export interface SessionListResponse {
 }
 
 export type DisplayItemType =
+  | "request_retry"
+  | "model_usage_updated"
   | "user_message"
   | "steering_message"
   | "session_command"
@@ -260,6 +262,8 @@ export interface DisplayContextCompaction {
 }
 
 export interface DisplayItem {
+  context_usage?: ZotigoSession["context_usage"];
+  retry?: { request_id?: string; status?: "waiting" | "retrying" | "recovered" | "failed" | "canceled" | "context_recovery"; attempt: number; delay_ms: number };
   before_input_id?: string;
   /** Client-only delivery state; never submitted to the daemon. */
   /** Client-only preview awaiting queue admission. */
