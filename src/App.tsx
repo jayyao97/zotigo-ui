@@ -540,7 +540,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
   const [sidePanelWidth, setSidePanelWidth] = useState(defaultSidePanelWidth);
   const [isSidePanelResizing, setIsSidePanelResizing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [treeVisible, setTreeVisible] = useState(true);
+  const [treeVisible, setTreeVisible] = useState(false);
   const fileOpenRequest = useRef(0);
   const [fileOpening, setFileOpening] = useState(false);
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>(() => normalizeHostFilesForRestore(restoredHostState?.openFiles ?? {}));
@@ -4091,7 +4091,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               }}
             />}
             <button type="button" className="icon-button" aria-label={t("app.sessionDetails")} aria-expanded={detailsOpen} onClick={() => setDetailsOpen((open) => !open)}><ListFilter size={17} /></button>
-            <button type="button" className="icon-button" aria-label={t("app.toggleSidePanel")} title={t("app.toggleSidePanelBCtrlAltB")} aria-expanded={sidePanelOpen} onClick={() => { setSidePanelOpen((open) => !open); setDetailsOpen(false); }}><PanelRight size={17} /></button>
+            {!sidePanelOpen && <button type="button" className="icon-button" aria-label={t("app.toggleSidePanel")} title={t("app.toggleSidePanelBCtrlAltB")} aria-expanded={sidePanelOpen} onClick={() => { setSidePanelOpen((open) => !open); setDetailsOpen(false); }}><PanelRight size={17} /></button>}
           </div>
         </header>
 
@@ -4569,16 +4569,16 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             </div>
             {subagentRuns.length > 0 && <button type="button" className="icon-button" aria-label={t("app.subagents")} onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}><Circle size={16} /></button>}
             <div className="workspace-panel-actions">
-              <button type="button" className="icon-button" title={activeSidePanelTab?.kind === "file" ? t("app.toggleFileTree") : t("app.browseFiles")} aria-label={activeSidePanelTab?.kind === "file" ? t("app.toggleFileTree") : t("app.browseFiles")} aria-expanded={activeSidePanelTab?.kind === "file" ? treeVisible : undefined} onClick={() => activeSidePanelTab?.kind === "file" ? setTreeVisible((visible) => !visible) : browseFiles()}><FolderOpen size={16} /></button>
+              <button type="button" className="icon-button" title={(!activeSidePanelTab || activeSidePanelTab.kind === "file") ? t("app.toggleFileTree") : t("app.browseFiles")} aria-label={(!activeSidePanelTab || activeSidePanelTab.kind === "file") ? t("app.toggleFileTree") : t("app.browseFiles")} aria-expanded={(!activeSidePanelTab || activeSidePanelTab.kind === "file") ? treeVisible : undefined} onClick={() => (!activeSidePanelTab || activeSidePanelTab.kind === "file") ? setTreeVisible((visible) => !visible) : browseFiles()}><FolderOpen size={16} /></button>
               <button type="button" className="icon-button panel-expand-button" aria-label={sidePanelExpanded ? t("app.restoreSplitView") : t("app.expandSidePanel")} onClick={() => setSidePanelExpanded((expanded) => !expanded)}>{sidePanelExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
-              <button type="button" className="icon-button panel-close-button" aria-label={t("app.closeFilesAndReturnToConversation")} onClick={() => setSidePanelOpen(false)}><X size={16} /></button>
+              <button type="button" className="icon-button panel-close-button" title={t("app.closeFilesAndReturnToConversation")} aria-label={t("app.closeFilesAndReturnToConversation")} aria-expanded={sidePanelOpen} onClick={() => setSidePanelOpen(false)}><PanelRight size={16} /></button>
             </div>
           </div>
           <div className={`workspace-panel-body ${!activeSidePanelTab ? "file-browser-only" : ""}`}>
           <div className="workspace-panel-content">
           {liveFiles.notice && activeSidePanelTab?.kind === "file" && <div className="file-editor-banner" role="status">{liveFiles.notice}</div>}
           {fileOpening && <div className="workspace-file-notice" role="status">{t("app.openingFile")}</div>}
-          {!activeSidePanelTab ? null : activeSidePanelTab.kind === "subagents" ? (
+          {!activeSidePanelTab ? (!treeVisible && <div className="subagent-panel-empty"><button type="button" className="file-editor-mode-button" onClick={() => browseFiles()}><FolderOpen size={16} />{t("app.browseFiles")}</button></div>) : activeSidePanelTab.kind === "subagents" ? (
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
             <SubagentTranscript
@@ -4611,7 +4611,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             <div className="subagent-panel-empty">{t("app.fileIsUnavailable")}</div>
           )}
           </div>
-          {sidePanelOpen && (!activeSidePanelTab || (treeVisible && activeSidePanelTab.kind === "file")) && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
+          {sidePanelOpen && treeVisible && (!activeSidePanelTab || activeSidePanelTab.kind === "file") && <WorkspaceFileTree api={client} root={treeLocation.path} sessionId={treeLocation.sessionId} selectedPath={activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined} onOpen={(path) => void openTreeFile(path)} onRoot={(path) => { fileOpenRequest.current++; setFileOpening(false); setDirectoryLocation({ path, sessionId: treeLocation.sessionId }); }} />}
           </div>
         </aside>
       )}

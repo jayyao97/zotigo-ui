@@ -1,6 +1,7 @@
-import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import { getDaemonConfig, health } from "../backend/zotigod";
 
 let managedProcess: ChildProcessWithoutNullStreams | null = null;
@@ -81,7 +82,18 @@ async function buildManagedZotigod(workdir: string, binaryPath: string): Promise
     await fs.promises.rm(temporaryPath, { force: true });
     throw new Error(`go build exited code=${result.code ?? "null"} signal=${result.signal ?? "null"}`);
   }
-  await fs.promises.rename(temporaryPath, binaryPath);
+  try {
+    if (process.platform === "darwin") {
+      // Use the daemon installer's identity and validation rules for dev builds too.
+      await promisify(execFile)("sh", [path.join(workdir, "scripts/sign-macos-daemon.sh"), temporaryPath], {
+        cwd: workdir,
+        env: process.env,
+      });
+    }
+    await fs.promises.rename(temporaryPath, binaryPath);
+  } finally {
+    await fs.promises.rm(temporaryPath, { force: true });
+  }
 }
 
 export function stopManagedZotigod(): void {
