@@ -5767,3 +5767,16 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 @media (max-width: 900px) {
   html[data-platform="web"] .sidebar-resize-handle { display: none; }
 }
+
+/* Keep human input discoverable even when the question has scrolled out of view. */
+.pending-interaction-notice { pointer-events: auto; width: min(var(--thread-content-width), 100%); margin: 0 auto 8px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-elevated); font-size: 13px; }
+.pending-interaction-notice > svg { flex: none; color: var(--text-muted); }
+.pending-interaction-notice > div { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.pending-interaction-notice span, .interaction-mode { color: var(--text-muted); font-size: 12px; }
+.pending-interaction-notice button { flex: none; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: transparent; color: var(--text); cursor: pointer; }
+.pending-interaction-notice button:hover { background: var(--surface-row); }
+.interaction-card:focus-visible { outline: 2px solid var(--text-muted); outline-offset: 3px; }
+.interaction-summary { color: var(--text-muted); font-size: 13px; }
+.interaction-summary summary { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.interaction-summary p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.interaction-summary[open] .interaction-summary-chevron { transform: rotate(90deg); }

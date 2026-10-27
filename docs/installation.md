@@ -47,7 +47,7 @@ The `.env` files contain trusted shell assignments owned by the installing user;
 
 Client defaults are created only when the corresponding configuration and `COMPONENT/current/INSTALLATION` are both absent, after daemon installation. They use the daemon's configured token file and address (wildcard bind addresses become loopback URLs). Existing configurations are never rewritten; a new client alongside a legacy unauthenticated daemon remains unauthenticated. Older installed Desktop versions without `desktop.json` keep their environment-based behavior. A missing configuration for an already installed Web service is an error, not a fresh install. Retry after an interrupted installation reuses existing configuration and credentials.
 
-The UI pins daemon `v0.0.4-dev.24`, which includes first-install token generation. When testing unpublished changes in both repositories, use `--daemon-source /path/to/zotigo`.
+The UI pins daemon `v0.0.4-dev.25`, which includes first-install token generation. When testing unpublished changes in both repositories, use `--daemon-source /path/to/zotigo`.
 
 New macOS daemon source installers require a persistent code-signing certificate
 and use identifier `com.zotigo.daemon`. Configure it as described in the paired

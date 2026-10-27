@@ -1,3 +1,4 @@
+import { PendingInteractionNotice } from "./conversation/PendingInteractionNotice";
 import { stateLabel } from "../shared/i18n/display";
 import { useLocale } from "./i18n";
 import { getLocale, t } from "../shared/i18n/index";
@@ -4139,6 +4140,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
                 binding={selectedBinding}
                 session={selectedSession}
                 items={searchWindow ?? timelineItems}
+                interactionHistory={actionableSessionItems}
                 itemsAuthoritative={sessionItemsLoadedForSessionId === selectedBinding?.daemon_session_id}
                 itemsLoading={sessionItemsLoading}
                 itemsError={sessionItemsError}
@@ -4231,6 +4233,15 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
 
         {selectedConversation && (
           <div className="composer-shell">
+            <PendingInteractionNotice items={actionableSessionItems} onOpen={(id) => {
+              closeSearchWindow();
+              stickToBottomRef.current = false;
+              requestAnimationFrame(() => {
+                const card = document.getElementById(`interaction-${id}`);
+                card?.scrollIntoView({ block: "center", behavior: "smooth" });
+                card?.focus({ preventScroll: true });
+              });
+            }} />
             {selectedBinding && <InputQueue onReconciled={(ids) => { setOptimisticPromptItems(current => current.filter(item => !ids.includes(item.id))); for (const id of ids) { promptRetries.current.delete(id); promptRecovery.current.get(id)?.release(); promptRecovery.current.delete(id); } }} pending={optimisticPromptItems.filter(item => item.queuedPreview)} onRetry={(id) => { if (!isBusy) void promptRetries.current.get(id)?.(); }} onRestore={(id) => { if (!isBusy) promptRecovery.current.get(id)?.restore(); }} onDismiss={(id) => { if (!isBusy) promptRecovery.current.get(id)?.discard(); }} daemonUrl={daemonUrl} key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} refresh={queueRefresh} active={surfaceActive} />}
             {runtimeOccupied && (
               <div className="runtime-occupied-notice" role="status">
