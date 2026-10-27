@@ -5362,6 +5362,7 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 
 /* Workspace tools stay beside the conversation; details are opened on demand. */
 .workspace-panel-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; -webkit-app-region: no-drag; }
+.workspace-panel-actions > .icon-button { display: grid; place-items: center; }
 .workspace-panel-body { display: flex; flex: 1; min-height: 0; min-width: 0; }
 .workspace-panel-content { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .workspace-panel-launcher { display: grid; gap: 8px; width: min(420px, calc(100% - 48px)); margin: auto; }
@@ -5541,10 +5542,6 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 /* Directories are the panel home, not an editor tab or launcher screen. */
 .file-browser-only .workspace-panel-content { flex: 0 0 auto; }
 .file-browser-only .workspace-file-tree { width: 100%; height: auto; max-height: none; flex: 1; border: 0; }
-.workspace-panel-actions .panel-close-button { display: inline-flex; }
-@media (max-width: 900px) {
-  html[data-platform="web"] .workspace-panel-actions .panel-close-button { display: inline-flex; }
-}
 
 /* Shared operation feedback, outside panel scrolling and layout. */
 .app-toasts {
