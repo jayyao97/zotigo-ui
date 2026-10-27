@@ -47,7 +47,21 @@ The `.env` files contain trusted shell assignments owned by the installing user;
 
 Client defaults are created only when the corresponding configuration and `COMPONENT/current/INSTALLATION` are both absent, after daemon installation. They use the daemon's configured token file and address (wildcard bind addresses become loopback URLs). Existing configurations are never rewritten; a new client alongside a legacy unauthenticated daemon remains unauthenticated. Older installed Desktop versions without `desktop.json` keep their environment-based behavior. A missing configuration for an already installed Web service is an error, not a fresh install. Retry after an interrupted installation reuses existing configuration and credentials.
 
-The UI pins daemon `v0.0.4-dev.24`, which includes first-install token generation. When testing unpublished changes in both repositories, use `--daemon-source /path/to/zotigo`.
+The UI pins daemon `v0.0.4-dev.25`, which includes first-install token generation. When testing unpublished changes in both repositories, use `--daemon-source /path/to/zotigo`.
+
+New macOS daemon source installers require a persistent code-signing certificate
+and use identifier `com.zotigo.daemon`. Configure it as described in the paired
+daemon's `docs/installation.md`; the UI installer inherits
+`ZOTIGO_MACOS_SIGNING_IDENTITY` and delegates signing to that installer. A saved
+`~/.config/zotigo/macos-signing-identity` is reused on subsequent builds.
+Desktop's development daemon builder also calls the source checkout's
+`scripts/sign-macos-daemon.sh` before replacing its stable user-data binary.
+On macOS, an older daemon checkout without this helper cannot be used for managed
+development builds; update it or set `ZOTIGO_DESKTOP_MANAGE_DAEMON=0` and connect
+to an already installed daemon. Signing failures preserve the previous binary.
+The development daemon and installed daemon use different stable paths and may
+need separate macOS permission grants. These changes do not reset system privacy
+permissions or provision certificates automatically.
 
 Web generates a login token on first startup if none is configured; read `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). This owner-only file is reused across restarts. To rotate the token, stop Web and remove the file before starting again. An explicit ZOTIGO_WEB_TOKEN overrides the file without replacing it. Browser login sessions still expire after 12 hours and are invalidated on server restart. The token itself is not printed or logged. See [README remote access](../README.md#remote-access) for HTTPS, authentication and network requirements. The default Local connection uses the colocated daemon. Saved remote hosts run workspace and text-file operations on their own daemon; the Web backend must be able to reach those addresses.
 

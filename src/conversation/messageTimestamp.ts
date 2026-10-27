@@ -5,11 +5,15 @@ export function messageTimestamp(value?: string, now = new Date(), locale: strin
   if (!value) return null;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
-  const recent = date <= now && now.getTime() - date.getTime() < 7 * 24 * 60 * 60 * 1000;
+  // Compare local calendar dates, not elapsed hours: last Monday evening is
+  // already a week old on Monday morning. UTC date ordinals also avoid DST.
+  const calendarDay = (value: Date) => Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+  const daysAgo = (calendarDay(now) - calendarDay(date)) / (24 * 60 * 60 * 1000);
+  const recent = date <= now && daysAgo >= 0 && daysAgo < 7;
   return {
     label: date.toLocaleString(locale, recent
       ? { weekday: "short", hour: "2-digit", minute: "2-digit" }
-      : { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+      : { year: date.getFullYear() === now.getFullYear() ? undefined : "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
     full: date.toLocaleString(locale, { year: "numeric", month: "long", day: "numeric", weekday: "long", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" }),
   };
 }

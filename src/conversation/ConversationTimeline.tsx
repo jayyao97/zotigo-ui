@@ -83,6 +83,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   session,
   items,
   itemsAuthoritative,
+  interactionHistory = items,
   itemsLoading,
   itemsError,
   message,
@@ -106,6 +107,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   session: ZotigoSession | null;
   items: DisplayItem[];
   itemsAuthoritative: boolean;
+  interactionHistory?: DisplayItem[];
   itemsLoading: boolean;
   itemsError: string | null;
   message: string | null;
@@ -140,8 +142,8 @@ export const SessionTimeline = memo(function SessionTimeline({
     : null;
   const openTurn = itemsAuthoritative && session && sessionAllowsActiveTurn(session.state) ? recordedActiveTurn : null;
   const pendingRequests = useMemo(
-    () => pendingHumanRequestIDs(itemsAuthoritative ? items : []),
-    [items, itemsAuthoritative],
+    () => pendingHumanRequestIDs(itemsAuthoritative ? interactionHistory : []),
+    [interactionHistory, itemsAuthoritative],
   );
   const pendingApprovalIds = session?.state === "paused" ? pendingRequests.approvals : new Set<string>();
   const pendingInteractionIds = pendingRequests.interactions;
@@ -201,7 +203,11 @@ export const SessionTimeline = memo(function SessionTimeline({
                     approvalPending={Boolean(item.approval?.id && pendingApprovalIds.has(item.approval.id))}
                     approvalSubmitting={item.approval?.id ? submittingApprovalIds.has(item.approval.id) : false}
                     onSubmitApproval={onSubmitApproval}
-                    interactionPending={Boolean(item.interaction?.id && pendingInteractionIds.has(item.interaction.id))}
+                    interactionPending={item.interaction?.id && pendingInteractionIds.has(item.interaction.id) ? true
+                      : itemsAuthoritative && interactionHistory.some(candidate => candidate.sequence > item.sequence && (
+                        (candidate.type === "interaction_response" && candidate.interaction?.id === item.interaction?.id)
+                        || candidate.type === "turn_completed" || candidate.type === "turn_failed" || candidate.type === "turn_interrupted"
+                      )) ? false : undefined}
                     interactionSubmitting={item.interaction?.id ? submittingInteractionIds.has(item.interaction.id) : false}
                     onSubmitInteraction={onSubmitInteraction}
                     smoothStreaming={smoothStreaming && streamingItemIds.has(item.id)}
@@ -403,7 +409,7 @@ const DisplayTimelineItem = memo(function DisplayTimelineItem({
   approvalPending: boolean;
   approvalSubmitting: boolean;
   onSubmitApproval: (approvalId: string, decisions: ApprovalDecisionInput[]) => Promise<void>;
-  interactionPending: boolean;
+  interactionPending: boolean | undefined;
   interactionSubmitting: boolean;
   onSubmitInteraction: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
   smoothStreaming: boolean;
@@ -658,9 +664,9 @@ function formatApprovalSource(source: string): string {
   return source === "codex" ? t("conversationTimeline.requestedByCodex") : t("conversationTimeline.requestedBy", { p0: source });
 }
 
-function UserInputItem({ item, pending, submitting, onSubmit }: {
+export function UserInputItem({ item, pending, submitting, onSubmit }: {
   item: DisplayItem;
-  pending: boolean;
+  pending: boolean | undefined;
   submitting: boolean;
   onSubmit: (interactionId: string, answers: Record<string, string[]>) => Promise<void>;
 }) {
@@ -670,13 +676,17 @@ function UserInputItem({ item, pending, submitting, onSubmit }: {
   const [answers, setAnswers] = useState<InteractionDrafts>({});
   const [confirmUnanswered, setConfirmUnanswered] = useState(false);
   if (!interaction) return null;
-  if (item.type === "interaction_response") {
-    return <div className="tool-process-line"><Check size={12} strokeWidth={1.8} /><span>{interaction.status === "expired" ? t("conversationTimeline.questionExpired") : t("conversationTimeline.answeredQuestion")}</span></div>;
+  if (item.type === "interaction_response" || pending === false) {
+    const answered = interaction.status === "resolved";
+    return <details className="interaction-summary">
+      <summary><ChevronRight className="interaction-summary-chevron" size={14} aria-hidden="true" />{answered ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}<span>{answered ? t("conversationTimeline.answeredQuestion") : t("interaction.closed")}</span></summary>
+      {questions.map(question => <p key={question.id}>{question.question}</p>)}
+    </details>;
   }
   const requester = interaction.requester?.name ? t("conversationTimeline.asks", { p0: interaction.requester.name }) : t("conversationTimeline.inputRequired");
   const complete = interactionAnswersComplete(questions, answers);
   return (
-    <form className={`tool-card interaction-card ${pending ? "pending" : "resolved"}`} onSubmit={(event) => {
+    <form id={`interaction-${interaction.id}`} tabIndex={-1} className={`tool-card interaction-card ${pending ? "pending" : "resolved"}`} onSubmit={(event) => {
       event.preventDefault();
       if (!pending || submitting) return;
       if (!complete && !confirmUnanswered) {
@@ -686,8 +696,9 @@ function UserInputItem({ item, pending, submitting, onSubmit }: {
       void onSubmit(interaction.id, buildInteractionAnswers(questions, answers));
     }}>
       <div className="approval-card-heading"><strong>{requester}</strong></div>
+      <p className="interaction-mode">{pending === undefined ? t("interaction.stateUnavailable") : interaction.is_blocking ? t("interaction.waitingForAnswer") : t("interaction.answerWhileWorking")}</p>
       {questions.map((question) => (
-        <fieldset key={question.id}>
+        <fieldset key={question.id} disabled={submitting || pending !== true}>
           <legend>{question.header && <span>{question.header}</span>}{question.question}</legend>
           {(question.options ?? []).map((option) => (
             <label className="interaction-option" key={option.label}>
