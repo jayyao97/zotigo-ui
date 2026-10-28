@@ -169,7 +169,7 @@ export async function listSessions(): Promise<ZotigoSession[]> {
   return response.sessions;
 }
 
-export function createSession(input: CreateSessionInput = {}): Promise<ZotigoSession> {
+export function createSession(input: CreateSessionInput = {}): Promise<ZotigoSession & { workspace_position?: number }> {
   const payload: Record<string, string> = {};
   if (input.workingDirectory !== undefined) {
     payload.working_directory = input.workingDirectory;
@@ -197,7 +197,10 @@ export function createSession(input: CreateSessionInput = {}): Promise<ZotigoSes
     method: "POST",
     body,
     headers: body ? { "Content-Type": "application/json" } : undefined,
-  }).then((value) => parseSession(value, "create session response"));
+  }).then((value) => ({
+    ...parseSession(value, "create session response"),
+    workspace_position: expectOptionalNumber(expectRecord(value, "create session response").workspace_position, "create session workspace_position"),
+  }));
 }
 
 export async function listCatalogProjects(): Promise<CatalogProject[]> {

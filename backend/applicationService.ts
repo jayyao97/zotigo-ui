@@ -508,7 +508,7 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
         : { profile }),
     });
     await setCatalogSessionTitle(created.id, title?.trim() || "New session");
-    if (workspaceId) {
+    if (workspaceId && created.workspace_position === undefined) {
       await setCatalogSessionPosition(created.id, -Date.now());
     }
     await selectCatalogSession(created.id);

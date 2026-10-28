@@ -5777,3 +5777,19 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .interaction-summary summary { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .interaction-summary p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .interaction-summary[open] .interaction-summary-chevron { transform: rotate(90deg); }
+
+/* The tools page uses the same quiet surfaces as open-file tabs. */
+.workspace-panel-home { width: 100%; max-width: 860px; margin: 0 auto; padding: clamp(20px, 4vw, 48px); overflow-y: auto; }
+.workspace-panel-home section + section { margin-top: 36px; }
+.workspace-panel-home h2 { margin: 0 0 14px; font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.workspace-tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 8px; }
+.workspace-tool-grid > button { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border: 0; border-radius: var(--radius-lg); background: var(--surface); text-align: left; font-size: 13px; }
+.workspace-tool-grid > button:hover { background: var(--surface-row); }
+.workspace-panel-home svg { flex-shrink: 0; color: var(--text-muted); }
+.workspace-open-files { display: grid; gap: 4px; }
+.workspace-open-files > button { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px; border: 0; border-radius: var(--radius-lg); background: transparent; text-align: left; }
+.workspace-open-files > button:hover { background: var(--surface); }
+.workspace-open-files span { display: grid; gap: 4px; min-width: 0; }
+.workspace-open-files strong { font-size: 13px; font-weight: 500; }
+.workspace-open-files small { font-size: 11px; color: var(--text-dim); }
+.workspace-open-files strong, .workspace-open-files small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

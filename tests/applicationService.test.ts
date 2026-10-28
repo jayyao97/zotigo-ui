@@ -414,3 +414,44 @@ test("prompt identity survives the client boundary and message-to-steering fallb
     daemon.close(); await once(daemon, "close");
   }
 });
+
+test("creation preserves server positions and only reorders for legacy daemons", async () => {
+  const original = getDaemonConfig().baseUrl;
+  for (const serverPosition of [undefined, -123456789, 0]) {
+    let reorderCount = 0;
+    let sent = false;
+    const session = { id: "new", state: "created", approval_policy: "auto", created_at: "2026-01-01" };
+    const projection = { runtime: session, organization: null, availability: "available" };
+    const daemon = createServer((request, response) => {
+      let data: unknown;
+      switch (request.url) {
+        case "/sessions": data = { ...session, workspace_position: serverPosition }; break;
+        case "/sessions/new/title": data = projection; break;
+        case "/sessions/new/position": reorderCount++; data = projection; break;
+        case "/projects": data = { projects: [] }; break;
+        case "/catalog/navigation": data = { projects: [], workspaces: [], pinned: [], legacy_order_imported: true }; break;
+        case "/catalog/sessions": data = { sessions: [projection] }; break;
+        case "/sessions/new/start": data = session; break;
+        case "/sessions/new/messages": sent = true; data = { id: "cmd", sequence: 1, type: "message", created_at: "2026-01-01" }; break;
+        default: response.writeHead(404); response.end(); return;
+      }
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ code: "ok", data }));
+    });
+    daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+    const address = daemon.address(); assert.ok(address && typeof address !== "string");
+    setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+    const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+    try {
+      const result = await service.invoke("desktop:create-conversation-with-session", [{
+        projectId: null, workspaceId: "workspace", prompt: "hello", images: [], skills: [],
+      }]);
+      assert.equal(result.ok, true);
+      assert.equal(sent, true, JSON.stringify(result));
+      assert.equal(reorderCount, serverPosition === undefined ? 1 : 0);
+    } finally {
+      service.dispose(); setDaemonBaseUrl(original);
+      const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed;
+    }
+  }
+});
