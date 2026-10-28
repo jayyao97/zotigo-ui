@@ -1,5 +1,7 @@
 import type { Message, MessageKey } from "./en";
 export const zhCN: Record<MessageKey, Message> = {
+  "panel.tools": "工具",
+  "panel.openFiles": "已打开文件",
   "retry.running": "正在第 {attempt}/2 次重试 · 等待模型响应",
   "retry.recovered": "模型已恢复响应 · 重试了 {attempt} 次",
   "retry.failed": "重试 {attempt} 次后仍失败",

@@ -1,5 +1,7 @@
 export type Message = string | { one: string; other: string };
 export const en = {
+  "panel.tools": "Tools",
+  "panel.openFiles": "Open files",
   "retry.running": "Retrying model request · {attempt}/2 · waiting for response",
   "retry.recovered": { one: "Model response resumed · after {attempt} retry", other: "Model response resumed · after {attempt} retries" },
   "retry.failed": { one: "Model request failed after {attempt} retry", other: "Model request failed after {attempt} retries" },

@@ -1,3 +1,5 @@
+import { LayoutGrid } from "lucide-react";
+import { WorkspacePanelHome } from "./WorkspacePanelHome";
 import { PendingInteractionNotice } from "./conversation/PendingInteractionNotice";
 import { stateLabel } from "../shared/i18n/display";
 import { useLocale } from "./i18n";
@@ -4561,6 +4563,11 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             onClose={() => setSidePanelOpen(false)} />}
           <div className={`subagent-panel-tabbar ${activeSidePanelTab?.kind === "file" ? "file-tabbar" : ""}`}>
             <div className="workspace-panel-tabs">
+              <div className={`subagent-panel-tab ${!activeSidePanelTab && !treeVisible ? "active" : ""}`}>
+                <button type="button" className="subagent-panel-tab-select" aria-pressed={!activeSidePanelTab && !treeVisible} onClick={() => { setTreeVisible(false); setSidePanelTabs(state => ({ ...state, activeTabId: null })); }}>
+                  <LayoutGrid size={14} /><span>{t("panel.tools")}</span>
+                </button>
+              </div>
             {sidePanelTabs.tabs.map((tab) => {
               const run = tab.kind === "subagent" ? subagentRuns.find((candidate) => candidate.id === tab.runId) : undefined;
               const fileState = tab.kind === "file" ? openFiles[tab.path] : undefined;
@@ -4585,11 +4592,16 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               <button type="button" className="icon-button panel-close-button" title={t("app.closeFilesAndReturnToConversation")} aria-label={t("app.closeFilesAndReturnToConversation")} aria-expanded={sidePanelOpen} onClick={() => setSidePanelOpen(false)}><PanelRight size={16} /></button>
             </div>
           </div>
-          <div className={`workspace-panel-body ${!activeSidePanelTab ? "file-browser-only" : ""}`}>
+          <div className={`workspace-panel-body ${!activeSidePanelTab && treeVisible ? "file-browser-only" : ""}`}>
           <div className="workspace-panel-content">
           {liveFiles.notice && activeSidePanelTab?.kind === "file" && <div className="file-editor-banner" role="status">{liveFiles.notice}</div>}
           {fileOpening && <div className="workspace-file-notice" role="status">{t("app.openingFile")}</div>}
-          {!activeSidePanelTab ? (!treeVisible && <div className="subagent-panel-empty"><button type="button" className="file-editor-mode-button" onClick={() => browseFiles()}><FolderOpen size={16} />{t("app.browseFiles")}</button></div>) : activeSidePanelTab.kind === "subagents" ? (
+          {!activeSidePanelTab ? (!treeVisible && <WorkspacePanelHome
+            files={sidePanelTabs.tabs.filter(tab => tab.kind === "file")}
+            onBrowse={() => browseFiles()}
+            onSubagents={() => showPanelTab({ id: "subagents", kind: "subagents" })}
+            onOpenFile={id => { const tab = sidePanelTabs.tabs.find(tab => tab.id === id); if (tab) showPanelTab(tab); }}
+          />) : activeSidePanelTab.kind === "subagents" ? (
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
             <SubagentTranscript
