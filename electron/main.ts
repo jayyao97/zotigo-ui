@@ -1,6 +1,7 @@
 import { withHost } from "../backend/hosts";
 import { configureDaemonImageAuth } from "./daemonImageAuth";
-import { app, session, BrowserWindow, ipcMain, screen, shell, type Rectangle } from "electron";
+import { app, session, BrowserWindow, ipcMain, Menu, screen, shell, type Rectangle } from "electron";
+import { imageContextMenu } from "./imageContextMenu";
 import path from "node:path";
 import { createApplicationService } from "../backend/applicationService";
 import { closePreferencesStore, getWindowBoundsPreference, initializePreferencesStore, setWindowBoundsPreference } from "../backend/preferencesStore";
@@ -65,6 +66,16 @@ async function createMainWindow(): Promise<void> {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+  const window = mainWindow;
+  window.webContents.on("context-menu", async (_event, params) => {
+    if (params.mediaType !== "image") return;
+    let locale = "en";
+    try {
+      locale = await window.webContents.executeJavaScript("document.documentElement.lang");
+    } catch { /* The renderer may have closed or navigated. */ }
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+    Menu.buildFromTemplate(imageContextMenu(params, window.webContents, locale)).popup({ window });
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     console.error("renderer_gone reason=%s exit_code=%d", details.reason, details.exitCode);

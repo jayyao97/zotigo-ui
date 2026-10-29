@@ -1,4 +1,6 @@
 import { changeLanguage, useLocale } from "./i18n";
+import { useState } from "react";
+import { ModelSettings } from "./ModelSettings";
 import { t } from "../shared/i18n/index";
 import type { TranslationLanguage } from "./translationLanguage";
 import type { SendMode } from "./sendMode";
@@ -9,6 +11,7 @@ import { ArrowLeft, Settings, Server, RefreshCw } from "lucide-react";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 
 export function SettingsPage({
+  initialPage = "general",
   hostName,
   defaultSendMode = "steering",
   onDefaultSendModeChange,
@@ -26,6 +29,7 @@ export function SettingsPage({
   onManageHosts,
   onBack,
 }: {
+  initialPage?: "general" | "models";
   hostName: string;
   defaultSendMode?: SendMode;
   onDefaultSendModeChange?: (mode: SendMode) => void;
@@ -44,6 +48,7 @@ export function SettingsPage({
   onBack: () => void;
 }) {
   const locale = useLocale();
+  const [page, setPage] = useState<"general" | "models">(initialPage);
   return (
     <main className="settings-page">
       <aside className="settings-sidebar">
@@ -53,16 +58,19 @@ export function SettingsPage({
           <span>{t("settingsPage.backToZotigo")}</span>
         </button>
         <nav aria-label={t("hostShell.settings")}>
-          <button type="button" className="settings-nav-item is-active" aria-current="page">
+          <button type="button" className={`settings-nav-item ${page === "general" ? "is-active" : ""}`} aria-current={page === "general" ? "page" : undefined} onClick={() => setPage("general")}>
             <Settings size={16} />
             <span>{t("settingsPage.general")}</span>
           </button>
+          <button type="button" className={`settings-nav-item ${page === "models" ? "is-active" : ""}`} aria-current={page === "models" ? "page" : undefined} onClick={() => setPage("models")}><Server size={16}/><span>{t("models.title")}</span></button>
         </nav>
       </aside>
 
       <section className="settings-main">
         <div className="settings-content">
+          {page === "models" ? <ModelSettings hostName={hostName}/> : <>
           <h1>{t("settingsPage.general")}</h1>
+          <section className="settings-section"><div className="settings-card"><div className="settings-row"><span><strong>{t("models.title")}</strong><small>{t("models.host", {host:hostName})}</small></span><button className="settings-secondary-button" onClick={() => setPage("models")}>{t("models.open")}</button></div></div></section>
 
           <section className="settings-section" aria-labelledby="language-settings-heading">
             <h2 id="language-settings-heading">{t("settings.language")}</h2>
@@ -140,6 +148,7 @@ export function SettingsPage({
               </div>
             </div>
           </section>
+          </>}
         </div>
       </section>
     </main>

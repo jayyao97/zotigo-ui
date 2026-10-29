@@ -1,4 +1,17 @@
 import type { SessionReadState } from "../shared/zotigod";
+import { parseModelSettings, type ModelSettingsChange, type ModelTestResult } from "../shared/modelSettings";
+
+export async function getModelSettings() {
+  return parseModelSettings(await requestJSON("/config/models"));
+}
+export async function updateModelSettings(change: ModelSettingsChange) {
+  return parseModelSettings(await requestJSON("/config/models", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(change)}));
+}
+export async function testModelSettings(change: ModelSettingsChange): Promise<ModelTestResult> {
+  const result = await requestJSON("/config/models/test", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(change)}) as ModelTestResult;
+  if (!result || typeof result.ok !== "boolean") throw new Error("Invalid model test response");
+  return result;
+}
 import { attachmentReference, type MessageFileInput } from "../shared/messageFiles";
 import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";

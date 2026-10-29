@@ -5,7 +5,8 @@ import { useMemo } from "react";
 import type React from "react";
 import { ArrowLeft, LoaderCircle } from "lucide-react";
 
-import { buildToolRenderProjection } from "../../shared/sessionDisplay";
+import { buildToolRenderProjection, groupReasoningItems, hasVisibleAssistantContent, latestPendingToolCall } from "../../shared/sessionDisplay";
+import { latestReasoningItemId, type ThinkingDisplayMode } from "../thinkingDisplay";
 import type { DisplayContentPart, DisplayItem } from "../../shared/zotigod";
 import {
   AssistantContentView,
@@ -15,6 +16,7 @@ import {
   formatDisplayToolResult,
   stringValue,
   UserMessage,
+  ThinkingDisclosure,
 } from "./ConversationTimeline";
 
 type SubagentHistoryEntry = {
@@ -159,15 +161,29 @@ export function SubagentTranscript({
   run,
   workspaceRoot,
   onBack,
+  thinkingDisplay,
 }: {
   run?: SubagentRun;
   workspaceRoot?: string;
   onBack: () => void;
+  thinkingDisplay?: ThinkingDisplayMode;
 }) {
   useLocale();
   const compact = (value?: string) => compactDisplayPaths(value, workspaceRoot) ?? "";
   const items = useMemo(() => subagentHistoryItems(run, workspaceRoot), [run, workspaceRoot]);
   const toolProjection = useMemo(() => buildToolRenderProjection(items), [items]);
+  const groups = groupReasoningItems(items.filter(item => item.role === "user" || hasVisibleAssistantContent(item, toolProjection)));
+  const latestThinking = latestReasoningItemId(items);
+  const activeToolCallId = run?.status === "running" ? latestPendingToolCall(items)?.id : undefined;
+  const renderItem = (item: DisplayItem) => item.role === "user" ? (
+    <UserMessage key={item.id} text={displayContentText(item.content)} />
+  ) : (
+    <div key={item.id} className="message-row assistant">
+      <div className="message-bubble assistant">
+        <AssistantContentView itemId={item.id} content={item.content ?? []} projection={toolProjection} activeToolCallId={activeToolCallId} />
+      </div>
+    </div>
+  );
   if (!run) {
     return <div className="subagent-panel-empty">{t("subagentPanel.subagentIsUnavailable")}</div>;
   }
@@ -190,17 +206,11 @@ export function SubagentTranscript({
             <div className="subagent-panel-empty">{run.status === "running" || run.status === "waiting_approval" ? subagentStatusLabel(run.status) : t("subagentPanel.noRecordedHistory")}</div>
           ) : (
             <div className="display-log subagent-transcript-history">
-              {items.map((item) => (
-                item.role === "user" ? (
-                  <UserMessage key={item.id} text={displayContentText(item.content)} />
-                ) : (
-                  <div key={item.id} className="message-row assistant">
-                    <div className="message-bubble assistant">
-                      <AssistantContentView itemId={item.id} content={item.content ?? []} projection={toolProjection} />
-                    </div>
-                  </div>
-                )
-              ))}
+              {groups.map(group => group.kind === "reasoning" ? (
+                <ThinkingDisclosure key={group.items[0].id} mode={thinkingDisplay} latest={group.items.some(item => item.id === latestThinking)}>
+                  {group.items.map(renderItem)}
+                </ThinkingDisclosure>
+              ) : renderItem(group.item))}
             </div>
           )}
         </div>

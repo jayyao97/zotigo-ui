@@ -1,5 +1,7 @@
 import { attachmentSizeError, parseMessageFiles, type MessageFileInput } from "../shared/messageFiles";
 import { createFileEvents } from "./fileEvents";
+import { parseModelSettingsChange } from "../shared/modelSettings";
+import { getModelSettings, updateModelSettings, testModelSettings } from "./zotigod";
 import { parseWatchedFiles, type FileEventEnvelope } from "../shared/fileEvents";
 import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost } from "./hosts";
 import { previewDaemonImage, openDaemonFile, saveDaemonFile, inspectCatalogSource, listDaemonDirectory } from "./zotigod";
@@ -135,6 +137,9 @@ addWorkspaceSourceToCatalog,
     return platform.downloadImage(imageDownloadUrl(assertString(url, "url"), getDaemonConfig().baseUrl));
   });
   handle("daemon:get-config", () => getDaemonConfig());
+  handle("daemon:get-model-settings", () => getModelSettings());
+  handle("daemon:update-model-settings", (change) => updateModelSettings(parseModelSettingsChange(change)));
+  handle("daemon:test-model-settings", (change) => testModelSettings(parseModelSettingsChange(change)));
   handle("desktop:upload-attachment", (sessionId, input) => {
     const [file] = parseMessageFiles([input]);
     return uploadMessageFile(assertNonEmptyString(sessionId, "sessionId"), file);
