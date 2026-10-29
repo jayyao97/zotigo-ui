@@ -61,6 +61,7 @@ export function HostShell() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [surface, setSurface] = useState<"workbench" | "settings">("workbench");
+  const [modelSetup, setModelSetup] = useState(false);
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const [translationLanguage, setTranslationLanguage] = useTranslationLanguage(selected);
   const [translationProfile, setTranslationProfile] = useTranslationProfile(selected);
@@ -154,9 +155,10 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ToastProvider key={selected}><ModelFavoritesProvider host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} />
+          <App onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
         {surface === "settings" && <SettingsPage
+          initialPage={modelSetup ? "models" : "general"}
           key={selected}
           onSync={() => void syncCatalog()}
           syncing={syncingCatalog || busy}
@@ -173,7 +175,7 @@ export function HostShell() {
           onTranslationProfileChange={setTranslationProfile}
           onThinkingDisplayChange={updateThinkingDisplay}
           onManageHosts={openHostSettings}
-          onBack={() => setSurface("workbench")}
+          onBack={() => { setModelSetup(false); setSurface("workbench"); }}
         />}
       </ModelFavoritesProvider></ToastProvider> : <main className="web-login"><p>{error || t("hostShell.loadingHosts")}</p></main>}
     </ClientContext.Provider>

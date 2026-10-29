@@ -345,7 +345,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ defaultSendMode = "steering", surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { defaultSendMode?: SendMode; surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
+export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   useLocale();
   const [queueRefresh, setQueueRefresh] = useState(0);
   const submitModeRef = useRef<SendMode | null>(null);
@@ -1294,7 +1294,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
     return () => {
       active = false;
     };
-  }, [profileWorkingDirectory, daemonUrl]);
+  }, [profileWorkingDirectory, daemonUrl, surfaceActive]);
 
   useEffect(() => {
     let active = true;
@@ -4170,6 +4170,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
               />
             ) : (
               <NewSessionPrompt
+                onConfigureModels={onConfigureModels}
                 favorites={modelFavorites}
                 selectedProject={selectedProject}
                 selectedWorkspace={selectedWorkspace}
@@ -4605,6 +4606,7 @@ export default function App({ defaultSendMode = "steering", surfaceActive = true
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
             <SubagentTranscript
+              thinkingDisplay={selectedSession?.agent === "codex" ? undefined : thinkingDisplay}
               run={subagentRuns.find((candidate) => candidate.id === activeSidePanelTab.runId)}
               workspaceRoot={selectedSession?.working_directory}
               onBack={() => showPanelTab({ id: "subagents", kind: "subagents" })}

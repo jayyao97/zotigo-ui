@@ -297,6 +297,9 @@ export interface ClientApi {
   inspectHostSources(paths: string[]): Promise<SourceCandidate[]>;
   getDaemonConfig(): Promise<DaemonConfig>;
   getProfiles(workingDirectory?: string, scope?: "global"): Promise<ProfilesResponse>;
+  getModelSettings(): Promise<import("./modelSettings").ModelSettings>;
+  updateModelSettings(change: import("./modelSettings").ModelSettingsChange): Promise<import("./modelSettings").ModelSettings>;
+  testModelSettings(change: import("./modelSettings").ModelSettingsChange): Promise<import("./modelSettings").ModelTestResult>;
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;
   getAgents(): Promise<AgentCatalogResponse>;
   prepareCodex(): Promise<AgentCatalogEntry>;

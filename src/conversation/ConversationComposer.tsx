@@ -131,6 +131,7 @@ export function ComposerAttachmentStrip({
 }
 
 export function NewSessionPrompt({
+  onConfigureModels,
   editorKey,
   onCaretChange,
   favorites,
@@ -213,6 +214,7 @@ export function NewSessionPrompt({
   profiles: RuntimeProfile[];
   selectedProfile: string;
   profilesLoading: boolean;
+  onConfigureModels?: () => void;
   onSelectProfile: (profile: string) => void;
   agents: AgentCatalogEntry[];
   agentsLoading: boolean;
@@ -274,6 +276,7 @@ export function NewSessionPrompt({
 
   return (
     <div className="new-chat">
+      {!profilesLoading && profiles.length === 0 && onConfigureModels && <button type="button" className="settings-secondary-button" onClick={onConfigureModels}>{t("models.open")}</button>}
       <form className="new-chat-composer" onSubmit={submit}>
         <div className="new-chat-project-context" ref={projectPickerRef}>
           <button

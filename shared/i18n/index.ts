@@ -21,6 +21,9 @@ export function setLocale(next: Locale): void {
   for (const listener of listeners) listener();
 }
 export function t(key: MessageKey, params: Record<string, string | number> = {}): string {
+  return translate(locale, key, params);
+}
+export function translate(locale: Locale, key: MessageKey, params: Record<string, string | number> = {}): string {
   const message = catalogs[locale][key];
   const template = typeof message === "string" ? message
     : message[new Intl.PluralRules(locale).select(Number(params.count ?? 0)) === "one" ? "one" : "other"];

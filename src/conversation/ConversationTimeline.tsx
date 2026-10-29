@@ -902,7 +902,7 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   previous.items.every((item) => previous.streamingItemIds.has(item.id) === next.streamingItemIds.has(item.id))
 ));
 
-function ThinkingDisclosure({ children, mode, latest = false }: { children: ReactNode; mode?: ThinkingDisplayMode; latest?: boolean }) {
+export function ThinkingDisclosure({ children, mode, latest = false }: { children: ReactNode; mode?: ThinkingDisplayMode; latest?: boolean }) {
   useLocale();
   const automaticKey = mode === "latest" ? `${mode}:${latest}` : mode;
   const automaticOpen = mode === undefined ? false : defaultThinkingDisclosureOpen(mode, latest);
@@ -1122,10 +1122,10 @@ function ToolProcess({ call, result, progress, active = false }: { call: Display
     <ToolDisclosure
       summary={summary}
       detail={detail || t("conversationTimeline.waitingForOutput")}
-      language={language === "Shell" ? t("markdownCodeBlock.shell") : t("markdownCodeBlock.plaintext")}
+      language={language === "Shell" ? t("markdownCodeBlock.shell") : call?.name || t("markdownCodeBlock.plaintext")}
       title={toolDetailTitle(call, language, summary)}
       command={toolResultCommand(call, language)}
-      showStatus={language === "Shell" || isFailure}
+      showStatus
       isError={isFailure}
       running={running}
     />
@@ -1490,7 +1490,7 @@ function toolResultCommand(call: DisplayToolCall | undefined, language: string):
 
 function toolDetailTitle(call: DisplayToolCall | undefined, language: string, summary: string): string {
   const command = toolResultCommand(call, language);
-  return command ? `$ ${command}` : summary;
+  return command ? `$ ${command}` : call?.name && call.arguments ? formatToolTarget(call.name, call.arguments) : summary;
 }
 
 function formatToolCallProcess(call: DisplayToolCall | undefined): string {

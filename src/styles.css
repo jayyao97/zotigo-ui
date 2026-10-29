@@ -5320,7 +5320,8 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
   .settings-sidebar { padding-bottom: 10px; border-right: 0; border-bottom: 1px solid var(--border); }
   .settings-sidebar-chrome { height: 8px; }
   .settings-back { margin-bottom: 4px; }
-  .settings-sidebar nav { display: none; }
+  .settings-sidebar nav { display: flex; gap: 8px; }
+  .settings-sidebar .settings-nav-item { width: auto; }
   .settings-content { width: calc(100% - 28px); padding: 28px 0 56px; }
   .settings-content h1 { margin-bottom: 28px; }
   .settings-row { align-items: flex-start; flex-direction: column; gap: 12px; }
@@ -5793,3 +5794,22 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .workspace-open-files strong { font-size: 13px; font-weight: 500; }
 .workspace-open-files small { font-size: 11px; color: var(--text-dim); }
 .workspace-open-files strong, .workspace-open-files small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.model-settings-help { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+.model-settings > p { margin: 10px 0 16px; }
+.model-settings > .settings-card { margin-top: 20px; }
+.model-settings-form { padding: 20px; }
+.model-settings-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.model-settings-form label { display: grid; gap: 7px; margin-bottom: 16px; font-size: 13px; }
+.model-settings-form small { color: var(--text-dim); line-height: 1.5; }
+.model-settings-form input:not([type=checkbox]), .model-settings-form select { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 10px; color: var(--text); background: var(--surface); border: 1px solid var(--border-heavy); border-radius: 8px; }
+.model-settings-form input:focus, .model-settings-form select:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
+.model-settings-form .model-key-clear { display: flex; align-items: center; }
+.model-settings-form .model-key-clear input { width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; flex: 0 0 16px; }
+.model-settings-form summary { cursor: pointer; margin: 16px 0; }
+.model-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.model-settings-row { flex-wrap: wrap; gap: 12px; }
+.model-settings-row > span { min-width: 160px; overflow-wrap: anywhere; }
+.model-delete-confirm { padding: 16px; }
+.model-settings [role=alert] { color: var(--orange); overflow-wrap: anywhere; }
+.model-settings button:disabled { opacity: .5; cursor: default; }
