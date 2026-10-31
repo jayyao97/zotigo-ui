@@ -58,14 +58,14 @@ export function toolDetail(
   return {
     label,
     text,
-    language: shell ? "Shell" : "plaintext",
+    language: shell ? "Shell" : call?.name || "plaintext",
     command: shell && command ? command : undefined,
-    title: shell && command ? `$ ${command}` : label,
+    title: shell && command ? `$ ${command}` : command || label,
     status: failed
       ? ("Failed" as const)
       : running
         ? ("Running" as const)
-        : result && shell
+        : result
           ? ("Success" as const)
           : undefined,
   };

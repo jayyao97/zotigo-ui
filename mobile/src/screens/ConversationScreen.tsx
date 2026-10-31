@@ -1,3 +1,4 @@
+import { interactionState } from "@zotigo/shared/interactionState";
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
 import { KeyboardFrameView } from "../components/KeyboardFrameView";
@@ -702,6 +703,7 @@ function ConversationContent() {
       return (
         <MessageCard
           sessionId={id}
+          interactionPending={item.interaction ? interactionState(item, state.items, state.status === "connected", pending.interactions) : undefined}
           item={item}
           openFile={openFile}
           live={previewIds.has(item.id)}
@@ -726,6 +728,9 @@ function ConversationContent() {
       turn,
       projection,
       ordered,
+      state.items,
+      pending,
+      state.status,
       state.session?.state,
       state.session?.ended_at,
       selectText,
@@ -1020,6 +1025,15 @@ function ConversationContent() {
           backgroundColor: colors.background,
         }}
       >
+        {pending.interactions.size > 0 && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.muted}>{requests.some(item => item.interaction?.is_blocking) ? t("interaction.waitingForAnswer") : t("interaction.answerWhileWorking")}</Text>
+              <Text style={styles.muted}>{t("interaction.pendingCount", { count: pending.interactions.size })}</Text>
+            </View>
+            <Action label={t("interaction.viewQuestions")} onPress={scrollToBottom} />
+          </View>
+        )}
         <InputQueue sessionId={id} refresh={queueRevision}
           pending={promptPreviews.filter(item => item.queuedPreview)}
           onReconciled={ids => setPromptPreviews(items => items.filter(item => !ids.includes(item.id)))} />
@@ -1393,6 +1407,7 @@ function ConversationContent() {
                 }
               />
               <RuntimePicker
+                onConfigureModels={() => { setOptions(false); nav.navigate("Profiles"); }}
                 key={`${state.session.agent}:${state.session.model}:${state.session.profile}:${state.session.reasoning_effort}`}
                 agents={
                   agents?.agents ?? [

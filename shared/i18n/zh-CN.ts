@@ -91,6 +91,7 @@ export const zhCN: Record<MessageKey, Message> = {
   "updates.phase.verifying": "正在验证更新…",
   "updates.phase.completed": "升级完成",
   "updates.phase.failed": "升级失败",
+  "mobile.invalidTokenLimit": "请输入 1 到 100,000,000 之间的整数 token 上限，或留空使用默认值。",
   "models.openai": "OpenAI / OpenAI-compatible",
   "models.anthropic": "Anthropic",
   "models.gemini": "Gemini",

@@ -1,4 +1,5 @@
 import { CompletionTriggerNavigation, createdCompletionTrigger } from "./CompletionTriggerNavigation";
+import { interactionState } from "../../shared/interactionState";
 import { requestRetryLabel } from "../../shared/requestRetry";
 import { useLocale } from "../i18n";
 import { t } from "../../shared/i18n/index";
@@ -148,7 +149,6 @@ export const SessionTimeline = memo(function SessionTimeline({
     [interactionHistory, itemsAuthoritative],
   );
   const pendingApprovalIds = session?.state === "paused" ? pendingRequests.approvals : new Set<string>();
-  const pendingInteractionIds = pendingRequests.interactions;
   const activeToolCall = activeTurn
     ? latestPendingToolCall(items, session?.active_tool) ?? latestPendingToolCall(items)
     : null;
@@ -205,11 +205,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                     approvalPending={Boolean(item.approval?.id && pendingApprovalIds.has(item.approval.id))}
                     approvalSubmitting={item.approval?.id ? submittingApprovalIds.has(item.approval.id) : false}
                     onSubmitApproval={onSubmitApproval}
-                    interactionPending={item.interaction?.id && pendingInteractionIds.has(item.interaction.id) ? true
-                      : itemsAuthoritative && interactionHistory.some(candidate => candidate.sequence > item.sequence && (
-                        (candidate.type === "interaction_response" && candidate.interaction?.id === item.interaction?.id)
-                        || candidate.type === "turn_completed" || candidate.type === "turn_failed" || candidate.type === "turn_interrupted"
-                      )) ? false : undefined}
+                    interactionPending={interactionState(item, interactionHistory, itemsAuthoritative, pendingRequests.interactions)}
                     interactionSubmitting={item.interaction?.id ? submittingInteractionIds.has(item.interaction.id) : false}
                     onSubmitInteraction={onSubmitInteraction}
                     smoothStreaming={smoothStreaming && streamingItemIds.has(item.id)}
