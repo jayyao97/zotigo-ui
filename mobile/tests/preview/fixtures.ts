@@ -1,3 +1,4 @@
+import type { ModelSettings, ModelSettingsChange } from "@zotigo/shared/modelSettings";
 import { pickedImageInput } from "../../src/core/imageInput";
 import { attachmentPng } from "./attachment";
 import type {
@@ -471,6 +472,11 @@ const agents = {
   ],
 };
 
+const modelSettings: Record<string, ModelSettings> = Object.fromEntries(["home", "work"].map(host => [host, {
+  revision: "1", default_profile: "balanced", defaults: { context_window: 200000, max_output_tokens: 32000 },
+  profiles: ["balanced", "review"].map(name => ({ name, provider: "openai", model: "gpt-5.3-codex", base_url: "", thinking_level: name === "review" ? "high" : "", context_window: 0, max_output_tokens: null, mode: "", has_api_key: true })),
+}]));
+
 export const fixtureFetch: Fetch = async (input, init = {}) => {
   if (init.signal?.aborted) throw new Error("Fixture request aborted.");
   const url = new URL(input);
@@ -504,19 +510,22 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     return envelope({ status: "ok", protocol_version: "1" });
   if (path === "/agents") return envelope(agents);
   if (path === "/agents/codex/prepare") return envelope(agents.agents[0]);
-  if (path === "/config/profiles")
-    return envelope({
-      default_profile: "balanced",
-      profiles: [
-        { name: "balanced", provider: "openai", model: "gpt-5.3-codex" },
-        {
-          name: "review",
-          provider: "openai",
-          model: "gpt-5.3-codex",
-          thinking_level: "high",
-        },
-      ],
-    });
+  if (path === "/config/models/test") return envelope({ ok: true });
+  if (path === "/config/models") {
+    const settings = modelSettings[key];
+    if (method === "GET") return envelope(settings);
+    const change = body as unknown as ModelSettingsChange;
+    if (change.revision !== settings.revision) return failure("Revision changed", 409, "conflict");
+    if (change.action === "default") settings.default_profile = change.profile.name;
+    else if (change.action === "delete") settings.profiles = settings.profiles.filter(p => p.name !== change.profile.name);
+    else {
+      const profile = { ...change.profile, has_api_key: change.api_key === undefined ? change.profile.has_api_key : !!change.api_key };
+      settings.profiles = [...settings.profiles.filter(p => p.name !== profile.name), profile];
+    }
+    settings.revision = String(Number(settings.revision) + 1);
+    return envelope(settings);
+  }
+  if (path === "/config/profiles") return envelope({ default_profile: modelSettings[key].default_profile, profiles: modelSettings[key].profiles });
   if (path === "/skills")
     return envelope({
       skills: [

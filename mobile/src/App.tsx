@@ -1,3 +1,4 @@
+import { ModelSettingsScreen } from "./screens/ModelSettingsScreen";
 import { clampSidebarWidth } from "@zotigo/shared/sidebarWidth";
 import { useSidebarWidth } from "./platform/preferences";
 import { SidebarResizeHandle } from "./components/SidebarResizeHandle";
@@ -385,7 +386,7 @@ export default function App() {
             />
             <Stack.Screen
               name="Profiles"
-              component={ModelsScreen}
+              component={ModelSettingsScreen}
               options={{ title: t("mobile.zotigoProfiles") }}
             />
             <Stack.Screen name="Devices" options={{ title: t("mobile.devices") }}>

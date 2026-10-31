@@ -20,7 +20,7 @@ import {
 import { useDaemon } from "../platform/context";
 import { useModelFavorites } from "../platform/preferences";
 import { ChoiceRow } from "./BottomSheet";
-import { colors, Loading, Notice, styles } from "./ui";
+import { Action, colors, Loading, Notice, styles } from "./ui";
 
 export function RuntimePicker({
   agents,
@@ -31,9 +31,11 @@ export function RuntimePicker({
   onConfirm,
   confirmLabel,
   profilesLoading = false,
+  onConfigureModels,
 }: {
   agents: PickerAgent[];
   profilesLoading?: boolean;
+  onConfigureModels?: () => void;
   profiles?: ProfilesResponse;
   value: ModelFavorite;
   fixedAgent?: AgentKind;
@@ -175,6 +177,7 @@ export function RuntimePicker({
         )}
         {tab === "zotigo" && (
           <>
+            {onConfigureModels && <Action secondary label={t("models.title")} onPress={onConfigureModels} />}
             {profilesLoading && <Loading />}
             {profiles?.profiles.length === 0 && (
               <Notice text={t("mobile.noProfilesConfigured")} />

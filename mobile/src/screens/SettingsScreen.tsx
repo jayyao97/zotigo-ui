@@ -1,3 +1,4 @@
+import { SettingsPage, SettingsGroup, SettingRow } from "../components/SettingsLayout";
 import { stateLabel } from "@zotigo/shared/i18n/display";
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale, changeLanguage } from "../platform/i18n";
@@ -14,16 +15,12 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { Routes } from "../navigation";
 import { useEffect, useRef, useState } from "react";
-import { View, Text, ScrollView } from "react-native";
-import type { ReactNode } from "react";
+import { View } from "react-native";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Star from "lucide-react-native/icons/star";
-import Monitor from "lucide-react-native/icons/monitor";
-import Gauge from "lucide-react-native/icons/gauge";
 import MessageCircle from "lucide-react-native/icons/message-circle";
-import Languages from "lucide-react-native/icons/languages";
 import Terminal from "lucide-react-native/icons/terminal";
-import { colors, styles, IconButton } from "../components/ui";
+import { colors, IconButton } from "../components/ui";
 import type {
   AgentCatalogResponse,
   HealthResponse,
@@ -34,90 +31,45 @@ import {
   Action,
   Loading,
   Notice,
-  Row,
+  Row as BaseRow,
   Section,
   errorText,
 } from "../components/ui";
 
-function SettingsPage({ children }: { children: ReactNode }) {
-  useLocale();
-  return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-    >
-      <View
-        style={{ width: "100%", maxWidth: 640, alignSelf: "center", gap: 20 }}
-      >
-        {children}
-      </View>
-    </ScrollView>
-  );
-}
-function SettingsGroup({ children }: { children: ReactNode }) {
-  useLocale();
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        paddingHorizontal: 12,
-        overflow: "hidden",
-      }}
-    >
-      {children}
-    </View>
-  );
+function Row(props: React.ComponentProps<typeof BaseRow>) {
+  return <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}><BaseRow {...props} /></View>;
 }
 const arrow = <ChevronRight size={18} color={colors.muted} />;
 export function SettingsScreen({ connected = true }: { connected?: boolean }) {
   useLocale();
-  return (
-    <SettingsPage>
-      <LanguageSettings />
-      <Section title={t("mobile.devices")}>
-        <SettingsGroup>
-          <DeviceSettingsRow connected={connected} />
-        </SettingsGroup>
-      </Section>
-      <Section title={t("mobile.preferences")}>
-        <SettingsGroup>
-          {connected && <ConnectedPreferenceRows />}
-          {!connected && <ConversationSettingsRow />}
-        </SettingsGroup>
-      </Section>
-      {connected && <DeviceActions />}
-    </SettingsPage>
-  );
+  return <SettingsPage>
+    {connected && <ModelConfigurationRow />}
+    <LanguageSettings />
+    <Section title={t("app.conversation")}>
+      <SettingsGroup>{connected ? <ConnectedPreferenceRows /> : <ConversationSettingsRow />}</SettingsGroup>
+    </Section>
+    {connected && <><FavoriteSettingsRow /><DeviceActions /></>}
+    <Section title={t("settingsPage.connections")}><SettingsGroup><DeviceSettingsRow connected={connected} /></SettingsGroup></Section>
+  </SettingsPage>;
 }
+function ModelConfigurationRow() {
+  const client = useDaemon();
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
+  return <SettingsGroup><SettingRow title={t("models.title")} subtitle={t("models.host", { host: client.connection.name })} onPress={() => nav.navigate("Profiles")} last /></SettingsGroup>;
+}
+
 function DeviceSettingsRow({ connected }: { connected: boolean }) {
   useLocale();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  return connected ? (
-    <ConnectedDeviceRow />
-  ) : (
-    <Row
-      title={t("mobile.devices")}
-      subtitle={t("mobile.addEditAndTestConnections")}
-      leading={<Monitor size={20} color={colors.muted} />}
-      right={arrow}
-      onPress={() => nav.navigate("Devices")}
-    />
-  );
+  return connected ? <ConnectedDeviceRow /> : <SettingRow title={t("mobile.devices")} subtitle={t("mobile.addEditAndTestConnections")} onPress={() => nav.navigate("Devices")} last />;
+
 }
 function ConnectedDeviceRow() {
   useLocale();
   const client = useDaemon();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  return (
-    <Row
-      title={client.connection.name}
-      subtitle={t("mobile.currentDeviceManageConnections")}
-      leading={<Monitor size={20} color={colors.muted} />}
-      right={arrow}
-      onPress={() => nav.navigate("Devices")}
-    />
-  );
+  return <SettingRow title={client.connection.name} subtitle={t("mobile.currentDeviceManageConnections")} onPress={() => nav.navigate("Devices")} last />;
+
 }
 function ConversationSettingsRow() {
   useLocale();
@@ -135,51 +87,20 @@ function ConnectedPreferenceRows() {
   useLocale();
   const client = useDaemon();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  const favorites = useModelFavorites(client.connection.id);
   const translation = useTranslationSettings(client.connection.id);
   const send = useSendMode(client.connection.id);
-  return (
-    <>
-      <Row
-        title={t("mobile.modelsAndFavorites")}
-        leading={<Gauge size={20} color={colors.muted} />}
-        right={
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={styles.muted}>{t("mobile.favoriteCount", { count: favorites.items.length })}</Text>
-            {arrow}
-          </View>
-        }
-        onPress={() => nav.navigate("Models")}
-      />
-      <Row
-        title={t("app.conversation")}
-        leading={<MessageCircle size={20} color={colors.muted} />}
-        right={
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={styles.muted}>
-              {send.mode === "queue" ? t("mobile.queue") : t("mobile.steer")}
-            </Text>
-            {arrow}
-          </View>
-        }
-        onPress={() => nav.navigate("ConversationPreferences")}
-      />
-      <Row
-        title={t("mobile.translation")}
-        leading={<Languages size={20} color={colors.muted} />}
-        right={
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={styles.muted}>
-              {translation.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")}
-            </Text>
-            {arrow}
-          </View>
-        }
-        onPress={() => nav.navigate("TranslationPreferences")}
-      />
-    </>
-  );
+  return <>
+    <SettingRow title={t("settingsPage.defaultSendMode")} value={send.mode === "queue" ? t("mobile.queue") : t("mobile.steer")} onPress={() => nav.navigate("ConversationPreferences")} />
+    <SettingRow title={t("mobile.translation")} value={translation.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")} onPress={() => nav.navigate("TranslationPreferences")} last />
+  </>;
 }
+function FavoriteSettingsRow() {
+  const client = useDaemon();
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
+  const favorites = useModelFavorites(client.connection.id);
+  return <Section title={t("conversationComposer.favorites")}><SettingsGroup><SettingRow title={t("mobile.modelsAndFavorites")} value={t("mobile.favoriteCount", { count: favorites.items.length })} onPress={() => nav.navigate("Models")} last /></SettingsGroup></Section>;
+}
+
 function DeviceActions() {
   useLocale();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
@@ -208,7 +129,7 @@ export function ConversationPreferencesScreen({
   const [showThinking, setShowThinking] = useState(false);
   return (
     <SettingsPage>
-      <SettingsGroup>
+      <SettingsGroup form>
         <Section title={t("app.conversation")}>
           <Row
             title={t("settingsPage.thinkingDisplay")}
@@ -226,7 +147,7 @@ export function ConversationPreferencesScreen({
         </Section>
       </SettingsGroup>
       {connected && (
-        <SettingsGroup>
+        <SettingsGroup form>
           <SendModeSettings />
         </SettingsGroup>
       )}
@@ -261,7 +182,7 @@ export function TranslationPreferencesScreen() {
   useLocale();
   return (
     <SettingsPage>
-      <SettingsGroup>
+      <SettingsGroup form>
         <TranslationSettings />
       </SettingsGroup>
     </SettingsPage>
@@ -467,26 +388,7 @@ export function ModelsScreen() {
             </Section>
           </>
         )}
-        {section === "Profiles" && (
-          <Section title={t("mobile.runtimeProfiles")}>
-            {profiles?.profiles.map((profile) => (
-              <Row
-                key={profile.name}
-                title={
-                  profile.name +
-                  (profile.name === profiles.default_profile
-                    ? " · " + t("mobile.default")
-                    : "")
-                }
-                subtitle={`${profile.provider} · ${profile.model}${profile.thinking_level ? " · " + stateLabel(profile.thinking_level) : ""}`}
-              />
-            ))}
-            {profiles && profiles.profiles.length === 0 && (
-              <Notice text={t("mobile.noRuntimeProfilesConfigured")} />
-            )}
-            <Notice text={t("mobile.editDaemonProfileDefinitionsOnItsHost")} />
-          </Section>
-        )}
+
       </View>
     </SettingsPage>
   );
@@ -667,21 +569,18 @@ function SendModeSettings() {
 }
 
 function LanguageSettings() {
-  useLocale();
   const locale = useLocale();
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   return <Section title={t("settings.language")}>
-    <SettingsGroup>
-      {(["en", "zh-CN"] as const).map(value => <ChoiceRow
-        key={value} title={value === "en" ? t("settingsPage.english") : "简体中文"}
-        selected={locale === value} disabled={saving}
-        onPress={() => {
-          setSaving(true);
-          void changeLanguage(value).catch(e => setError(errorText(e))).finally(() => setSaving(false));
-        }}
-      />)}
-    </SettingsGroup>
+    <SettingsGroup><SettingRow title={t("settings.language")} value={locale === "en" ? t("language.english") : t("language.chinese")} onPress={() => setOpen(true)} last /></SettingsGroup>
     <Notice text={error} error />
+    <BottomSheet visible={open} title={t("settings.language")} onClose={() => setOpen(false)}>
+      {(["en", "zh-CN"] as const).map(value => <ChoiceRow key={value} title={value === "en" ? t("language.english") : t("language.chinese")} selected={locale === value} disabled={saving} onPress={() => {
+        setSaving(true);
+        void changeLanguage(value).then(() => setOpen(false)).catch(e => setError(errorText(e))).finally(() => setSaving(false));
+      }} />)}
+    </BottomSheet>
   </Section>;
 }

@@ -92,6 +92,7 @@ export const en = {
   "updates.phase.verifying": "Verifying update…",
   "updates.phase.completed": "Update completed",
   "updates.phase.failed": "Update failed",
+  "mobile.invalidTokenLimit": "Enter a whole token limit between 1 and 100,000,000, or leave it empty for the default.",
   "models.openai": "OpenAI / OpenAI-compatible",
   "models.anthropic": "Anthropic",
   "models.gemini": "Gemini",

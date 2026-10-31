@@ -281,8 +281,10 @@ export const MessageCard = memo(function MessageCard({
   onSelecting,
   highlight,
   onLocateMessage,
+  interactionPending,
 }: {
   item: DisplayItem;
+  interactionPending?: boolean;
   highlight?: string;
   onLocateMessage?: (id: string) => void;
   sessionId: string;
@@ -340,6 +342,7 @@ export const MessageCard = memo(function MessageCard({
     ? userImages(item, client.connection.baseUrl, sessionId)
     : [];
 
+  if (item.interaction) return interactionPending === true ? null : <InteractionSummary item={item} pending={interactionPending} />;
   if (item.type === "model_usage_updated") return null;
   if (item.type === "request_retry" && item.retry) return <RequestRetryStatus item={item} />;
 
@@ -584,3 +587,18 @@ export const MessageCard = memo(function MessageCard({
     </View>
   );
 });
+
+function InteractionSummary({ item, pending }: { item: DisplayItem; pending?: boolean }) {
+  useLocale();
+  const [open, setOpen] = useState(false);
+  const animate = useLayoutTransition();
+  const known = item.type === "interaction_response" || pending === false;
+  const label = known ? t(item.interaction?.status === "resolved" ? "conversationTimeline.answeredQuestion" : "interaction.closed") : t("interaction.stateUnavailable");
+  return <View style={{ paddingHorizontal: 18, gap: 4 }}>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => { animate(); setOpen(!open); }} style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44 }}>
+      {open ? <ChevronDown size={16} color={colors.muted} /> : <ChevronRight size={16} color={colors.muted} />}
+      <Text style={styles.muted}>{label}</Text>
+    </Pressable>
+    {open && item.interaction?.questions?.map(question => <Text selectable key={question.id} style={styles.text}>{question.question}</Text>)}
+  </View>;
+}

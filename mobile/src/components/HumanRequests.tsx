@@ -117,6 +117,7 @@ export function HumanRequest({
               ? t("conversationTimeline.asks", {p0: interaction.requester.name})
               : t("conversationTimeline.inputRequired")}
           </Text>
+          <Notice text={interaction.is_blocking ? t("interaction.waitingForAnswer") : t("interaction.answerWhileWorking")} />
           {interaction.questions?.map((q) => (
             <View key={q.id} style={{ gap: 8 }}>
               {q.header && <Text style={styles.muted}>{q.header}</Text>}

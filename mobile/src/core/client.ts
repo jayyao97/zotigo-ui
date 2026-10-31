@@ -1,3 +1,4 @@
+import { parseModelSettings, parseModelSettingsChange, type ModelSettingsChange, type ModelTestResult } from "@zotigo/shared/modelSettings";
 import { mergeReadState } from "@zotigo/shared/sessionReadState";
 import {
   parseMessageFiles,
@@ -446,6 +447,14 @@ export class DaemonClient {
     this.mergeSessionReadState(
       await this.request<D.ZotigoSession>(`/sessions/${enc(id)}`),
     );
+  getModelSettings = async () => parseModelSettings(await this.request("/config/models"));
+  updateModelSettings = async (change: ModelSettingsChange) =>
+    parseModelSettings(await this.request("/config/models", "PUT", parseModelSettingsChange(change)));
+  testModelSettings = async (change: ModelSettingsChange) => {
+    const result = await this.request<ModelTestResult>("/config/models/test", "POST", parseModelSettingsChange(change));
+    if (!result || typeof result.ok !== "boolean") throw new Error("Invalid model test response");
+    return result;
+  };
   createSession = (input: D.CreateSessionInput) =>
     this.request<D.ZotigoSession>("/sessions", "POST", {
       workspace_id: input.workspaceId,

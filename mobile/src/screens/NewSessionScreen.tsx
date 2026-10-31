@@ -35,6 +35,7 @@ import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
 import { RuntimePicker } from "../components/RuntimePicker";
 import {
   useNavigation,
+  useIsFocused,
   useRoute,
   usePreventRemove,
   type RouteProp,
@@ -214,13 +215,16 @@ export function NewSessionScreen() {
       active = false;
     };
   }, [client, choosing, projectId]);
+  const screenFocused = useIsFocused();
+  const lastProfilesDirectory = useRef<string | undefined>(undefined);
   // There is exactly one directory-scoped profile request owner. Old responses cannot
   // replace profiles after workspace changes, and creation waits for a matching result.
   useEffect(() => {
+    if (!screenFocused) return;
     let active = true;
     setProfiles(undefined);
     setProfilesDirectory(undefined);
-    setProfile("");
+    if (lastProfilesDirectory.current !== workspace?.root_path) setProfile("");
     setProfileError("");
     void client
       .profiles(workspace?.root_path)
@@ -228,7 +232,8 @@ export function NewSessionScreen() {
         if (!active) return;
         setProfiles(value);
         setProfilesDirectory(workspace?.root_path);
-        setProfile(value.default_profile);
+        lastProfilesDirectory.current = workspace?.root_path;
+        setProfile(current => value.profiles.some(p => p.name === current) ? current : value.default_profile);
       })
       .catch((e) => {
         if (active) setProfileError(errorText(e));
@@ -236,7 +241,7 @@ export function NewSessionScreen() {
     return () => {
       active = false;
     };
-  }, [client, workspace, profileRevision]);
+  }, [client, workspace, profileRevision, screenFocused]);
   const selected = catalog?.agents.find((a) => a.id === agent);
   const codex = catalog?.agents.find((a) => a.id === "codex");
   useEffect(() => {
@@ -637,6 +642,7 @@ export function NewSessionScreen() {
               />
             )}
             <RuntimePicker
+              onConfigureModels={() => { setPanel(null); nav.navigate("Profiles"); }}
               agents={catalog?.agents ?? []}
               profiles={profiles}
               profilesLoading={!profiles && !profileError}
