@@ -16,10 +16,23 @@ function markUpdate(key: string, running: boolean) {
 
 export function UpdateSettings({ hosts, api }: { hosts: HostProfile[]; api: ClientApi }) {
   const { kind } = useClient();
+  const [selected, setSelected] = useState("client");
+  const targets = [
+    {id:"client", title:t(kind === "desktop" ? "updates.desktop" : "updates.web"), host:undefined},
+    ...hosts.map(host => ({id:`daemon:${host.id}`, title:t("updates.daemon", {host:host.id === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : host.name}), host})),
+  ];
+  const current = targets.find(target => target.id === selected) ?? targets[0];
+  useEffect(() => { if (current.id !== selected) setSelected(current.id); }, [current.id, selected]);
   return <>
+    <label className="settings-row settings-host-picker"><span><strong>{t("updates.target")}</strong><small>{current.host?.baseUrl}</small></span>
+      <select aria-label={t("updates.target")} value={current.id} onChange={event => setSelected(event.target.value)}>
+        {targets.map(target => <option key={target.id} value={target.id}>{target.title}</option>)}
+      </select>
+    </label>
     <h1>{t("updates.title")}</h1>
-    <UpdateCard api={api} target="client" title={t(kind === "desktop" ? "updates.desktop" : "updates.web")} />
-    {hosts.map(host => <UpdateCard api={api} key={host.id} hostId={host.id} address={host.baseUrl} target="daemon" title={t("updates.daemon", { host: host.id === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : host.name })} />)}
+    {targets.map(target => <div key={target.id} hidden={target.id !== current.id}>
+      <UpdateCard api={api} target={target.host ? "daemon" : "client"} hostId={target.host?.id} title={target.title} />
+    </div>)}
   </>;
 }
 
@@ -139,6 +152,6 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
       <div className="settings-row"><button className="settings-secondary-button" disabled={busy || updating || (!!active && !canCancel)} onClick={() => void perform(action)}>{buttonText}</button></div>
     </div>
     {(error || status?.error) && <p role="alert">{error || status?.error}</p>}
-    {!status && error && <p>{t("updates.bootstrap")}</p>}
+    {!status && error && <p>{t("updates.statusUnavailable")}</p>}
   </section>;
 }

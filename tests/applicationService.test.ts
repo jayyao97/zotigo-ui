@@ -56,6 +56,27 @@ test("explicit settings destinations override the workbench host without changin
   }
 });
 
+test("only missing update endpoints are reported as unsupported", async () => {
+  let statusCode = 404;
+  const daemon = createServer((_request,response) => {response.writeHead(statusCode);response.end("fixture error");});
+  daemon.listen(0,"127.0.0.1"); await once(daemon,"listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  const connection = {id:"fixture",name:"fixture",baseUrl:`http://127.0.0.1:${address.port}`,token:"fixture"};
+  const service = createApplicationService(platform(),()=>{});
+  const request = () => withConnection(connection,()=>service.invoke("updates:component",["daemon","status"]));
+  try {
+    for (const code of [404,405]) {
+      statusCode=code; const reply=await request(); assert.equal(reply.ok,false);
+      assert.match(JSON.stringify(reply),/does not support the update API/);
+    }
+    statusCode=503; const unavailable=await request(); assert.equal(unavailable.ok,false);
+    assert.doesNotMatch(JSON.stringify(unavailable),/installer|does not support/);
+    await new Promise<void>(resolve=>daemon.close(()=>resolve()));
+    const offline=await request(); assert.equal(offline.ok,false);
+    assert.doesNotMatch(JSON.stringify(offline),/installer|does not support/);
+  } finally {service.dispose();daemon.close();}
+});
+
 test("update requests retain their remote host and credentials while client updates stay local", async () => {
   const received: Array<{host: string; authorization: string | undefined; body: unknown}> = [];
   const daemons = ["alpha", "beta"].map(host => createServer(async (request, response) => {

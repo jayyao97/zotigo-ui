@@ -56,6 +56,11 @@ test("settings select model hosts independently and run an update from one fixed
     assert.equal(picker.options.length,3,"host management changes are reflected without reopening settings");
     await act(async () => render());
     await act(async () => (document.querySelectorAll("nav button")[2] as HTMLButtonElement).click());
+    const targetPicker = document.querySelector<HTMLSelectElement>('[aria-label="Update target"]')!;
+    assert.equal(targetPicker.options.length,3);
+    await act(async()=>{targetPicker.value="daemon:remote";targetPicker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
+    assert.equal(document.querySelectorAll(".settings-section")[2].parentElement!.hidden,false);
+    assert.equal(document.querySelectorAll(".settings-section")[0].parentElement!.hidden,true);
     const cards = document.querySelectorAll(".settings-section");
     assert.equal(cards.length,3);
     assert.ok([...cards].every(card=>card.querySelectorAll("button").length===1));
@@ -113,7 +118,9 @@ test("channels are per component, changing one only checks releases, and old hos
     assert.ok([...document.querySelectorAll("section")].every(section => section.querySelectorAll("button").length === 1));
     assert.ok(calls.some(([target, action]) => target === "client" && action === "check"), "a completed update must not disable future checks");
     assert.ok(calls.some(([target, action]) => target === "daemon" && action === "check"));
-    const select = document.querySelectorAll("select")[1];
+    const targetPicker = document.querySelector<HTMLSelectElement>('[aria-label="Update target"]')!;
+    await act(async()=>{targetPicker.value="daemon:local";targetPicker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
+    const select = document.querySelectorAll("select")[2];
     await act(async () => { select.value = "stable"; select.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
     assert.deepEqual(calls.slice(-2), [["daemon", "channel", "stable", "local"], ["daemon", "check", undefined, "local"]]);
     assert.ok(!calls.some(([, action]) => action === "prepare" || action === "apply"));
@@ -143,6 +150,11 @@ test("channels are per component, changing one only checks releases, and old hos
     assert.equal(confirmations, 2);
     assert.ok(calls.some(([target, action]) => target === "client" && action === "apply"));
     window.removeEventListener("zotigo:before-update", veto);
+    const offlineApi = {updateComponent: async()=>{throw new Error("fetch failed");}} as unknown as ClientApi;
+    await act(async()=>render("offline",offlineApi));
+    assert.match(document.body.textContent!,/Unable to read update status/);
+    assert.doesNotMatch(document.body.textContent!,/Older installations|manual upgrade/);
+
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of Object.entries(previous)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
