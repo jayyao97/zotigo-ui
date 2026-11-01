@@ -1,5 +1,17 @@
 export type Message = string | { one: string; other: string };
 export const en = {
+  "updates.defaultDaemon": "Default daemon",
+  "updates.all": "Update all",
+  "updates.updatingAll": "Updating…",
+  "updates.machineHelp": "Update the modules on this host",
+  "updates.partialHelp": "Prepare all updates first, then update Daemon before the client. Completed modules remain installed if a later step fails.",
+  "updates.allCompleted": "All available updates on this host completed.",
+  "updates.alreadyRunning": "An update is already running. Wait for it to finish.",
+  "updates.notPrepared": "Preparation did not complete. No further modules were applied.",
+  "updates.restartCancelled": "Client restart was cancelled. Prepared updates are retained.",
+  "updates.notCompleted": "Update did not complete or was cancelled. Remaining modules were not applied.",
+  "updates.batchFailed": "{component}: {error}",
+  "updates.client": "Client",
   "updates.now": "Update now",
   "settings.targetHost": "Host to configure",
   "settings.thisComputer": "This computer",

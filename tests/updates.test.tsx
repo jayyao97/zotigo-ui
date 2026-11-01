@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { markUpdate } from "../src/machineUpdates";
 import { UpdateSettings } from "../src/UpdateSettings";
 import { bindClientGeneration } from "../shared/bindClientGeneration";
 import { SettingsPage } from "../src/SettingsPage";
@@ -57,8 +58,8 @@ test("settings select model hosts independently and run an update from one fixed
     await act(async () => render());
     await act(async () => (document.querySelectorAll("nav button")[2] as HTMLButtonElement).click());
     const targetPicker = document.querySelector<HTMLSelectElement>('[aria-label="Update target"]')!;
-    assert.equal(targetPicker.options.length,3);
-    await act(async()=>{targetPicker.value="daemon:remote";targetPicker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
+    assert.equal(targetPicker.options.length,2);
+    await act(async()=>{targetPicker.value="remote";targetPicker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
     assert.equal(document.querySelectorAll(".settings-section")[2].parentElement!.hidden,false);
     assert.equal(document.querySelectorAll(".settings-section")[0].parentElement!.hidden,true);
     const cards = document.querySelectorAll(".settings-section");
@@ -119,10 +120,10 @@ test("channels are per component, changing one only checks releases, and old hos
     assert.ok(calls.some(([target, action]) => target === "client" && action === "check"), "a completed update must not disable future checks");
     assert.ok(calls.some(([target, action]) => target === "daemon" && action === "check"));
     const targetPicker = document.querySelector<HTMLSelectElement>('[aria-label="Update target"]')!;
-    await act(async()=>{targetPicker.value="daemon:local";targetPicker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
-    const select = document.querySelectorAll("select")[2];
+    await act(async()=>{targetPicker.value="local";targetPicker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
+    const select = document.querySelectorAll("select")[1];
     await act(async () => { select.value = "stable"; select.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
-    assert.deepEqual(calls.slice(-2), [["daemon", "channel", "stable", "local"], ["daemon", "check", undefined, "local"]]);
+    assert.deepEqual(calls.slice(-3), [["daemon", "channel", "stable", "local"], ["daemon", "check", undefined, "local"], ["daemon", "status", undefined, "local"]]);
     assert.ok(!calls.some(([, action]) => action === "prepare" || action === "apply"));
     deferStatus = true;
     await act(async () => render("remote-b"));
@@ -141,7 +142,7 @@ test("channels are per component, changing one only checks releases, and old hos
     window.addEventListener("zotigo:before-update", veto);
     let confirmations = 0;
     window.confirm = () => { confirmations++; return false; };
-    const restart = document.querySelector("section button") as HTMLButtonElement;
+    const restart = document.querySelectorAll("section button")[1] as HTMLButtonElement;
     await act(async () => restart.click());
     assert.equal(confirmations, 1, "unsaved work must require confirmation before restarting");
     assert.ok(!calls.some(([, action]) => action === "apply"));
@@ -158,6 +159,51 @@ test("channels are per component, changing one only checks releases, and old hos
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of Object.entries(previous)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
+    dom.window.close();
+  }
+});
+
+
+test("reopening updates preserves a running job's terminal state and clears connection errors after refresh",async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{url:"https://zotigo.test"});
+  const globals={window:dom.window,document:dom.window.document,Event:dom.window.Event,IS_REACT_ACT_ENVIRONMENT:true};
+  const previous=Object.fromEntries(Object.keys(globals).map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  for(const [key,value] of Object.entries(globals))Object.defineProperty(globalThis,key,{value,configurable:true});
+  const root=createRoot(document.getElementById("root")!);
+  let hosts=[{id:"local",name:"Local",baseUrl:"http://localhost:8766",hasToken:false}];
+  const calls:string[]=[];let offline=false;
+  const api={updateComponent:async(target:string,action:string)=>{
+    calls.push(`${target}:${action}`);
+    if(offline && target==="daemon")throw new Error("connection refused");
+    return {...status,phase:"completed",checked_at:new Date(0).toISOString(),target:{version:"next",commit:"next"}};
+  }} as unknown as ClientApi;
+  const render=()=>root.render(<ClientContext.Provider value={{api,kind:"desktop"}}><UpdateSettings hosts={hosts} api={api}/></ClientContext.Provider>);
+  try{
+    markUpdate("daemon:local",true);markUpdate("client:client",true);
+    await act(async()=>render());
+    assert.deepEqual(calls,["daemon:status","client:status"],"mount must not reset completed to idle via check while an update owns it");
+    await act(async()=>root.render(null));
+    offline=true;await act(async()=>render());
+    assert.match(document.body.textContent!,/connection refused/);
+    offline=false;
+    await act(async()=>{markUpdate("daemon:local",false);markUpdate("client:client",false);});
+    assert.doesNotMatch(document.body.textContent!,/connection refused/);
+    const all=[...document.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent==="Update all")!;
+    assert.equal(all.disabled,false,"successful refresh must allow retry after a temporary outage");
+    hosts=[{...hosts[0],baseUrl:"https://remote.example:8766"}];
+    await act(async()=>render());
+    const picker=document.querySelector<HTMLSelectElement>('[aria-label="Update target"]')!;
+    assert.deepEqual([...picker.options].map(option=>option.textContent),["This computer","Default daemon"]);
+    const visibleSections=()=>[...document.querySelectorAll("section")].filter(section=>!section.closest("[hidden]"));
+    assert.equal(visibleSections().length,1);
+    assert.match(visibleSections()[0].textContent!,/Desktop/);
+    await act(async()=>{picker.value="daemon:local";picker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
+    assert.equal(visibleSections().length,1);
+    assert.match(visibleSections()[0].textContent!,/Daemon.*Default daemon/);
+
+  } finally {
+    await act(async()=>root.unmount());markUpdate("daemon:local",false);markUpdate("client:client",false);
+    for(const [key,descriptor] of Object.entries(previous)){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}
     dom.window.close();
   }
 });
