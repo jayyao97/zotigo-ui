@@ -3,5 +3,6 @@ import type { ApprovalPolicy } from "./zotigod";
 
 export function approvalPolicyLabel(policy: ApprovalPolicy | null): string {
   if (policy === null) return t("directoryBrowser.unavailable");
-  return policy === "bypass_permissions" ? t("channelsPage.fullAccess") : t("channelsPage.auto");
+  if (policy === "bypass_permissions") return t("channelsPage.fullAccess");
+  return policy === "manual" ? t("approvalPolicy.manual") : t("channelsPage.auto");
 }

@@ -1,6 +1,6 @@
 export type SessionState = "created" | "starting" | "running" | "paused" | "offline" | "ended" | "failed";
 
-export type ApprovalPolicy = "auto" | "bypass_permissions";
+export type ApprovalPolicy = "manual" | "auto" | "bypass_permissions";
 
 export type AgentKind = "zotigo" | "codex";
 
@@ -27,6 +27,7 @@ export interface ZotigoSession {
   model?: string;
   reasoning_effort?: string;
   approval_policy?: ApprovalPolicy;
+  last_prompt?: string;
   created_at: string;
   updated_at?: string;
   started_at?: string;

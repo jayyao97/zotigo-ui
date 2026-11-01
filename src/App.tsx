@@ -4447,6 +4447,20 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               <GitBranch className="env-icon" size={15} strokeWidth={1.8} />
               <span>{selectedWorkspace?.title ?? t("app.noWorkspace")}</span>
             </div>
+            {selectedSession?.working_directory && selectedSession.working_directory !== selectedWorkspace?.root_path && (
+              <div className="env-row" title={selectedSession.working_directory}>
+                <Folder className="env-icon" size={15} strokeWidth={1.8} />
+                <span>{selectedSession.working_directory}</span>
+                <span className="env-row-actions">
+                  <button type="button" className="icon-button" title={t("app.copyWorkingDirectory")} aria-label={t("app.copyWorkingDirectory")} onClick={() => void copyWorkspacePath(selectedSession.working_directory!)}>
+                    {copiedWorkspacePath === selectedSession.working_directory ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
+                  </button>
+                  <button type="button" className="icon-button" title={t("app.browseWorkingDirectory")} aria-label={t("app.browseWorkingDirectory")} onClick={() => browseFiles(selectedSession.working_directory!)}>
+                    <FolderOpen size={14} />
+                  </button>
+                </span>
+              </div>
+            )}
           </div>
 
           {subagentRuns.length > 0 && (

@@ -27,7 +27,7 @@ import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, Ch
 
 const defaultBaseUrl = "http://127.0.0.1:8766";
 const sessionStates = new Set<SessionState>(["created", "starting", "running", "paused", "offline", "ended", "failed"]);
-const approvalPolicies = new Set<ApprovalPolicy>(["auto", "bypass_permissions"]);
+const approvalPolicies = new Set<ApprovalPolicy>(["manual", "auto", "bypass_permissions"]);
 const catalogWorkspaceStatuses = new Set<WorkspaceStatus>([
   "provisioning", "ready", "error", "archiving", "archived", "deleting", "deleted",
 ]);
@@ -1200,6 +1200,7 @@ function parseSession(value: unknown, context: string): ZotigoSession {
     model: expectOptionalString(record.model, `${context} model`),
     reasoning_effort: expectOptionalString(record.reasoning_effort, `${context} reasoning_effort`),
     approval_policy: approvalPolicy,
+    last_prompt: expectOptionalString(record.last_prompt, `${context} last_prompt`),
     created_at: expectString(record.created_at, `${context} created_at`),
     updated_at: expectOptionalString(record.updated_at, `${context} updated_at`),
     started_at: expectOptionalString(record.started_at, `${context} started_at`),
