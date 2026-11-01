@@ -1,6 +1,7 @@
 import { changeLanguage, useLocale } from "./i18n";
 import { useState } from "react";
 import { ModelSettings } from "./ModelSettings";
+import { UpdateSettings } from "./UpdateSettings";
 import { t } from "../shared/i18n/index";
 import type { TranslationLanguage } from "./translationLanguage";
 import type { SendMode } from "./sendMode";
@@ -48,7 +49,7 @@ export function SettingsPage({
   onBack: () => void;
 }) {
   const locale = useLocale();
-  const [page, setPage] = useState<"general" | "models">(initialPage);
+  const [page, setPage] = useState<"general" | "models" | "updates">(initialPage);
   return (
     <main className="settings-page">
       <aside className="settings-sidebar">
@@ -58,6 +59,7 @@ export function SettingsPage({
           <span>{t("settingsPage.backToZotigo")}</span>
         </button>
         <nav aria-label={t("hostShell.settings")}>
+          <button type="button" className={`settings-nav-item ${page === "updates" ? "is-active" : ""}`} aria-current={page === "updates" ? "page" : undefined} onClick={() => setPage("updates")}><RefreshCw size={16}/><span>{t("updates.title")}</span></button>
           <button type="button" className={`settings-nav-item ${page === "general" ? "is-active" : ""}`} aria-current={page === "general" ? "page" : undefined} onClick={() => setPage("general")}>
             <Settings size={16} />
             <span>{t("settingsPage.general")}</span>
@@ -68,7 +70,7 @@ export function SettingsPage({
 
       <section className="settings-main">
         <div className="settings-content">
-          {page === "models" ? <ModelSettings hostName={hostName}/> : <>
+          {page === "updates" ? <UpdateSettings hostName={hostName}/> : page === "models" ? <ModelSettings hostName={hostName}/> : <>
           <h1>{t("settingsPage.general")}</h1>
           <section className="settings-section"><div className="settings-card"><div className="settings-row"><span><strong>{t("models.title")}</strong><small>{t("models.host", {host:hostName})}</small></span><button className="settings-secondary-button" onClick={() => setPage("models")}>{t("models.open")}</button></div></div></section>
 

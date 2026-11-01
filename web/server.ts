@@ -1,4 +1,5 @@
 import { createFileEvents } from "../backend/fileEvents";
+import { createClientUpdater } from "../backend/clientUpdates";
 import { parseWatchedFiles } from "../shared/fileEvents";
 import { withHost, currentHost } from "../backend/hosts";
 import { fetchDaemon } from "../backend/daemonHttp";
@@ -24,6 +25,7 @@ export function createWebServer(options: { origin: string; token: string; assets
   const security = createWebSecurity(options.token, options.origin);
   const unavailable = async () => { throw new Error("This operation requires the Desktop application."); };
   const platform = {
+    updateClient: createClientUpdater("web", options.assetsPath),
     openPath: unavailable,
     openExternal: unavailable, downloadImage: unavailable,
   };

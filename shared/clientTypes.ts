@@ -276,6 +276,7 @@ export interface TranslationResult {
 }
 
 export interface ClientApi {
+  closeWindow?: () => Promise<void>;
   uploadAttachment(sessionId: string, file: MessageFileInput): Promise<string>;
 	listChannelConnections(): Promise<import("./channels").ChannelConnection[]>;
 	createChannelConnection(input: import("./channels").ChannelConnectionInput): Promise<import("./channels").ChannelConnection>;
@@ -298,6 +299,7 @@ export interface ClientApi {
   getDaemonConfig(): Promise<DaemonConfig>;
   getProfiles(workingDirectory?: string, scope?: "global"): Promise<ProfilesResponse>;
   getModelSettings(): Promise<import("./modelSettings").ModelSettings>;
+  updateComponent(target: "client" | "daemon", action: import("./updates").UpdateAction, channel?: import("./updates").UpdateChannel): Promise<import("./updates").UpdateStatus>;
   updateModelSettings(change: import("./modelSettings").ModelSettingsChange): Promise<import("./modelSettings").ModelSettings>;
   testModelSettings(change: import("./modelSettings").ModelSettingsChange): Promise<import("./modelSettings").ModelTestResult>;
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;

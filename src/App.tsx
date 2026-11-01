@@ -132,6 +132,8 @@ import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, De
 import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
 import { attachmentReference, attachmentSizeError, modelImageTypes, type MessageFileInput } from "../shared/messageFiles";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
+import { SidebarSection } from "./SidebarSection";
+import { updateSidebarClipping } from "./sidebarClipping";
 import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "./sidebarDisclosure";
 import {
   closeSidePanelTab,
@@ -579,9 +581,17 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       }
     };
     window.addEventListener("zotigo:before-host-switch", beforeSwitch);
+    const beforeUpdate = (event: Event) => {
+      const states = [volatileStateRef.current, ...[...volatileStateByHost.entries()].filter(([host]) => host !== clientScope).map(([, state]) => state)];
+      if (pendingUploadsRef.current > 0 || filesSavingRef.current.size > 0 || states.some(state =>
+        Object.values(state.openFiles).some(file => file.kind === "text" && file.saveStatus !== "clean") ||
+        Object.values(state.composerDrafts).some(draft => draft.prompt.length > 0 || draft.attachments.length > 0))) event.preventDefault();
+    };
+    window.addEventListener("zotigo:before-update", beforeUpdate);
     window.addEventListener("zotigo:host-switch-cancelled", switchCancelled);
     return () => {
       window.removeEventListener("zotigo:before-host-switch", beforeSwitch);
+      window.removeEventListener("zotigo:before-update", beforeUpdate);
       window.removeEventListener("zotigo:host-switch-cancelled", switchCancelled);
     };
   }, [clientScope]);
@@ -723,27 +733,28 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     let frame: number | null = null;
     const updateStickyRows = () => {
       frame = null;
-      const scrollerTop = scroller.getBoundingClientRect().top;
-      const rowHeight = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-height")) || 30;
-      for (const row of scroller.querySelectorAll<HTMLElement>(".project-row-shell, .workspace-row-shell")) {
-        if (getComputedStyle(row).position !== "sticky") {
-          row.classList.remove("is-stuck");
-          continue;
-        }
-        const stickyTop = scrollerTop + (row.classList.contains("workspace-row-shell") ? rowHeight : 0);
-        const bounds = row.getBoundingClientRect();
-        row.classList.toggle("is-stuck", bounds.top <= stickyTop + 0.5 && bounds.bottom > stickyTop + 0.5);
-      }
+      updateSidebarClipping(scroller);
     };
     const scheduleUpdate = () => {
       if (frame === null) frame = window.requestAnimationFrame(updateStickyRows);
     };
     const resizeObserver = new ResizeObserver(scheduleUpdate);
-    const mutationObserver = new MutationObserver(scheduleUpdate);
+    const observedSections = new Set<Element>();
+    const observeSections = () => {
+      const sections = new Set(scroller.querySelectorAll(".sidebar-section"));
+      for (const section of observedSections) {
+        if (!sections.has(section)) { resizeObserver.unobserve(section); observedSections.delete(section); }
+      }
+      for (const section of sections) {
+        if (!observedSections.has(section)) { resizeObserver.observe(section); observedSections.add(section); }
+      }
+      scheduleUpdate();
+    };
+    const mutationObserver = new MutationObserver(observeSections);
     scroller.addEventListener("scroll", scheduleUpdate, { passive: true });
     resizeObserver.observe(scroller);
     mutationObserver.observe(scroller, { childList: true, subtree: true });
-    scheduleUpdate();
+    observeSections();
     return () => {
       scroller.removeEventListener("scroll", scheduleUpdate);
       resizeObserver.disconnect();
@@ -995,7 +1006,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       applyDesktopState(await client.getDesktopState());
     }
   }
-  const previousConversations = useMemo(
+  const ungroupedConversations = useMemo(
     () => desktopState.conversations.filter((conversation) => conversation.workspace_id === null && !conversation.pinned_at),
     [desktopState.conversations],
   );
@@ -2044,6 +2055,17 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     await client.selectWorkspace(workspace.id);
     applyDesktopState(await client.selectConversation(null));
   }
+
+  useEffect(() => {
+    if (!surfaceActive) return;
+    const closeSession = (event: Event) => {
+      if (!desktopState.selectedConversationId) return;
+      event.preventDefault();
+      void openNewConversation().catch((error: unknown) => setMessage(errorMessage(error)));
+    };
+    window.addEventListener("zotigo:close-session", closeSession);
+    return () => window.removeEventListener("zotigo:close-session", closeSession);
+  }, [surfaceActive, desktopState.selectedConversationId, client]);
 
   async function retryWorkspace(workspace: DesktopWorkspace) {
     setIsBusy(true);
@@ -3849,8 +3871,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
         <div className="sidebar-lower-stack">
         <div ref={navigationScrollRef} className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
-        <section className="sidebar-section pinned-section" aria-label={t("app.pinned")}>
-          <div className="sidebar-section-title">{t("app.pinned")}</div>
+        <SidebarSection name="pinned" title={t("app.pinned")}>
           {pinnedItems.length === 0 ? (
             <p className="sidebar-empty">{t("app.noPinnedItems")}</p>
           ) : (
@@ -3875,48 +3896,40 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               })}
             </div>
           )}
-        </section>
+        </SidebarSection>
 
-        <section className="sidebar-section projects-section" aria-label={t("app.projects")}>
-          <div className="project-section-heading">
-            <span className="sidebar-section-title">{t("app.projects")}</span>
-            <div>
-              <button type="button" onClick={openCreateProjectDialog} disabled={isBusy} aria-label={t("app.addProject")}>
-                <FolderPlus size={15} strokeWidth={1.8} />
-              </button>
-            </div>
-          </div>
-
+        <SidebarSection name="projects" title={t("app.projects")} actions={
+          <button type="button" onClick={openCreateProjectDialog} disabled={isBusy} aria-label={t("app.addProject")}>
+            <FolderPlus size={15} strokeWidth={1.8} />
+          </button>
+        }>
           {desktopState.projects.length === 0 ? (
             <p className="sidebar-empty">{t("app.noProjectsYet")}</p>
           ) : (
-            <>
-{desktopState.projects.filter((project) => !isNavigationPinned("project", project.id)).map((project) => renderProjectNavigation(project))}
-
-              {previousConversations.length > 0 && (
-                <div className="previous-sessions-group">
-                  <span className="sidebar-section-title">{t("app.previousSessions")}</span>
-                  <div className="sidebar-session-list">
-                  {previousConversations.map((conversation) => (
-                    <ConversationNavItem
-                      key={conversation.id}
-                      conversation={conversation}
-                      selected={conversation.id === selectedConversation?.id}
-                      working={workingConversationIds.has(conversation.id)}
-                      unread={unreadConversationIds.has(conversation.id)}
-                      onSelect={() => void selectConversation(conversation.id)}
-                      onContextMenu={(event) => openConversationContextMenu(event, conversation.id)}
-                      onRename={() => openRenameConversationDialog(conversation)}
-                      onPin={() => void toggleConversationPinned(conversation)}
-                      onArchive={() => void archiveConversation(conversation)}
-                    />
-                  ))}
-                  </div>
-                </div>
-              )}
-            </>
+            desktopState.projects.filter((project) => !isNavigationPinned("project", project.id)).map((project) => renderProjectNavigation(project))
           )}
-        </section>
+        </SidebarSection>
+
+        {ungroupedConversations.length > 0 && (
+          <SidebarSection name="ungrouped" title={t("app.ungroupedSessions")}>
+            <div className="sidebar-session-list">
+            {ungroupedConversations.map((conversation) => (
+              <ConversationNavItem
+                key={conversation.id}
+                conversation={conversation}
+                selected={conversation.id === selectedConversation?.id}
+                working={workingConversationIds.has(conversation.id)}
+                unread={unreadConversationIds.has(conversation.id)}
+                onSelect={() => void selectConversation(conversation.id)}
+                onContextMenu={(event) => openConversationContextMenu(event, conversation.id)}
+                onRename={() => openRenameConversationDialog(conversation)}
+                onPin={() => void toggleConversationPinned(conversation)}
+                onArchive={() => void archiveConversation(conversation)}
+              />
+            ))}
+            </div>
+          </SidebarSection>
+        )}
 
         {sidebarActionError && (
           <div className="sidebar-action-error" role="alert">

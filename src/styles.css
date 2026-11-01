@@ -554,6 +554,46 @@ p {
   font-weight: 430;
 }
 
+.sidebar-section-heading {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--row-height);
+  margin-bottom: 8px;
+}
+
+.sidebar-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--row-x);
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 430;
+  text-align: left;
+}
+
+.sidebar-section-actions { display: flex; }
+.sidebar-section-actions button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+.sidebar-section-heading button:hover:not(:disabled) { background: rgb(255 255 255 / 0.07); }
+
 .project-section-heading {
   display: flex;
   align-items: center;
@@ -609,7 +649,7 @@ p {
 
 .project-row-shell {
   position: sticky;
-  top: 0;
+  top: var(--row-height);
   z-index: 30;
   background: transparent;
 }
@@ -823,6 +863,7 @@ p {
   background: var(--border);
   content: "";
   pointer-events: none;
+  clip-path: inset(var(--sidebar-tree-clip-top, 0px) 0 0);
 }
 
 .workspace-group {
@@ -836,15 +877,9 @@ p {
 
 .workspace-row-shell {
   position: sticky;
-  top: var(--row-height);
+  top: calc(var(--row-height) * 2);
   z-index: 20;
   background: transparent;
-}
-
-.project-row-shell.is-stuck,
-.workspace-row-shell.is-stuck {
-  background: var(--sidebar-bg);
-  backdrop-filter: blur(20px);
 }
 
 .project-row-shell:has(.project-action-menu),
@@ -852,11 +887,9 @@ p {
   z-index: 100;
 }
 
-/* Pinned trees flow normally; only Projects uses stacked sticky headers. */
-.pinned-section .project-row-shell,
-.pinned-section .workspace-row-shell {
-  position: relative;
-  top: auto;
+/* A directly pinned workspace has no project header above it. */
+.pinned-section > div > .sidebar-session-list > .workspace-group > .workspace-row-shell {
+  top: var(--row-height);
 }
 
 .pinned-section .workspace-sessions {
@@ -4095,7 +4128,7 @@ p {
 .source-direct-warning { grid-column: 2 / -1; color: var(--orange) !important; }
 .create-workspace-dialog { width: min(610px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; }
 
-.previous-sessions-group { display: grid; gap: 5px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+
 .sidebar-session { position: relative; }
 .sidebar-session-actions { position: absolute; top: 3px; right: 3px; z-index: 2; display: flex; opacity: 0; pointer-events: none; }
 .sidebar-session-actions button { display: grid; width: 24px; min-width: 24px; min-height: 24px; place-items: center; border: 0; background: transparent; color: var(--text-muted); padding: 0; }
@@ -5188,7 +5221,16 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 
 /* Keep sticky headers and row menus below the host menu in the sidebar header. */
 .sidebar-lower-stack { grid-column: 2; grid-row: 4; position: relative; z-index: 0; min-height: 0; flex: 1; overflow: hidden; -webkit-app-region: no-drag; }
-.sidebar-default-navigation { overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--text-dim) transparent; color-scheme: dark; display: flex; position: absolute; inset: 0; min-height: 0; flex-direction: column; transition: transform 200ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
+.sidebar-default-navigation { overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; padding-right: 8px; scrollbar-gutter: stable; color-scheme: dark; display: flex; position: absolute; inset: 0; min-height: 0; flex-direction: column; transition: transform 200ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
+/* Reserve space even when macOS draws an overlay scrollbar over the scrollport. */
+.sidebar-default-navigation::-webkit-scrollbar { width: 8px; }
+.sidebar-default-navigation::-webkit-scrollbar-track { background: transparent; }
+.sidebar-default-navigation::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: rgb(255 255 255 / .18); background-clip: padding-box; }
+.sidebar-default-navigation::-webkit-scrollbar-thumb:hover { background-color: rgb(255 255 255 / .30); }
+.sidebar-default-navigation::-webkit-scrollbar-button { display: none; }
+@supports not selector(::-webkit-scrollbar) {
+  .sidebar-default-navigation { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .18) transparent; }
+}
 .sidebar-default-navigation > .sidebar-section { flex: 0 0 auto; }
 .sidebar-default-navigation.is-hidden { transform: translateX(-100%); opacity: 0; pointer-events: none; }
 .channels-sidebar-root { position: absolute; inset: 0; min-height: 0; transform: translateX(100%); opacity: 0; pointer-events: none; transition: transform 200ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
@@ -5504,12 +5546,12 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
   html[data-platform="web"] .sidebar-session-actions > .sidebar-session-touch-menu { display: grid; width: 44px; min-height: 44px; }
   html[data-platform="web"] .sidebar-session > button:first-child { padding-right: 68px; }
   html[data-platform="web"] :is(.sidebar-session-spinner, .sidebar-session-unread) { right: 51px; }
+  html[data-platform="web"] .sidebar-section-actions button { min-width: 44px; min-height: 44px; }
   html[data-platform="web"] .project-section-heading > div { opacity: 1; pointer-events: auto; }
   html[data-platform="web"] .project-section-heading button { min-width: 44px; min-height: 44px; }
   html[data-platform="web"] .sidebar-session-title > span.scrolling { animation: none; }
   html[data-platform="web"] .sidebar-default-navigation { overflow-y: auto; overscroll-behavior-y: contain; }
   html[data-platform="web"] .sidebar-default-navigation > .sidebar-section { flex: 0 0 auto; overflow: visible; }
-  html[data-platform="web"] .sidebar-default-navigation :is(.project-row-shell, .workspace-row-shell) { position: relative; top: auto; }
   html[data-platform="web"] :is(.workspace-action-menu, .project-action-menu, .session-context-menu) button { min-height: 44px; }
 }
 

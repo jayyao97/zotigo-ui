@@ -3,6 +3,7 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { EditorView } from "@codemirror/view";
 
 import { createClientApi } from "../shared/clientApi";
 import type { DesktopState, NavigationItem } from "../shared/clientTypes";
@@ -30,10 +31,12 @@ function installDom() {
   });
   class TestResizeObserver {
     observe() {}
+    unobserve() {}
     disconnect() {}
   }
   const replacements = {
     window: dom.window,
+    Window: dom.window.Window,
     document: dom.window.document,
     Node: dom.window.Node,
     Event: dom.window.Event,
@@ -97,7 +100,14 @@ function hostClient(failDev = false, initialState = emptyState, sync?: () => Pro
         state = { ...state, pinnedItems: args[0] as NavigationItem[] };
         return state as T;
       }
-      if (channel === "desktop:select-project") return emptyState as T;
+      if (channel === "desktop:select-project") {
+        state = { ...state, selectedProjectId: args[0] as string | null, selectedWorkspaceId: null };
+        return state as T;
+      }
+      if (channel === "desktop:select-conversation") {
+        state = { ...state, selectedConversationId: args[0] as string | null };
+        return state as T;
+      }
       if (channel === "sessions:list") return [] as T;
       if (channel === "daemon:get-profiles") return { default_profile: "", profiles: [] } as T;
       if (channel === "daemon:get-agents") return { default_agent: "zotigo", agents: [] } as T;
@@ -133,6 +143,38 @@ async function chooseDevHost() {
   await act(async () => click(dev));
   await flush();
 }
+
+test("sidebar sections collapse independently and ungrouped sessions exist without projects", async () => {
+  const restore = installDom();
+  const time = "2026-01-01T00:00:00Z";
+  const state: DesktopState = {
+    ...emptyState,
+    conversations: [{ id: "loose", project_id: null, workspace_id: null, title: "Loose session", created_at: time, updated_at: time }],
+  };
+  const client = hostClient(false, state);
+  let root = await mountHostShell(client.api);
+  try {
+    assert.ok(document.querySelector(".ungrouped-section")?.textContent?.includes("Loose session"));
+    for (const name of ["pinned", "projects", "ungrouped"]) {
+      const button = document.querySelector<HTMLButtonElement>(`.${name}-section .sidebar-section-toggle`)!;
+      assert.equal(button.getAttribute("aria-expanded"), "true");
+      await act(async () => click(button));
+      assert.equal(button.getAttribute("aria-expanded"), "false");
+      assert.equal(document.getElementById(button.getAttribute("aria-controls")!)?.hidden, true);
+    }
+    assert.ok(!document.querySelector(".ungrouped-section")?.textContent?.includes("Loose session"));
+    assert.ok(document.querySelector('[aria-label="Add project"]'), "create action remains available while collapsed");
+    await act(async () => root.unmount());
+    root = await mountHostShell(client.api);
+    assert.equal(document.querySelector('.ungrouped-section button')?.getAttribute("aria-expanded"), "false");
+    await act(async () => click(document.querySelector('.ungrouped-section button')!));
+    assert.ok(document.querySelector(".ungrouped-section")?.textContent?.includes("Loose session"));
+    assert.equal(document.querySelector('.projects-section .sidebar-section-toggle')?.getAttribute("aria-expanded"), "false");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
 
 test("pinned navigation moves whole subtrees without duplicate selected sessions and supports mixed dragging", async () => {
   const restore = installDom();
@@ -190,6 +232,42 @@ test("pinned navigation moves whole subtrees without duplicate selected sessions
     assert.ok(projects().textContent?.includes("Nested session"));
     assert.ok(!pins().textContent?.includes("Nested session"));
     assert.equal(document.querySelectorAll(".sidebar-session.selected").length, 1);
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
+test("close shortcut leaves a session with its draft intact, then confirms closing the main window", async () => {
+  const restore = installDom();
+  const time = "2026-01-01T00:00:00Z";
+  const client = hostClient(false, { ...emptyState, selectedConversationId: "close-test", conversations: [
+    { id: "close-test", project_id: null, workspace_id: null, title: "Draft session", created_at: time, updated_at: time },
+  ] });
+  let closes = 0, confirmations = 0, confirmed = false;
+  client.api.closeWindow = async () => { closes++; };
+  window.confirm = () => { confirmations++; return confirmed; };
+  const root = await mountHostShell(client.api);
+  const requestClose = async () => { await act(async () => { window.dispatchEvent(new Event("zotigo:close-request")); }); await flush(); };
+  const editor = () => EditorView.findFromDOM(document.querySelector(".cm-content")!)!;
+  try {
+    await act(async () => editor().dispatch({ changes: { from: 0, insert: "Keep my session draft" } }));
+    await requestClose();
+    assert.equal(confirmations, 0);
+    assert.equal(closes, 0);
+    assert.equal(document.querySelectorAll(".sidebar-session.selected").length, 0);
+    assert.equal(editor().state.doc.toString(), "");
+    await act(async () => editor().dispatch({ changes: { from: 0, insert: "Keep my new-session draft" } }));
+    await requestClose();
+    assert.equal(confirmations, 1);
+    assert.equal(closes, 0, "cancel must not close the window");
+    confirmed = true;
+    await requestClose();
+    assert.equal(closes, 1);
+    assert.equal(editor().state.doc.toString(), "Keep my new-session draft");
+    await act(async () => click(document.querySelector(".sidebar-session button")!));
+    await flush();
+    assert.equal(editor().state.doc.toString(), "Keep my session draft");
   } finally {
     await act(async () => root.unmount());
     restore();

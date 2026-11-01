@@ -47,6 +47,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     getDaemonConfig: () => invoke("daemon:get-config"),
     getProfiles: (workingDirectory, scope) => invoke("daemon:get-profiles", workingDirectory, scope),
     getModelSettings: () => invoke("daemon:get-model-settings"),
+    updateComponent: (target, action, channel) => invoke("updates:component", target, action, channel),
     updateModelSettings: (change) => invoke("daemon:update-model-settings", change),
     testModelSettings: (change) => invoke("daemon:test-model-settings", change),
     listSkills: (sessionId, forceReload) => invoke("daemon:list-skills", sessionId, forceReload),

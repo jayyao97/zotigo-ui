@@ -27,5 +27,7 @@ const api = createClientApi({
 });
 
 const activate = api.setActiveHost;
+api.closeWindow = () => ipcRenderer.invoke("window:close");
+ipcRenderer.on("window:close-request", () => window.dispatchEvent(new Event("zotigo:close-request")));
 api.setActiveHost = async (id) => { await activate(id); activeHost = id; };
 contextBridge.exposeInMainWorld("zotigo", api);
