@@ -5,7 +5,7 @@ import { getModelSettings, updateModelSettings, testModelSettings } from "./zoti
 import { updateDaemon } from "./zotigod";
 import { parseUpdateRequest, type UpdateAction, type UpdateChannel, type UpdateStatus } from "../shared/updates";
 import { parseWatchedFiles, type FileEventEnvelope } from "../shared/fileEvents";
-import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost } from "./hosts";
+import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost, withHost } from "./hosts";
 import { previewDaemonImage, openDaemonFile, saveDaemonFile, inspectCatalogSource, listDaemonDirectory } from "./zotigod";
 import fs from "node:fs";
 import path from "node:path";
@@ -140,16 +140,19 @@ addWorkspaceSourceToCatalog,
     return platform.downloadImage(imageDownloadUrl(assertString(url, "url"), getDaemonConfig().baseUrl));
   });
   handle("daemon:get-config", () => getDaemonConfig());
-  handle("daemon:get-model-settings", () => getModelSettings());
-  handle("updates:component", (target, action, channel) => {
+  // Settings can address a saved host without changing workbench selection.
+  const settingsHost = <T>(hostId: unknown, run: () => T): T => hostId === undefined || hostId === null
+    ? run() : withHost(assertNonEmptyString(hostId, "hostId"), run);
+  handle("daemon:get-model-settings", (hostId) => settingsHost(hostId, () => getModelSettings()));
+  handle("updates:component", (target, action, channel, hostId) => {
     const request = parseUpdateRequest(action, channel);
-    if (target === "daemon") return updateDaemon(request.action, request.channel);
+    if (target === "daemon") return settingsHost(hostId, () => updateDaemon(request.action, request.channel));
     if (target !== "client") throw new Error("Invalid update target");
     if (!platform.updateClient) throw new Error("Client updates are unavailable in this installation.");
     return platform.updateClient(request.action, request.channel);
   });
-  handle("daemon:update-model-settings", (change) => updateModelSettings(parseModelSettingsChange(change)));
-  handle("daemon:test-model-settings", (change) => testModelSettings(parseModelSettingsChange(change)));
+  handle("daemon:update-model-settings", (change, hostId) => settingsHost(hostId, () => updateModelSettings(parseModelSettingsChange(change))));
+  handle("daemon:test-model-settings", (change, hostId) => settingsHost(hostId, () => testModelSettings(parseModelSettingsChange(change))));
   handle("desktop:upload-attachment", (sessionId, input) => {
     const [file] = parseMessageFiles([input]);
     return uploadMessageFile(assertNonEmptyString(sessionId, "sessionId"), file);

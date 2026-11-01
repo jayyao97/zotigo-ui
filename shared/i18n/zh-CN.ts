@@ -1,5 +1,10 @@
 import type { Message, MessageKey } from "./en";
 export const zhCN: Record<MessageKey, Message> = {
+  "updates.now": "立即更新",
+  "settings.targetHost": "配置主机",
+  "settings.thisComputer": "此电脑",
+  "settings.servingHost": "网页所在主机",
+  "settings.modelsHostHelp": "在模型配置页选择要配置的主机。",
   "app.confirmCloseWindow": "关闭当前窗口吗？Zotigo 会继续运行，重新打开窗口时仍会保留草稿。",
   "updates.unsaved": "还有未保存的文件、未发送的草稿或正在进行的上传、保存操作。重启可能丢失这些内容。仍要重启并升级吗？",
   "updates.checked": "检查完成",

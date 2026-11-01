@@ -15,11 +15,11 @@ test("model settings retain keys by default, explicitly clear them, test drafts 
   for(const [key,value] of Object.entries(globals))Object.defineProperty(globalThis,key,{value,configurable:true});
   const settings:Settings={revision:"revision-1",defaults:{context_window:200000,max_output_tokens:120000},default_profile:"gpt-5.6-sol",profiles:[{name:"gpt-5.6-sol",provider:"deepseek",model:"example",base_url:"",thinking_level:"",context_window:0,max_output_tokens:null,mode:"",has_api_key:true}]};
   const changes:ModelSettingsChange[]=[];let tested=0;let fail=false;
-  const api={getModelSettings:async()=>settings,updateModelSettings:async(change:ModelSettingsChange)=>{changes.push(change);if(fail)throw new Error("conflict");return settings;},testModelSettings:async()=>{tested++;return {ok:true};}} as unknown as ClientApi;
+  const api={getModelSettings:async(host?:string)=>{assert.equal(host,"selected-host");return settings;},updateModelSettings:async(change:ModelSettingsChange,host?:string)=>{assert.equal(host,"selected-host");changes.push(change);if(fail)throw new Error("conflict");return settings;},testModelSettings:async(_change:ModelSettingsChange,host?:string)=>{assert.equal(host,"selected-host");tested++;return {ok:true};}} as unknown as ClientApi;
   const root=createRoot(document.getElementById("root")!);
   const click=async(text:string)=>{const button=[...document.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent===text);assert.ok(button,`missing ${text}`);await act(async()=>button.click());};
   try {
-    await act(async()=>root.render(<ClientContext.Provider value={{api,kind:"web"}}><ModelSettings hostName="test-host"/></ClientContext.Provider>));
+    await act(async()=>root.render(<ClientContext.Provider value={{api,kind:"web"}}><ModelSettings hostName="test-host" hostId="selected-host"/></ClientContext.Provider>));
     assert.match(document.body.textContent!,/test-host/);
     await click("Edit");
     assert.equal(document.querySelector<HTMLSelectElement>("form select")!.value,"deepseek");

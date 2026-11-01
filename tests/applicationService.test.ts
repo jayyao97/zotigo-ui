@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
-import { withConnection } from "../backend/hosts";
+import { withConnection, initializeHosts, saveHost } from "../backend/hosts";
 import { once } from "node:events";
 import { createApplicationService, type NativeServices } from "../backend/applicationService";
 import { getDaemonConfig, setDaemonBaseUrl } from "../backend/zotigod";
@@ -12,6 +12,49 @@ function platform(overrides: Partial<NativeServices> = {}): NativeServices {
   const unexpected = async () => { throw new Error("Unexpected native operation"); };
   return { openPath: unexpected, openExternal: unexpected, downloadImage: unexpected, ...overrides };
 }
+
+test("explicit settings destinations override the workbench host without changing its context", async () => {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "settings-hosts-"));
+  initializeHosts(directory);
+  const received: Array<{host:string;url:string;auth:string|undefined}> = [];
+  const daemons = ["first","second"].map(host => createServer(async (request,response) => {
+    for await (const _chunk of request) { /* Consume the real HTTP request body. */ }
+    received.push({host,url:request.url!,auth:request.headers.authorization});
+    const data = request.url === "/updates" ? {component:"daemon",version:"1.0.0",commit:host,custom:false,channel:"stable",phase:"idle"}
+      : request.url === "/config/models/test" ? {ok:true} : {revision:"r",default_profile:"",profiles:[]};
+    response.setHeader("Content-Type","application/json");response.end(JSON.stringify({code:"ok",data}));
+  }));
+  const service = createApplicationService(platform(),()=>{});
+  try {
+    for (const daemon of daemons) {daemon.listen(0,"127.0.0.1");await once(daemon,"listening");}
+    const hosts = daemons.map((daemon,index) => {
+      const address = daemon.address();assert.ok(address && typeof address !== "string");
+      return saveHost({name:["first","second"][index],baseUrl:`http://127.0.0.1:${address.port}`,token:`secret-${index}`});
+    });
+    const outside = {...hosts[0],token:"secret-0"};
+    const change = {action:"save",revision:"r",profile:{name:"saved",provider:"openai",model:"test",base_url:"",thinking_level:"",context_window:0,max_output_tokens:null,mode:"",has_api_key:false}};
+    const replies = await withConnection(outside, () => Promise.all([
+      service.invoke("updates:component",["daemon","check",null,hosts[1].id]),
+      service.invoke("daemon:get-model-settings",[hosts[1].id]),
+      service.invoke("daemon:update-model-settings",[change,hosts[1].id]),
+      service.invoke("daemon:test-model-settings",[change,hosts[1].id]),
+      service.invoke("updates:component",["daemon","status"]),
+    ]));
+    assert.ok(replies.every(reply=>reply.ok),JSON.stringify(replies));
+    assert.equal(received.filter(r=>r.host==="second" && r.auth==="Bearer secret-1").length,4);
+    assert.deepEqual(received.filter(r=>r.host==="first"),[{host:"first",url:"/updates",auth:"Bearer secret-0"}]);
+    const rejected = await service.invoke("daemon:get-model-settings",["missing-host"]);
+    assert.equal(rejected.ok,false);
+    assert.equal(received.length,5,"unknown hosts must not fall back to the active host");
+  } finally {
+    service.dispose();
+    await Promise.all(daemons.map(daemon=>new Promise<void>(resolve=>daemon.close(()=>resolve()))));
+    await fs.rm(directory,{recursive:true,force:true});
+  }
+});
 
 test("update requests retain their remote host and credentials while client updates stay local", async () => {
   const received: Array<{host: string; authorization: string | undefined; body: unknown}> = [];

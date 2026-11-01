@@ -1,5 +1,10 @@
 export type Message = string | { one: string; other: string };
 export const en = {
+  "updates.now": "Update now",
+  "settings.targetHost": "Host to configure",
+  "settings.thisComputer": "This computer",
+  "settings.servingHost": "Serving host",
+  "settings.modelsHostHelp": "Choose a host on the model configuration page.",
   "app.confirmCloseWindow": "Close this window? Zotigo will keep running and your drafts will remain available when you reopen it.",
   "updates.unsaved": "There are unsaved files, unsent drafts, or uploads or saves in progress. Restarting may lose this work. Restart and update anyway?",
   "updates.checked": "Check completed",

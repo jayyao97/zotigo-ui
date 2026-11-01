@@ -5121,6 +5121,8 @@ html[data-platform="web"] .settings-page { height: 100dvh; }
 }
 
 .settings-sidebar-chrome { height: var(--toolbar); }
+.settings-host-address { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; margin: -8px 0 14px; }
+.settings-host-picker { margin-bottom: 24px; }
 html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 
 .settings-back,

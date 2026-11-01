@@ -66,7 +66,7 @@ test("settings switch language live, persist locally, and retain drafts and prot
       <div data-read-call><AssistantContentView itemId="read" projection={buildToolRenderProjection([])} content={[{ type: "tool_call", tool_call: { id: "call-read", name: "read_file", arguments: '{"path":"file.ts"}' } }]} /></div>
       <div data-unknown-call><AssistantContentView itemId="unknown" projection={buildToolRenderProjection([])} content={[{ type: "tool_call", tool_call: { id: "call-custom", name: "Custom_Tool", arguments: '{}' } }]} /></div>
       <textarea data-draft value={draft} onChange={event => update(event.target.value)} />
-      <SettingsPage hostName="fixture" onSync={() => {}} syncing={false} syncStatus="" syncError="" translationLanguage="en" onTranslationLanguageChange={() => { translationChanges++; }} translationProfile="" onTranslationProfileChange={() => {}} thinkingDisplay="latest" onThinkingDisplayChange={() => {}} onManageHosts={() => {}} onBack={() => {}} />
+      <SettingsPage updateApi={api} hosts={[]} hostName="fixture" onSync={() => {}} syncing={false} syncStatus="" syncError="" translationLanguage="en" onTranslationLanguageChange={() => { translationChanges++; }} translationProfile="" onTranslationProfileChange={() => {}} thinkingDisplay="latest" onThinkingDisplayChange={() => {}} onManageHosts={() => {}} onBack={() => {}} />
     </ModelFavoritesProvider></ClientContext.Provider>;
   }
   const root = createRoot(document.getElementById("root")!);
