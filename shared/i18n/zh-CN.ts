@@ -1,5 +1,17 @@
 import type { Message, MessageKey } from "./en";
 export const zhCN: Record<MessageKey, Message> = {
+  "updates.defaultDaemon": "默认 Daemon",
+  "updates.all": "升级全部",
+  "updates.updatingAll": "正在升级…",
+  "updates.machineHelp": "升级此主机上的模块",
+  "updates.partialHelp": "先准备全部更新，再升级 Daemon，最后升级客户端。后续步骤失败时，已成功的模块会保留。",
+  "updates.allCompleted": "此主机上可用的更新已全部完成。",
+  "updates.alreadyRunning": "已有更新正在运行，请等待完成。",
+  "updates.notPrepared": "准备未完成，未继续应用其他模块。",
+  "updates.restartCancelled": "已取消客户端重启，准备好的更新会保留。",
+  "updates.notCompleted": "升级未完成或已取消，尚未应用剩余模块。",
+  "updates.batchFailed": "{component}：{error}",
+  "updates.client": "客户端",
   "updates.now": "立即更新",
   "settings.targetHost": "配置主机",
   "settings.thisComputer": "此电脑",

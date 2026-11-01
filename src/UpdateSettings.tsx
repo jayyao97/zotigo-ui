@@ -1,42 +1,55 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useClient } from "./ClientContext";
 import { t } from "../shared/i18n";
 import type { UpdateAction, UpdateChannel, UpdateStatus } from "../shared/updates";
 import type { ClientApi } from "../shared/clientTypes";
 import type { HostProfile } from "../shared/hosts";
 
-// An initiated update survives page navigation, but never starts again just by opening settings.
-const runningUpdates = new Set<string>();
-const updateListeners = new Set<() => void>();
-function subscribeUpdates(listener: () => void) { updateListeners.add(listener); return () => { updateListeners.delete(listener); }; }
-function markUpdate(key: string, running: boolean) {
-  if (running) runningUpdates.add(key); else runningUpdates.delete(key);
-  for (const listener of updateListeners) listener();
-}
+import { runningUpdates, subscribeUpdates, markUpdate, machineJob, updateMachine, updateMachines, type UpdateMachine } from "./machineUpdates";
 
 export function UpdateSettings({ hosts, api }: { hosts: HostProfile[]; api: ClientApi }) {
   const { kind } = useClient();
-  const [selected, setSelected] = useState("client");
-  const targets = [
-    {id:"client", title:t(kind === "desktop" ? "updates.desktop" : "updates.web"), host:undefined},
-    ...hosts.map(host => ({id:`daemon:${host.id}`, title:t("updates.daemon", {host:host.id === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : host.name}), host})),
-  ];
-  const current = targets.find(target => target.id === selected) ?? targets[0];
-  useEffect(() => { if (current.id !== selected) setSelected(current.id); }, [current.id, selected]);
+  const [selected, setSelected] = useState("local");
+  const machines = updateMachines(hosts);
+  const current = machines.find(machine => machine.id === selected) ?? machines[0];
+  const machineName = (machine: UpdateMachine) => machine.includeClient ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : machine.host!.id === "local" ? t("updates.defaultDaemon") : machine.host!.name;
+  useEffect(() => { if (current && current.id !== selected) setSelected(current.id); }, [current?.id, selected]);
   return <>
-    <label className="settings-row settings-host-picker"><span><strong>{t("updates.target")}</strong><small>{current.host?.baseUrl}</small></span>
-      <select aria-label={t("updates.target")} value={current.id} onChange={event => setSelected(event.target.value)}>
-        {targets.map(target => <option key={target.id} value={target.id}>{target.title}</option>)}
+    <label className="settings-row settings-host-picker"><span><strong>{t("updates.target")}</strong><small>{current?.host?.baseUrl}</small></span>
+      <select aria-label={t("updates.target")} value={current?.id ?? ""} onChange={event => setSelected(event.target.value)}>
+        {machines.map(machine => <option key={machine.id} value={machine.id}>{machineName(machine)}</option>)}
       </select>
     </label>
     <h1>{t("updates.title")}</h1>
-    {targets.map(target => <div key={target.id} hidden={target.id !== current.id}>
-      <UpdateCard api={api} target={target.host ? "daemon" : "client"} hostId={target.host?.id} title={target.title} />
+    {machines.map(machine => <div key={machine.id} hidden={machine.id !== current?.id}>
+      <MachineUpdates api={api} machine={machine} name={machineName(machine)}/>
     </div>)}
   </>;
 }
 
-function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; target: "client" | "daemon"; title: string; hostId?: string; address?: string }) {
+interface CardState { status?: UpdateStatus; busy: boolean; error: string; }
+function MachineUpdates({api,machine,name}: {api:ClientApi;machine:UpdateMachine;name:string}) {
+  const {kind} = useClient();
+  const [cards,setCards] = useState<Record<string,CardState>>({});
+  const report = useCallback((target: string, state: CardState) => setCards(value=>({...value,[target]:state})),[]);
+  const job = useSyncExternalStore(subscribeUpdates,()=>machineJob(machine.id));
+  const targets = [...(machine.host ? ["daemon"] : []), ...(machine.includeClient ? ["client"] : [])];
+  const available = targets.every(target => cards[target]?.status && !cards[target].busy && !cards[target].error
+    && !["preparing","waiting","applying","verifying"].includes(cards[target].status!.phase));
+  const hasUpdate = targets.some(target => cards[target]?.status?.target || cards[target]?.status?.phase === "ready");
+  const confirmRestart = () => kind !== "desktop" || window.dispatchEvent(new Event("zotigo:before-update",{cancelable:true})) || window.confirm(t("updates.unsaved"));
+  return <>
+    <div className="settings-row"><span><strong>{t("updates.machineHelp")}</strong>{targets.length > 1 && <small>{t("updates.partialHelp")}</small>}</span>
+      <button className="settings-secondary-button" disabled={!available || !hasUpdate || job?.running} onClick={()=>void updateMachine(api,machine,confirmRestart)}>{t(job?.running ? "updates.updatingAll" : "updates.all")}</button>
+    </div>
+    {job?.error && <p role="alert">{job.error}</p>}
+    {job?.completed && <p role="status">{t("updates.allCompleted")}</p>}
+    {machine.host && <UpdateCard api={api} target="daemon" hostId={machine.host.id} machineId={machine.id} title={t("updates.daemon",{host:name})} onState={report}/>}
+    {machine.includeClient && <UpdateCard api={api} target="client" machineId={machine.id} title={t(kind === "desktop" ? "updates.desktop" : "updates.web")} onState={report}/>}
+  </>;
+}
+
+function UpdateCard({ api, target, title, hostId, machineId, onState }: { api: ClientApi; target: "client" | "daemon"; title: string; hostId?: string; machineId: string; onState: (target: string, state: CardState) => void }) {
   const { kind } = useClient();
   const [status, setStatus] = useState<UpdateStatus>();
   const [error, setError] = useState("");
@@ -44,8 +57,10 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
   const generation = useRef(0);
   const updateKey = `${target}:${hostId ?? "client"}`;
   const updating = useSyncExternalStore(subscribeUpdates, () => runningUpdates.has(updateKey));
+  const machineRunning = useSyncExternalStore(subscribeUpdates,()=>machineJob(machineId)?.running);
   const wasUpdating = useRef(updating);
   const inFlight = useRef(false);
+  useEffect(() => onState(target,{status,busy:busy || updating,error}),[onState,target,status,busy,updating,error]);
   const active = status && ["preparing", "waiting", "applying", "verifying"].includes(status.phase);
   useEffect(() => {
     const id = ++generation.current;
@@ -55,7 +70,7 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
       if (generation.current !== id) return;
       setStatus(value);
       const elapsed = Date.now() - Date.parse(value.checked_at ?? "");
-      if (["idle", "completed", "failed"].includes(value.phase) && (!Number.isFinite(elapsed) || elapsed > 4 * 60 * 60 * 1000)) {
+      if (!runningUpdates.has(updateKey) && ["idle", "completed", "failed"].includes(value.phase) && (!Number.isFinite(elapsed) || elapsed > 4 * 60 * 60 * 1000)) {
         const checked = await api.updateComponent(target, "check", undefined, hostId);
         if (generation.current === id) setStatus(checked);
       }
@@ -69,12 +84,12 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
     if (!finished) return;
     let stopped = false;
     void api.updateComponent(target, "status", undefined, hostId).then(value => {
-      if (!stopped) setStatus(value);
+      if (!stopped) { setStatus(value); setError(""); }
     }).catch(() => {});
     return () => { stopped = true; };
   }, [api, target, hostId, updating]);
   useEffect(() => {
-    if (!active || updating) return;
+    if ((!active && !machineRunning) || (updating && !machineRunning)) return;
     const id = generation.current;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -89,10 +104,10 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
     };
     timer = setTimeout(poll, 2000);
     return () => { stopped = true; clearTimeout(timer); };
-  }, [api, target, hostId, active, updating]);
+  }, [api, target, hostId, active, updating, machineRunning]);
 
   async function perform(action: UpdateAction, channel?: UpdateChannel) {
-    if (inFlight.current || runningUpdates.has(updateKey)) return;
+    if (inFlight.current || (runningUpdates.has(updateKey) && action !== "cancel")) return;
     if (action === "apply" && target === "client" && kind === "desktop" && !window.dispatchEvent(new Event("zotigo:before-update", {cancelable: true}))) {
       if (!window.confirm(t("updates.unsaved"))) return;
     }
@@ -100,7 +115,7 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
     inFlight.current = true;
     setBusy(true); setError("");
     try {
-      if (action === "prepare") markUpdate(updateKey, true);
+      if (action !== "cancel") markUpdate(updateKey, true);
       let value = await api.updateComponent(target, action, channel, hostId);
       if (action === "prepare") {
         // Keep the explicit destination and request alive when this card unmounts.
@@ -124,7 +139,7 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
       }
     } catch (err) { if (generation.current === id) setError(err instanceof Error ? err.message : String(err)); }
     finally {
-      if (action === "prepare") markUpdate(updateKey, false);
+      if (action !== "cancel") markUpdate(updateKey, false);
       if (generation.current === id) { inFlight.current = false; setBusy(false); }
     }
   }
@@ -134,7 +149,6 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
   const buttonText = canCancel ? t("updates.cancel") : active ? t(`updates.phase.${status!.phase}`) : status?.phase === "ready" || status?.target ? t("updates.now") : t("updates.check");
   return <section className="settings-section">
     <h2>{title}</h2>
-    {address && <p className="settings-host-address">{address}</p>}
     <div className="settings-card">
       {status && <>
         <div className="settings-row"><span><strong>{status.version}</strong><small>{status.commit.slice(0, 12)}{status.custom ? ` · ${t("updates.custom")}` : ""}</small></span></div>
@@ -149,7 +163,7 @@ function UpdateCard({ api, target, title, hostId, address }: { api: ClientApi; t
         </span>
         </div>
       </>}
-      <div className="settings-row"><button className="settings-secondary-button" disabled={busy || updating || (!!active && !canCancel)} onClick={() => void perform(action)}>{buttonText}</button></div>
+      <div className="settings-row"><button className="settings-secondary-button" disabled={busy || (updating && !canCancel) || (!!active && !canCancel)} onClick={() => void perform(action)}>{buttonText}</button></div>
     </div>
     {(error || status?.error) && <p role="alert">{error || status?.error}</p>}
     {!status && error && <p>{t("updates.statusUnavailable")}</p>}

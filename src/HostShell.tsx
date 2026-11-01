@@ -1,3 +1,4 @@
+import { runningUpdates } from "./machineUpdates";
 import { useLocale } from "./i18n";
 import { t } from "../shared/i18n/index";
 import { useTranslationLanguage, useTranslationProfile } from "./translationLanguage";
@@ -118,7 +119,7 @@ export function HostShell() {
     const check = async (target: "client" | "daemon") => {
       try {
         const status = await client.updateComponent(target, "status");
-        if (stopped || !["idle", "completed", "failed"].includes(status.phase)) return;
+        if (stopped || runningUpdates.has(`${target}:${target === "daemon" ? selected : "client"}`) || !["idle", "completed", "failed"].includes(status.phase)) return;
         const elapsed = Date.now() - Date.parse(status.checked_at ?? "");
         if (!Number.isFinite(elapsed) || elapsed > 4 * 60 * 60 * 1000) await client.updateComponent(target, "check");
       } catch { /* Old/offline hosts remain usable; settings exposes check errors. */ }
