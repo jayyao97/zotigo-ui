@@ -86,12 +86,15 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
   const workspaceById = useMemo(() => new Map(workspaces.map((value) => [value.id, value])), [workspaces]);
   const sessionTitleById = useMemo(() => new Map(sessionCatalog.map((value) => [value.id, value.title])), [sessionCatalog]);
   const selectedWorkspace = groupDraft?.workspace_id ? workspaceById.get(groupDraft.workspace_id) : undefined;
+  // Ownership comes from the catalog, not the cwd: a Workspace session may
+  // run in a subdirectory such as code/backend.
+  const sessionWorkspaceById = useMemo(() => new Map(sessionCatalog.map((value) => [value.id, value.workspace_id])), [sessionCatalog]);
   const compatibleSessions = useMemo(() => sessions.filter((session) => selectedWorkspace
-    && session.working_directory === selectedWorkspace.root_path
-    && (session.id === groupConversation?.session_id || sessionTitleById.has(session.id))
+    && (session.id === groupConversation?.session_id || sessionWorkspaceById.get(session.id) === selectedWorkspace.id)
+    && session.approval_policy !== "manual"
     && (session.id === groupConversation?.session_id || (!session.working && (session.state === "created" || session.state === "offline" || session.state === "running")))
     && (session.id === groupConversation?.session_id || session.agent !== "codex" || session.channel_tools_eligible === true)
-    && (!boundSessionIds.has(session.id) || session.id === groupConversation?.session_id)), [boundSessionIds, groupConversation?.session_id, sessionTitleById, sessions, selectedWorkspace]);
+    && (!boundSessionIds.has(session.id) || session.id === groupConversation?.session_id)), [boundSessionIds, groupConversation?.session_id, sessionWorkspaceById, sessions, selectedWorkspace]);
   const codexModels: AgentModel[] = agents.find((agent) => agent.id === "codex")?.models ?? [];
   const runtimeValid = groupDraft?.agent !== "codex" || Boolean(groupDraft.model && groupDraft.reasoning_effort);
   const selectableGroupMembers = useMemo(() => {

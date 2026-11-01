@@ -86,7 +86,7 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
         id: projection.runtime.id,
         project_id: organization?.project_id ?? null,
         workspace_id: organization?.workspace_id ?? null,
-        title: organization?.title?.trim() || "New session",
+        title: organization?.title?.trim() || promptTitle(projection.runtime.last_prompt) || "New session",
         pinned_at: organization?.pinned_at ?? undefined,
         pinned_order: organization?.pinned_position ?? undefined,
         workspace_position: organization?.workspace_position ?? undefined,
@@ -395,4 +395,12 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     reorderCatalogPinnedItems,
     pinCatalogNavigation,
   };
+}
+
+// Untitled sessions (for example terminal or ACP directory sessions) are
+// labelled by their latest prompt so the list does not fill with identical
+// "New session" entries.
+export function promptTitle(prompt: string | undefined): string {
+  const text = (prompt ?? "").replace(/\s+/g, " ").trim();
+  return text.length > 60 ? `${text.slice(0, 57)}...` : text;
 }

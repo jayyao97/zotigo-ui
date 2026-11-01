@@ -788,8 +788,8 @@ function assertAgentKind(value: unknown, name: string): AgentKind {
 
 function assertApprovalPolicy(value: unknown, name: string): ApprovalPolicy {
   const policy = assertString(value, name);
-  if (policy !== "auto" && policy !== "bypass_permissions") {
-    throw new Error(`${name} must be auto or bypass_permissions`);
+  if (policy !== "manual" && policy !== "auto" && policy !== "bypass_permissions") {
+    throw new Error(`${name} must be manual, auto or bypass_permissions`);
   }
   return policy;
 }

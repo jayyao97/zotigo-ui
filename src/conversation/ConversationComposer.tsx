@@ -874,6 +874,14 @@ export function ApprovalPolicyPicker({
       </button>
       {open && (
         <div className="approval-policy-menu" role="menu" aria-label={t("conversationComposer.accessMode2")}>
+          <button type="button" role="menuitemradio" aria-checked={value === "manual"} onClick={() => choose("manual")}>
+            <ShieldCheck size={16} strokeWidth={1.8} />
+            <span>
+              <strong>{t("approvalPolicy.manual")}</strong>
+              <small>{t("conversationComposer.askBeforeEveryChange")}</small>
+            </span>
+            {value === "manual" && <Check size={15} strokeWidth={2} />}
+          </button>
           <button type="button" role="menuitemradio" aria-checked={value === "auto"} onClick={() => choose("auto")}>
             <ShieldCheck size={16} strokeWidth={1.8} />
             <span>
