@@ -2,6 +2,8 @@ import { attachmentSizeError, parseMessageFiles, type MessageFileInput } from ".
 import { createFileEvents } from "./fileEvents";
 import { parseModelSettingsChange } from "../shared/modelSettings";
 import { getModelSettings, updateModelSettings, testModelSettings } from "./zotigod";
+import { updateDaemon } from "./zotigod";
+import { parseUpdateRequest, type UpdateAction, type UpdateChannel, type UpdateStatus } from "../shared/updates";
 import { parseWatchedFiles, type FileEventEnvelope } from "../shared/fileEvents";
 import { currentHost, listHosts, saveHost, deleteHost, testHost, resolveHost } from "./hosts";
 import { previewDaemonImage, openDaemonFile, saveDaemonFile, inspectCatalogSource, listDaemonDirectory } from "./zotigod";
@@ -79,6 +81,7 @@ import type { SessionEventEnvelope } from "../shared/clientTypes";
 import type { ChannelConnectionInput, ChannelConversationInput, ChannelOverrideMode, ChannelProgressMode, ChannelSessionStrategy } from "../shared/channels";
 
 export interface NativeServices {
+  updateClient?(action: UpdateAction, channel?: UpdateChannel): Promise<UpdateStatus>;
   openPath(path: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   downloadImage(url: string): void | Promise<void>;
@@ -138,6 +141,13 @@ addWorkspaceSourceToCatalog,
   });
   handle("daemon:get-config", () => getDaemonConfig());
   handle("daemon:get-model-settings", () => getModelSettings());
+  handle("updates:component", (target, action, channel) => {
+    const request = parseUpdateRequest(action, channel);
+    if (target === "daemon") return updateDaemon(request.action, request.channel);
+    if (target !== "client") throw new Error("Invalid update target");
+    if (!platform.updateClient) throw new Error("Client updates are unavailable in this installation.");
+    return platform.updateClient(request.action, request.channel);
+  });
   handle("daemon:update-model-settings", (change) => updateModelSettings(parseModelSettingsChange(change)));
   handle("daemon:test-model-settings", (change) => testModelSettings(parseModelSettingsChange(change)));
   handle("desktop:upload-attachment", (sessionId, input) => {

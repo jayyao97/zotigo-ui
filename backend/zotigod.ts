@@ -1,4 +1,9 @@
 import type { SessionReadState } from "../shared/zotigod";
+import { parseUpdateStatus, type UpdateAction, type UpdateChannel } from "../shared/updates";
+
+export async function updateDaemon(action: UpdateAction, channel?: UpdateChannel) {
+  return parseUpdateStatus(await requestJSON("/updates", action === "status" ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, channel})}));
+}
 import { parseModelSettings, type ModelSettingsChange, type ModelTestResult } from "../shared/modelSettings";
 
 export async function getModelSettings() {

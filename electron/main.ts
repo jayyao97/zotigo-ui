@@ -1,4 +1,5 @@
 import { withHost } from "../backend/hosts";
+import { createClientUpdater, acknowledgeDesktopUpdate } from "../backend/clientUpdates";
 import { configureDaemonImageAuth } from "./daemonImageAuth";
 import { app, session, BrowserWindow, ipcMain, Menu, screen, shell, type Rectangle } from "electron";
 import { imageContextMenu } from "./imageContextMenu";
@@ -20,6 +21,7 @@ const minimumWindowWidth = 1120;
 const minimumWindowHeight = 680;
 
 let mainWindow: BrowserWindow | null = null;
+let quitting = false;
 let applicationService: ReturnType<typeof createApplicationService>;
 const hostApplications = new Map<string, ReturnType<typeof createApplicationService>>();
 
@@ -29,6 +31,7 @@ if (!hasSingleInstanceLock) app.quit();
 app.on("second-instance", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
   mainWindow.focus();
 });
 
@@ -55,12 +58,21 @@ async function createMainWindow(): Promise<void> {
     },
   });
 
-  mainWindow.on("close", () => {
-    applicationService?.dispose();
-  for (const application of hostApplications.values()) application.dispose();
+  mainWindow.on("close", (event) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       setWindowBoundsPreference(mainWindow.getNormalBounds());
     }
+    if (!quitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    const modifier = process.platform === "darwin" ? input.meta : input.control;
+    if (input.type !== "keyDown" || !modifier || input.alt || input.shift || input.key.toLowerCase() !== "w") return;
+    event.preventDefault();
+    if (!input.isAutoRepeat) mainWindow?.webContents.send("window:close-request");
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -141,21 +153,23 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     await startManagedZotigodIfNeeded(app.getAppPath(), userDataPath);
   }
   await createMainWindow();
+  acknowledgeDesktopUpdate(app.getAppPath());
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
       void createMainWindow();
+    } else {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
     }
   });
 });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+app.on("window-all-closed", () => { /* Closing windows does not quit the app. */ });
 
 app.on("before-quit", () => {
+  quitting = true;
   applicationService?.dispose();
   for (const application of hostApplications.values()) application.dispose();
   stopManagedZotigod();
@@ -166,7 +180,12 @@ app.on("will-quit", () => {
 });
 
 function registerIpcHandlers(): void {
+  ipcMain.handle("window:close", (event) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Untrusted application caller");
+    mainWindow.close();
+  });
   const createForHost = (hostId: string) => createApplicationService({
+    updateClient: createClientUpdater("desktop", app.getAppPath(), () => app.quit()),
     openExternal: (url) => shell.openExternal(url),
     openPath: async (path) => {
       const error = await shell.openPath(path);

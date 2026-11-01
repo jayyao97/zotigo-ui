@@ -13,6 +13,37 @@ function platform(overrides: Partial<NativeServices> = {}): NativeServices {
   return { openPath: unexpected, openExternal: unexpected, downloadImage: unexpected, ...overrides };
 }
 
+test("update requests retain their remote host and credentials while client updates stay local", async () => {
+  const received: Array<{host: string; authorization: string | undefined; body: unknown}> = [];
+  const daemons = ["alpha", "beta"].map(host => createServer(async (request, response) => {
+    assert.equal(request.url, "/updates");
+    const chunks = []; for await (const chunk of request) chunks.push(chunk);
+    received.push({host, authorization: request.headers.authorization, body: JSON.parse(Buffer.concat(chunks).toString())});
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({code:"ok", data:{component:"daemon",version:"1.0.0",commit:host,custom:false,channel:"development",phase:"idle"}}));
+  }));
+  for (const daemon of daemons) { daemon.listen(0, "127.0.0.1"); await once(daemon, "listening"); }
+  let localCalls = 0;
+  const service = createApplicationService(platform({ updateClient: async () => {
+    localCalls++; return {component:"desktop",version:"1.0.0",commit:"local",custom:false,channel:"stable",phase:"idle"};
+  }}), () => {});
+  const connections = daemons.map((daemon, index) => {
+    const address = daemon.address(); assert.ok(address && typeof address !== "string");
+    const id = ["alpha", "beta"][index];
+    return {id, name:id, baseUrl:`http://127.0.0.1:${address.port}`, token:`token-${id}`};
+  });
+  try {
+    const replies = await Promise.all(connections.map(connection => withConnection(connection, () => service.invoke("updates:component", ["daemon", "channel", "development"]))));
+    assert.ok(replies.every(reply => reply.ok));
+    assert.deepEqual(received.sort((a,b) => a.host.localeCompare(b.host)), connections.map(connection => ({host:connection.id, authorization:`Bearer ${connection.token}`, body:{action:"channel",channel:"development"}})));
+    const local = await withConnection(connections[1], () => service.invoke("updates:component", ["client", "status"]));
+    assert.equal(local.ok, true); assert.equal(localCalls, 1); assert.equal(received.length, 2);
+  } finally {
+    service.dispose();
+    await Promise.all(daemons.map(daemon => new Promise<void>(resolve => daemon.close(() => resolve()))));
+  }
+});
+
 test("Project deletion crosses the shared client boundary and clears only its own selection", async () => {
   const original = getDaemonConfig().baseUrl;
   let deleted = false;

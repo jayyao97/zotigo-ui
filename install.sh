@@ -69,7 +69,7 @@ daemon_source=$(cd "$daemon_source" && pwd -P)
 . "$daemon_source/scripts/install-common.sh"
 install_init
 # install_init sets a per-component cleanup trap; retain the bootstrap checkout as well.
-trap 'rm -rf "$stage" "$bootstrap"; rmdir "$root/install.lock"' EXIT
+trap 'install_cleanup; rm -rf "$bootstrap"' EXIT
 toolchain_manifest="$daemon_source/scripts/toolchains.tsv"
 . "$daemon_source/scripts/toolchains.sh"
 ensure_go "$daemon_source"
@@ -79,7 +79,7 @@ source_identity
 version=$("$node_executable" -p 'require(process.argv[1]).version' "$source_dir/package.json")
 validate_version
 service_check
-assert_stopped
+[ "${ZOTIGO_PREPARE_UPDATE:-}" = 1 ] || assert_stopped
 if [ "$component" = desktop ]; then
   case "$platform" in
     Darwin)
@@ -124,7 +124,9 @@ else
 fi
 
 # UI defaults to a local daemon. Reuse only the exact paired build, and never stop it implicitly.
-if installed_daemon_matches "$prefix/daemon/current/zotigod" "$daemon_source"; then
+if [ "${ZOTIGO_PREPARE_UPDATE:-}" = 1 ]; then
+  echo 'Preparing only the client; daemon updates are managed separately.'
+elif installed_daemon_matches "$prefix/daemon/current/zotigod" "$daemon_source"; then
   echo 'Reusing the installed paired daemon.'
   if [ "$service" = yes ]; then
     (
@@ -150,6 +152,10 @@ else
 fi
 . "$source_dir/scripts/install-client-config.sh"
 install_client_config
+(cd "$daemon_source" && go build -trimpath -o "$stage/output/zotigo-update" ./cmd/zotigo-update)
+cp "$source_dir/update.json" "$stage/output/UPDATE.json"
+mkdir "$stage/output/update-support"
+cp "$daemon_source/scripts/install-common.sh" "$daemon_source/scripts/apply-update.sh" "$stage/output/update-support/"
 publish_install
 if [ "$component" = web ]; then
   service_install

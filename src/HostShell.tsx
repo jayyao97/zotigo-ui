@@ -98,11 +98,36 @@ export function HostShell() {
     window.addEventListener("keydown", openSettings);
     return () => window.removeEventListener("keydown", openSettings);
   }, []);
+  useEffect(() => {
+    if (parent.kind !== "desktop") return;
+    const close = () => {
+      if (!window.dispatchEvent(new Event("zotigo:close-session", { cancelable: true }))) return;
+      if (window.confirm(t("app.confirmCloseWindow"))) void api.closeWindow?.();
+    };
+    window.addEventListener("zotigo:close-request", close);
+    return () => window.removeEventListener("zotigo:close-request", close);
+  }, [api, parent.kind]);
   const client = useMemo(() => bindClientGeneration({ ...api,
     chooseSourceFolders: () => new Promise<SourceCandidate[]>((resolve) => { pickerResult.current?.([]); pickerResult.current = resolve; setPicker(true); }),
     revealPath: selected === "local" ? api.revealPath : async (value: string) => { await navigator.clipboard.writeText(value); },
     getDaemonConfig: async () => { const config = await api.getDaemonConfig(); const url = new URL(config.baseUrl); url.searchParams.set("zotigoHost", selected); return { ...config, baseUrl: url.toString() }; },
   }, () => generationRef.current === generation), [api, selected, generation]);
+  useEffect(() => {
+    if (!ready) return;
+    let stopped = false;
+    const check = async (target: "client" | "daemon") => {
+      try {
+        const status = await client.updateComponent(target, "status");
+        if (stopped || !["idle", "completed", "failed"].includes(status.phase)) return;
+        const elapsed = Date.now() - Date.parse(status.checked_at ?? "");
+        if (!Number.isFinite(elapsed) || elapsed > 4 * 60 * 60 * 1000) await client.updateComponent(target, "check");
+      } catch { /* Old/offline hosts remain usable; settings exposes check errors. */ }
+    };
+    const checkBoth = () => { void check("client"); void check("daemon"); };
+    checkBoth();
+    const timer = setInterval(checkBoth, 4 * 60 * 60 * 1000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [client, ready]);
   async function switchHost(id: string) {
     if (busy || catalogSyncInFlight.current) return false;
     if (id === selected) return true;
