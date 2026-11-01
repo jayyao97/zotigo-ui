@@ -2,7 +2,14 @@ import type { SessionReadState } from "../shared/zotigod";
 import { parseUpdateStatus, type UpdateAction, type UpdateChannel } from "../shared/updates";
 
 export async function updateDaemon(action: UpdateAction, channel?: UpdateChannel) {
-  return parseUpdateStatus(await requestJSON("/updates", action === "status" ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, channel})}));
+  try {
+    return parseUpdateStatus(await requestJSON("/updates", action === "status" ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, channel})}));
+  } catch (error) {
+    if (error instanceof ZotigodRequestError && (error.status === 404 || error.status === 405)) {
+      throw new Error("This daemon does not support the update API. Upgrade it once with the current installer.");
+    }
+    throw error;
+  }
 }
 import { parseModelSettings, type ModelSettingsChange, type ModelTestResult } from "../shared/modelSettings";
 

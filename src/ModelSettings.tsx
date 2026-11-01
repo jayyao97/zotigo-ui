@@ -6,7 +6,7 @@ import type { ModelProfile, ModelSettings as Settings, ModelSettingsChange } fro
 
 const blankProfile = (): ModelProfile => ({name:"",provider:"openai",model:"",base_url:"",thinking_level:"",context_window:0,max_output_tokens:null,mode:"",has_api_key:false});
 
-export function ModelSettings({hostName}: {hostName:string}) {
+export function ModelSettings({hostName, hostId, onEditingChange}: {hostName:string; hostId?: string; onEditingChange?: (editing: boolean) => void}) {
   const locale = useLocale();
   const {api}=useClient();
   const [settings,setSettings]=useState<Settings>();
@@ -23,14 +23,15 @@ export function ModelSettings({hostName}: {hostName:string}) {
   const [deleting,setDeleting]=useState<ModelProfile>();
   const alive=useRef(true);
   const inFlight=useRef(false);
+  useEffect(() => { onEditingChange?.(!!draft || busy); return () => onEditingChange?.(false); }, [draft, busy, onEditingChange]);
   useEffect(()=>{alive.current=true;return ()=>{alive.current=false;};},[]);
   useEffect(()=>{
     let active=true;setLoading(true);setError("");
-    void api.getModelSettings().then(data=>{if(active)setSettings(data);})
+    void api.getModelSettings(hostId).then(data=>{if(active)setSettings(data);})
       .catch(()=>{if(active)setError(t("models.loadError"));})
       .finally(()=>{if(active)setLoading(false);});
     return ()=>{active=false;};
-  },[api,reload]);
+  },[api,reload,hostId]);
   function open(profile?:ModelProfile) {
     setDraft(profile ? {...profile} : blankProfile());setEditing(!!profile);setKey("");setClearKey(false);setError("");setStatus("");setDeleting(undefined);
   }
@@ -43,12 +44,12 @@ export function ModelSettings({hostName}: {hostName:string}) {
     inFlight.current=true;setBusy(true);setTesting(test);setError("");setStatus("");
     try {
       if(test) {
-        const result=await api.testModelSettings(input);
+        const result=await api.testModelSettings(input, hostId);
         if(!alive.current)return;
         const reasons={authentication:"models.authentication",quota:"models.quota",model:"models.modelError",timeout:"models.timeout",connection:"models.connection"} as const;
         if(result.ok)setStatus(t("models.success"));else setError(t(reasons[result.reason ?? "connection"] ?? "models.connection"));
       } else {
-        const result=await api.updateModelSettings(input);
+        const result=await api.updateModelSettings(input, hostId);
         if(!alive.current)return;
         setSettings(result);setDraft(undefined);setKey("");setClearKey(false);setDeleting(undefined);setStatus(t("models.saved"));
       }

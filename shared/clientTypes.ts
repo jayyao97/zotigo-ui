@@ -298,10 +298,10 @@ export interface ClientApi {
   inspectHostSources(paths: string[]): Promise<SourceCandidate[]>;
   getDaemonConfig(): Promise<DaemonConfig>;
   getProfiles(workingDirectory?: string, scope?: "global"): Promise<ProfilesResponse>;
-  getModelSettings(): Promise<import("./modelSettings").ModelSettings>;
-  updateComponent(target: "client" | "daemon", action: import("./updates").UpdateAction, channel?: import("./updates").UpdateChannel): Promise<import("./updates").UpdateStatus>;
-  updateModelSettings(change: import("./modelSettings").ModelSettingsChange): Promise<import("./modelSettings").ModelSettings>;
-  testModelSettings(change: import("./modelSettings").ModelSettingsChange): Promise<import("./modelSettings").ModelTestResult>;
+  getModelSettings(hostId?: string): Promise<import("./modelSettings").ModelSettings>;
+  updateComponent(target: "client" | "daemon", action: import("./updates").UpdateAction, channel?: import("./updates").UpdateChannel, hostId?: string): Promise<import("./updates").UpdateStatus>;
+  updateModelSettings(change: import("./modelSettings").ModelSettingsChange, hostId?: string): Promise<import("./modelSettings").ModelSettings>;
+  testModelSettings(change: import("./modelSettings").ModelSettingsChange, hostId?: string): Promise<import("./modelSettings").ModelTestResult>;
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;
   getAgents(): Promise<AgentCatalogResponse>;
   prepareCodex(): Promise<AgentCatalogEntry>;
