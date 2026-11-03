@@ -1,5 +1,6 @@
 import type { Message, MessageKey } from "./en";
 export const zhCN: Record<MessageKey, Message> = {
+  "favoriteModelSettings.codexUnavailable": "Codex 不可用",
   "updates.defaultDaemon": "默认 Daemon",
   "updates.all": "升级全部",
   "updates.updatingAll": "正在升级…",

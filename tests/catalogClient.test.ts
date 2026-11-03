@@ -35,6 +35,7 @@ const requests: Array<{ method?: string; url?: string; body?: unknown }> = [];
 const timestamp = new Date(0).toISOString();
 const semanticWorkspaceRoot = "/tmp/projects/zotigo-11111111/workspaces/protocol-move-22222222";
 let preservesLocalBranches: boolean | undefined = true;
+let codexUnavailable = false;
 let projectImpact: Record<string, unknown> = {};
 
 function safeProjectImpact() {
@@ -89,7 +90,7 @@ before(async () => {
       return writeOK(response, body && typeof body === "object" && "agent" in body ? codexSession() : session(), 201);
     }
     if (request.method === "GET" && request.url === "/agents") {
-      return writeOK(response, agentCatalog());
+      return writeOK(response, codexUnavailable ? { default_agent: "zotigo", agents: [zotigoAgent()], unavailable_agents: [{ ...codexAgent("installed"), availability: "unavailable", reason: "Codex executable missing" }] } : agentCatalog());
     }
     if (request.method === "GET" && request.url === "/skills?session_id=session-1&force_reload=true") {
       return writeOK(response, {
@@ -573,3 +574,13 @@ function writeError(response: http.ServerResponse, status: number, code: string,
   response.writeHead(status, { "Content-Type": "application/json" });
   response.end(JSON.stringify({ code, message }));
 }
+
+test("preserves unavailable runtime diagnostics without adding selectable agents", async () => {
+  codexUnavailable = true;
+  try {
+    const catalog = await getAgents();
+    assert.deepEqual(catalog.agents.map(agent => agent.id), ["zotigo"]);
+    assert.equal(catalog.unavailable_agents?.[0]?.availability, "unavailable");
+    assert.equal(catalog.unavailable_agents?.[0]?.reason, "Codex executable missing");
+  } finally { codexUnavailable = false; }
+});

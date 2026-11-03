@@ -1343,6 +1343,7 @@ function parseAgentCatalogResponse(value: unknown): AgentCatalogResponse {
   const defaultAgent = parseAgentKind(record.default_agent, "agent catalog response default_agent");
   return {
     default_agent: defaultAgent,
+    unavailable_agents: record.unavailable_agents === undefined ? undefined : expectArray(record.unavailable_agents, "agent catalog response unavailable_agents").map((agent, index) => parseAgentCatalogEntry(agent, `unavailable_agents[${index}]`)),
     agents: expectArray(record.agents, "agent catalog response agents")
       .map((agent, index) => parseAgentCatalogEntry(agent, `agent catalog response agents[${index}]`)),
   };
@@ -1351,7 +1352,7 @@ function parseAgentCatalogResponse(value: unknown): AgentCatalogResponse {
 function parseAgentCatalogEntry(value: unknown, context: string): AgentCatalogEntry {
   const record = expectRecord(value, context);
   const availability = expectString(record.availability, `${context} availability`);
-  if (availability !== "available" && availability !== "installed") {
+  if (availability !== "available" && availability !== "installed" && availability !== "unavailable") {
     throw new Error(`${context} availability is not supported: ${availability}`);
   }
   const capabilities = expectRecord(record.capabilities, `${context} capabilities`);
@@ -1359,6 +1360,7 @@ function parseAgentCatalogEntry(value: unknown, context: string): AgentCatalogEn
     id: parseAgentKind(record.id, `${context} id`),
     label: expectString(record.label, `${context} label`),
     availability,
+    reason: expectOptionalString(record.reason, `${context} reason`),
     version: expectOptionalString(record.version, `${context} version`),
     capabilities: {
       profiles: expectBoolean(capabilities.profiles, `${context} capabilities.profiles`),

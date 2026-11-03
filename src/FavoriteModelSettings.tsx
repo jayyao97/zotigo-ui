@@ -19,23 +19,31 @@ export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: 
   const [profile, setProfile] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [codexWarning, setCodexWarning] = useState("");
   const [retry, setRetry] = useState(0);
   const [refreshed, setRefreshed] = useState(false);
   useEffect(() => {
     let active = true;
-    setLoading(true); setError(""); setRefreshed(false);
+    setLoading(true); setError(""); setCodexWarning(""); setRefreshed(false);
     void (async () => {
       const [catalog, state] = await Promise.all([api.getAgents(), api.getDesktopState()]);
-      const installedCodex = catalog.agents.find((item) => item.id === "codex");
-      let availableAgents = catalog.agents;
-      if (installedCodex && (retry > 0 || !installedCodex.models?.length)) {
-        const prepared = await api.prepareCodex();
-        availableAgents = catalog.agents.map((item) => item.id === "codex" ? prepared : item);
+      const installedCodex = catalog.agents.find((item) => item.id === "codex") ?? catalog.unavailable_agents?.find((item) => item.id === "codex");
+      let availableAgents = catalog.agents.filter((item) => item.availability !== "unavailable");
+      let codexError = installedCodex?.availability === "unavailable" ? installedCodex.reason || t("favoriteModelSettings.codexUnavailable") : "";
+      if (installedCodex && installedCodex.availability !== "unavailable" && (retry > 0 || !installedCodex.models?.length)) {
+        try {
+          const prepared = await api.prepareCodex();
+          availableAgents = availableAgents.map((item) => item.id === "codex" ? prepared : item);
+        } catch (cause) {
+          codexError = cause instanceof Error ? cause.message : t("favoriteModelSettings.codexUnavailable");
+          availableAgents = availableAgents.filter((item) => item.id !== "codex");
+        }
       }
       const workspace = state.workspaces.find((item) => item.id === state.selectedWorkspaceId);
       const config = await api.getProfiles(workspace?.root_path, workspace ? undefined : "global");
       if (!active) return;
       setAgents(availableAgents); setProfiles(config.profiles);
+      setCodexWarning(codexError ? `${t("favoriteModelSettings.codexUnavailable")}: ${codexError}` : "");
       const codex = availableAgents.find((item) => item.id === "codex");
       if (retry > 0 && codex) { onCodexRefresh?.(codex); setRefreshed(true); }
       setAgent((current) => retry > 0 && availableAgents.some((item) => item.id === current) ? current : availableAgents.some((item) => item.id === "codex") ? "codex" : "zotigo");
@@ -62,8 +70,9 @@ export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: 
     <div className="settings-card">
       <div className="settings-row">
         <span><strong>{t("favoriteModelSettings.codexModels")}</strong><small>{t("favorites.refreshHelp", { host: hostName })}</small></span>
-        <button type="button" className="settings-secondary-button" disabled={loading || !agents.some((item) => item.id === "codex")} onClick={() => setRetry((value) => value + 1)}>{t("favoriteModelSettings.refreshModels")}</button>
+        <button type="button" className="settings-secondary-button" disabled={loading || (!codexWarning && !agents.some((item) => item.id === "codex"))} onClick={() => setRetry((value) => value + 1)}>{t("favoriteModelSettings.refreshModels")}</button>
       </div>
+      {codexWarning && <div className="settings-row" role="alert">{codexWarning}</div>}
       {refreshed && <div className="settings-row" role="status"><span><small>{t("favorites.refreshed", { count: models.length })}{agents.find((item) => item.id === "codex")?.version ? t("favoriteModelSettings.runtime", { p0: agents.find((item) => item.id === "codex")!.version ?? "" }) : ""}</small></span></div>}
       {favorites.items.length === 0 && <div className="settings-row"><span><small>{t("favoriteModelSettings.noFavoriteModelsYet")}</small></span></div>}
       {favorites.items.map((item) => <div className="settings-row" key={favoriteKey(item)}>

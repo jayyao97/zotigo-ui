@@ -1314,7 +1314,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     client.getAgents()
       .then(async (catalog) => {
         const nativeAgent = catalog.agents.find((agent) => agent.id === "zotigo");
-        const installedCodex = catalog.agents.find((agent) => agent.id === "codex");
+        const installedCodex = catalog.agents.find((agent) => agent.id === "codex" && agent.availability !== "unavailable");
         let preparedCodex: AgentCatalogEntry | undefined;
         if (installedCodex || refreshedCodex) {
           try {

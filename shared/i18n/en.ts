@@ -1,5 +1,6 @@
 export type Message = string | { one: string; other: string };
 export const en = {
+  "favoriteModelSettings.codexUnavailable": "Codex is unavailable",
   "updates.defaultDaemon": "Default daemon",
   "updates.all": "Update all",
   "updates.updatingAll": "Updating…",
