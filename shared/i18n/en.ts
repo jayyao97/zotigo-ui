@@ -1,5 +1,9 @@
 export type Message = string | { one: string; other: string };
 export const en = {
+  "completionTriggers.waiting": "Waiting for background tasks",
+  "completionTriggers.notification": "Background task notification",
+  "completionTriggers.expires": "Expires {p0}",
+  "completionTriggers.cancel": "Cancel notification for {p0}",
   "favoriteModelSettings.codexUnavailable": "Codex is unavailable",
   "updates.defaultDaemon": "Default daemon",
   "updates.all": "Update all",

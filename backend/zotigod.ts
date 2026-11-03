@@ -544,6 +544,25 @@ export async function listQueuedInputs(id: string): Promise<import("../shared/zo
   });
 }
 
+export async function listCompletionTriggers(id: string): Promise<{ id: string; title: string; on_fire: string; expires_at: string }[] | null> {
+  let data: unknown;
+  try { data = await requestJSON(`/sessions/${encodeURIComponent(id)}/completion-triggers`); }
+  catch (error) {
+    if (error instanceof ZotigodRequestError && (error.status === 404 || error.status === 405)) return null;
+    throw error;
+  }
+  const response = expectRecord(data, "completion triggers");
+  if (!Array.isArray(response.items)) throw new Error("Invalid completion triggers");
+  return response.items.map(value => {
+    const row = expectRecord(value, "completion trigger");
+    return { id: expectString(row.id, "trigger id"), title: expectString(row.title, "title"), on_fire: expectString(row.on_fire, "on_fire"), expires_at: expectString(row.expires_at, "expires_at") };
+  });
+}
+
+export async function cancelCompletionTrigger(id: string, triggerId: string): Promise<void> {
+  await requestJSON(`/sessions/${encodeURIComponent(id)}/completion-triggers/${encodeURIComponent(triggerId)}`, { method: "DELETE" });
+}
+
 export async function changeQueuedInput(id: string, itemId: string, revision: number, text?: string, imageIndices?: number[]): Promise<void> {
   if (imageIndices !== undefined) {
     const items = await listQueuedInputs(id);

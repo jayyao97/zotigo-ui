@@ -1,5 +1,9 @@
 import type { Message, MessageKey } from "./en";
 export const zhCN: Record<MessageKey, Message> = {
+  "completionTriggers.waiting": "等待后台任务",
+  "completionTriggers.notification": "后台任务通知",
+  "completionTriggers.expires": "有效期至 {p0}",
+  "completionTriggers.cancel": "取消 {p0} 的通知",
   "favoriteModelSettings.codexUnavailable": "Codex 不可用",
   "updates.defaultDaemon": "默认 Daemon",
   "updates.all": "升级全部",

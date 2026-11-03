@@ -8,6 +8,7 @@ import { SidebarResizeHandle, loadSidebarWidth } from "./SidebarResizeHandle";
 import { retainSessionContextUsage } from "./sessionContextCache";
 import { referencePrompt } from "../shared/conversationReferences";
 import { InputQueue } from "./conversation/InputQueue";
+import { CompletionTriggers } from "./conversation/CompletionTriggers";
 import { alternateSendMode, type SendMode } from "./sendMode";
 import { ConversationTools, ComposerReferences } from "./conversation/ConversationTools";
 import { AttachmentMenu } from "./conversation/AttachmentMenu";
@@ -4259,6 +4260,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               });
             }} />
             {selectedBinding && <InputQueue onReconciled={(ids) => { setOptimisticPromptItems(current => current.filter(item => !ids.includes(item.id))); for (const id of ids) { promptRetries.current.delete(id); promptRecovery.current.get(id)?.release(); promptRecovery.current.delete(id); } }} pending={optimisticPromptItems.filter(item => item.queuedPreview)} onRetry={(id) => { if (!isBusy) void promptRetries.current.get(id)?.(); }} onRestore={(id) => { if (!isBusy) promptRecovery.current.get(id)?.restore(); }} onDismiss={(id) => { if (!isBusy) promptRecovery.current.get(id)?.discard(); }} daemonUrl={daemonUrl} key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} refresh={queueRefresh} active={surfaceActive} />}
+            {selectedBinding && <CompletionTriggers key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} active={surfaceActive} />}
             {runtimeOccupied && (
               <div className="runtime-occupied-notice" role="status">
                 <ShieldAlert size={18} strokeWidth={1.9} />
