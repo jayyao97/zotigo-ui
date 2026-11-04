@@ -1,4 +1,5 @@
 export type SidePanelTab =
+  | { id: "notifications"; kind: "notifications"; triggerId?: string }
   | { id: "subagents"; kind: "subagents" }
   | { id: `subagent:${string}`; kind: "subagent"; runId: string }
   | { id: `file:${string}`; kind: "file"; path: string; line?: number; column?: number };

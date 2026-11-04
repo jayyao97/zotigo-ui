@@ -544,9 +544,9 @@ export async function listQueuedInputs(id: string): Promise<import("../shared/zo
   });
 }
 
-export async function listCompletionTriggers(id: string): Promise<{ id: string; title: string; on_fire: string; expires_at: string }[] | null> {
+export async function listCompletionTriggers(id: string, targetId?: string): Promise<{ id: string; title: string; on_fire: string; expires_at: string; state?: "pending" | "fired" | "cancelled" | "expired" }[] | null> {
   let data: unknown;
-  try { data = await requestJSON(`/sessions/${encodeURIComponent(id)}/completion-triggers`); }
+  try { data = await requestJSON(`/sessions/${encodeURIComponent(id)}/completion-triggers?include_history=true${targetId ? `&target=${encodeURIComponent(targetId)}` : ""}`); }
   catch (error) {
     if (error instanceof ZotigodRequestError && (error.status === 404 || error.status === 405)) return null;
     throw error;
@@ -555,7 +555,8 @@ export async function listCompletionTriggers(id: string): Promise<{ id: string; 
   if (!Array.isArray(response.items)) throw new Error("Invalid completion triggers");
   return response.items.map(value => {
     const row = expectRecord(value, "completion trigger");
-    return { id: expectString(row.id, "trigger id"), title: expectString(row.title, "title"), on_fire: expectString(row.on_fire, "on_fire"), expires_at: expectString(row.expires_at, "expires_at") };
+    if (row.state !== undefined && !["pending", "fired", "cancelled", "expired"].includes(String(row.state))) throw new Error("Invalid completion trigger state");
+    return { ...(row.state === undefined ? {} : { state: row.state as "pending" | "fired" | "cancelled" | "expired" }), id: expectString(row.id, "trigger id"), title: expectString(row.title, "title"), on_fire: expectString(row.on_fire, "on_fire"), expires_at: expectString(row.expires_at, "expires_at") };
   });
 }
 

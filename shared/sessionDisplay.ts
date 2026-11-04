@@ -1,3 +1,4 @@
+import { isCompletionTriggerCall } from "./completionTriggerDisplay";
 import type { CommandImageMetadata, DisplayDelta, DisplayItem, DisplaySubagent, DisplayToolCall, DisplayToolResult, SessionCommandResponse, SessionState, ZotigoSession } from "./zotigod";
 import type { DaemonSessionBinding } from "./clientTypes";
 
@@ -658,6 +659,8 @@ export function hasVisibleAssistantContent(item: DisplayItem, projection: ToolRe
 
 export function groupTimelineItems(items: DisplayItem[], activeTurnSequence?: number): TimelineDisplayGroup[] {
   const groups: TimelineDisplayGroup[] = [];
+  const completionCalls = new Set(items.flatMap(item => (item.content ?? []).flatMap(part =>
+    isCompletionTriggerCall(part.tool_call) && part.tool_call?.id ? [part.tool_call.id] : [])));
   let pendingActivity: DisplayItem[] = [];
 
   const flushActivity = (atTimelineTail: boolean) => {
@@ -685,6 +688,14 @@ export function groupTimelineItems(items: DisplayItem[], activeTurnSequence?: nu
     const isReasoning = isReasoningItem(item);
     const isToolActivity = isAssistant &&
       content.every((part) => part.type === "tool_call" || part.type === "tool_result" || part.type === "tool_progress");
+
+    const notification = content.some(part => isCompletionTriggerCall(part.tool_call) ||
+      (part.tool_result?.tool_call_id && completionCalls.has(part.tool_result.tool_call_id)));
+    if (notification) {
+      flushActivity(false);
+      groups.push({ kind: "item", item });
+      continue;
+    }
 
     if (isReasoning || isToolActivity) {
       pendingActivity.push(item);

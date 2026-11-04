@@ -104,7 +104,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     startConversationSession: (conversationId) => invoke("desktop:start-conversation-session", conversationId),
     sendConversationMessage: (input) => invoke("desktop:send-conversation-message", input),
     listQueuedInputs: (id) => invoke("sessions:queue-list", id),
-    listCompletionTriggers: (id) => invoke("sessions:completion-list", id),
+    listCompletionTriggers: (id, targetId) => invoke("sessions:completion-list", id, targetId),
     cancelCompletionTrigger: (id, triggerId) => invoke("sessions:completion-cancel", id, triggerId),
     editQueuedInput: (id, itemId, revision, text, imageIndices) => invoke("sessions:queue-edit", id, itemId, revision, text, imageIndices),
     deleteQueuedInput: (id, itemId, revision) => invoke("sessions:queue-delete", id, itemId, revision),

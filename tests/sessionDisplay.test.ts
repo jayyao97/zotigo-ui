@@ -742,3 +742,22 @@ test("a durable push removes the optimistic prompt before the delayed send respo
   assert.deepEqual(reconcileOptimisticSteering([local, repeatedPrompt], [durable]), [repeatedPrompt]);
   assert.deepEqual(reconcileOptimisticSteering([local], [{ ...durable, type: "steering_message" }]), []);
 });
+
+test("completion notification remains outside collapsed following commands", () => {
+  const notification = assistant("callback", 1, [{ type: "tool_call", tool_call: { id: "callback", name: "zotigo.create_completion_trigger" } }]);
+  const receipt = assistant("receipt", 2, [{ type: "tool_result", tool_result: { tool_call_id: "callback", json: { trigger_id: "cb_1" } } }]);
+  const commands = Array.from({ length: 5 }, (_, i) => assistant(`command-${i}`, i + 3, [
+    { type: "tool_call", tool_call: { id: `shell-${i}`, name: "shell" } },
+    { type: "tool_result", tool_result: { tool_call_id: `shell-${i}`, text: "ok" } },
+  ]));
+  const groups = groupTimelineItems([notification, receipt, ...commands]);
+  assert.deepEqual(groups.map(group => group.kind), ["item", "item", "tools"]);
+  const tools = groups[2];
+  assert.equal(tools.kind, "tools");
+  if (tools.kind === "tools") {
+    assert.equal(tools.active, false);
+    assert.deepEqual(tools.items, commands);
+    const projection = buildToolRenderProjection([notification, receipt, ...commands]);
+    assert.deepEqual(projection.resultsByCall.get(contentLocation("callback", 0))?.json, { trigger_id: "cb_1" });
+  }
+});

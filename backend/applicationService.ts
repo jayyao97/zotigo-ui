@@ -406,7 +406,7 @@ addWorkspaceSourceToCatalog,
     return translateSelection(assertNonEmptyString(id, "sessionId"), source, target, profile == null ? undefined : assertString(profile, "profile"));
   });
   handle("sessions:queue-list", id => listQueuedInputs(assertNonEmptyString(id, "sessionId")));
-  handle("sessions:completion-list", id => listCompletionTriggers(assertNonEmptyString(id, "sessionId")));
+  handle("sessions:completion-list", (id, targetId) => listCompletionTriggers(assertNonEmptyString(id, "sessionId"), targetId === undefined ? undefined : assertNonEmptyString(targetId, "triggerId")));
   handle("sessions:completion-cancel", (id, triggerId) => cancelCompletionTrigger(assertNonEmptyString(id, "sessionId"), assertNonEmptyString(triggerId, "triggerId")));
   handle("sessions:queue-resume", id => resumeInputQueue(assertNonEmptyString(id, "sessionId")));
   for (const operation of ["edit", "delete", "send"] as const) {
