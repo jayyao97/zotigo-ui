@@ -1,11 +1,12 @@
-import { FileText, FolderOpen, Users } from "lucide-react";
+import { Bell, FileText, FolderOpen, Users } from "lucide-react";
 import { t } from "../shared/i18n";
 import { useLocale } from "./i18n";
 
-export function WorkspacePanelHome({ files, onBrowse, onSubagents, onOpenFile }: {
+export function WorkspacePanelHome({ files, onBrowse, onSubagents, onNotifications, onOpenFile }: {
   files: { id: string; path: string }[];
   onBrowse: () => void;
   onSubagents: () => void;
+  onNotifications?: () => void;
   onOpenFile: (id: string) => void;
 }) {
   useLocale();
@@ -15,6 +16,7 @@ export function WorkspacePanelHome({ files, onBrowse, onSubagents, onOpenFile }:
       <div className="workspace-tool-grid">
         <button type="button" onClick={onBrowse}><FolderOpen size={18} /><span>{t("app.browseFiles")}</span></button>
         <button type="button" onClick={onSubagents}><Users size={18} /><span>{t("app.subagents")}</span></button>
+        {onNotifications && <button type="button" onClick={onNotifications}><Bell size={18} /><span>{t("completionTriggers.title")}</span></button>}
       </div>
     </section>
     {files.length > 0 && <section aria-labelledby="panel-files-heading">

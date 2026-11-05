@@ -365,7 +365,8 @@ export interface AgentModel {
 export interface AgentCatalogEntry {
   id: AgentKind;
   label: string;
-  availability: "available" | "installed";
+  availability: "available" | "installed" | "unavailable";
+  reason?: string;
   version?: string;
   capabilities: AgentCapabilities;
   models?: AgentModel[];
@@ -374,6 +375,7 @@ export interface AgentCatalogEntry {
 export interface AgentCatalogResponse {
   default_agent: AgentKind;
   agents: AgentCatalogEntry[];
+  unavailable_agents?: AgentCatalogEntry[];
 }
 
 export interface CodexSettingsInput {

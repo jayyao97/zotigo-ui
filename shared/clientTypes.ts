@@ -353,6 +353,8 @@ export interface ClientApi {
   startConversationSession(conversationId: string): Promise<DesktopActionResult>;
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
   listQueuedInputs(id: string): Promise<import("./zotigod").QueuedInput[] | null>;
+  listCompletionTriggers(id: string, targetId?: string): Promise<{ id: string; title: string; on_fire: string; expires_at: string; state?: "pending" | "fired" | "cancelled" | "expired" }[] | null>;
+  cancelCompletionTrigger(id: string, triggerId: string): Promise<void>;
   editQueuedInput(id: string, itemId: string, revision: number, text: string, imageIndices?: number[]): Promise<void>;
   deleteQueuedInput(id: string, itemId: string, revision: number): Promise<void>;
   resumeInputQueue(id: string): Promise<void>;

@@ -544,6 +544,26 @@ export async function listQueuedInputs(id: string): Promise<import("../shared/zo
   });
 }
 
+export async function listCompletionTriggers(id: string, targetId?: string): Promise<{ id: string; title: string; on_fire: string; expires_at: string; state?: "pending" | "fired" | "cancelled" | "expired" }[] | null> {
+  let data: unknown;
+  try { data = await requestJSON(`/sessions/${encodeURIComponent(id)}/completion-triggers?include_history=true${targetId ? `&target=${encodeURIComponent(targetId)}` : ""}`); }
+  catch (error) {
+    if (error instanceof ZotigodRequestError && (error.status === 404 || error.status === 405)) return null;
+    throw error;
+  }
+  const response = expectRecord(data, "completion triggers");
+  if (!Array.isArray(response.items)) throw new Error("Invalid completion triggers");
+  return response.items.map(value => {
+    const row = expectRecord(value, "completion trigger");
+    if (row.state !== undefined && !["pending", "fired", "cancelled", "expired"].includes(String(row.state))) throw new Error("Invalid completion trigger state");
+    return { ...(row.state === undefined ? {} : { state: row.state as "pending" | "fired" | "cancelled" | "expired" }), id: expectString(row.id, "trigger id"), title: expectString(row.title, "title"), on_fire: expectString(row.on_fire, "on_fire"), expires_at: expectString(row.expires_at, "expires_at") };
+  });
+}
+
+export async function cancelCompletionTrigger(id: string, triggerId: string): Promise<void> {
+  await requestJSON(`/sessions/${encodeURIComponent(id)}/completion-triggers/${encodeURIComponent(triggerId)}`, { method: "DELETE" });
+}
+
 export async function changeQueuedInput(id: string, itemId: string, revision: number, text?: string, imageIndices?: number[]): Promise<void> {
   if (imageIndices !== undefined) {
     const items = await listQueuedInputs(id);
@@ -1343,6 +1363,7 @@ function parseAgentCatalogResponse(value: unknown): AgentCatalogResponse {
   const defaultAgent = parseAgentKind(record.default_agent, "agent catalog response default_agent");
   return {
     default_agent: defaultAgent,
+    unavailable_agents: record.unavailable_agents === undefined ? undefined : expectArray(record.unavailable_agents, "agent catalog response unavailable_agents").map((agent, index) => parseAgentCatalogEntry(agent, `unavailable_agents[${index}]`)),
     agents: expectArray(record.agents, "agent catalog response agents")
       .map((agent, index) => parseAgentCatalogEntry(agent, `agent catalog response agents[${index}]`)),
   };
@@ -1351,7 +1372,7 @@ function parseAgentCatalogResponse(value: unknown): AgentCatalogResponse {
 function parseAgentCatalogEntry(value: unknown, context: string): AgentCatalogEntry {
   const record = expectRecord(value, context);
   const availability = expectString(record.availability, `${context} availability`);
-  if (availability !== "available" && availability !== "installed") {
+  if (availability !== "available" && availability !== "installed" && availability !== "unavailable") {
     throw new Error(`${context} availability is not supported: ${availability}`);
   }
   const capabilities = expectRecord(record.capabilities, `${context} capabilities`);
@@ -1359,6 +1380,7 @@ function parseAgentCatalogEntry(value: unknown, context: string): AgentCatalogEn
     id: parseAgentKind(record.id, `${context} id`),
     label: expectString(record.label, `${context} label`),
     availability,
+    reason: expectOptionalString(record.reason, `${context} reason`),
     version: expectOptionalString(record.version, `${context} version`),
     capabilities: {
       profiles: expectBoolean(capabilities.profiles, `${context} capabilities.profiles`),

@@ -72,7 +72,7 @@ export function InputQueue({ client, sessionId, refresh, active, daemonUrl = "",
       </div> : <>
         <div className="queue-message"><span>{item.text || t("inputQueue.imageAttachment")}</span>{images(item, (item.images ?? []).map((_, index) => index))}{item.state !== "queued" && <small>{item.state === "paused" ? t("inputQueue.paused") : t("conversationTimeline.sending")}</small>}</div>
         <button type="button" className="icon-button" aria-label={t("inputQueue.sendNow")} title={t("inputQueue.sendNow")} disabled={busy || !item.editable} onClick={() => void change(() => client.sendQueuedInput(sessionId, item.id, item.revision))}><ArrowUp size={14} /></button>
-        <button type="button" className="icon-button" aria-label={t("inputQueue.editQueuedMessage")} disabled={busy || !item.editable} onClick={() => setEditing({ item, text: item.text ?? "", imageIndices: (item.images ?? []).map((_, index) => index) })}><Pencil size={14} /></button>
+        {!item.id.startsWith("completion:") && <button type="button" className="icon-button" aria-label={t("inputQueue.editQueuedMessage")} disabled={busy || !item.editable} onClick={() => setEditing({ item, text: item.text ?? "", imageIndices: (item.images ?? []).map((_, index) => index) })}><Pencil size={14} /></button>}
         <button type="button" className="icon-button" aria-label={t("inputQueue.deleteQueuedMessage")} disabled={busy || !item.editable} onClick={() => void change(() => client.deleteQueuedInput(sessionId, item.id, item.revision))}><Trash2 size={14} /></button>
       </>}
     </li>)}{previews.map(item => <li key={item.id}>

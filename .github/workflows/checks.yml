@@ -16,7 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # Avoid the macOS ARM runner capacity failures affecting PR checks.
+        os: [ubuntu-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:

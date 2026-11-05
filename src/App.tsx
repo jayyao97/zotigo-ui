@@ -8,6 +8,8 @@ import { SidebarResizeHandle, loadSidebarWidth } from "./SidebarResizeHandle";
 import { retainSessionContextUsage } from "./sessionContextCache";
 import { referencePrompt } from "../shared/conversationReferences";
 import { InputQueue } from "./conversation/InputQueue";
+import { CompletionTriggerNavigation } from "./conversation/CompletionTriggerNavigation";
+import { CompletionTriggers } from "./conversation/CompletionTriggers";
 import { alternateSendMode, type SendMode } from "./sendMode";
 import { ConversationTools, ComposerReferences } from "./conversation/ConversationTools";
 import { AttachmentMenu } from "./conversation/AttachmentMenu";
@@ -1314,7 +1316,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     client.getAgents()
       .then(async (catalog) => {
         const nativeAgent = catalog.agents.find((agent) => agent.id === "zotigo");
-        const installedCodex = catalog.agents.find((agent) => agent.id === "codex");
+        const installedCodex = catalog.agents.find((agent) => agent.id === "codex" && agent.availability !== "unavailable");
         let preparedCodex: AgentCatalogEntry | undefined;
         if (installedCodex || refreshedCodex) {
           try {
@@ -3820,6 +3822,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
   return (
     <MarkdownImageContext.Provider value={markdownImageContext}>
+    <CompletionTriggerNavigation.Provider value={triggerId => showPanelTab({ id: "notifications", kind: "notifications", triggerId })}>
     <main
       ref={appFrameRef}
       className={`app-frame ${isSidebarResizing ? "resizing-sidebar" : ""} ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
@@ -4599,11 +4602,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             {sidePanelTabs.tabs.map((tab) => {
               const run = tab.kind === "subagent" ? subagentRuns.find((candidate) => candidate.id === tab.runId) : undefined;
               const fileState = tab.kind === "file" ? openFiles[tab.path] : undefined;
-              const label = tab.kind === "subagents" ? t("app.subagents") : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? t("app.subagent");
+              const label = tab.kind === "notifications" ? t("completionTriggers.title") : tab.kind === "subagents" ? t("app.subagents") : tab.kind === "file" ? fileNameForPath(tab.path) : run?.name ?? t("app.subagent");
               return (
                 <div key={tab.id} className={`subagent-panel-tab ${sidePanelTabs.activeTabId === tab.id ? "active" : ""}`}>
                   <button type="button" className="subagent-panel-tab-select" onClick={() => setSidePanelTabs((state) => openSidePanelTab(state, tab))}>
-                    {tab.kind === "file" ? fileState?.kind === "image" ? <Image size={14} strokeWidth={1.8} /> : <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
+                    {tab.kind === "notifications" ? <Bell size={14} /> : tab.kind === "file" ? fileState?.kind === "image" ? <Image size={14} strokeWidth={1.8} /> : <FileText size={14} strokeWidth={1.8} /> : run ? <SubagentAvatar run={run} compact /> : <Circle size={14} strokeWidth={2} fill="currentColor" />}
                     <span>{label}</span>
                   </button>
                   <button type="button" className="subagent-panel-tab-close" aria-label={t("app.close", { p0: label })} onClick={() => void closePanelTab(tab.id)}>
@@ -4627,9 +4630,12 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           {!activeSidePanelTab ? (!treeVisible && <WorkspacePanelHome
             files={sidePanelTabs.tabs.filter(tab => tab.kind === "file")}
             onBrowse={() => browseFiles()}
+            onNotifications={selectedBinding ? () => showPanelTab({ id: "notifications", kind: "notifications" }) : undefined}
             onSubagents={() => showPanelTab({ id: "subagents", kind: "subagents" })}
             onOpenFile={id => { const tab = sidePanelTabs.tabs.find(tab => tab.id === id); if (tab) showPanelTab(tab); }}
-          />) : activeSidePanelTab.kind === "subagents" ? (
+          />) : activeSidePanelTab.kind === "notifications" ? (
+            selectedBinding && <CompletionTriggers key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} active={sidePanelOpen && !channelsOpen && surfaceActive} triggerId={activeSidePanelTab.triggerId} focusRequest={activeSidePanelTab} />
+          ) : activeSidePanelTab.kind === "subagents" ? (
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
             <SubagentTranscript
@@ -5209,6 +5215,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         </div>
       )}
     </main>
+    </CompletionTriggerNavigation.Provider>
     </MarkdownImageContext.Provider>
   );
 }

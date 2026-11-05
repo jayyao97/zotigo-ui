@@ -69,6 +69,15 @@ test("settings add and remove persisted favorites and update mounted consumers w
     assert.equal(document.querySelector('[role="alert"]'), null);
     assert.equal([...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "Refresh models")!.disabled, true);
     assert.match(document.querySelector('.settings-favorite-fields')!.textContent!, /Zotigo/);
+    const nativeCatalog = await api.getAgents();
+    api.getAgents = async () => ({ ...nativeCatalog, unavailable_agents: [{ id: "codex", label: "Codex", availability: "unavailable", reason: "Codex executable missing", capabilities: { profiles: false, models: false, steering: false, approvals: false } }] });
+    api.getProfiles = async () => ({ profiles: [{ name: "native-profile" }], default_profile: "native-profile" }) as Awaited<ReturnType<ClientApi["getProfiles"]>>;
+    api.prepareCodex = async () => { throw new Error("must not prepare an unavailable runtime"); };
+    await render("codex-missing");
+    assert.match(document.querySelector('[role="alert"]')!.textContent!, /Codex executable missing/);
+    assert.match(document.querySelector('.settings-favorite-fields')!.textContent!, /native-profile/);
+    assert.equal(document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled, false);
+
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of Object.entries(previous)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }

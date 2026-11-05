@@ -1,3 +1,4 @@
+import { CompletionTriggerNavigation, createdCompletionTrigger } from "./CompletionTriggerNavigation";
 import { useLocale } from "../i18n";
 import { getLocale, t } from "../../shared/i18n/index";
 import { messageTimestamp } from "./messageTimestamp";
@@ -6,6 +7,7 @@ import { skillTokens } from "../../shared/skillCommands";
 import { MarkdownImage } from "../MarkdownImage";
 import {
   Children,
+  useContext,
   type ReactNode,
   memo,
   useEffect,
@@ -15,6 +17,7 @@ import {
   useState,
 } from "react";
 import {
+  Bell,
   Check,
   ChevronDown,
   ChevronRight,
@@ -227,6 +230,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                     <HistoricalToolGroup
                       key={`tools-${group.items[0]?.id}`}
                       items={group.items}
+                      toolProjection={toolProjection}
                       active={group.active}
                       activeToolCallId={group.active ? activeToolCall?.id : undefined}
                       thinkingDisplay={thinkingDisplay}
@@ -845,6 +849,7 @@ function ThinkingStatus({ label = t("app.thinking") }: { label?: string }) {
 
 const HistoricalToolGroup = memo(function HistoricalToolGroup({
   items,
+  toolProjection,
   active,
   activeToolCallId,
   thinkingDisplay,
@@ -853,6 +858,7 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   smoothStreaming,
 }: {
   items: DisplayItem[];
+  toolProjection: ToolRenderProjection;
   active: boolean;
   activeToolCallId?: string;
   thinkingDisplay?: ThinkingDisplayMode;
@@ -861,7 +867,6 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
   smoothStreaming: boolean;
 }) {
   useLocale();
-  const toolProjection = useMemo(() => buildToolRenderProjection(items), [items]);
   const renderActivityItem = (item: DisplayItem) => (
     <AssistantContentView
       key={item.id}
@@ -892,6 +897,7 @@ const HistoricalToolGroup = memo(function HistoricalToolGroup({
     </TimelineDisclosure>
   );
 }, (previous, next) => (
+  previous.toolProjection === next.toolProjection &&
   previous.active === next.active &&
   previous.activeToolCallId === next.activeToolCallId &&
   previous.thinkingDisplay === next.thinkingDisplay &&
@@ -1107,12 +1113,18 @@ function DisplayContentPartView({ part, daemonUrl, smoothStreaming }: { part: Di
 
 function ToolProcess({ call, result, progress, active = false }: { call: DisplayToolCall | undefined; result?: DisplayToolResult; progress?: string; active?: boolean }) {
   useLocale();
+  const openNotification = useContext(CompletionTriggerNavigation);
+  const triggerId = createdCompletionTrigger(call, result);
   const running = !result && (active || Boolean(progress));
   const summary = running ? formatRunningToolCall(call) : formatToolCallProcess(call);
   const isFailure = isToolResultFailure(result);
   const detail = result ? formatFullToolResult(result) : progress ?? "";
   const language = toolResultLanguage(call);
   const expandableRunningShell = running && language === "Shell";
+
+  if (triggerId && openNotification && !isFailure) {
+    return <div className="completion-tool-result"><button type="button" className="completion-open-link" onClick={() => openNotification(triggerId)}><span className="process-icon" aria-hidden="true"><Bell size={13} strokeWidth={1.75} /></span><span>{t("completionTriggers.view")}</span><ChevronRight size={12} /></button></div>;
+  }
 
   if ((!detail && !expandableRunningShell) || shouldSuppressToolResult(call, result)) {
     return <ToolProcessLine summary={summary} isError={isFailure} running={running} />;
