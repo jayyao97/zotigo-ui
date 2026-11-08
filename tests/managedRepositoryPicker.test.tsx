@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { DesktopProjectRepository, ManagedRepository, RepositoryBranch } from "../shared/clientTypes";
-import { ManagedRepositoryPicker, RepositoryBaseField, repositoryBaseLabel } from "../src/ManagedRepositoryPicker";
+import { ManagedRepositoryPicker, RepositoryBaseField } from "../src/ManagedRepositoryPicker";
 
 const repository: ManagedRepository = {
   id: "repo-one", name: "one", remote_url: "https://example.com/one.git", default_branch: "trunk",
@@ -145,52 +145,59 @@ test("repository registration releases busy on client replacement and ignores st
   } finally { await cleanup(); }
 });
 
-test("managed base branch follows the remote by default and can restore automatic selection", async () => {
+test("base branch defaults automatically and lists only readable remote branches", async () => {
   const { root, cleanup } = mount();
-  const source: DesktopProjectRepository = {
-    id: "source", project_id: "project", repository_id: repository.id, remote_url: repository.remote_url,
-    repo_key: "key", name: "one", source_path: "/managed/one", git_common_dir: "/managed/one/.git",
-    default_base_ref: "trunk", availability: "available", created_at: repository.created_at, updated_at: repository.updated_at,
-  };
-  let changed: string | undefined;
+  const source = { id: "source", project_id: "project", repository_id: repository.id, default_base_ref: "main" } as DesktopProjectRepository;
+  let changed = "";
+  const client = { listRepositoryBranches: async () => [
+    { name: "release", ref: "refs/remotes/origin/release", kind: "remote" as const },
+    { name: "main", ref: "refs/remotes/origin/main", kind: "remote" as const },
+    { name: "unpublished", ref: "refs/zotigo/imported/source/heads/unpublished", kind: "imported" as const },
+  ] };
   try {
-    await act(async () => root.render(<RepositoryBaseField client={{ listRepositoryBranches: async () => [] }} repository={source} value="" onChange={value => { changed = value; }} />));
-    assert.equal(document.querySelector<HTMLInputElement>("input")!.value, "", "auto selection must not pin a potentially stale branch name");
-    assert.match(document.querySelector<HTMLInputElement>("input")!.placeholder, /trunk/);
-    assert.match(repositoryBaseLabel({ ...source, default_base_ref: "" }, ""), /Remote default branch/);
-    await act(async () => root.render(<RepositoryBaseField client={{ listRepositoryBranches: async () => [] }} repository={source} value="release" onChange={value => { changed = value; }} />));
-    await act(async () => [...document.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Use default branch")!.click());
+    await act(async () => root.render(<RepositoryBaseField client={client} repository={source} value="" onChange={value => { changed = value; }} />));
+    assert.equal(document.querySelector("input"), null);
+    assert.equal(document.querySelectorAll("select").length, 1);
+    assert.equal(document.querySelectorAll("option").length, 2, "do not list the default branch twice");
+    assert.match(document.body.textContent!, /main \(default\)/);
+    assert.doesNotMatch(document.body.textContent!, /refs\/|unpublished|snapshot/);
+    assert.equal(document.querySelector("select")!.value, "");
+    await act(async () => {
+      const select = document.querySelector("select")!;
+      select.value = "refs/remotes/origin/release";
+      select.dispatchEvent(new window.Event("change", { bubbles: true }));
+    });
+    assert.equal(changed, "refs/remotes/origin/release", "submit exact ref but show the short name");
+    await act(async () => {
+      const select = document.querySelector("select")!;
+      select.value = "";
+      select.dispatchEvent(new window.Event("change", { bubbles: true }));
+    });
     assert.equal(changed, "");
-    assert.equal(repositoryBaseLabel(source, "release"), "release");
   } finally { await cleanup(); }
 });
 
-
-test("base choices lazily expose imported snapshots while preserving manual overrides", async () => {
+test("branch loading failure preserves automatic default selection", async () => {
   const { root, cleanup } = mount();
-  const source = { id: "source", project_id: "project", repository_id: repository.id, name: "one", default_base_ref: "trunk" } as DesktopProjectRepository;
-  const imported = "refs/zotigo/imported/old-source/heads/unpublished";
-  let requests = 0;
-  let changed = "";
-  const client = { listRepositoryBranches: async () => {
-    requests++;
-    return [{ name: "trunk", ref: "refs/remotes/origin/trunk", kind: "remote" }, { name: "unpublished", ref: imported, kind: "imported", source_name: "old-checkout" }] as RepositoryBranch[];
-  } };
+  const source = { id: "source", project_id: "project", default_base_ref: "HEAD" } as DesktopProjectRepository;
   try {
-    await act(async () => root.render(<RepositoryBaseField client={client} repository={source} value="custom-commit" onChange={value => { changed = value; }} />));
-    assert.equal(requests, 0);
-    await act(async () => document.querySelector<HTMLButtonElement>("[aria-expanded]")!.click());
-    assert.equal(requests, 1);
-    assert.equal(document.querySelector<HTMLInputElement>("input")!.value, "custom-commit");
-    assert.equal(document.querySelectorAll("optgroup").length, 2);
-    assert.match(document.body.textContent!, /old-checkout/);
-    assert.match(document.body.textContent!, /Later commits.*not synchronized automatically/);
-    await act(async () => {
-      const select = document.querySelector("select")!;
-      select.value = imported;
-      select.dispatchEvent(new window.Event("change", { bubbles: true }));
-    });
-    assert.equal(changed, imported);
+    await act(async () => root.render(<RepositoryBaseField client={{ listRepositoryBranches: async () => { throw new Error("offline"); } }} repository={source} value="HEAD" onChange={() => {}} />));
+    assert.equal(document.querySelector("select")!.value, "HEAD");
+    assert.equal(document.querySelector("select")!.disabled, false);
+    assert.match(document.querySelector('[role="alert"]')!.textContent!, /default branch/);
+  } finally { await cleanup(); }
+});
+
+test("an explicit branch remains visible while its list reload fails", async () => {
+  const { root, cleanup } = mount();
+  const source = { id: "source", project_id: "project", repository_id: "managed", default_base_ref: "main" } as DesktopProjectRepository;
+  const value = "refs/remotes/origin/release";
+  try {
+    await act(async () => root.render(<RepositoryBaseField client={{ listRepositoryBranches: async () => { throw new Error("offline"); } }} repository={source} value={value} onChange={() => {}} />));
+    const select = document.querySelector("select")!;
+    assert.equal(select.value, value);
+    assert.equal(select.selectedOptions[0].textContent, "release");
+    assert.doesNotMatch(document.body.textContent!, /refs\//);
   } finally { await cleanup(); }
 });
 
@@ -201,9 +208,8 @@ test("branch choices discard late responses from another daemon", async () => {
   const oldClient = { listRepositoryBranches: () => new Promise<RepositoryBranch[]>(resolve => { resolveOld = resolve; }) };
   const newClient = { listRepositoryBranches: async () => [{ name: "new-host", ref: "refs/heads/new-host", kind: "local" as const }] };
   try {
-    await act(async () => root.render(<RepositoryBaseField client={oldClient} repository={source} value="" onChange={() => {}} />));
-    await act(async () => document.querySelector<HTMLButtonElement>("[aria-expanded]")!.click());
-    await act(async () => root.render(<RepositoryBaseField client={newClient} repository={source} value="" onChange={() => {}} />));
+    await act(async () => root.render(<RepositoryBaseField client={oldClient} repository={source} value="HEAD" onChange={() => {}} />));
+    await act(async () => root.render(<RepositoryBaseField client={newClient} repository={source} value="HEAD" onChange={() => {}} />));
     await act(async () => resolveOld([{ name: "old-host", ref: "refs/heads/old-host", kind: "local" }]));
     assert.match(document.querySelector("select")!.textContent!, /new-host/);
     assert.doesNotMatch(document.querySelector("select")!.textContent!, /old-host/);

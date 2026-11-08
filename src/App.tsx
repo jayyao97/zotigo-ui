@@ -131,7 +131,7 @@ import {
 } from "../shared/sessionDisplay";
 import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, MessageImageInput, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ProjectSourceInput, SourceCandidate, WorkspaceFileOpenResult } from "../shared/clientTypes";
-import { initialWorkspaceSourceSelection, workspaceBranchSuggestion, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
+import { initialWorkspaceSourceSelection, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentReference, attachmentSizeError, modelImageTypes, type MessageFileInput } from "../shared/messageFiles";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
 import { SidebarSection } from "./SidebarSection";
@@ -185,7 +185,7 @@ import type { ThinkingDisplayMode } from "./thinkingDisplay";
 import { shouldSmoothStreaming } from "./streamingText";
 import { ChannelsPage } from "./channels/ChannelsPage";
 import { ProjectDisclosureIcon } from "./SidebarDisclosureIcons";
-import { ManagedRepositoryPicker, RepositoryBaseField, repositoryBaseLabel } from "./ManagedRepositoryPicker";
+import { ManagedRepositoryPicker, RepositoryBaseField } from "./ManagedRepositoryPicker";
 import {
   composerDraftKey as draftKeyForSelection,
   emptyComposerDraft,
@@ -454,7 +454,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [removeSourceTarget, setRemoveSourceTarget] = useState<{ kind: "git" | "folder"; id: string; name: string } | null>(null);
   const [createWorkspaceProjectId, setCreateWorkspaceProjectId] = useState<string | null>(null);
   const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
-  const [newWorkspaceBranchName, setNewWorkspaceBranchName] = useState("");
   const [workspaceSourceQuery, setWorkspaceSourceQuery] = useState("");
   const [addWorkspaceSourceQuery, setAddWorkspaceSourceQuery] = useState("");
   const [workspaceRepositories, setWorkspaceRepositories] = useState<WorkspaceRepositoryDraft[]>([]);
@@ -466,7 +465,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const workspaceSourcesRequestRef = useRef(0);
   const [workspaceSourceId, setWorkspaceSourceId] = useState("");
   const [workspaceSourceBaseRef, setWorkspaceSourceBaseRef] = useState("HEAD");
-  const [workspaceSourceBranchName, setWorkspaceSourceBranchName] = useState("");
   const [workspaceSourceMode, setWorkspaceSourceMode] = useState<FolderSourceMode>("direct");
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
   const [workspaceMenuId, setWorkspaceMenuId] = useState<string | null>(null);
@@ -1775,12 +1773,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     const selection = initialWorkspaceSourceSelection(repositories, folders);
     setMessage(null);
     setNewWorkspaceTitle("");
-    setNewWorkspaceBranchName("");
     setWorkspaceSourceQuery("");
     setWorkspaceRepositories(repositories.map((repository) => ({
       repository,
       selected: selection.repositoryIds.includes(repository.id),
-      baseRef: repository.repository_id ? "" : repository.default_base_ref,
+      baseRef: repository.repository_id ? "" : repository.default_base_ref || "HEAD",
     })));
     setWorkspaceFolderModes(selection.folderModes);
     setCreateWorkspaceProjectId(project.id);
@@ -1846,7 +1843,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       const state = await client.createWorkspace({
         projectId,
         title: newWorkspaceTitle.trim(),
-        branchName: newWorkspaceBranchName.trim() || undefined,
         repositories: workspaceRepositories.filter((draft) => draft.selected).map((draft) => ({
           repositoryId: draft.repository.id,
           baseRef: draft.baseRef,
@@ -1904,7 +1900,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setWorkspaceSourceId("");
     setAddWorkspaceSourceQuery("");
     setWorkspaceSourceBaseRef("HEAD");
-    setWorkspaceSourceBranchName("");
     if (loadedSources) {
       workspaceSourcesRequestRef.current++;
       setWorkspaceSourcesLoadError(null);
@@ -1941,8 +1936,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setWorkspaceSourceId(sourceId);
     const repository = desktopState.repositories.find((source) => source.id === sourceId);
     const folder = desktopState.folders.find((source) => source.id === sourceId);
-    setWorkspaceSourceBaseRef(repository?.repository_id ? "" : repository?.default_base_ref ?? "HEAD");
-    setWorkspaceSourceBranchName(repository ? workspaceBranchSuggestion(workspaceSources) : "");
+    setWorkspaceSourceBaseRef(repository?.repository_id ? "" : repository?.default_base_ref || "HEAD");
     setWorkspaceSourceMode(folder?.default_mode ?? "direct");
   }
 
@@ -1955,12 +1949,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     try {
       const sources = await client.addWorkspaceSource(workspaceSourcesTarget.id, {
         sourceId: workspaceSourceId,
-        ...(repository ? { baseRef: workspaceSourceBaseRef, branchName: workspaceSourceBranchName || undefined } : {}),
+        ...(repository ? { baseRef: workspaceSourceBaseRef } : {}),
         ...(folder ? { mode: workspaceSourceMode } : {}),
       });
       setWorkspaceSources(sources);
       setWorkspaceSourceId("");
-      setWorkspaceSourceBranchName("");
     } catch (error) {
       setMessage(errorMessage(error));
       await loadWorkspaceSources(workspaceSourcesTarget.id);
@@ -4862,7 +4855,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             </header>
 
             <label className="workspace-dialog-field">
-              <span>{t("app.whatAreYouWorkingOn")}</span>
+              <span>{t("app.workspaceName")}</span>
               <input
                 autoFocus
                 value={newWorkspaceTitle}
@@ -4872,22 +4865,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               />
             </label>
 
-            {workspaceRepositories.some((draft) => draft.selected) && (
-              <label className="workspace-dialog-field">
-                <span>{t("app.gitBranch")}{" "}<small>{t("app.optional")}</small></span>
-                <input
-                  value={newWorkspaceBranchName}
-                  onChange={(event) => setNewWorkspaceBranchName(event.target.value)}
-                  placeholder={t("workspace.branchExample")}
-                  disabled={isBusy}
-                />
-                <small>{t("app.leaveBlankToDeriveAStableBranchFrom")}</small>
-              </label>
-            )}
-
             <div className="workspace-sources-field">
               <div className="workspace-sources-heading">
-                <span>{t("app.sources")}{" "}<small>{t("app.optional")}</small></span>
+                <span>{t(desktopState.folders.some(folder => folder.project_id === createWorkspaceProject.id) ? "app.sources" : "repositories.title")}</span>
                 <div>
                   <button type="button" disabled={isBusy || !canSelectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(true)}>{t(workspaceSourceQuery.trim() ? "workspace.selectMatches" : "app.selectAll")}</button>
                   <button type="button" disabled={isBusy || !canDeselectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(false)}>{t(workspaceSourceQuery.trim() ? "workspace.deselectMatches" : "app.deselectAll")}</button>
@@ -4911,15 +4891,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                   </label>
                   {draft.repository.availability !== "available" && <p className="workspace-dialog-note">{t("app.unavailableReconnectOrRepairThisSourceBeforeUsing")}</p>}
                   {draft.selected && (
-                    <details className="workspace-source-settings">
-                      <summary>
-                        <span>{t("app.gitSettings")}</span>
-                        <small>{repositoryBaseLabel(draft.repository, draft.baseRef)}</small>
-                      </summary>
-                      <div className="workspace-dialog-grid single-column">
-                        <RepositoryBaseField client={client} repository={draft.repository} value={draft.baseRef} disabled={isBusy} onChange={value => updateRepositoryBaseRef(draft.repository.id, value)} />
-                      </div>
-                    </details>
+                    <div className="workspace-source-settings">
+                      <RepositoryBaseField client={client} repository={draft.repository} value={draft.baseRef} disabled={isBusy} onChange={value => updateRepositoryBaseRef(draft.repository.id, value)} />
+                    </div>
                   )}
                 </div>
               ))}
@@ -4992,9 +4966,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                     {matchingFolders.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.folder")}</option>)}
                   </select>
                 </label>
-                {selectedRepository && <div className="workspace-dialog-grid">
+                {selectedRepository && <div className="workspace-dialog-grid single-column">
                   <RepositoryBaseField client={client} repository={selectedRepository} value={workspaceSourceBaseRef} disabled={isBusy} onChange={setWorkspaceSourceBaseRef} />
-                  <label className="workspace-dialog-field"><span>{t("app.branch")}{" "}<small>{t("app.optional")}</small></span><input value={workspaceSourceBranchName} onChange={(event) => setWorkspaceSourceBranchName(event.target.value)} placeholder={t("workspace.branchExample")} /></label>
                 </div>}
                 {selectedFolder && <label className="workspace-dialog-field"><span>{t("app.folderMode")}</span><select value={workspaceSourceMode} onChange={(event) => setWorkspaceSourceMode(event.target.value as FolderSourceMode)}><option value="direct">{t("app.direct")}</option><option value="copy">{t("app.copy")}</option><option value="reference">{t("app.reference")}</option></select></label>}
               </> : !workspaceSourcesLoading && <p className="workspace-dialog-note">{t("app.everySourceInThisProjectIsAlreadyBound")}</p>}

@@ -13,11 +13,6 @@ type Props = {
   onBusyChange?: (busy: boolean) => void;
 };
 
-export function repositoryBaseLabel(repository: DesktopProjectRepository, value: string): string {
-  if (value) return value;
-  return repository.default_base_ref ? t("repositories.latestDefault", { branch: repository.default_base_ref }) : t("repositories.autoBranch");
-}
-
 function RepositorySyncStatus({ repository }: { repository: Pick<ManagedRepository, "last_synced_at" | "last_sync_error"> }) {
   const locale = useLocale();
   const synced = repository.last_synced_at && new Date(repository.last_synced_at);
@@ -29,43 +24,29 @@ function RepositorySyncStatus({ repository }: { repository: Pick<ManagedReposito
 
 export function RepositoryBaseField({ client, repository, value, onChange, disabled }: { client: Pick<ClientApi, "listRepositoryBranches">; repository: DesktopProjectRepository; value: string; onChange: (value: string) => void; disabled?: boolean }) {
   useLocale();
-  const [branchesOpen, setBranchesOpen] = useState(false);
   const [branches, setBranches] = useState<RepositoryBranch[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const defaultValue = repository.repository_id ? "" : repository.default_base_ref || "HEAD";
   useEffect(() => {
-    if (!branchesOpen) return;
     let active = true;
     setBranches([]);
-    setLoading(true);
     setError("");
     void client.listRepositoryBranches(repository.project_id, repository.id).then(items => {
-      if (active) setBranches(items);
+      if (active) setBranches(items.filter(branch => branch.kind === (repository.repository_id ? "remote" : "local") && (!repository.repository_id || branch.name !== repository.default_base_ref)));
     }).catch(cause => {
       if (active) setError(cause instanceof Error ? cause.message : String(cause));
-    }).finally(() => { if (active) setLoading(false); });
+    });
     return () => { active = false; };
-  }, [client, repository.project_id, repository.id, branchesOpen]);
-  return <div className="workspace-dialog-field repository-base-field">
+  }, [client, repository.project_id, repository.id, repository.repository_id, repository.default_base_ref]);
+  return <label className="workspace-dialog-field repository-base-field">
     <span>{t("app.startFrom")}</span>
-    <input aria-label={t("app.startFrom")} value={value} placeholder={repository.repository_id ? repositoryBaseLabel(repository, "") : undefined} disabled={disabled} onInput={event => onChange(event.currentTarget.value)} />
-    <button type="button" disabled={disabled} aria-expanded={branchesOpen} onClick={() => setBranchesOpen(open => !open)}>{t(branchesOpen ? "repositories.hideBranches" : "repositories.chooseBranch")}</button>
-    {branchesOpen && <>
-      {loading ? <small role="status">{t("repositories.loadingBranches")}</small> : error ? <small className="error" role="alert">{error}</small> : <>
-        <select aria-label={t("repositories.chooseBranch")} disabled={disabled || branches.length === 0} value={branches.some(branch => branch.ref === value) ? value : ""} onChange={event => { if (event.target.value) onChange(event.target.value); }}>
-          <option value="">{t(branches.length ? "repositories.chooseBranch" : "repositories.noBranches")}</option>
-          {(["remote", "imported", "local"] as const).map(kind => {
-            const items = branches.filter(branch => branch.kind === kind);
-            return items.length > 0 && <optgroup key={kind} label={t(`repositories.branches.${kind}`)}>{items.map(branch => <option key={branch.ref} value={branch.ref}>{branch.name}{branch.source_name ? ` — ${branch.source_name}` : ""}</option>)}</optgroup>;
-          })}
-        </select>
-        {branches.some(branch => branch.kind === "imported") && <small>{t("repositories.importedSnapshotHelp")}</small>}
-      </>}
-    </>}
-    <small>{t(repository.repository_id ? "repositories.latestHelp" : "app.resolvedByZotigodWhenTheWorkspaceIsCreated")}</small>
-    {repository.repository_id && <RepositorySyncStatus repository={repository} />}
-    {repository.repository_id && value && <button type="button" disabled={disabled} onClick={() => onChange("")}>{t("repositories.useDefault")}</button>}
-  </div>;
+    <select aria-label={t("app.startFrom")} disabled={disabled} value={value || defaultValue} onChange={event => onChange(event.target.value)}>
+      <option value={defaultValue}>{repository.repository_id ? (repository.default_base_ref ? t("repositories.defaultBranch", { branch: repository.default_base_ref }) : t("repositories.autoBranch")) : t("repositories.currentBranch")}</option>
+      {value && value !== defaultValue && !branches.some(branch => branch.ref === value) && <option value={value}>{value.replace(/^refs\/(?:remotes\/origin|heads)\//, "")}</option>}
+      {branches.map(branch => <option key={branch.ref} value={branch.ref}>{branch.name}</option>)}
+    </select>
+    {error && <small className="error" role="alert">{t("repositories.branchListFailed")}</small>}
+  </label>;
 }
 
 export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = [], onChange, disabled = false, onBusyChange }: Props) {
