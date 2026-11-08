@@ -28,7 +28,7 @@ import { attachmentReference, type MessageFileInput } from "../shared/messageFil
 import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplaySubagent, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
-import type { DaemonConfig, NavigationItem } from "../shared/clientTypes";
+import type { DaemonConfig, NavigationItem, ManagedRepository } from "../shared/clientTypes";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, ChannelConversationInput, ChannelGroup, ChannelMessage } from "../shared/channels";
 
@@ -232,6 +232,37 @@ export async function listCatalogProjects(): Promise<CatalogProject[]> {
   const record = expectRecord(await requestJSON("/projects"), "project list response");
   return expectArray(record.projects, "project list response projects")
     .map((value, index) => parseCatalogProject(value, `project list response projects[${index}]`));
+}
+
+export async function listManagedRepositories(): Promise<ManagedRepository[]> {
+  const record = expectRecord(await requestJSON("/repositories"), "repository list response");
+  return expectArray(record.repositories, "repositories").map((value, index) => parseManagedRepository(value, `repositories[${index}]`));
+}
+
+export async function createManagedRepository(input: { remoteUrl: string; name?: string }): Promise<ManagedRepository> {
+  return parseManagedRepository(await requestJSON("/repositories", {
+    ...jsonRequest("POST", { remote_url: input.remoteUrl, name: input.name }),
+    signal: AbortSignal.timeout(120000),
+  }), "create repository response");
+}
+
+function parseManagedRepository(value: unknown, context: string): ManagedRepository {
+  const record = expectRecord(value, context);
+  return {
+    id: expectString(record.id, `${context} id`),
+    name: expectString(record.name, `${context} name`),
+    remote_url: expectString(record.remote_url, `${context} remote_url`),
+    default_branch: expectString(record.default_branch, `${context} default_branch`),
+    canonical_path: expectString(record.canonical_path, `${context} canonical_path`),
+    created_at: expectString(record.created_at, `${context} created_at`),
+    updated_at: expectString(record.updated_at, `${context} updated_at`),
+  };
+}
+
+export function addCatalogRepository(projectId: string, repositoryId: string): Promise<CatalogSource> {
+  return requestJSON(`/projects/${encodeURIComponent(projectId)}/sources`, jsonRequest("POST", {
+    repository_id: repositoryId,
+  })).then((value) => parseCatalogSource(value, "create source response"));
 }
 
 export function createCatalogProject(name: string): Promise<CatalogProject> {
@@ -1061,6 +1092,9 @@ function parseCatalogSource(value: unknown, context: string): CatalogSource {
     git_common_dir: expectOptionalString(record.git_common_dir, `${context} git_common_dir`),
     git_object_format: expectOptionalString(record.git_object_format, `${context} git_object_format`),
     folder_mode: folderMode,
+    repository_id: expectOptionalString(record.repository_id, `${context} repository_id`),
+    remote_url: expectOptionalString(record.remote_url, `${context} remote_url`),
+    default_branch: expectOptionalString(record.default_branch, `${context} default_branch`),
     source_key: expectString(record.source_key, `${context} source_key`),
     created_at: expectString(record.created_at, `${context} created_at`),
     updated_at: expectString(record.updated_at, `${context} updated_at`),

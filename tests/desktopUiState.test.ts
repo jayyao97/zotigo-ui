@@ -4,7 +4,24 @@ import { test } from "node:test";
 import { parseCreateProjectInput } from "../backend/projectInputValidation";
 import { orderSidebarItems, reorderSidebarIds } from "../shared/sidebarOrdering";
 import type { DesktopProjectFolder, DesktopProjectRepository } from "../shared/clientTypes";
-import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
+import { initialWorkspaceSourceSelection, workspaceBranchSuggestion, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
+import type { CatalogWorkspaceSource } from "../shared/zotigod";
+
+test("workspace branch suggestion reuses an unambiguous existing branch", () => {
+  const binding = (branch: string, kind = "git") => ({ source: { kind }, branch_name: branch }) as CatalogWorkspaceSource;
+  assert.equal(workspaceBranchSuggestion([]), "");
+  assert.equal(workspaceBranchSuggestion([binding("fix/existing")]), "fix/existing");
+  assert.equal(workspaceBranchSuggestion([binding("feat/shared"), binding("feat/shared"), binding("", "folder")]), "feat/shared");
+  assert.equal(workspaceBranchSuggestion([binding("feat/one"), binding("feat/two")]), "");
+});
+
+test("migrated workspaces do not offer their legacy repository as a second dependency", () => {
+  const bindings = [{ source: { id: "legacy-source", repository_id: "repo-1" } }] as CatalogWorkspaceSource[];
+  assert.equal(workspaceHasRepository(bindings, { id: "replacement", repository_id: "repo-1" } as DesktopProjectRepository), true);
+  assert.equal(workspaceHasRepository(bindings, { id: "other", repository_id: "repo-2" } as DesktopProjectRepository), false);
+  assert.equal(workspaceHasRepository(bindings, { id: "legacy-source" } as DesktopProjectRepository), true);
+  assert.equal(workspaceHasRepository(bindings, { id: "unrelated-local" } as DesktopProjectRepository), false);
+});
 import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "../src/sidebarDisclosure";
 
 test("create Project input accepts an empty Source list", () => {
@@ -75,4 +92,15 @@ test("malformed sidebar disclosure falls back to fully expanded", () => {
     collapsedProjectIds: new Set(),
     collapsedWorkspaceIds: new Set(),
   });
+});
+
+
+test("workspace source search matches names, remote URLs and local paths with trimmed case-insensitive queries", () => {
+  const repository = { name: "Web Client", remote_url: "git@example.com:Org/React.git", source_path: "/projects/checkout" };
+  for (const query of [" CLIENT ", "ORG/react", "PROJECTS/checkout", "   "]) {
+    assert.equal(workspaceSourceMatches(repository, query), true, query);
+  }
+  assert.equal(workspaceSourceMatches(repository, "missing"), false);
+  assert.equal(workspaceSourceMatches({ name: "Notes", source_path: "/shared/design" }, " DESIGN "), true);
+  assert.equal(workspaceSourceMatches({ name: "Notes", source_path: "/shared/design" }, "git@example"), false);
 });

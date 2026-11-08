@@ -14,6 +14,8 @@ import { decodedBase64Size, maxMessageImageCount, messageImageSizeError } from "
 import { imageDownloadUrl } from "./imageDownload";
 import {
   createSession,
+  listManagedRepositories,
+  createManagedRepository,
   uploadMessageFiles,
   uploadMessageFile,
   forkSession,
@@ -237,6 +239,14 @@ addWorkspaceSourceToCatalog,
   handle("desktop:get-state", () => getCatalogDesktopState());
   handle("desktop:sync-state", () => getCatalogDesktopState({ syncCodex: true }));
   handle("desktop:create-project", async (input) => createProjectInCatalog(parseCreateProjectInput(input)));
+  handle("repositories:list", () => listManagedRepositories());
+  handle("repositories:create", (input) => {
+    const record = assertRecord(input, "repository input");
+    return createManagedRepository({
+      remoteUrl: assertNonEmptyString(record.remoteUrl, "remoteUrl"),
+      name: optionalTrimmedString(record.name, "name"),
+    });
+  });
   handle("desktop:add-project-sources", (projectId, sources) =>
     addSourcesToCatalog(assertNonEmptyString(projectId, "projectId"), parseProjectSources(sources)),
   );
@@ -710,7 +720,7 @@ function assertCreateWorkspaceInput(value: unknown): {
       const repository = assertRecord(item, `repositories[${index}]`);
       return {
         repositoryId: assertNonEmptyString(repository.repositoryId, `repositories[${index}].repositoryId`),
-        baseRef: assertNonEmptyString(repository.baseRef, `repositories[${index}].baseRef`),
+        baseRef: optionalTrimmedString(repository.baseRef, `repositories[${index}].baseRef`) ?? "",
       };
     }),
     folders: assertArray(record.folders, "folders").map((item, index) => {

@@ -419,6 +419,9 @@ export interface CatalogProject {
 }
 
 export interface CatalogSource {
+  repository_id?: string;
+  remote_url?: string;
+  default_branch?: string;
   id: string;
   project_id: string;
   kind: ProjectSourceKind;

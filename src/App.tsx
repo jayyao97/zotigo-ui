@@ -131,7 +131,7 @@ import {
 } from "../shared/sessionDisplay";
 import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, MessageImageInput, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ProjectSourceInput, SourceCandidate, WorkspaceFileOpenResult } from "../shared/clientTypes";
-import { initialWorkspaceSourceSelection } from "../shared/workspaceSourceSelection";
+import { initialWorkspaceSourceSelection, workspaceBranchSuggestion, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentReference, attachmentSizeError, modelImageTypes, type MessageFileInput } from "../shared/messageFiles";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
 import { SidebarSection } from "./SidebarSection";
@@ -185,6 +185,7 @@ import type { ThinkingDisplayMode } from "./thinkingDisplay";
 import { shouldSmoothStreaming } from "./streamingText";
 import { ChannelsPage } from "./channels/ChannelsPage";
 import { ProjectDisclosureIcon } from "./SidebarDisclosureIcons";
+import { ManagedRepositoryPicker, RepositoryBaseField, repositoryBaseLabel } from "./ManagedRepositoryPicker";
 import {
   composerDraftKey as draftKeyForSelection,
   emptyComposerDraft,
@@ -368,6 +369,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }, []);
   const [webNavigationOpen, setWebNavigationOpen] = useState(false);
   const [channelsOpen, setChannelsOpen] = useState(false);
+  const [repositoriesOpen, setRepositoriesOpen] = useState(false);
   const [channelsSidebarActive, setChannelsSidebarActive] = useState(false);
   const [channelsSessionVisible, setChannelsSessionVisible] = useState(false);
   const [channelsSidebarRoot, setChannelsSidebarRoot] = useState<HTMLDivElement | null>(null);
@@ -376,6 +378,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const channelsNavigationRequest = useRef(0);
   const webNavigationButton = useRef<HTMLButtonElement>(null);
   const channelsNavigationButton = useRef<HTMLButtonElement>(null);
+  const repositoriesNavigationButton = useRef<HTMLButtonElement>(null);
   const channelsEntryButton = useRef<HTMLButtonElement>(null);
   const webNavigationCloseButton = useRef<HTMLButtonElement>(null);
   const previousWebNavigationOpen = useRef(false);
@@ -386,6 +389,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     channelsEntryFrames.current = [];
   }, []);
   const openChannels = useCallback(() => {
+    setRepositoriesOpen(false);
     if (channelsOpen && channelsSidebarActive) return;
     channelsNavigationRequest.current++;
     cancelChannelsTransition();
@@ -413,6 +417,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }, 200);
   }, [cancelChannelsTransition]);
   const leaveChannelsImmediately = useCallback(() => {
+    setRepositoriesOpen(false);
     channelsNavigationRequest.current++;
     cancelChannelsTransition();
     setChannelsSidebarActive(false);
@@ -426,10 +431,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   useEffect(() => {
     if (webNavigationOpen) webNavigationCloseButton.current?.focus();
     else if (previousWebNavigationOpen.current) {
-      (channelsOpen ? channelsNavigationButton : webNavigationButton).current?.focus();
+      (repositoriesOpen ? repositoriesNavigationButton : channelsOpen ? channelsNavigationButton : webNavigationButton).current?.focus();
     }
     previousWebNavigationOpen.current = webNavigationOpen;
-  }, [channelsOpen, webNavigationOpen]);
+  }, [channelsOpen, repositoriesOpen, webNavigationOpen]);
   const [daemonUrl, setDaemonUrl] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [sessions, setSessions] = useState<ZotigoSession[]>([]);
@@ -443,11 +448,15 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectSources, setNewProjectSources] = useState<ProjectSourceDraft[]>([]);
+  const [newProjectRepositoryIds, setNewProjectRepositoryIds] = useState<string[]>([]);
+  const [repositoryAdding, setRepositoryAdding] = useState(false);
   const [addSourcesProjectId, setAddSourcesProjectId] = useState<string | null>(null);
   const [removeSourceTarget, setRemoveSourceTarget] = useState<{ kind: "git" | "folder"; id: string; name: string } | null>(null);
   const [createWorkspaceProjectId, setCreateWorkspaceProjectId] = useState<string | null>(null);
   const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
   const [newWorkspaceBranchName, setNewWorkspaceBranchName] = useState("");
+  const [workspaceSourceQuery, setWorkspaceSourceQuery] = useState("");
+  const [addWorkspaceSourceQuery, setAddWorkspaceSourceQuery] = useState("");
   const [workspaceRepositories, setWorkspaceRepositories] = useState<WorkspaceRepositoryDraft[]>([]);
   const [workspaceFolderModes, setWorkspaceFolderModes] = useState<Record<string, "" | FolderSourceMode>>({});
   const [workspaceSourcesTarget, setWorkspaceSourcesTarget] = useState<DesktopWorkspace | null>(null);
@@ -924,7 +933,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     updateVisibility();
     window.addEventListener("resize", updateVisibility);
     return () => window.removeEventListener("resize", updateVisibility);
-  }, [sidePanelOpen, sidePanelExpanded, channelsOpen, channelsSessionVisible, webNavigationOpen, selectedConversation?.id]);
+  }, [sidePanelOpen, sidePanelExpanded, channelsOpen, channelsSessionVisible, repositoriesOpen, webNavigationOpen, selectedConversation?.id]);
 
   useEffect(() => { manualUnread.current = null; }, [selectedConversation?.id]);
 
@@ -1712,11 +1721,12 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setMessage(null);
     setNewProjectName("");
     setNewProjectSources([]);
+    setNewProjectRepositoryIds([]);
     setCreateProjectOpen(true);
   }
 
   function closeCreateProjectDialog() {
-    if (isBusy) {
+    if (isBusy || repositoryAdding) {
       return;
     }
     setCreateProjectOpen(false);
@@ -1738,7 +1748,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   async function createNamedProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = newProjectName.trim();
-    if (!name) {
+    if (!name || repositoryAdding) {
       return;
     }
 
@@ -1747,9 +1757,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     try {
       applyDesktopState(await client.createProject({
         name,
-        sources: newProjectSources.map(projectSourceInput),
+        sources: [...newProjectRepositoryIds.map(repositoryId => ({ repositoryId })), ...newProjectSources.map(projectSourceInput)],
       }));
       setCreateProjectOpen(false);
+      setRepositoriesOpen(false);
     } catch (error) {
       setMessage(errorMessage(error));
       applyDesktopState(await client.getDesktopState());
@@ -1765,28 +1776,32 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setMessage(null);
     setNewWorkspaceTitle("");
     setNewWorkspaceBranchName("");
+    setWorkspaceSourceQuery("");
     setWorkspaceRepositories(repositories.map((repository) => ({
       repository,
       selected: selection.repositoryIds.includes(repository.id),
-      baseRef: repository.default_base_ref,
+      baseRef: repository.repository_id ? "" : repository.default_base_ref,
     })));
     setWorkspaceFolderModes(selection.folderModes);
     setCreateWorkspaceProjectId(project.id);
   }
 
-  const availableWorkspaceFolders = desktopState.folders.filter((folder) => folder.project_id === createWorkspaceProject?.id && folder.availability === "available");
-  const canSelectAllWorkspaceSources = workspaceRepositories.some((draft) => draft.repository.availability === "available" && !draft.selected)
+  const visibleWorkspaceRepositories = workspaceRepositories.filter(draft => workspaceSourceMatches(draft.repository, workspaceSourceQuery));
+  const visibleWorkspaceFolders = desktopState.folders.filter(folder => folder.project_id === createWorkspaceProject?.id && workspaceSourceMatches(folder, workspaceSourceQuery));
+  const availableWorkspaceFolders = visibleWorkspaceFolders.filter(folder => folder.availability === "available");
+  const selectedWorkspaceSourceCount = workspaceRepositories.filter(draft => draft.selected).length + Object.values(workspaceFolderModes).filter(Boolean).length;
+  const canSelectAllWorkspaceSources = visibleWorkspaceRepositories.some((draft) => draft.repository.availability === "available" && !draft.selected)
     || availableWorkspaceFolders.some((folder) => !workspaceFolderModes[folder.id]);
-  const canDeselectAllWorkspaceSources = workspaceRepositories.some((draft) => draft.repository.availability === "available" && draft.selected)
+  const canDeselectAllWorkspaceSources = visibleWorkspaceRepositories.some((draft) => draft.repository.availability === "available" && draft.selected)
     || availableWorkspaceFolders.some((folder) => Boolean(workspaceFolderModes[folder.id]));
 
   function selectAllWorkspaceSources(selected: boolean) {
     if (!createWorkspaceProject || isBusy) return;
-    setWorkspaceRepositories((current) => current.map((draft) => draft.repository.availability === "available" ? { ...draft, selected } : draft));
+    setWorkspaceRepositories((current) => current.map((draft) => draft.repository.availability === "available" && workspaceSourceMatches(draft.repository, workspaceSourceQuery) ? { ...draft, selected } : draft));
     setWorkspaceFolderModes((current) => {
       const next = { ...current };
       for (const folder of desktopState.folders) {
-        if (folder.project_id === createWorkspaceProject.id && folder.availability === "available") {
+        if (folder.project_id === createWorkspaceProject.id && folder.availability === "available" && workspaceSourceMatches(folder, workspaceSourceQuery)) {
           next[folder.id] = selected ? current[folder.id] || folder.default_mode : "";
         }
       }
@@ -1845,6 +1860,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         return next;
       });
       setCreateWorkspaceProjectId(null);
+      setRepositoriesOpen(false);
     } catch (error) {
       setMessage(errorMessage(error));
       applyDesktopState(await client.getDesktopState());
@@ -1854,6 +1870,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }
 
   async function selectProject(id: string | null) {
+    setRepositoriesOpen(false);
     setWebNavigationOpen(false);
     setMessage(null);
     applyDesktopState(await client.selectProject(id));
@@ -1870,6 +1887,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setWorkspaceSourcesTarget(workspace);
     setWorkspaceSources([]);
     setWorkspaceSourceId("");
+    setAddWorkspaceSourceQuery("");
     setWorkspaceSourceBaseRef("HEAD");
     setWorkspaceSourceBranchName("");
     await loadWorkspaceSources(workspace.id);
@@ -1902,8 +1920,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setWorkspaceSourceId(sourceId);
     const repository = desktopState.repositories.find((source) => source.id === sourceId);
     const folder = desktopState.folders.find((source) => source.id === sourceId);
-    setWorkspaceSourceBaseRef(repository?.default_base_ref ?? "HEAD");
-    setWorkspaceSourceBranchName("");
+    setWorkspaceSourceBaseRef(repository?.repository_id ? "" : repository?.default_base_ref ?? "HEAD");
+    setWorkspaceSourceBranchName(repository ? workspaceBranchSuggestion(workspaceSources) : "");
     setWorkspaceSourceMode(folder?.default_mode ?? "direct");
   }
 
@@ -1958,6 +1976,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }
 
   async function selectWorkspace(id: string) {
+    setRepositoriesOpen(false);
     setWebNavigationOpen(false);
     setProjectOverviewId(null);
     setMessage(null);
@@ -2232,20 +2251,17 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }
 
   async function addSourcesToProject(projectId: string) {
-    try {
-      const candidates = await client.chooseSourceFolders();
-      if (candidates.length > 0) {
-        setNewProjectSources(candidates.map((candidate) => ({ candidate, folderMode: "direct" })));
-        setAddSourcesProjectId(projectId);
-      }
-    } catch (error) { setMessage(errorMessage(error)); }
+    setMessage(null);
+    setNewProjectSources([]);
+    setNewProjectRepositoryIds([]);
+    setAddSourcesProjectId(projectId);
   }
 
   async function confirmAddSources() {
-    if (!addSourcesProjectId) return;
+    if (!addSourcesProjectId || repositoryAdding) return;
     setIsBusy(true);
     try {
-      applyDesktopState(await client.addProjectSources(addSourcesProjectId, newProjectSources.map(projectSourceInput)));
+      applyDesktopState(await client.addProjectSources(addSourcesProjectId, [...newProjectRepositoryIds.map(repositoryId => ({ repositoryId })), ...newProjectSources.map(projectSourceInput)]));
       setAddSourcesProjectId(null);
       setNewProjectSources([]);
     } catch (error) { setMessage(errorMessage(error)); }
@@ -3803,7 +3819,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.isComposing || document.querySelector("dialog[open], [aria-modal=true]")) return;
-      if (channelsOpen) return;
+      if (channelsOpen || repositoriesOpen) return;
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "p") {
         event.preventDefault(); browseFiles();
       } else if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === "KeyB") {
@@ -3812,11 +3828,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [channelsOpen, workspaceFileRoot, selectedSession?.id]);
+  }, [channelsOpen, repositoriesOpen, workspaceFileRoot, selectedSession?.id]);
 
   const activeSidePanelTab = sidePanelTabs.tabs.find((tab) => tab.id === sidePanelTabs.activeTabId) ?? null;
   const liveFiles = useLiveFiles(client, openFiles, openFilesRef, setOpenFiles,
-    sidePanelOpen && !channelsOpen && activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined,
+    sidePanelOpen && !channelsOpen && !repositoriesOpen && activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined,
     hostSwitchingRef);
 
 
@@ -3825,7 +3841,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     <CompletionTriggerNavigation.Provider value={triggerId => showPanelTab({ id: "notifications", kind: "notifications", triggerId })}>
     <main
       ref={appFrameRef}
-      className={`app-frame ${isSidebarResizing ? "resizing-sidebar" : ""} ${channelsOpen ? "channels-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
+      className={`app-frame ${isSidebarResizing ? "resizing-sidebar" : ""} ${channelsOpen ? "channels-mode" : ""} ${repositoriesOpen ? "repositories-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && !repositoriesOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && !repositoriesOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && !repositoriesOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
       style={{ "--preferred-sidebar-width": `${sidebarWidth}px`, "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
       onClickCapture={(event) => void handleMarkdownLinkClick(event)}
       onKeyDown={(event) => {
@@ -3854,7 +3870,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         </div>
 
         <nav className="utility-nav" aria-label={t("app.navigation")}>
-          <button type="button" aria-label={t("app.home")} aria-pressed={!channelsOpen} className={!channelsOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setWebNavigationOpen(false); }}>
+          <button type="button" aria-label={t("app.home")} aria-pressed={!channelsOpen && !repositoriesOpen} className={!channelsOpen && !repositoriesOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setWebNavigationOpen(false); }}>
             <House size={18} strokeWidth={1.8} />
             <span className="utility-nav-label">{t("app.home")}</span>
           </button>
@@ -3865,6 +3881,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           <button ref={channelsEntryButton} type="button" aria-label={t("app.channels")} aria-pressed={channelsOpen} className={channelsOpen ? "selected" : ""} onClick={() => { openChannels(); setProjectOverviewId(null); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
             <Blocks size={15} strokeWidth={1.8} />
             <span className="utility-nav-label">{t("app.channels")}</span>
+          </button>
+          <button type="button" aria-label={t("repositories.library")} aria-pressed={repositoriesOpen} className={repositoriesOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setRepositoriesOpen(true); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
+            <GitBranch size={16} strokeWidth={1.8} />
+            <span className="utility-nav-label">{t("repositories.library")}</span>
           </button>
         </nav>
 
@@ -3902,9 +3922,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         </SidebarSection>
 
         <SidebarSection name="projects" title={t("app.projects")} actions={
+          <>
           <button type="button" onClick={openCreateProjectDialog} disabled={isBusy} aria-label={t("app.addProject")}>
             <FolderPlus size={15} strokeWidth={1.8} />
           </button>
+          </>
         }>
           {desktopState.projects.length === 0 ? (
             <p className="sidebar-empty">{t("app.noProjectsYet")}</p>
@@ -4043,7 +4065,16 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         setWebNavigationOpen(false);
       }} />}
 
-      <section hidden={channelsOpen && !channelsSessionVisible} className={`conversation ${selectedConversation ? "has-composer" : ""}`}>
+      {repositoriesOpen && <section className="conversation repository-page" aria-label={t("repositories.library")}>
+        <header className="conversation-titlebar">
+          {kind === "web" && <button ref={repositoriesNavigationButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(true)} aria-label={t("app.openNavigation")} aria-expanded={webNavigationOpen}><PanelLeft size={18} /></button>}
+          <div className="title-with-icon"><GitBranch size={16} /><h1>{t("repositories.library")}</h1></div>
+          <div className="repository-page-host"><HostMenu /></div>
+        </header>
+        <div className="repository-page-scroll"><div className="repository-page-content"><ManagedRepositoryPicker client={client} /></div></div>
+      </section>}
+
+      <section hidden={repositoriesOpen || (channelsOpen && !channelsSessionVisible)} className={`conversation ${selectedConversation ? "has-composer" : ""}`}>
         <header className="conversation-titlebar">
           {kind === "web" && <button ref={webNavigationButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(true)} aria-label={t("app.openNavigation")} aria-expanded={webNavigationOpen}><PanelLeft size={18} /></button>}
           {selectedConversation ? (
@@ -4411,7 +4442,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         )}
       </section>
 
-      {detailsOpen && !channelsOpen && <aside className="inspector" aria-label={t("app.sessionDetails")}>
+      {detailsOpen && !channelsOpen && !repositoriesOpen && <aside className="inspector" aria-label={t("app.sessionDetails")}>
         <section className="inspector-card">
           <div className="inspector-heading">
             <h2>{t("app.environment")}</h2>
@@ -4570,7 +4601,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       </aside>}
 
       {(
-        <aside inert={channelsOpen || !sidePanelOpen} aria-hidden={channelsOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label={t("app.sidePanel")}>
+        <aside inert={channelsOpen || repositoriesOpen || !sidePanelOpen} aria-hidden={channelsOpen || repositoriesOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label={t("app.sidePanel")}>
           <div
             className="side-panel-resize-handle"
             role="separator"
@@ -4692,7 +4723,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           <form className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="create-project-title" onSubmit={(event) => void createNamedProject(event)}>
             <header>
               <h2 id="create-project-title">{t("app.createProject")}</h2>
-              <button type="button" className="dialog-close" onClick={closeCreateProjectDialog} disabled={isBusy} aria-label={t("app.close2")}>
+              <button type="button" className="dialog-close" onClick={closeCreateProjectDialog} disabled={isBusy || repositoryAdding} aria-label={t("app.close2")}>
                 <X size={15} strokeWidth={1.8} />
               </button>
             </header>
@@ -4709,8 +4740,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               />
             </label>
 
+            <ManagedRepositoryPicker client={client} selectedIds={newProjectRepositoryIds} onChange={setNewProjectRepositoryIds} disabled={isBusy} onBusyChange={setRepositoryAdding} />
             <div className="project-folder-field">
-              <span>{t("app.filesAndRepositories")}{" "}<small>{t("app.optional")}</small></span>
+              <span>{t("repositories.localSources")}{" "}<small>{t("app.optional")}</small></span>
               {newProjectSources.length > 0 && (
                 <div className="project-source-list">
                   {newProjectSources.map((draft) => (
@@ -4726,18 +4758,18 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                   ))}
                 </div>
               )}
-              <button type="button" className="project-folder-picker compact" onClick={() => void chooseNewProjectSources()} disabled={isBusy}>
+              <button type="button" className="project-folder-picker compact" onClick={() => void chooseNewProjectSources()} disabled={isBusy || repositoryAdding}>
                 <Plus size={16} strokeWidth={1.8} />
                 <span>{t("app.addFolder")}</span>
               </button>
-              <small className="project-dialog-help">{t("app.youCanCreateAnEmptyProjectAndAdd")}</small>
+              <small className="project-dialog-help">{t("repositories.localHelp")}</small>
             </div>
 
             {message && <p className="dialog-error">{message}</p>}
 
             <footer>
-              <button type="button" className="dialog-cancel" onClick={closeCreateProjectDialog} disabled={isBusy}>{t("app.cancel")}</button>
-              <button type="submit" className="dialog-submit" disabled={isBusy || !newProjectName.trim()}>{t("app.createProject")}</button>
+              <button type="button" className="dialog-cancel" onClick={closeCreateProjectDialog} disabled={isBusy || repositoryAdding}>{t("app.cancel")}</button>
+              <button type="submit" className="dialog-submit" disabled={isBusy || repositoryAdding || !newProjectName.trim()}>{t("app.createProject")}</button>
             </footer>
           </form>
         </div>
@@ -4757,9 +4789,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       )}
 
       {addSourcesProjectId && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setAddSourcesProjectId(null); }}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy && !repositoryAdding) setAddSourcesProjectId(null); }} onKeyDown={event => { if (event.key === "Escape" && !isBusy && !repositoryAdding) setAddSourcesProjectId(null); }}>
           <div className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="add-sources-title">
-            <header><div><h2 id="add-sources-title">{t("app.addSources")}</h2><p>{t("app.reviewEachSourceBeforeAddingIt")}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={() => setAddSourcesProjectId(null)}><X size={15} /></button></header>
+            <header><div><h2 id="add-sources-title">{t("app.addSources")}</h2><p>{desktopState.projects.find(project => project.id === addSourcesProjectId)?.name}</p></div><button autoFocus type="button" className="dialog-close" disabled={isBusy || repositoryAdding} onClick={() => setAddSourcesProjectId(null)} aria-label={t("app.close2")}><X size={15} /></button></header>
+            <ManagedRepositoryPicker client={client} selectedIds={newProjectRepositoryIds} linkedIds={desktopState.repositories.filter(source => source.project_id === addSourcesProjectId && source.repository_id).map(source => source.repository_id!)} onChange={setNewProjectRepositoryIds} disabled={isBusy} onBusyChange={setRepositoryAdding} />
             <div className="project-source-list">{newProjectSources.map((draft) => <div className="project-source-row source-choice-row" key={draft.candidate.selectedPath}>
               {draft.candidate.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
               <span><strong>{draft.candidate.name}</strong><small>{draft.candidate.canonicalPath}</small></span>
@@ -4768,8 +4801,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 : <div className="source-mode-actions"><em>{folderModeLabel(draft.folderMode)}</em>{draft.folderMode === "direct" ? <><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "copy" } : item))}>{t("app.useACopy")}</button><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "reference" } : item))}>{t("app.useAsReference")}</button></> : <button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "direct" } : item))}>{t("app.useDirectly")}</button>}</div>}
               {draft.candidate.kind === "folder" && draft.folderMode === "direct" && <small className="source-direct-warning">{t("app.workspaceChangesWillAppearInTheOriginalFolder")}</small>}
             </div>)}</div>
+            <button type="button" className="project-folder-picker compact" disabled={isBusy || repositoryAdding} onClick={() => void chooseNewProjectSources()}><Plus size={14} />{t("app.addFolder")}</button>
             {message && <p className="dialog-error">{message}</p>}
-            <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={() => setAddSourcesProjectId(null)}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={isBusy} onClick={() => void confirmAddSources()}>{t("app.addSources")}</button></footer>
+            <footer><button type="button" className="dialog-cancel" disabled={isBusy || repositoryAdding} onClick={() => setAddSourcesProjectId(null)}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={isBusy || repositoryAdding || (!newProjectSources.length && !newProjectRepositoryIds.length)} onClick={() => void confirmAddSources()}>{t("app.addSources")}</button></footer>
           </div>
         </div>
       )}
@@ -4834,14 +4868,17 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               <div className="workspace-sources-heading">
                 <span>{t("app.sources")}{" "}<small>{t("app.optional")}</small></span>
                 <div>
-                  <button type="button" disabled={isBusy || !canSelectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(true)}>{t("app.selectAll")}</button>
-                  <button type="button" disabled={isBusy || !canDeselectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(false)}>{t("app.deselectAll")}</button>
+                  <button type="button" disabled={isBusy || !canSelectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(true)}>{t(workspaceSourceQuery.trim() ? "workspace.selectMatches" : "app.selectAll")}</button>
+                  <button type="button" disabled={isBusy || !canDeselectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(false)}>{t(workspaceSourceQuery.trim() ? "workspace.deselectMatches" : "app.deselectAll")}</button>
                 </div>
               </div>
               {(workspaceRepositories.length > 0 || desktopState.folders.some((folder) => folder.project_id === createWorkspaceProject.id)) && (
                 <small className="workspace-sources-help">{t("app.availableSourcesAreSelectedByDefaultUncheckAnything")}</small>
               )}
-              {workspaceRepositories.map((draft) => (
+              <label className="repository-search"><Search size={14} aria-hidden="true" /><input type="search" value={workspaceSourceQuery} disabled={isBusy} aria-label={t("workspace.searchSources")} placeholder={t("workspace.searchSources")} onInput={event => setWorkspaceSourceQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></label>
+              <small className="workspace-sources-help">{t("workspace.selectedSourceCount", { count: selectedWorkspaceSourceCount })}</small>
+              {workspaceSourceQuery.trim() && visibleWorkspaceRepositories.length === 0 && visibleWorkspaceFolders.length === 0 && <p className="workspace-dialog-note">{t("workspace.noMatchingSources")}</p>}
+              {visibleWorkspaceRepositories.map((draft) => (
                 <div className={`workspace-source-card ${draft.selected ? "selected" : ""}`} key={draft.repository.id}>
                   <label className="workspace-source-toggle">
                     <input type="checkbox" checked={draft.selected} disabled={draft.repository.availability !== "available"} onChange={(event) => {
@@ -4856,20 +4893,16 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                     <details className="workspace-source-settings">
                       <summary>
                         <span>{t("app.gitSettings")}</span>
-                        <small>{draft.baseRef} {"→"}{" "}{newWorkspaceBranchName.trim() || "zotigo/<workspace-slug>-<short-id>"}</small>
+                        <small>{repositoryBaseLabel(draft.repository, draft.baseRef)}</small>
                       </summary>
                       <div className="workspace-dialog-grid single-column">
-                        <label className="workspace-dialog-field">
-                          <span>{t("app.startFrom")}</span>
-                          <input value={draft.baseRef} onChange={(event) => updateRepositoryBaseRef(draft.repository.id, event.target.value)} />
-                          <small>{t("app.resolvedByZotigodWhenTheWorkspaceIsCreated")}</small>
-                        </label>
+                        <RepositoryBaseField repository={draft.repository} value={draft.baseRef} disabled={isBusy} onChange={value => updateRepositoryBaseRef(draft.repository.id, value)} />
                       </div>
                     </details>
                   )}
                 </div>
               ))}
-              {desktopState.folders.filter((folder) => folder.project_id === createWorkspaceProject.id).map((folder) => (
+              {visibleWorkspaceFolders.map((folder) => (
                 <div className={`workspace-source-card ${workspaceFolderModes[folder.id] ? "selected" : ""}`} key={folder.id}>
                   <label className="workspace-source-toggle"><input type="checkbox" checked={Boolean(workspaceFolderModes[folder.id])} disabled={folder.availability !== "available"} onChange={(event) => setWorkspaceFolderModes((current) => ({ ...current, [folder.id]: event.target.checked ? folder.default_mode : "" }))} /><Folder size={15} /><strong>{folder.name}</strong></label>
                   {folder.availability !== "available" && <p className="workspace-dialog-note">{t("app.unavailableReconnectOrRepairThisSourceBeforeUsing")}</p>}
@@ -4890,7 +4923,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 type="submit"
                 className="dialog-submit"
                 disabled={
-                  isBusy || !newWorkspaceTitle.trim() || workspaceRepositories.some((draft) => draft.selected && !draft.baseRef.trim())
+                  isBusy || !newWorkspaceTitle.trim() || workspaceRepositories.some((draft) => draft.selected && !draft.repository.repository_id && !draft.baseRef.trim())
                 }
               >
                 {isBusy ? t("app.creating") : t("app.createWorkspace")}
@@ -4902,10 +4935,14 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
       {workspaceSourcesTarget && (() => {
         const boundIds = new Set(workspaceSources.map((binding) => binding.source.id));
-        const availableRepositories = desktopState.repositories.filter((source) => source.project_id === workspaceSourcesTarget.project_id && !boundIds.has(source.id));
+        const availableRepositories = desktopState.repositories.filter((source) => source.project_id === workspaceSourcesTarget.project_id && !workspaceHasRepository(workspaceSources, source));
         const availableFolders = desktopState.folders.filter((source) => source.project_id === workspaceSourcesTarget.project_id && !boundIds.has(source.id));
         const selectedRepository = availableRepositories.find((source) => source.id === workspaceSourceId);
         const selectedFolder = availableFolders.find((source) => source.id === workspaceSourceId);
+        const matchingRepositories = availableRepositories.filter(source => workspaceSourceMatches(source, addWorkspaceSourceQuery));
+        const matchingFolders = availableFolders.filter(source => workspaceSourceMatches(source, addWorkspaceSourceQuery));
+        const selectedSource = selectedRepository ?? selectedFolder;
+        const selectedOutsideSearch = selectedSource && !workspaceSourceMatches(selectedSource, addWorkspaceSourceQuery);
         return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) closeWorkspaceSources(); }}>
           <div className="create-project-dialog workspace-sources-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-sources-title">
             <header><div><h2 id="workspace-sources-title">{t("app.workspaceSources")}</h2><p>{workspaceSourcesTarget.title}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={closeWorkspaceSources} aria-label={t("app.close2")}><X size={15} /></button></header>
@@ -4923,16 +4960,19 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             {!workspaceSourcesLoadError && workspaceSourcesTarget.status === "ready" && <section className="workspace-add-source">
               <span>{t("app.addDependency")}</span>
               {!workspaceSourcesLoading && (availableRepositories.length > 0 || availableFolders.length > 0) ? <>
+                <label className="repository-search"><Search size={14} aria-hidden="true" /><input type="search" value={addWorkspaceSourceQuery} disabled={isBusy} aria-label={t("workspace.searchSources")} placeholder={t("workspace.searchSources")} onInput={event => setAddWorkspaceSourceQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></label>
+                {matchingRepositories.length === 0 && matchingFolders.length === 0 && <p className="workspace-dialog-note">{t("workspace.noMatchingSources")}</p>}
                 <label className="workspace-dialog-field">
                   <span>{t("app.projectSource")}</span>
                   <select value={workspaceSourceId} onChange={(event) => selectWorkspaceSource(event.target.value)}>
                     <option value="">{t("app.chooseASource")}</option>
-                    {availableRepositories.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.git")}</option>)}
-                    {availableFolders.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.folder")}</option>)}
+                    {selectedOutsideSearch && <option value={selectedSource.id}>{t("workspace.selectedOutsideSearch", { name: selectedSource.name })}</option>}
+                    {matchingRepositories.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.git")}</option>)}
+                    {matchingFolders.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.folder")}</option>)}
                   </select>
                 </label>
                 {selectedRepository && <div className="workspace-dialog-grid">
-                  <label className="workspace-dialog-field"><span>{t("app.startFrom")}</span><input value={workspaceSourceBaseRef} onChange={(event) => setWorkspaceSourceBaseRef(event.target.value)} /></label>
+                  <RepositoryBaseField repository={selectedRepository} value={workspaceSourceBaseRef} disabled={isBusy} onChange={setWorkspaceSourceBaseRef} />
                   <label className="workspace-dialog-field"><span>{t("app.branch")}{" "}<small>{t("app.optional")}</small></span><input value={workspaceSourceBranchName} onChange={(event) => setWorkspaceSourceBranchName(event.target.value)} placeholder={t("workspace.branchExample")} /></label>
                 </div>}
                 {selectedFolder && <label className="workspace-dialog-field"><span>{t("app.folderMode")}</span><select value={workspaceSourceMode} onChange={(event) => setWorkspaceSourceMode(event.target.value as FolderSourceMode)}><option value="direct">{t("app.direct")}</option><option value="copy">{t("app.copy")}</option><option value="reference">{t("app.reference")}</option></select></label>}
@@ -4941,7 +4981,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             </section>}
             {!workspaceSourcesLoadError && workspaceSourcesTarget.status !== "ready" && <div className="workspace-source-unavailable"><p>{t("workspace.unready", { state: stateLabel(workspaceSourcesTarget.status) })}</p>{workspaceSourcesTarget.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retryWorkspace2")}</button>}</div>}
             {message && <p className="dialog-error">{message}</p>}
-            <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={closeWorkspaceSources}>{t("app.close2")}</button><button type="button" className="dialog-submit" disabled={isBusy || workspaceSourcesTarget.status !== "ready" || workspaceSourcesLoading || Boolean(workspaceSourcesLoadError) || !workspaceSourceId || Boolean(selectedRepository && !workspaceSourceBaseRef.trim())} onClick={() => void confirmAddWorkspaceSource()}>{t("app.addSource")}</button></footer>
+            <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={closeWorkspaceSources}>{t("app.close2")}</button><button type="button" className="dialog-submit" disabled={isBusy || workspaceSourcesTarget.status !== "ready" || workspaceSourcesLoading || Boolean(workspaceSourcesLoadError) || !workspaceSourceId || Boolean(selectedRepository && !selectedRepository.repository_id && !workspaceSourceBaseRef.trim())} onClick={() => void confirmAddWorkspaceSource()}>{t("app.addSource")}</button></footer>
           </div>
         </div>;
       })()}
@@ -5330,7 +5370,7 @@ function ProjectOverview({
     <section className="project-overview-card">
       <div className="project-overview-heading"><h3>{t("app.sources")}</h3><button type="button" onClick={onAddSources}><Plus size={13} /> {t("app.addSource2")}</button></div>
       {repositories.map((source) => <div className="project-source-row" key={source.id}>
-        <GitBranch size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title={t("app.browseFiles")} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
+        <GitBranch size={15} />{source.repository_id ? <span className="managed-project-source"><strong>{source.name}</strong><small>{source.remote_url}</small></span> : <button type="button" className="source-path-button" disabled={!onOpenPath} title={t("app.browseFiles")} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>}
         <button type="button" onClick={() => onRemoveSource("git", source.id, source.name)} aria-label={t("app.removeFromProject2", { p0: source.name })}><X size={13} /></button>
       </div>)}
       {folders.map((source) => <div className="project-source-row" key={source.id}>
