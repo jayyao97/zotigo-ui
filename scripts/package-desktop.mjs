@@ -23,6 +23,9 @@ try {
     icon: path.resolve(process.platform === "darwin" ? "resources/zotigo.icns" : process.platform === "win32" ? "resources/zotigo.ico" : "public/brand/zotigo-app.png"),
     extendInfo: { CFBundleDisplayName: "Zotigo" },
     electronVersion: JSON.parse(await readFile("node_modules/electron/package.json", "utf8")).version,
+    // Use the hashes shipped with that exact, lockfile-pinned Electron package,
+    // just like its installer. Cached binaries still undergo SHA-256 validation.
+    download: { checksums: JSON.parse(await readFile("node_modules/electron/checksums.json", "utf8")) },
     platform: process.platform, arch: process.arch, prune: false,
   });
   for (const directory of packages) console.log(directory);

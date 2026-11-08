@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { GitBranch, Plus, RefreshCw, Search } from "lucide-react";
-import type { ClientApi, ManagedRepository, DesktopProjectRepository } from "../shared/clientTypes";
+import type { ClientApi, ManagedRepository, DesktopProjectRepository, RepositoryBranch } from "../shared/clientTypes";
 import { t } from "../shared/i18n";
 import { useLocale } from "./i18n";
 
@@ -23,19 +23,49 @@ function RepositorySyncStatus({ repository }: { repository: Pick<ManagedReposito
   const synced = repository.last_synced_at && new Date(repository.last_synced_at);
   const syncedAt = synced && Number.isFinite(synced.getTime()) ? synced.toLocaleString(locale) : null;
   return <small className={`repository-sync-status${repository.last_sync_error ? " repository-sync-warning" : ""}`} title={repository.last_sync_error}>
-    {syncedAt ? t(repository.last_sync_error ? "repositories.cachedAfterFailure" : "repositories.syncedAt", { time: syncedAt }) : t(repository.last_sync_error ? "repositories.noCacheAfterFailure" : "repositories.notSynced")}
+    {syncedAt ? t(repository.last_sync_error ? "repositories.cachedAfterFailure" : "repositories.syncedAt", { time: syncedAt }) : t(repository.last_sync_error ? "repositories.noCacheAfterFailure" : "repositories.preparing")}
   </small>;
 }
 
-export function RepositoryBaseField({ repository, value, onChange, disabled }: { repository: DesktopProjectRepository; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+export function RepositoryBaseField({ client, repository, value, onChange, disabled }: { client: Pick<ClientApi, "listRepositoryBranches">; repository: DesktopProjectRepository; value: string; onChange: (value: string) => void; disabled?: boolean }) {
   useLocale();
-  return <label className="workspace-dialog-field repository-base-field">
+  const [branchesOpen, setBranchesOpen] = useState(false);
+  const [branches, setBranches] = useState<RepositoryBranch[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!branchesOpen) return;
+    let active = true;
+    setBranches([]);
+    setLoading(true);
+    setError("");
+    void client.listRepositoryBranches(repository.project_id, repository.id).then(items => {
+      if (active) setBranches(items);
+    }).catch(cause => {
+      if (active) setError(cause instanceof Error ? cause.message : String(cause));
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [client, repository.project_id, repository.id, branchesOpen]);
+  return <div className="workspace-dialog-field repository-base-field">
     <span>{t("app.startFrom")}</span>
-    <input value={value} placeholder={repository.repository_id ? repositoryBaseLabel(repository, "") : undefined} disabled={disabled} onChange={event => onChange(event.target.value)} />
+    <input aria-label={t("app.startFrom")} value={value} placeholder={repository.repository_id ? repositoryBaseLabel(repository, "") : undefined} disabled={disabled} onInput={event => onChange(event.currentTarget.value)} />
+    <button type="button" disabled={disabled} aria-expanded={branchesOpen} onClick={() => setBranchesOpen(open => !open)}>{t(branchesOpen ? "repositories.hideBranches" : "repositories.chooseBranch")}</button>
+    {branchesOpen && <>
+      {loading ? <small role="status">{t("repositories.loadingBranches")}</small> : error ? <small className="error" role="alert">{error}</small> : <>
+        <select aria-label={t("repositories.chooseBranch")} disabled={disabled || branches.length === 0} value={branches.some(branch => branch.ref === value) ? value : ""} onChange={event => { if (event.target.value) onChange(event.target.value); }}>
+          <option value="">{t(branches.length ? "repositories.chooseBranch" : "repositories.noBranches")}</option>
+          {(["remote", "imported", "local"] as const).map(kind => {
+            const items = branches.filter(branch => branch.kind === kind);
+            return items.length > 0 && <optgroup key={kind} label={t(`repositories.branches.${kind}`)}>{items.map(branch => <option key={branch.ref} value={branch.ref}>{branch.name}{branch.source_name ? ` — ${branch.source_name}` : ""}</option>)}</optgroup>;
+          })}
+        </select>
+        {branches.some(branch => branch.kind === "imported") && <small>{t("repositories.importedSnapshotHelp")}</small>}
+      </>}
+    </>}
     <small>{t(repository.repository_id ? "repositories.latestHelp" : "app.resolvedByZotigodWhenTheWorkspaceIsCreated")}</small>
     {repository.repository_id && <RepositorySyncStatus repository={repository} />}
     {repository.repository_id && value && <button type="button" disabled={disabled} onClick={() => onChange("")}>{t("repositories.useDefault")}</button>}
-  </label>;
+  </div>;
 }
 
 export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = [], onChange, disabled = false, onBusyChange }: Props) {
@@ -76,6 +106,27 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
     };
   }, [client, refresh]);
 
+  useEffect(() => {
+    if (loading || adding || !repositories.some(repository => !repository.last_synced_at)) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = () => {
+      void client.listRepositories().then(items => {
+        if (active) {
+          setError("");
+          setRepositories(items);
+        }
+      }).catch(cause => {
+        if (active) {
+          setError(cause instanceof Error ? cause.message : String(cause));
+          timer = setTimeout(poll, 30000);
+        }
+      });
+    };
+    timer = setTimeout(poll, repositories.some(repository => !repository.last_synced_at && !repository.last_sync_error) ? 3000 : 30000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [client, repositories, loading, adding]);
+
   async function addRepository() {
     if (adding || disabled || !remoteUrl.trim()) return;
     const current = request.current;
@@ -87,7 +138,7 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
       const repository = await client.createRepository({ remoteUrl: remoteUrl.trim() });
       if (current !== request.current) return;
       setRepositories(items => [...items.filter(item => item.id !== repository.id), repository]);
-      if (!linkedIds.includes(repository.id) && !selectedIds.includes(repository.id)) onChange?.([...selectedIds, repository.id]);
+      if (repository.last_synced_at && !linkedIds.includes(repository.id) && !selectedIds.includes(repository.id)) onChange?.([...selectedIds, repository.id]);
       setRemoteUrl("");
       setQuery("");
       setShowRemote(false);
@@ -117,7 +168,7 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
         const linked = linkedIds.includes(repository.id);
         const content = <><GitBranch size={15} /><span><strong>{repository.name}</strong><small title={repository.remote_url}>{repository.remote_url}</small><RepositorySyncStatus repository={repository} /></span><small className="managed-repository-branch">{linked ? t("repositories.linked") : repository.default_branch || t("repositories.autoBranch")}</small></>;
         return onChange ? <label className="managed-repository-row" key={repository.id}>
-          <input type="checkbox" checked={linked || selectedIds.includes(repository.id)} disabled={disabled || adding || linked} onChange={event => onChange(event.target.checked ? [...selectedIds, repository.id] : selectedIds.filter(id => id !== repository.id))} />{content}
+          <input type="checkbox" checked={linked || selectedIds.includes(repository.id)} disabled={disabled || adding || linked || !repository.last_synced_at} onChange={event => onChange(event.target.checked ? [...selectedIds, repository.id] : selectedIds.filter(id => id !== repository.id))} />{content}
         </label> : <div className="managed-repository-row" key={repository.id}>{content}</div>;
       })}
       {!repositories.length && !error && <p className="managed-repositories-empty">{t("repositories.empty")}</p>}

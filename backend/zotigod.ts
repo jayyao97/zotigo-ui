@@ -28,7 +28,7 @@ import { attachmentReference, type MessageFileInput } from "../shared/messageFil
 import { currentHost, configureLocalHostUrl } from "./hosts";
 import { fetchDaemon, repositoryRequestDispatcher, type DaemonRequestInit } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplaySubagent, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
-import type { DaemonConfig, NavigationItem, ManagedRepository } from "../shared/clientTypes";
+import type { DaemonConfig, NavigationItem, ManagedRepository, RepositoryBranch } from "../shared/clientTypes";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, ChannelConversationInput, ChannelGroup, ChannelMessage } from "../shared/channels";
 
@@ -242,8 +242,18 @@ export async function listManagedRepositories(): Promise<ManagedRepository[]> {
 export async function createManagedRepository(input: { remoteUrl: string; name?: string }): Promise<ManagedRepository> {
   return parseManagedRepository(await requestJSON("/repositories", {
     ...jsonRequest("POST", { remote_url: input.remoteUrl, name: input.name }),
-    dispatcher: repositoryRequestDispatcher,
+    signal: AbortSignal.timeout(15000),
   }), "create repository response");
+}
+
+export async function listRepositoryBranches(projectId: string, sourceId: string): Promise<RepositoryBranch[]> {
+  const record = expectRecord(await requestJSON(`/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/branches`), "repository branches response");
+  return expectArray(record.branches, "branches").map((value, index) => {
+    const branch = expectRecord(value, `branches[${index}]`);
+    const kind = expectString(branch.kind, "branch kind");
+    if (kind !== "remote" && kind !== "imported" && kind !== "local") throw new Error("Invalid repository branch kind");
+    return { name: expectString(branch.name, "branch name"), ref: expectString(branch.ref, "branch ref"), kind, source_name: expectOptionalString(branch.source_name, "branch source_name") };
+  });
 }
 
 function parseManagedRepository(value: unknown, context: string): ManagedRepository {

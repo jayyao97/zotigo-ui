@@ -63,6 +63,13 @@ export interface ManagedRepository {
   updated_at: string;
 }
 
+export interface RepositoryBranch {
+  name: string;
+  ref: string;
+  kind: "remote" | "imported" | "local";
+  source_name?: string;
+}
+
 export interface DesktopProjectRepository {
   id: string;
   project_id: string;
@@ -343,6 +350,7 @@ export interface ClientApi {
   syncDesktopState?(): Promise<DesktopState>;
   createProject(input: CreateProjectInput): Promise<DesktopState>;
   listRepositories(): Promise<ManagedRepository[]>;
+  listRepositoryBranches(projectId: string, sourceId: string): Promise<RepositoryBranch[]>;
   createRepository(input: { remoteUrl: string; name?: string }): Promise<ManagedRepository>;
   chooseSourceFolders(): Promise<SourceCandidate[]>;
   addProjectSources(projectId: string, sources: ProjectSourceInput[]): Promise<DesktopState>;

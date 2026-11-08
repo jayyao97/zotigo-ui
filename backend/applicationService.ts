@@ -15,6 +15,7 @@ import { imageDownloadUrl } from "./imageDownload";
 import {
   createSession,
   listManagedRepositories,
+  listRepositoryBranches,
   createManagedRepository,
   uploadMessageFiles,
   uploadMessageFile,
@@ -240,6 +241,7 @@ addWorkspaceSourceToCatalog,
   handle("desktop:sync-state", () => getCatalogDesktopState({ syncCodex: true }));
   handle("desktop:create-project", async (input) => createProjectInCatalog(parseCreateProjectInput(input)));
   handle("repositories:list", () => listManagedRepositories());
+  handle("repositories:branches", (projectId, sourceId) => listRepositoryBranches(assertNonEmptyString(projectId, "projectId"), assertNonEmptyString(sourceId, "sourceId")));
   handle("repositories:create", (input) => {
     const record = assertRecord(input, "repository input");
     return createManagedRepository({

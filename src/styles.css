@@ -4123,7 +4123,6 @@ label.managed-repository-row:hover { background: rgb(255 255 255 / 0.025); }
 .managed-repository-add { padding: 6px 0 0; }
 .managed-repository-add-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 10px; }
 .managed-repository-add-actions > button:not(.dialog-submit) { min-height: 30px; border: 0; background: transparent; color: var(--text-muted); font-size: 12px; }
-.workspace-source-settings .repository-base-field { grid-template-rows: auto; }
 .repository-base-field > button { justify-self: start; padding: 3px 0; border: 0; background: transparent; color: var(--text-muted); font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
 .project-source-row > .managed-project-source { display: grid; gap: 3px; }
 .source-row-actions { display: flex; align-items: center; gap: 7px; }
@@ -4132,7 +4131,7 @@ label.managed-repository-row:hover { background: rgb(255 255 255 / 0.025); }
 .workspace-sources-field { margin-top: 14px; }
 .workspace-sources-field > span { color: var(--text-muted); font-size: 12px; font-weight: 500; }
 .workspace-sources-help { color: var(--text-dim); font-size: 10.5px; line-height: 1.4; }
-.workspace-source-card { display: grid; gap: 5px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: transparent; padding: 7px 9px; }
+.workspace-source-card { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 5px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: transparent; padding: 7px 9px; }
 .workspace-source-card.selected { border-color: var(--border-heavy); background: rgb(255 255 255 / 0.025); }
 .workspace-source-toggle { display: flex; min-height: 22px; align-items: center; gap: 8px; color: var(--text); font-size: 12px; }
 .workspace-source-toggle input[type="checkbox"] {
@@ -4166,14 +4165,17 @@ label.managed-repository-row:hover { background: rgb(255 255 255 / 0.025); }
 .workspace-source-toggle input[type="checkbox"]:checked::before { transform: translateY(-1px) rotate(-45deg) scale(1); }
 .workspace-source-toggle input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
 .workspace-source-toggle strong { font-weight: 550; }
-.workspace-source-settings { margin-left: 22px; }
+.workspace-source-settings { min-width: 0; margin-left: 22px; }
 .workspace-source-settings summary { display: flex; min-height: 22px; align-items: center; justify-content: space-between; gap: 10px; color: var(--text-dim); cursor: pointer; font-size: 10.5px; list-style: none; }
 .workspace-source-settings summary::-webkit-details-marker { display: none; }
+.workspace-source-settings summary > span { flex-shrink: 0; }
 .workspace-source-settings summary > span::before { display: inline-block; margin-right: 5px; content: "›"; transition: transform 120ms ease; }
 .workspace-source-settings[open] summary > span::before { transform: rotate(90deg); }
 .workspace-source-settings summary small { min-width: 0; overflow: hidden; color: var(--text-dim); text-overflow: ellipsis; white-space: nowrap; }
 .workspace-source-settings .workspace-dialog-grid { margin-top: 6px; }
 .workspace-source-settings .workspace-dialog-field { grid-template-rows: 14px 30px 14px; gap: 3px; align-content: start; margin-top: 0; }
+.workspace-source-settings .repository-base-field { grid-template-rows: auto; min-width: 0; }
+.repository-base-field select { min-width: 0; width: 100%; }
 .workspace-source-settings .workspace-dialog-field > span { font-size: 10px; }
 .workspace-source-settings .workspace-dialog-field input { height: 30px; min-height: 30px; border-radius: var(--radius-md); background: rgb(0 0 0 / 0.16); font-size: 11.5px; padding: 0 8px; }
 .workspace-source-settings .workspace-dialog-field small { min-height: 14px; font-size: 9.5px; line-height: 14px; }

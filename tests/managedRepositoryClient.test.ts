@@ -5,7 +5,7 @@ import test from "node:test";
 import { Agent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { withConnection } from "../backend/hosts";
 import { createApplicationService } from "../backend/applicationService";
-import { addCatalogRepository, addCatalogWorkspaceSource, createCatalogWorkspace, createManagedRepository, getCatalogProject } from "../backend/zotigod";
+import { addCatalogRepository, addCatalogWorkspaceSource, createCatalogWorkspace, getCatalogProject } from "../backend/zotigod";
 import { parseProjectSources } from "../backend/projectInputValidation";
 import { createClientApi } from "../shared/clientApi";
 
@@ -42,7 +42,6 @@ test("repository mutations wait for daemon Git phases instead of the default fet
     await assert.rejects(fetch(baseUrl + "/baseline"), "the short default deadline must actually expire");
     await withConnection({ id: "long-operations", name: "long-operations", baseUrl, token: "test-token" }, async () => {
       await Promise.all([
-        createManagedRepository({ remoteUrl: data.remote_url }),
         addCatalogRepository("project", "repo"),
         createCatalogWorkspace("project", "workspace", [{ source_id: "source" }]),
         addCatalogWorkspaceSource("workspace", { source_id: "source" }).then(binding => {
@@ -51,7 +50,7 @@ test("repository mutations wait for daemon Git phases instead of the default fet
         }),
       ]);
     });
-    assert.deepEqual(requests.slice(1).map(request => request.path).sort(), ["/repositories", "/projects/project/sources", "/projects/project/workspaces", "/workspaces/workspace/sources"].sort());
+    assert.deepEqual(requests.slice(1).map(request => request.path).sort(), ["/projects/project/sources", "/projects/project/workspaces", "/workspaces/workspace/sources"].sort());
     assert.ok(requests.slice(1).every(request => request.auth === "Bearer test-token"));
   } finally {
     setGlobalDispatcher(originalDispatcher);
@@ -70,7 +69,8 @@ test("repository operations share IPC/Web contract and remain bound to their dae
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     const text = Buffer.concat(chunks).toString();
     received.push({ host, method: request.method!, url: request.url!, auth: request.headers.authorization, body: text ? JSON.parse(text) : undefined });
-    const data = request.url === "/repositories" ? request.method === "GET" ? { repositories: [repository] } : repository
+    const data = request.url?.endsWith("/branches") ? { branches: [{ name: "local-work", ref: "refs/zotigo/imported/source/heads/local-work", kind: "imported", source_name: "checkout" }] }
+      : request.url === "/repositories" ? request.method === "GET" ? { repositories: [repository] } : repository
       : request.method === "GET" ? { id: "project-1", name: "Project", created_at: "now", updated_at: "now", sources: [source] } : source;
     response.setHeader("Content-Type", "application/json");
     response.end(JSON.stringify({ code: "ok", data }));
@@ -91,6 +91,9 @@ test("repository operations share IPC/Web contract and remain bound to their dae
   try {
     const [listed, created] = await Promise.all([clients[0].listRepositories(), clients[1].createRepository({ remoteUrl: repository.remote_url })]);
     assert.deepEqual(listed, [repository]); assert.deepEqual(created, repository);
+    const branches = await clients[0].listRepositoryBranches("project-1", "source-1");
+    assert.deepEqual(branches, [{ name: "local-work", ref: "refs/zotigo/imported/source/heads/local-work", kind: "imported", source_name: "checkout" }]);
+    assert.ok(received.some(request => request.url === "/projects/project-1/sources/source-1/branches" && request.host === "alpha" && request.auth === "Bearer secret-0"));
     assert.ok(received.some(request => request.host === "alpha" && request.method === "GET" && request.auth === "Bearer secret-0"));
     assert.ok(received.some(request => request.host === "beta" && request.method === "POST" && request.auth === "Bearer secret-1"));
     assert.deepEqual(received.find(request => request.method === "POST")?.body, { remote_url: repository.remote_url });

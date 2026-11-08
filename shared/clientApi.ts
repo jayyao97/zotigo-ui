@@ -77,6 +77,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     syncDesktopState: () => invoke("desktop:sync-state"),
     createProject: (input) => invoke("desktop:create-project", input),
     listRepositories: () => invoke("repositories:list"),
+    listRepositoryBranches: (projectId, sourceId) => invoke("repositories:branches", projectId, sourceId),
     createRepository: (input) => invoke("repositories:create", input),
     chooseSourceFolders: async () => { throw new Error("Folder selection requires the directory browser UI."); },
     addProjectSources: (projectId, sources) => invoke("desktop:add-project-sources", projectId, sources),

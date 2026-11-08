@@ -4917,7 +4917,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                         <small>{repositoryBaseLabel(draft.repository, draft.baseRef)}</small>
                       </summary>
                       <div className="workspace-dialog-grid single-column">
-                        <RepositoryBaseField repository={draft.repository} value={draft.baseRef} disabled={isBusy} onChange={value => updateRepositoryBaseRef(draft.repository.id, value)} />
+                        <RepositoryBaseField client={client} repository={draft.repository} value={draft.baseRef} disabled={isBusy} onChange={value => updateRepositoryBaseRef(draft.repository.id, value)} />
                       </div>
                     </details>
                   )}
@@ -4993,7 +4993,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                   </select>
                 </label>
                 {selectedRepository && <div className="workspace-dialog-grid">
-                  <RepositoryBaseField repository={selectedRepository} value={workspaceSourceBaseRef} disabled={isBusy} onChange={setWorkspaceSourceBaseRef} />
+                  <RepositoryBaseField client={client} repository={selectedRepository} value={workspaceSourceBaseRef} disabled={isBusy} onChange={setWorkspaceSourceBaseRef} />
                   <label className="workspace-dialog-field"><span>{t("app.branch")}{" "}<small>{t("app.optional")}</small></span><input value={workspaceSourceBranchName} onChange={(event) => setWorkspaceSourceBranchName(event.target.value)} placeholder={t("workspace.branchExample")} /></label>
                 </div>}
                 {selectedFolder && <label className="workspace-dialog-field"><span>{t("app.folderMode")}</span><select value={workspaceSourceMode} onChange={(event) => setWorkspaceSourceMode(event.target.value as FolderSourceMode)}><option value="direct">{t("app.direct")}</option><option value="copy">{t("app.copy")}</option><option value="reference">{t("app.reference")}</option></select></label>}
