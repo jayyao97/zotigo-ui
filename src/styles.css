@@ -480,6 +480,7 @@ p {
 .brand-actions .sidebar-navigation-close { display: none; }
 
 .utility-nav {
+  width: 44px;
   border-right: 1px solid var(--border-heavy);
   grid-column: 1;
   grid-row: 2 / 5;
@@ -4089,10 +4090,12 @@ p {
 .repository-search input::placeholder { color: var(--text-dim); }
 .repository-page-host { margin-left: auto; white-space: nowrap; color: var(--text-muted); font-size: 12px; -webkit-app-region: no-drag; }
 .repository-page-host .host-menu-popover { left: auto; right: 0; }
-.app-frame.repositories-mode { --sidebar-width: 88px; grid-template-columns: var(--sidebar-width) minmax(0, 1fr) 0px; }
+.app-frame.repositories-mode { --sidebar-width: 56px; grid-template-columns: var(--sidebar-width) minmax(0, 1fr) 0px; }
 .repositories-mode > .sidebar { grid-template-columns: minmax(0, 1fr); }
 .repositories-mode .sidebar-chrome { visibility: hidden; padding: 0; }
 .repositories-mode .utility-nav { grid-row: 2 / -1; }
+/* Keep the title clear of native window controls above the narrow navigation. */
+html[data-platform="desktop"] .repository-page .conversation-titlebar { padding-left: 50px; }
 .repositories-mode :is(.sidebar-brand, .sidebar-new-session, .sidebar-lower-stack, .sidebar-footer, .sidebar-resize-handle) { display: none; }
 html[data-platform="web"] .app-frame.repositories-mode { --sidebar-width: 56px; grid-template-columns: var(--sidebar-width) minmax(0, 1fr) 0px; }
 html[data-platform="web"] .repositories-mode > .sidebar { display: grid; grid-area: 1 / 1; grid-template-columns: minmax(0, 1fr); }
@@ -5586,6 +5589,7 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 @media (pointer: coarse) {
   html[data-platform="web"] { --row-height: 44px; }
   html[data-platform="web"] .sidebar { grid-template-columns: 56px minmax(0, 1fr); }
+  html[data-platform="web"] .utility-nav { width: 56px; }
   html[data-platform="web"] .utility-nav button { width: 52px; min-height: 60px; padding: 6px 0; gap: 4px; }
   html[data-platform="web"] .utility-nav-label {
     position: static; transform: none; visibility: visible; border: 0; background: transparent;
