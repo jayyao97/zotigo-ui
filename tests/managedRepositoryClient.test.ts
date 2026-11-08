@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import test from "node:test";
+import { Agent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { withConnection } from "../backend/hosts";
 import { createApplicationService } from "../backend/applicationService";
-import { addCatalogRepository, getCatalogProject } from "../backend/zotigod";
+import { addCatalogRepository, addCatalogWorkspaceSource, createCatalogWorkspace, createManagedRepository, getCatalogProject } from "../backend/zotigod";
 import { parseProjectSources } from "../backend/projectInputValidation";
 import { createClientApi } from "../shared/clientApi";
 
@@ -14,6 +15,45 @@ test("project sources accept repository references and reject ambiguous local in
   ]);
   for (const value of [{}, { repositoryId: "" }, { repositoryId: "r", path: "/local" }, { repositoryId: "r", folderMode: "copy" }]) {
     assert.throws(() => parseProjectSources([value]));
+  }
+});
+
+test("repository mutations wait for daemon Git phases instead of the default fetch headers deadline", async () => {
+  const originalDispatcher = getGlobalDispatcher();
+  const shortDeadline = new Agent({ headersTimeout: 10 });
+  const requests: Array<{ path: string; auth: string | undefined }> = [];
+  const source = { id: "source", project_id: "project", kind: "git", canonical_path: "/repo", source_key: "key", created_at: "now", updated_at: "now" };
+  const data = {
+    ...source, name: "repo", remote_url: "https://example.com/repo.git", default_branch: "main",
+    title: "workspace", root_path: "/workspace", status: "ready", source, target_path: "/workspace/code/repo",
+  };
+  const server = createServer((request, response) => {
+    requests.push({ path: request.url!, auth: request.headers.authorization });
+    const timer = setTimeout(() => response.end(JSON.stringify({ code: "ok", data })), 1500);
+    response.on("close", () => clearTimeout(timer));
+    request.resume();
+  }).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    setGlobalDispatcher(shortDeadline);
+    await assert.rejects(fetch(baseUrl + "/baseline"), "the short default deadline must actually expire");
+    await withConnection({ id: "long-operations", name: "long-operations", baseUrl, token: "test-token" }, async () => {
+      await Promise.all([
+        createManagedRepository({ remoteUrl: data.remote_url }),
+        addCatalogRepository("project", "repo"),
+        createCatalogWorkspace("project", "workspace", [{ source_id: "source" }]),
+        addCatalogWorkspaceSource("workspace", { source_id: "source" }),
+      ]);
+    });
+    assert.deepEqual(requests.slice(1).map(request => request.path).sort(), ["/repositories", "/projects/project/sources", "/projects/project/workspaces", "/workspaces/workspace/sources"].sort());
+    assert.ok(requests.slice(1).every(request => request.auth === "Bearer test-token"));
+  } finally {
+    setGlobalDispatcher(originalDispatcher);
+    await shortDeadline.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
 

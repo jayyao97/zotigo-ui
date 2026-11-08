@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { fetchDaemon, daemonHeaders } from "../backend/daemonHttp";
+import { fetchDaemon, daemonHeaders, repositoryRequestDispatcher } from "../backend/daemonHttp";
 
 test("daemon requests authenticate, rotate credentials and reject redirects or foreign endpoints", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-auth-"));
@@ -32,6 +32,10 @@ test("daemon requests authenticate, rotate credentials and reject redirects or f
     assert.equal(seen.at(-1), "Bearer rotated-token");
     await assert.rejects(async () => fetchDaemon(base + "/redirect"));
     assert.equal(seen.length, 5, "redirect target must not be contacted");
+    await (await fetchDaemon(base + "/repositories", { dispatcher: repositoryRequestDispatcher })).text();
+    assert.equal(seen.at(-1), "Bearer rotated-token");
+    await assert.rejects(fetchDaemon(base + "/redirect", { dispatcher: repositoryRequestDispatcher }));
+    assert.equal(seen.length, 7, "long repository requests must also reject redirect targets");
     assert.throws(() => daemonHeaders("https://other.example/projects"), /endpoint/);
     fs.writeFileSync(process.env.ZOTIGOD_AUTH_TOKEN_FILE, "\n");
     assert.throws(() => daemonHeaders(base), /empty/);

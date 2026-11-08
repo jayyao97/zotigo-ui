@@ -90,6 +90,46 @@ test("repository search matches names and remote addresses without losing hidden
   } finally { await cleanup(); }
 });
 
+test("repository registration releases busy on client replacement and ignores stale completion", async () => {
+  const { root, cleanup } = mount();
+  let finishOld!: (item: ManagedRepository) => void;
+  let finishNew!: (item: ManagedRepository) => void;
+  const oldClient = { listRepositories: async () => [], createRepository: () => new Promise<ManagedRepository>(resolve => { finishOld = resolve; }) };
+  const newClient = { listRepositories: async () => [], createRepository: () => new Promise<ManagedRepository>(resolve => { finishNew = resolve; }) };
+  const busy: boolean[] = [];
+  const selected: string[][] = [];
+  const props = { onBusyChange: (value: boolean) => busy.push(value), onChange: (ids: string[]) => selected.push(ids) };
+  const register = async () => {
+    if (!document.querySelector(".managed-repository-add")) {
+      await act(async () => document.querySelector<HTMLButtonElement>(".managed-repository-add-button")!.click());
+    }
+    await act(async () => {
+      const input = document.querySelector<HTMLInputElement>(".managed-repository-add input")!;
+      input.value = repository.remote_url;
+      input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    });
+    await act(async () => document.querySelector<HTMLButtonElement>(".managed-repository-add .dialog-submit")!.click());
+  };
+  try {
+    await act(async () => root.render(<ManagedRepositoryPicker client={oldClient} {...props} />));
+    await register();
+    assert.deepEqual(busy, [true]);
+    await act(async () => root.render(<ManagedRepositoryPicker client={newClient} {...props} />));
+    assert.deepEqual(busy, [true, false]);
+    await register();
+    assert.deepEqual(busy, [true, false, true]);
+    await act(async () => finishOld(repository));
+    assert.deepEqual(busy, [true, false, true], "old completion must not release the new registration");
+    assert.deepEqual(selected, []);
+    assert.equal(document.querySelector<HTMLButtonElement>(".managed-repository-add .dialog-submit")!.disabled, true);
+    await act(async () => root.render(<></>));
+    assert.deepEqual(busy, [true, false, true, false]);
+    await act(async () => finishNew(repository));
+    assert.deepEqual(selected, []);
+    assert.deepEqual(busy, [true, false, true, false]);
+  } finally { await cleanup(); }
+});
+
 test("managed base branch follows the remote by default and can restore automatic selection", async () => {
   const { root, cleanup } = mount();
   const source: DesktopProjectRepository = {

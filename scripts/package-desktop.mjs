@@ -10,6 +10,8 @@ try {
   for (const name of ["dist", "dist-electron", "LICENSE", "THIRD_PARTY_NOTICES.md"]) {
     await cp(name, path.join(staging, name), { recursive: true });
   }
+  // Backend TypeScript is not bundled; retain its one external runtime dependency.
+  await cp("node_modules/undici", path.join(staging, "node_modules/undici"), { recursive: true, dereference: true });
   await writeFile(path.join(staging, "package.json"), JSON.stringify({
     name: pkg.name, productName: pkg.productName, version: pkg.version,
     main: pkg.main, license: pkg.license,

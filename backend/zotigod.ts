@@ -26,7 +26,7 @@ export async function testModelSettings(change: ModelSettingsChange): Promise<Mo
 }
 import { attachmentReference, type MessageFileInput } from "../shared/messageFiles";
 import { currentHost, configureLocalHostUrl } from "./hosts";
-import { fetchDaemon } from "./daemonHttp";
+import { fetchDaemon, repositoryRequestDispatcher, type DaemonRequestInit } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplaySubagent, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
 import type { DaemonConfig, NavigationItem, ManagedRepository } from "../shared/clientTypes";
 import type { ProjectDeletePreview } from "../shared/zotigod";
@@ -242,7 +242,7 @@ export async function listManagedRepositories(): Promise<ManagedRepository[]> {
 export async function createManagedRepository(input: { remoteUrl: string; name?: string }): Promise<ManagedRepository> {
   return parseManagedRepository(await requestJSON("/repositories", {
     ...jsonRequest("POST", { remote_url: input.remoteUrl, name: input.name }),
-    signal: AbortSignal.timeout(120000),
+    dispatcher: repositoryRequestDispatcher,
   }), "create repository response");
 }
 
@@ -260,9 +260,10 @@ function parseManagedRepository(value: unknown, context: string): ManagedReposit
 }
 
 export function addCatalogRepository(projectId: string, repositoryId: string): Promise<CatalogSource> {
-  return requestJSON(`/projects/${encodeURIComponent(projectId)}/sources`, jsonRequest("POST", {
-    repository_id: repositoryId,
-  })).then((value) => parseCatalogSource(value, "create source response"));
+  return requestJSON(`/projects/${encodeURIComponent(projectId)}/sources`, {
+    ...jsonRequest("POST", { repository_id: repositoryId }),
+    dispatcher: repositoryRequestDispatcher,
+  }).then((value) => parseCatalogSource(value, "create source response"));
 }
 
 export function createCatalogProject(name: string): Promise<CatalogProject> {
@@ -311,7 +312,9 @@ export function createCatalogWorkspace(
   title: string,
   sources: CatalogWorkspaceSourceInput[],
 ): Promise<CatalogWorkspace> {
-  return requestJSON(`/projects/${encodeURIComponent(projectId)}/workspaces`, jsonRequest("POST", { title, sources }))
+  return requestJSON(`/projects/${encodeURIComponent(projectId)}/workspaces`, {
+    ...jsonRequest("POST", { title, sources }), dispatcher: repositoryRequestDispatcher,
+  })
     .then((value) => parseCatalogWorkspace(value, "create workspace response"));
 }
 
@@ -325,7 +328,9 @@ export async function listCatalogWorkspaceSources(id: string): Promise<CatalogWo
 }
 
 export function addCatalogWorkspaceSource(id: string, source: CatalogWorkspaceSourceInput): Promise<CatalogWorkspaceSource> {
-  return requestJSON(`/workspaces/${encodeURIComponent(id)}/sources`, jsonRequest("POST", { ...source }))
+  return requestJSON(`/workspaces/${encodeURIComponent(id)}/sources`, {
+    ...jsonRequest("POST", { ...source }), dispatcher: repositoryRequestDispatcher,
+  })
     .then((value) => parseCatalogWorkspaceSource(value, "add workspace source response"));
 }
 
@@ -844,7 +849,7 @@ export async function uploadMessageFile(sessionId: string, file: MessageFileInpu
   return expectString(response.path, "attachment path");
 }
 
-async function requestJSON(path: string, init: RequestInit = {}): Promise<unknown> {
+async function requestJSON(path: string, init: DaemonRequestInit = {}): Promise<unknown> {
   const response = await fetchDaemon(`${getDaemonConfig().baseUrl}${path}`, {
     ...init,
     headers: {

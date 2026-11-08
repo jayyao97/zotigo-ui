@@ -106,6 +106,8 @@ fi
 mkdir "$stage/output"
 if [ "$component" = web ]; then
   cp -R "$stage/ui/dist" "$stage/ui/dist-electron" "$stage/output/"
+  mkdir "$stage/output/node_modules"
+  cp -RL "$stage/ui/node_modules/undici" "$stage/output/node_modules/undici"
   cp "$source_dir/LICENSE" "$source_dir/THIRD_PARTY_NOTICES.md" "$stage/output/"
   config="$prefix/config/web.env"
   {

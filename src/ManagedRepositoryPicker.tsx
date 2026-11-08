@@ -39,9 +39,17 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
   const [showRemote, setShowRemote] = useState(false);
   const [query, setQuery] = useState("");
   const request = useRef(0);
+  const releaseBusy = useRef<(() => void) | null>(null);
+
+  function finishAdding() {
+    const release = releaseBusy.current;
+    releaseBusy.current = null;
+    release?.();
+  }
 
   useEffect(() => {
     const current = ++request.current;
+    setAdding(false);
     setLoading(true);
     setError("");
     setRepositories([]);
@@ -52,7 +60,10 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
     }).finally(() => {
       if (request.current === current) setLoading(false);
     });
-    return () => { request.current++; };
+    return () => {
+      request.current++;
+      finishAdding();
+    };
   }, [client, refresh]);
 
   async function addRepository() {
@@ -60,6 +71,7 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
     const current = request.current;
     setAdding(true);
     onBusyChange?.(true);
+    releaseBusy.current = () => onBusyChange?.(false);
     setError("");
     try {
       const repository = await client.createRepository({ remoteUrl: remoteUrl.trim() });
@@ -74,7 +86,7 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
     } finally {
       if (current === request.current) {
         setAdding(false);
-        onBusyChange?.(false);
+        finishAdding();
       }
     }
   }
@@ -103,7 +115,7 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
     </div>}
     {error && <p className="dialog-error" role="alert">{error}</p>}
     {showRemote ? <div className="managed-repository-add">
-      <label className="workspace-dialog-field"><span>{t("repositories.remote")}</span><input autoFocus value={remoteUrl} disabled={adding || disabled} placeholder={t("repositories.remotePlaceholder")} onChange={event => setRemoteUrl(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void addRepository(); } }} /></label>
+      <label className="workspace-dialog-field"><span>{t("repositories.remote")}</span><input autoFocus value={remoteUrl} disabled={adding || disabled} placeholder={t("repositories.remotePlaceholder")} onInput={event => setRemoteUrl(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void addRepository(); } }} /></label>
       <div className="managed-repository-add-actions"><button type="button" disabled={adding || disabled} onClick={() => { setShowRemote(false); setRemoteUrl(""); }}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={adding || disabled || !remoteUrl.trim()} onClick={() => void addRepository()}>{t(adding ? "repositories.adding" : "repositories.add")}</button></div>
     </div> : <button type="button" className="managed-repository-add-button" disabled={disabled || loading} onClick={() => setShowRemote(true)}><Plus size={14} />{t("repositories.add")}</button>}
   </section>;
