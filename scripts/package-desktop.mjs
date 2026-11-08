@@ -1,6 +1,7 @@
 import { packager } from "@electron/packager";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 // Build output only: never copy source checkouts, credentials, or development dependencies.
 await mkdir("build", { recursive: true });
@@ -16,7 +17,7 @@ try {
     name: pkg.name, productName: pkg.productName, version: pkg.version,
     main: pkg.main, license: pkg.license,
   }));
-  const packages = await packager({
+  const options = {
     dir: staging, out: "build/desktop", overwrite: true,
     name: "Zotigo", executableName: "zotigo-desktop",
     appBundleId: "com.zotigo.desktop", appVersion: pkg.version,
@@ -27,7 +28,20 @@ try {
     // just like its installer. Cached binaries still undergo SHA-256 validation.
     download: { checksums: JSON.parse(await readFile("node_modules/electron/checksums.json", "utf8")) },
     platform: process.platform, arch: process.arch, prune: false,
-  });
+  };
+  let packages;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      packages = await packager(options);
+      break;
+    } catch (error) {
+      // Retry transient release download responses only, never packaging or
+      // checksum failures. Keep a finite bound for installers and CI alike.
+      if (attempt >= 4 || ![429, 502, 503, 504].includes(error?.response?.status)) throw error;
+      console.warn(`Electron download returned ${error.response.status}; retrying (${attempt}/3).`);
+      await delay(attempt * 5000);
+    }
+  }
   for (const directory of packages) console.log(directory);
 } finally {
   await rm(staging, { recursive: true, force: true });
