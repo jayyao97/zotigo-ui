@@ -26,24 +26,42 @@ export function RepositoryBaseField({ client, repository, value, onChange, disab
   useLocale();
   const [branches, setBranches] = useState<RepositoryBranch[]>([]);
   const [error, setError] = useState("");
+  const [defaultBranch, setDefaultBranch] = useState(repository.default_base_ref);
   const defaultValue = repository.repository_id ? "" : repository.default_base_ref || "HEAD";
   useEffect(() => {
     let active = true;
     setBranches([]);
+    setDefaultBranch(repository.default_base_ref);
     setError("");
-    void client.listRepositoryBranches(repository.project_id, repository.id).then(items => {
-      if (active) setBranches(items.filter(branch => branch.kind === (repository.repository_id ? "remote" : "local") && (!repository.repository_id || branch.name !== repository.default_base_ref)));
-    }).catch(cause => {
-      if (active) setError(cause instanceof Error ? cause.message : String(cause));
-    });
+    const showBranches = (items: RepositoryBranch[]) => {
+      if (active) {
+        setBranches(items.filter(branch => branch.kind === (repository.repository_id ? "remote" : "local")));
+        const currentDefault = items.find(branch => branch.kind === "remote" && branch.is_default);
+        if (currentDefault) setDefaultBranch(currentDefault.name);
+      }
+    };
+    void (async () => {
+      try {
+        showBranches(await client.listRepositoryBranches(repository.project_id, repository.id));
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : String(cause));
+      }
+      if (!active || !repository.repository_id) return;
+      try {
+        const fresh = await client.listRepositoryBranches(repository.project_id, repository.id, true);
+        if (active) { showBranches(fresh); setError(""); }
+      } catch {
+        // Keep the cached list and selection when the remote is unavailable.
+      }
+    })();
     return () => { active = false; };
   }, [client, repository.project_id, repository.id, repository.repository_id, repository.default_base_ref]);
   return <label className="workspace-dialog-field repository-base-field">
     <span>{t("app.startFrom")}</span>
     <select aria-label={t("app.startFrom")} disabled={disabled} value={value || defaultValue} onChange={event => onChange(event.target.value)}>
-      <option value={defaultValue}>{repository.repository_id ? (repository.default_base_ref ? t("repositories.defaultBranch", { branch: repository.default_base_ref }) : t("repositories.autoBranch")) : t("repositories.currentBranch")}</option>
+      <option value={defaultValue}>{repository.repository_id ? (defaultBranch ? t("repositories.defaultBranch", { branch: defaultBranch }) : t("repositories.autoBranch")) : t("repositories.currentBranch")}</option>
       {value && value !== defaultValue && !branches.some(branch => branch.ref === value) && <option value={value}>{value.replace(/^refs\/(?:remotes\/origin|heads)\//, "")}</option>}
-      {branches.map(branch => <option key={branch.ref} value={branch.ref}>{branch.name}</option>)}
+      {branches.filter(branch => !repository.repository_id || branch.name !== defaultBranch || branch.ref === value).map(branch => <option key={branch.ref} value={branch.ref}>{branch.name}</option>)}
     </select>
     {error && <small className="error" role="alert">{t("repositories.branchListFailed")}</small>}
   </label>;

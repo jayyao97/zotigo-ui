@@ -246,13 +246,13 @@ export async function createManagedRepository(input: { remoteUrl: string; name?:
   }), "create repository response");
 }
 
-export async function listRepositoryBranches(projectId: string, sourceId: string): Promise<RepositoryBranch[]> {
-  const record = expectRecord(await requestJSON(`/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/branches`), "repository branches response");
+export async function listRepositoryBranches(projectId: string, sourceId: string, refresh = false): Promise<RepositoryBranch[]> {
+  const record = expectRecord(await requestJSON(`/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/branches`, { method: refresh ? "POST" : "GET", signal: AbortSignal.timeout(15000) }), "repository branches response");
   return expectArray(record.branches, "branches").map((value, index) => {
     const branch = expectRecord(value, `branches[${index}]`);
     const kind = expectString(branch.kind, "branch kind");
     if (kind !== "remote" && kind !== "imported" && kind !== "local") throw new Error("Invalid repository branch kind");
-    return { name: expectString(branch.name, "branch name"), ref: expectString(branch.ref, "branch ref"), kind, source_name: expectOptionalString(branch.source_name, "branch source_name") };
+    return { name: expectString(branch.name, "branch name"), ref: expectString(branch.ref, "branch ref"), kind, ...(branch.is_default === true ? { is_default: true } : {}), source_name: expectOptionalString(branch.source_name, "branch source_name") };
   });
 }
 

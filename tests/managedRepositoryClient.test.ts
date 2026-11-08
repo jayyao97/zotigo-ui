@@ -83,7 +83,7 @@ test("repository operations share IPC/Web contract and remain bound to their dae
   });
   const clients = connections.map(connection => createClientApi({
     invoke: async <T,>(channel: string, ...args: unknown[]): Promise<T> => {
-      const response = await withConnection(connection, () => service.invoke(channel, args));
+      const response = await withConnection(connection, () => service.invoke(channel, JSON.parse(JSON.stringify(args))));
       if (!response.ok) throw new Error(response.error);
       return response.value as T;
     }, onFileEvent: () => () => {}, onSessionEvent: () => () => {},
@@ -92,6 +92,8 @@ test("repository operations share IPC/Web contract and remain bound to their dae
     const [listed, created] = await Promise.all([clients[0].listRepositories(), clients[1].createRepository({ remoteUrl: repository.remote_url })]);
     assert.deepEqual(listed, [repository]); assert.deepEqual(created, repository);
     const branches = await clients[0].listRepositoryBranches("project-1", "source-1");
+    await clients[0].listRepositoryBranches("project-1", "source-1", true);
+    assert.ok(received.some(request => request.url.endsWith("/branches") && request.method === "POST" && request.host === "alpha"));
     assert.deepEqual(branches, [{ name: "local-work", ref: "refs/zotigo/imported/source/heads/local-work", kind: "imported", source_name: "checkout" }]);
     assert.ok(received.some(request => request.url === "/projects/project-1/sources/source-1/branches" && request.host === "alpha" && request.auth === "Bearer secret-0"));
     assert.ok(received.some(request => request.host === "alpha" && request.method === "GET" && request.auth === "Bearer secret-0"));

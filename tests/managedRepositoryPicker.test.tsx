@@ -300,3 +300,23 @@ test("pending polling stops on unmount and cannot replace another host's reposit
     assert.equal(calls, 3, "unmount cancels pending preparation polling");
   } finally { await cleanup(); }
 });
+
+test("cached branches display immediately and refresh adds remote branches without changing selection", async () => {
+ const { root, cleanup } = mount();
+ const source = { id: "source", project_id: "project", repository_id: "repo", default_base_ref: "main" } as DesktopProjectRepository;
+ let complete!: (items: RepositoryBranch[]) => void;
+ let changed = false;
+ const client = { listRepositoryBranches: async (_project: string, _source: string, refresh = false) => refresh
+   ? new Promise<RepositoryBranch[]>(resolve => { complete = resolve; })
+   : [{ name: "release", ref: "refs/remotes/origin/release", kind: "remote" as const }] };
+ try {
+  await act(async () => root.render(<RepositoryBaseField client={client} repository={source} value="refs/remotes/origin/release" onChange={() => { changed = true; }} />));
+  assert.match(document.querySelector("select")!.textContent!, /release/);
+  assert.equal(document.querySelector("select")!.value, "refs/remotes/origin/release");
+  await act(async () => complete([{ name: "new-branch", ref: "refs/remotes/origin/new-branch", kind: "remote", is_default: true }]));
+  assert.match(document.querySelector("select")!.textContent!, /new-branch \(default\)/);
+  assert.doesNotMatch(document.querySelector("select")!.textContent!, /main \(default\)/);
+  assert.equal(document.querySelector("select")!.value, "refs/remotes/origin/release");
+  assert.equal(changed, false);
+ } finally { await cleanup(); }
+});
