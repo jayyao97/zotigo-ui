@@ -1,5 +1,12 @@
 import { currentHost } from "./hosts";
 import fs from "node:fs";
+import { Agent, type Dispatcher } from "undici";
+
+export type DaemonRequestInit = RequestInit & { dispatcher?: Dispatcher };
+
+// The daemon bounds each Git phase. A multi-repository operation can legitimately
+// take longer than Node fetch's five-minute response-header deadline.
+export const repositoryRequestDispatcher = new Agent({ headersTimeout: 0 });
 
 // Credentials belong to the configured endpoint, never a renderer-selected URL.
 export function daemonHeaders(url: string, initial?: HeadersInit): Headers {
@@ -21,6 +28,6 @@ export function daemonHeaders(url: string, initial?: HeadersInit): Headers {
   return headers;
 }
 
-export function fetchDaemon(url: string, init: RequestInit = {}): Promise<Response> {
+export function fetchDaemon(url: string, init: DaemonRequestInit = {}): Promise<Response> {
   return fetch(url, { ...init, headers: daemonHeaders(url, init.headers), redirect: "error" });
 }

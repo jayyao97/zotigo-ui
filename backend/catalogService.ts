@@ -12,6 +12,7 @@ import {
   setCatalogNavigationPinned,
   addCatalogWorkspaceSource,
   addCatalogSource,
+  addCatalogRepository,
   archiveCatalogSession,
   archiveCatalogWorkspace,
   createCatalogProject,
@@ -148,6 +149,11 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
 
   async function addSourcesToCatalog(projectId: string, sources: ProjectSourceInput[]): Promise<DesktopState> {
     for (const source of sources) {
+      if (source.repositoryId) {
+        await addCatalogRepository(projectId, source.repositoryId);
+        continue;
+      }
+      if (!source.path) throw new Error("source path or repositoryId is required");
       const inspection = await inspectCatalogSource(source.path);
       await addCatalogSource(projectId, source.path, inspection.kind === "folder" ? (source.folderMode ?? "direct") : undefined);
     }
@@ -320,7 +326,11 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
       name: path.basename(source.canonical_path) || source.source_key,
       source_path: source.canonical_path,
       git_common_dir: source.git_common_dir ?? source.canonical_path,
-      default_base_ref: "HEAD",
+      default_base_ref: source.default_branch || (source.repository_id ? "" : "HEAD"),
+      repository_id: source.repository_id,
+      remote_url: source.remote_url,
+      last_synced_at: source.last_synced_at,
+      last_sync_error: source.last_sync_error,
       availability: "available",
       created_at: source.created_at,
       updated_at: source.updated_at,

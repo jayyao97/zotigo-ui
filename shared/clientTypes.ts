@@ -51,6 +51,26 @@ export interface DesktopProject {
 
 export type RepositoryAvailability = "available" | "unavailable";
 
+export interface ManagedRepository {
+  id: string;
+  name: string;
+  remote_url: string;
+  default_branch: string;
+  canonical_path: string;
+  last_synced_at?: string;
+  last_sync_error?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepositoryBranch {
+  is_default?: boolean;
+  name: string;
+  ref: string;
+  kind: "remote" | "imported" | "local";
+  source_name?: string;
+}
+
 export interface DesktopProjectRepository {
   id: string;
   project_id: string;
@@ -59,6 +79,10 @@ export interface DesktopProjectRepository {
   source_path: string;
   git_common_dir: string;
   default_base_ref: string;
+  repository_id?: string;
+  remote_url?: string;
+  last_synced_at?: string;
+  last_sync_error?: string;
   availability: RepositoryAvailability;
   created_at: string;
   updated_at: string;
@@ -146,7 +170,8 @@ export interface CreateProjectInput {
 }
 
 export interface ProjectSourceInput {
-  path: string;
+  path?: string;
+  repositoryId?: string;
   folderMode?: FolderSourceMode;
 }
 
@@ -325,6 +350,9 @@ export interface ClientApi {
   getDesktopState(): Promise<DesktopState>;
   syncDesktopState?(): Promise<DesktopState>;
   createProject(input: CreateProjectInput): Promise<DesktopState>;
+  listRepositories(): Promise<ManagedRepository[]>;
+  listRepositoryBranches(projectId: string, sourceId: string, refresh?: boolean): Promise<RepositoryBranch[]>;
+  createRepository(input: { remoteUrl: string; name?: string }): Promise<ManagedRepository>;
   chooseSourceFolders(): Promise<SourceCandidate[]>;
   addProjectSources(projectId: string, sources: ProjectSourceInput[]): Promise<DesktopState>;
   removeProjectSource(kind: ProjectSourceKind, sourceId: string): Promise<DesktopState>;

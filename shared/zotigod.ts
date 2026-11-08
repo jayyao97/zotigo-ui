@@ -419,6 +419,11 @@ export interface CatalogProject {
 }
 
 export interface CatalogSource {
+  repository_id?: string;
+  remote_url?: string;
+  default_branch?: string;
+  last_synced_at?: string;
+  last_sync_error?: string;
   id: string;
   project_id: string;
   kind: ProjectSourceKind;
@@ -493,6 +498,8 @@ export interface CatalogWorkspaceSource {
   base_commit?: string;
   branch_name?: string;
   worktree_path?: string;
+  used_cached_base?: boolean;
+  base_synced_at?: string;
   status: string;
   error?: string;
 }

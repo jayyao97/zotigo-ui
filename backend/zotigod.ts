@@ -26,9 +26,9 @@ export async function testModelSettings(change: ModelSettingsChange): Promise<Mo
 }
 import { attachmentReference, type MessageFileInput } from "../shared/messageFiles";
 import { currentHost, configureLocalHostUrl } from "./hosts";
-import { fetchDaemon } from "./daemonHttp";
+import { fetchDaemon, repositoryRequestDispatcher, type DaemonRequestInit } from "./daemonHttp";
 import type { AgentCatalogEntry, AgentCatalogResponse, AgentKind, ApprovalPolicy, ApprovalDecisionInput, ApprovalDecisionResponse, InteractionResponse, CatalogProject, CatalogProjectDetail, CatalogSessionProjection, CatalogSource, CatalogSourceInspection, CatalogWorkspace, CatalogWorkspaceSource, CatalogWorkspaceSourceInput, ChangeApprovalPolicyResponse, CodexSettingsInput, DisplayContentPart, DisplayDelta, DisplayCommand, DisplayItem, DisplayItemType, DisplayApproval, DisplayInteraction, DisplayInteractionQuestion, DisplaySubagent, DisplayToolResult, DisplayToolResultContentPart, DisplayTurn, HealthResponse, ProfilesResponse, ChangeProfileResponse, MessageImageInput, SessionCommandResponse, CreateSessionInput, SessionListResponse, SessionItemsQuery, SessionItemsResponse, SessionDisplayEvent, SessionState, SkillsResponse, TitleSuggestionResponse, WorkspaceArchivePreview, WorkspaceDeletePreview, WorkspaceStatus, ZotigoSession } from "../shared/zotigod";
-import type { DaemonConfig, NavigationItem } from "../shared/clientTypes";
+import type { DaemonConfig, NavigationItem, ManagedRepository, RepositoryBranch } from "../shared/clientTypes";
 import type { ProjectDeletePreview } from "../shared/zotigod";
 import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, ChannelConversationInput, ChannelGroup, ChannelMessage } from "../shared/channels";
 
@@ -234,6 +234,50 @@ export async function listCatalogProjects(): Promise<CatalogProject[]> {
     .map((value, index) => parseCatalogProject(value, `project list response projects[${index}]`));
 }
 
+export async function listManagedRepositories(): Promise<ManagedRepository[]> {
+  const record = expectRecord(await requestJSON("/repositories"), "repository list response");
+  return expectArray(record.repositories, "repositories").map((value, index) => parseManagedRepository(value, `repositories[${index}]`));
+}
+
+export async function createManagedRepository(input: { remoteUrl: string; name?: string }): Promise<ManagedRepository> {
+  return parseManagedRepository(await requestJSON("/repositories", {
+    ...jsonRequest("POST", { remote_url: input.remoteUrl, name: input.name }),
+    signal: AbortSignal.timeout(15000),
+  }), "create repository response");
+}
+
+export async function listRepositoryBranches(projectId: string, sourceId: string, refresh = false): Promise<RepositoryBranch[]> {
+  const record = expectRecord(await requestJSON(`/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/branches`, { method: refresh ? "POST" : "GET", signal: AbortSignal.timeout(15000) }), "repository branches response");
+  return expectArray(record.branches, "branches").map((value, index) => {
+    const branch = expectRecord(value, `branches[${index}]`);
+    const kind = expectString(branch.kind, "branch kind");
+    if (kind !== "remote" && kind !== "imported" && kind !== "local") throw new Error("Invalid repository branch kind");
+    return { name: expectString(branch.name, "branch name"), ref: expectString(branch.ref, "branch ref"), kind, ...(branch.is_default === true ? { is_default: true } : {}), source_name: expectOptionalString(branch.source_name, "branch source_name") };
+  });
+}
+
+function parseManagedRepository(value: unknown, context: string): ManagedRepository {
+  const record = expectRecord(value, context);
+  return {
+    id: expectString(record.id, `${context} id`),
+    name: expectString(record.name, `${context} name`),
+    remote_url: expectString(record.remote_url, `${context} remote_url`),
+    default_branch: expectString(record.default_branch, `${context} default_branch`),
+    canonical_path: expectString(record.canonical_path, `${context} canonical_path`),
+    last_synced_at: expectOptionalString(record.last_synced_at, `${context} last_synced_at`),
+    last_sync_error: expectOptionalString(record.last_sync_error, `${context} last_sync_error`),
+    created_at: expectString(record.created_at, `${context} created_at`),
+    updated_at: expectString(record.updated_at, `${context} updated_at`),
+  };
+}
+
+export function addCatalogRepository(projectId: string, repositoryId: string): Promise<CatalogSource> {
+  return requestJSON(`/projects/${encodeURIComponent(projectId)}/sources`, {
+    ...jsonRequest("POST", { repository_id: repositoryId }),
+    dispatcher: repositoryRequestDispatcher,
+  }).then((value) => parseCatalogSource(value, "create source response"));
+}
+
 export function createCatalogProject(name: string): Promise<CatalogProject> {
   return requestJSON("/projects", jsonRequest("POST", { name }))
     .then((value) => parseCatalogProject(value, "create project response"));
@@ -280,7 +324,9 @@ export function createCatalogWorkspace(
   title: string,
   sources: CatalogWorkspaceSourceInput[],
 ): Promise<CatalogWorkspace> {
-  return requestJSON(`/projects/${encodeURIComponent(projectId)}/workspaces`, jsonRequest("POST", { title, sources }))
+  return requestJSON(`/projects/${encodeURIComponent(projectId)}/workspaces`, {
+    ...jsonRequest("POST", { title, sources }), dispatcher: repositoryRequestDispatcher,
+  })
     .then((value) => parseCatalogWorkspace(value, "create workspace response"));
 }
 
@@ -294,7 +340,9 @@ export async function listCatalogWorkspaceSources(id: string): Promise<CatalogWo
 }
 
 export function addCatalogWorkspaceSource(id: string, source: CatalogWorkspaceSourceInput): Promise<CatalogWorkspaceSource> {
-  return requestJSON(`/workspaces/${encodeURIComponent(id)}/sources`, jsonRequest("POST", { ...source }))
+  return requestJSON(`/workspaces/${encodeURIComponent(id)}/sources`, {
+    ...jsonRequest("POST", { ...source }), dispatcher: repositoryRequestDispatcher,
+  })
     .then((value) => parseCatalogWorkspaceSource(value, "add workspace source response"));
 }
 
@@ -813,7 +861,7 @@ export async function uploadMessageFile(sessionId: string, file: MessageFileInpu
   return expectString(response.path, "attachment path");
 }
 
-async function requestJSON(path: string, init: RequestInit = {}): Promise<unknown> {
+async function requestJSON(path: string, init: DaemonRequestInit = {}): Promise<unknown> {
   const response = await fetchDaemon(`${getDaemonConfig().baseUrl}${path}`, {
     ...init,
     headers: {
@@ -1061,6 +1109,11 @@ function parseCatalogSource(value: unknown, context: string): CatalogSource {
     git_common_dir: expectOptionalString(record.git_common_dir, `${context} git_common_dir`),
     git_object_format: expectOptionalString(record.git_object_format, `${context} git_object_format`),
     folder_mode: folderMode,
+    repository_id: expectOptionalString(record.repository_id, `${context} repository_id`),
+    remote_url: expectOptionalString(record.remote_url, `${context} remote_url`),
+    default_branch: expectOptionalString(record.default_branch, `${context} default_branch`),
+    last_synced_at: expectOptionalString(record.last_synced_at, `${context} last_synced_at`),
+    last_sync_error: expectOptionalString(record.last_sync_error, `${context} last_sync_error`),
     source_key: expectString(record.source_key, `${context} source_key`),
     created_at: expectString(record.created_at, `${context} created_at`),
     updated_at: expectString(record.updated_at, `${context} updated_at`),
@@ -1112,6 +1165,8 @@ function parseCatalogWorkspaceSource(value: unknown, context: string): CatalogWo
     base_commit: expectOptionalString(record.base_commit, `${context} base_commit`),
     branch_name: expectOptionalString(record.branch_name, `${context} branch_name`),
     worktree_path: expectOptionalString(record.worktree_path, `${context} worktree_path`),
+    used_cached_base: expectOptionalBoolean(record.used_cached_base, `${context} used_cached_base`),
+    base_synced_at: expectOptionalString(record.base_synced_at, `${context} base_synced_at`),
     status: expectString(record.status, `${context} status`),
     error: expectOptionalString(record.error, `${context} error`),
   };

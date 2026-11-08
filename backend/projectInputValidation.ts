@@ -12,6 +12,10 @@ export function parseProjectSources(value: unknown): ProjectSourceInput[] {
   if (!Array.isArray(value)) throw new Error("sources must be an array");
   return value.map((item, index) => {
     const source = recordValue(item, `sources[${index}]`);
+    if (source.repositoryId !== undefined) {
+      if (source.path !== undefined || source.folderMode !== undefined) throw new Error("repositoryId cannot be combined with path or folderMode");
+      return { repositoryId: nonEmptyString(source.repositoryId, `sources[${index}].repositoryId`) };
+    }
     const folderMode = source.folderMode === undefined ? undefined : stringValue(source.folderMode, `sources[${index}].folderMode`);
     if (folderMode !== undefined && folderMode !== "direct" && folderMode !== "copy" && folderMode !== "reference") throw new Error("folderMode is invalid");
     return {
