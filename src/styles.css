@@ -4114,6 +4114,9 @@ label.managed-repository-row:hover { background: rgb(255 255 255 / 0.025); }
 .managed-repository-row > span { display: grid; gap: 4px; flex: 1; min-width: 0; }
 .managed-repository-row strong { color: var(--text); font-size: 12px; font-weight: 500; }
 .managed-repository-row small { color: var(--text-dim); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.managed-repository-row .repository-sync-status { white-space: normal; overflow-wrap: anywhere; }
+.repository-sync-warning, .managed-repository-row .repository-sync-warning { color: var(--orange); }
+.workspace-binding-row .workspace-cache-notice { color: var(--orange); white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
 .managed-repository-row > .managed-repository-branch { max-width: 32%; flex-shrink: 0; }
 .managed-repository-add-button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 3px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 12px; }
 .managed-repository-add-button:hover:not(:disabled) { color: var(--text); }

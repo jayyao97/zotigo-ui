@@ -254,6 +254,8 @@ function parseManagedRepository(value: unknown, context: string): ManagedReposit
     remote_url: expectString(record.remote_url, `${context} remote_url`),
     default_branch: expectString(record.default_branch, `${context} default_branch`),
     canonical_path: expectString(record.canonical_path, `${context} canonical_path`),
+    last_synced_at: expectOptionalString(record.last_synced_at, `${context} last_synced_at`),
+    last_sync_error: expectOptionalString(record.last_sync_error, `${context} last_sync_error`),
     created_at: expectString(record.created_at, `${context} created_at`),
     updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
@@ -1100,6 +1102,8 @@ function parseCatalogSource(value: unknown, context: string): CatalogSource {
     repository_id: expectOptionalString(record.repository_id, `${context} repository_id`),
     remote_url: expectOptionalString(record.remote_url, `${context} remote_url`),
     default_branch: expectOptionalString(record.default_branch, `${context} default_branch`),
+    last_synced_at: expectOptionalString(record.last_synced_at, `${context} last_synced_at`),
+    last_sync_error: expectOptionalString(record.last_sync_error, `${context} last_sync_error`),
     source_key: expectString(record.source_key, `${context} source_key`),
     created_at: expectString(record.created_at, `${context} created_at`),
     updated_at: expectString(record.updated_at, `${context} updated_at`),
@@ -1151,6 +1155,8 @@ function parseCatalogWorkspaceSource(value: unknown, context: string): CatalogWo
     base_commit: expectOptionalString(record.base_commit, `${context} base_commit`),
     branch_name: expectOptionalString(record.branch_name, `${context} branch_name`),
     worktree_path: expectOptionalString(record.worktree_path, `${context} worktree_path`),
+    used_cached_base: expectOptionalBoolean(record.used_cached_base, `${context} used_cached_base`),
+    base_synced_at: expectOptionalString(record.base_synced_at, `${context} base_synced_at`),
     status: expectString(record.status, `${context} status`),
     error: expectOptionalString(record.error, `${context} error`),
   };

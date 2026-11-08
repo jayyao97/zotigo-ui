@@ -60,6 +60,21 @@ test("repository picker ignores late results from another host and surfaces retr
   } finally { await cleanup(); }
 });
 
+test("repository cache status distinguishes available stale code from an unsynced repository", async () => {
+  const { root, cleanup } = mount();
+  const cached = { ...repository, last_synced_at: "2026-11-08T00:00:00Z", last_sync_error: "remote unavailable" };
+  const uncached = { ...repository, id: "no-cache", name: "no-cache", last_sync_error: "clone failed" };
+  const client = { listRepositories: async () => [cached, uncached], createRepository: async () => repository };
+  try {
+    await act(async () => root.render(<ManagedRepositoryPicker client={client} />));
+    const notices = [...document.querySelectorAll(".repository-sync-status")];
+    assert.match(notices[0].textContent!, /cached version.*2026.*available/);
+    assert.equal(notices[0].getAttribute("title"), "remote unavailable");
+    assert.match(notices[1].textContent!, /no successfully synced version yet/);
+    assert.equal(document.querySelectorAll('[role="alert"]').length, 0, "cached refresh failure is not a failed form operation");
+  } finally { await cleanup(); }
+});
+
 test("repository search matches names and remote addresses without losing hidden selections", async () => {
   const { root, cleanup } = mount();
   const other = { ...repository, id: "repo-two", name: "Shared Library", remote_url: "git@example.com:team/library.git" };

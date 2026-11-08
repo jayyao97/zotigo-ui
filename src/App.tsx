@@ -1836,6 +1836,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
     const projectId = createWorkspaceProjectId;
     const modes = workspaceFolderModes;
+    let createdWorkspace: DesktopWorkspace | undefined;
     setIsBusy(true);
     setMessage(null);
     try {
@@ -1853,6 +1854,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         folders,
       });
       applyDesktopState(state);
+      createdWorkspace = state.workspaces.find(workspace => workspace.id === state.selectedWorkspaceId);
       setCollapsedProjectIds((current) => {
         if (!current.has(projectId)) return current;
         const next = new Set(current);
@@ -1866,6 +1868,19 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       applyDesktopState(await client.getDesktopState());
     } finally {
       setIsBusy(false);
+    }
+    if (createdWorkspace && !hostSwitchingRef.current) {
+      const requestId = ++workspaceSourcesRequestRef.current;
+      try {
+        const sources = await client.getWorkspaceSources(createdWorkspace.id);
+        if (!hostSwitchingRef.current && workspaceSourcesRequestRef.current === requestId && sources.some(source => source.used_cached_base)) {
+          await openWorkspaceSources(createdWorkspace, sources);
+        }
+      } catch (error) {
+        if (!hostSwitchingRef.current && workspaceSourcesRequestRef.current === requestId) {
+          setMessage(t("repositories.createdSourcesUnavailable", { error: errorMessage(error) }));
+        }
+      }
     }
   }
 
@@ -1882,15 +1897,21 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     await selectProject(project.id);
   }
 
-  async function openWorkspaceSources(workspace: DesktopWorkspace) {
+  async function openWorkspaceSources(workspace: DesktopWorkspace, loadedSources?: CatalogWorkspaceSource[]) {
     setMessage(null);
     setWorkspaceSourcesTarget(workspace);
-    setWorkspaceSources([]);
+    setWorkspaceSources(loadedSources ?? []);
     setWorkspaceSourceId("");
     setAddWorkspaceSourceQuery("");
     setWorkspaceSourceBaseRef("HEAD");
     setWorkspaceSourceBranchName("");
-    await loadWorkspaceSources(workspace.id);
+    if (loadedSources) {
+      workspaceSourcesRequestRef.current++;
+      setWorkspaceSourcesLoadError(null);
+      setWorkspaceSourcesLoading(false);
+    } else {
+      await loadWorkspaceSources(workspace.id);
+    }
   }
 
   async function loadWorkspaceSources(workspaceId: string) {
@@ -4952,7 +4973,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               {!workspaceSourcesLoading && workspaceSourcesLoadError && <div className="workspace-source-load-error"><p>{workspaceSourcesLoadError}</p><button type="button" onClick={() => void loadWorkspaceSources(workspaceSourcesTarget.id)}>{t("app.reload")}</button></div>}
               {!workspaceSourcesLoading && workspaceSources.map((binding) => <div className="workspace-binding-row" key={binding.source.id}>
                 {binding.source.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
-                <span><strong>{workspaceSourceName(binding)}</strong><small>{binding.source.kind === "git" ? `${binding.base_ref} → ${binding.branch_name}` : `${binding.mode} → ${binding.target_path}`}</small>{binding.error && <small className="error">{binding.error}</small>}</span>
+                <span><strong>{workspaceSourceName(binding)}</strong><small>{binding.source.kind === "git" ? `${binding.base_ref} → ${binding.branch_name}` : `${binding.mode} → ${binding.target_path}`}</small>{binding.used_cached_base && <small className="workspace-cache-notice">{binding.base_synced_at ? t("repositories.workspaceUsedCache", { time: formatDateTime(binding.base_synced_at) }) : t("repositories.workspaceUsedCacheUnknown")}</small>}{binding.error && <small className="error">{binding.error}</small>}</span>
                 <div className="workspace-binding-status"><em className={binding.status === "error" ? "error" : ""}>{stateLabel(binding.status)}</em>{binding.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retry2")}</button>}</div>
               </div>)}
               {!workspaceSourcesLoading && !workspaceSourcesLoadError && workspaceSources.length === 0 && <p className="workspace-dialog-note">{t("app.thisWorkspaceHasNoSourcesYet")}</p>}

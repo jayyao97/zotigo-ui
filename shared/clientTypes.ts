@@ -57,6 +57,8 @@ export interface ManagedRepository {
   remote_url: string;
   default_branch: string;
   canonical_path: string;
+  last_synced_at?: string;
+  last_sync_error?: string;
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +73,8 @@ export interface DesktopProjectRepository {
   default_base_ref: string;
   repository_id?: string;
   remote_url?: string;
+  last_synced_at?: string;
+  last_sync_error?: string;
   availability: RepositoryAvailability;
   created_at: string;
   updated_at: string;

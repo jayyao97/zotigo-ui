@@ -329,6 +329,8 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
       default_base_ref: source.default_branch || (source.repository_id ? "" : "HEAD"),
       repository_id: source.repository_id,
       remote_url: source.remote_url,
+      last_synced_at: source.last_synced_at,
+      last_sync_error: source.last_sync_error,
       availability: "available",
       created_at: source.created_at,
       updated_at: source.updated_at,

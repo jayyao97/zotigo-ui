@@ -26,6 +26,7 @@ test("repository mutations wait for daemon Git phases instead of the default fet
   const data = {
     ...source, name: "repo", remote_url: "https://example.com/repo.git", default_branch: "main",
     title: "workspace", root_path: "/workspace", status: "ready", source, target_path: "/workspace/code/repo",
+    used_cached_base: true, base_synced_at: "2026-11-08T00:00:00Z",
   };
   const server = createServer((request, response) => {
     requests.push({ path: request.url!, auth: request.headers.authorization });
@@ -44,7 +45,10 @@ test("repository mutations wait for daemon Git phases instead of the default fet
         createManagedRepository({ remoteUrl: data.remote_url }),
         addCatalogRepository("project", "repo"),
         createCatalogWorkspace("project", "workspace", [{ source_id: "source" }]),
-        addCatalogWorkspaceSource("workspace", { source_id: "source" }),
+        addCatalogWorkspaceSource("workspace", { source_id: "source" }).then(binding => {
+          assert.equal(binding.used_cached_base, true);
+          assert.equal(binding.base_synced_at, data.base_synced_at);
+        }),
       ]);
     });
     assert.deepEqual(requests.slice(1).map(request => request.path).sort(), ["/repositories", "/projects/project/sources", "/projects/project/workspaces", "/workspaces/workspace/sources"].sort());
@@ -59,8 +63,8 @@ test("repository mutations wait for daemon Git phases instead of the default fet
 
 test("repository operations share IPC/Web contract and remain bound to their daemon", async () => {
   const received: Array<{ host: string; method: string; url: string; auth?: string; body: unknown }> = [];
-  const repository = { id: "repo-1", name: "app", remote_url: "git@example.com:team/app.git", default_branch: "trunk", canonical_path: "/managed/app", created_at: "now", updated_at: "now" };
-  const source = { id: "source-1", project_id: "project-1", kind: "git", canonical_path: "/managed/app", source_key: "key", repository_id: repository.id, remote_url: repository.remote_url, default_branch: repository.default_branch, created_at: "now", updated_at: "now" };
+  const repository = { id: "repo-1", name: "app", remote_url: "git@example.com:team/app.git", default_branch: "trunk", canonical_path: "/managed/app", last_synced_at: "2026-11-08T00:00:00Z", last_sync_error: "remote unavailable", created_at: "now", updated_at: "now" };
+  const source = { id: "source-1", project_id: "project-1", kind: "git", canonical_path: "/managed/app", source_key: "key", repository_id: repository.id, remote_url: repository.remote_url, default_branch: repository.default_branch, last_synced_at: repository.last_synced_at, last_sync_error: repository.last_sync_error, created_at: "now", updated_at: "now" };
   const daemons = ["alpha", "beta"].map(host => createServer(async (request, response) => {
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -95,6 +99,8 @@ test("repository operations share IPC/Web contract and remain bound to their dae
     const detail = await withConnection(connections[0], () => getCatalogProject("project-1"));
     assert.equal(detail.sources[0].default_branch, "trunk");
     assert.equal(detail.sources[0].repository_id, "repo-1");
+    assert.equal(detail.sources[0].last_synced_at, repository.last_synced_at);
+    assert.equal(detail.sources[0].last_sync_error, "remote unavailable");
   } finally {
     service.dispose();
     await Promise.all(daemons.map(daemon => new Promise<void>(resolve => daemon.close(() => resolve()))));

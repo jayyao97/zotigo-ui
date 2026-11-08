@@ -18,12 +18,22 @@ export function repositoryBaseLabel(repository: DesktopProjectRepository, value:
   return repository.default_base_ref ? t("repositories.latestDefault", { branch: repository.default_base_ref }) : t("repositories.autoBranch");
 }
 
+function RepositorySyncStatus({ repository }: { repository: Pick<ManagedRepository, "last_synced_at" | "last_sync_error"> }) {
+  const locale = useLocale();
+  const synced = repository.last_synced_at && new Date(repository.last_synced_at);
+  const syncedAt = synced && Number.isFinite(synced.getTime()) ? synced.toLocaleString(locale) : null;
+  return <small className={`repository-sync-status${repository.last_sync_error ? " repository-sync-warning" : ""}`} title={repository.last_sync_error}>
+    {syncedAt ? t(repository.last_sync_error ? "repositories.cachedAfterFailure" : "repositories.syncedAt", { time: syncedAt }) : t(repository.last_sync_error ? "repositories.noCacheAfterFailure" : "repositories.notSynced")}
+  </small>;
+}
+
 export function RepositoryBaseField({ repository, value, onChange, disabled }: { repository: DesktopProjectRepository; value: string; onChange: (value: string) => void; disabled?: boolean }) {
   useLocale();
   return <label className="workspace-dialog-field repository-base-field">
     <span>{t("app.startFrom")}</span>
     <input value={value} placeholder={repository.repository_id ? repositoryBaseLabel(repository, "") : undefined} disabled={disabled} onChange={event => onChange(event.target.value)} />
     <small>{t(repository.repository_id ? "repositories.latestHelp" : "app.resolvedByZotigodWhenTheWorkspaceIsCreated")}</small>
+    {repository.repository_id && <RepositorySyncStatus repository={repository} />}
     {repository.repository_id && value && <button type="button" disabled={disabled} onClick={() => onChange("")}>{t("repositories.useDefault")}</button>}
   </label>;
 }
@@ -105,7 +115,7 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
     {loading ? <p className="managed-repositories-help" role="status">{t("repositories.loading")}</p> : <div className="managed-repository-list">
       {visibleRepositories.map(repository => {
         const linked = linkedIds.includes(repository.id);
-        const content = <><GitBranch size={15} /><span><strong>{repository.name}</strong><small title={repository.remote_url}>{repository.remote_url}</small></span><small className="managed-repository-branch">{linked ? t("repositories.linked") : repository.default_branch || t("repositories.autoBranch")}</small></>;
+        const content = <><GitBranch size={15} /><span><strong>{repository.name}</strong><small title={repository.remote_url}>{repository.remote_url}</small><RepositorySyncStatus repository={repository} /></span><small className="managed-repository-branch">{linked ? t("repositories.linked") : repository.default_branch || t("repositories.autoBranch")}</small></>;
         return onChange ? <label className="managed-repository-row" key={repository.id}>
           <input type="checkbox" checked={linked || selectedIds.includes(repository.id)} disabled={disabled || adding || linked} onChange={event => onChange(event.target.checked ? [...selectedIds, repository.id] : selectedIds.filter(id => id !== repository.id))} />{content}
         </label> : <div className="managed-repository-row" key={repository.id}>{content}</div>;
