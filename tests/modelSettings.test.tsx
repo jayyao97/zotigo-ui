@@ -86,3 +86,34 @@ test("model settings display and preserve saved thinking levels, including max a
     }
   }
 });
+
+test("model settings show the actual load failure and allow retry", async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: "https://zotigo.test" });
+  const globals = { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true };
+  const previous = Object.fromEntries(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { value, configurable: true });
+  let fail = true;
+  const api = { getModelSettings: async () => {
+    if (fail) throw new Error("invalid configuration field types");
+    return { revision: "r", default_profile: "", profiles: [] };
+  } } as unknown as ClientApi;
+  const root = createRoot(document.getElementById("root")!);
+  try {
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ModelSettings hostName="test" /></ClientContext.Provider>));
+    assert.match(document.body.textContent!, /invalid configuration field types/);
+    assert.doesNotMatch(document.body.textContent!, /update the daemon/);
+    fail = false;
+    const reload = [...document.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Reload");
+    assert.ok(reload);
+    await act(async () => reload.click());
+    assert.doesNotMatch(document.body.textContent!, /invalid configuration field types/);
+    assert.match(document.body.textContent!, /Add model/);
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+    for (const [key, descriptor] of Object.entries(previous)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+  }
+});

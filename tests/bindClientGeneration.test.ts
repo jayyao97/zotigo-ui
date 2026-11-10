@@ -13,3 +13,12 @@ test("attachment preprocessing from an old host cannot invoke on a new host", as
   await api.unsubscribeSessionEvents();
   assert.equal(sends, 0); assert.equal(unsubscribes, 0);
 });
+
+test("late effects receive a rejected promise instead of a synchronous render error", async () => {
+  let calls = 0;
+  const api = bindClientGeneration({ getProfiles: async () => { calls++; } } as unknown as ClientApi, () => false);
+  let pending: ReturnType<ClientApi["getProfiles"]> | undefined;
+  assert.doesNotThrow(() => { pending = api.getProfiles(); });
+  await assert.rejects(pending!, /Host changed/);
+  assert.equal(calls, 0, "a stale effect must not send to the newly selected host");
+});

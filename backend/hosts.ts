@@ -63,7 +63,7 @@ function validateInput(input: HostInput, id: string): Connection {
 }
 export async function testHost(id: string): Promise<void> {
   const host = resolveHost(id); const headers = host.token ? { Authorization: `Bearer ${host.token}` } : undefined;
-  for (const endpoint of ["/health", "/projects", ...(id === "local" ? [] : ["/files/capabilities"])]) {
+  await Promise.all(["/health", "/projects", ...(id === "local" ? [] : ["/files/capabilities"])].map(async endpoint => {
     const response = await fetch(host.baseUrl + endpoint, { headers, redirect: "error", signal: AbortSignal.timeout(10000) });
     if (!response.ok) { await response.body?.cancel(); throw new Error(endpoint === "/files/capabilities" && response.status === 404 ? "Update this daemon to support remote workspace files." : response.status === 401 ? "Daemon rejected the token." : `Daemon returned ${response.status}.`); }
     const result = await response.json();
@@ -71,5 +71,5 @@ export async function testHost(id: string): Promise<void> {
       if (!result?.data) throw new Error("This address is not a Zotigo daemon.");
     }
     if (endpoint === "/health" && result.data?.protocol_version !== "1") throw new Error("Unsupported daemon protocol.");
-  }
+  }));
 }

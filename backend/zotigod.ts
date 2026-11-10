@@ -418,13 +418,35 @@ export function parseNavigationItem(value: unknown): NavigationItem {
 }
 
 export async function getCatalogNavigation() {
-  const record = expectRecord(await requestJSON("/catalog/navigation"), "navigation");
+  return parseCatalogNavigation(await requestJSON("/catalog/navigation"));
+}
+
+function parseCatalogNavigation(value: unknown) {
+  const record = expectRecord(value, "navigation");
   if (typeof record.legacy_order_imported !== "boolean") throw new Error("Invalid navigation migration state");
   return {
     legacyOrderImported: record.legacy_order_imported,
     projects: expectArray(record.projects, "navigation projects").map(parseNavigationItem),
     workspaces: expectArray(record.workspaces, "navigation workspaces").map(parseNavigationItem),
     pinned: expectArray(record.pinned, "navigation pinned").map(parseNavigationItem),
+  };
+}
+
+export async function getCatalogSnapshot() {
+  let value: unknown;
+  try { value = await requestJSON("/catalog/snapshot"); }
+  catch (error) {
+    // Older daemons keep their original catalog API. Do not mask authentication,
+    // timeout or server failures by retrying through a different path.
+    if (error instanceof ZotigodRequestError && (error.status === 404 || error.status === 405)) return null;
+    throw error;
+  }
+  const record = expectRecord(value, "catalog snapshot");
+  return {
+    projects: expectArray(record.projects, "snapshot projects").map((item, i) => parseCatalogProjectDetail(item, `snapshot projects[${i}]`)),
+    workspaces: expectArray(record.workspaces, "snapshot workspaces").map((item, i) => parseCatalogWorkspace(item, `snapshot workspaces[${i}]`)),
+    navigation: parseCatalogNavigation(record.navigation),
+    sessions: expectArray(record.sessions, "snapshot sessions").map((item, i) => parseCatalogSessionProjection(item, `snapshot sessions[${i}]`)),
   };
 }
 

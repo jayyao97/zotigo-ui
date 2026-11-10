@@ -258,6 +258,8 @@ function OpenWorkspaceFileTab({ active, state, line, column, onDraftChange, onMo
 }
 type ComposerDraft = ComposerDraftState<ComposerAttachment>;
 type HostVolatileState = {
+  desktopState: DesktopState;
+  sessions: ZotigoSession[];
   composerDrafts: Record<string, ComposerDraft>;
   openFiles: Record<string, OpenFileState>;
   sessionSidePanels: SessionSidePanels;
@@ -437,8 +439,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }, [channelsOpen, repositoriesOpen, webNavigationOpen]);
   const [daemonUrl, setDaemonUrl] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
-  const [sessions, setSessions] = useState<ZotigoSession[]>([]);
-  const [desktopState, setDesktopState] = useState<DesktopState>(emptyDesktopState);
+  const [sessions, setSessions] = useState<ZotigoSession[]>(restoredHostState?.sessions ?? []);
+  const [desktopState, setDesktopState] = useState<DesktopState>(() => {
+    const cached = restoredHostState?.desktopState ?? emptyDesktopState;
+    return openNewSessionOnMount ? { ...cached, selectedProjectId: null, selectedWorkspaceId: null, selectedConversationId: null } : cached;
+  });
   const [message, setMessage] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<DesktopConversation | null>(null);
   const [archivingSession, setArchivingSession] = useState(false);
@@ -454,6 +459,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [removeSourceTarget, setRemoveSourceTarget] = useState<{ kind: "git" | "folder"; id: string; name: string } | null>(null);
   const [createWorkspaceProjectId, setCreateWorkspaceProjectId] = useState<string | null>(null);
   const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
+  const [newWorkspaceBranch, setNewWorkspaceBranch] = useState("");
   const [workspaceSourceQuery, setWorkspaceSourceQuery] = useState("");
   const [addWorkspaceSourceQuery, setAddWorkspaceSourceQuery] = useState("");
   const [workspaceRepositories, setWorkspaceRepositories] = useState<WorkspaceRepositoryDraft[]>([]);
@@ -646,11 +652,15 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const skillsRequestRef = useRef(0);
   openFilesRef.current = openFiles;
   const volatileStateRef = useRef<HostVolatileState>({
+    desktopState,
+    sessions,
     composerDrafts,
     openFiles,
     sessionSidePanels,
   });
   volatileStateRef.current = {
+    desktopState,
+    sessions,
     composerDrafts,
     openFiles,
     sessionSidePanels: Object.fromEntries(Object.entries(sessionSidePanels).map(([id, panel]) => [id, { ...panel, tabs: retainFileTabs(panel.tabs) }])),
@@ -1114,6 +1124,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
   useEffect(() => {
     let isMounted = true;
+    const initialDesktopGeneration = desktopStateGenerationRef.current;
 
     Promise.all([
       client.getDaemonConfig(),
@@ -1124,7 +1135,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           return;
         }
         setDaemonUrl(config.baseUrl);
-        setDesktopState(state);
+        // Cached rows are interactive before this request returns. A delayed
+        // initial snapshot must not undo a newer selection or catalog mutation.
+        if (catalogSnapshotIsCurrent(initialDesktopGeneration, desktopStateGenerationRef.current)) setDesktopState(state);
         lastCatalogRefreshAttemptAtRef.current = Date.now();
         let savedDisclosure: string | null = null;
         try { savedDisclosure = localStorage.getItem(sidebarDisclosureStorageKey(clientScope)); } catch { /* Use defaults. */ }
@@ -1773,6 +1786,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     const selection = initialWorkspaceSourceSelection(repositories, folders);
     setMessage(null);
     setNewWorkspaceTitle("");
+    setNewWorkspaceBranch("");
     setWorkspaceSourceQuery("");
     setWorkspaceRepositories(repositories.map((repository) => ({
       repository,
@@ -1843,6 +1857,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       const state = await client.createWorkspace({
         projectId,
         title: newWorkspaceTitle.trim(),
+        branchName: newWorkspaceBranch.trim() || undefined,
         repositories: workspaceRepositories.filter((draft) => draft.selected).map((draft) => ({
           repositoryId: draft.repository.id,
           baseRef: draft.baseRef,
@@ -4854,6 +4869,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               </button>
             </header>
 
+            <div className="workspace-dialog-body">
             <label className="workspace-dialog-field">
               <span>{t("app.workspaceName")}</span>
               <input
@@ -4863,6 +4879,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 placeholder={t("app.fixStreamingToolResults")}
                 disabled={isBusy}
               />
+            </label>
+
+            <label className="workspace-dialog-field">
+              <span>{t("workspace.newBranch")}</span>
+              <input value={newWorkspaceBranch} onChange={event => setNewWorkspaceBranch(event.target.value)} placeholder={t("workspace.newBranchPlaceholder")} disabled={isBusy} />
             </label>
 
             <div className="workspace-sources-field">
@@ -4879,6 +4900,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               <label className="repository-search"><Search size={14} aria-hidden="true" /><input type="search" value={workspaceSourceQuery} disabled={isBusy} aria-label={t("workspace.searchSources")} placeholder={t("workspace.searchSources")} onInput={event => setWorkspaceSourceQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></label>
               <small className="workspace-sources-help">{t("workspace.selectedSourceCount", { count: selectedWorkspaceSourceCount })}</small>
               {workspaceSourceQuery.trim() && visibleWorkspaceRepositories.length === 0 && visibleWorkspaceFolders.length === 0 && <p className="workspace-dialog-note">{t("workspace.noMatchingSources")}</p>}
+              <div className="workspace-source-list">
               {visibleWorkspaceRepositories.map((draft) => (
                 <div className={`workspace-source-card ${draft.selected ? "selected" : ""}`} key={draft.repository.id}>
                   <label className="workspace-source-toggle">
@@ -4909,9 +4931,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               {workspaceRepositories.length === 0 && desktopState.folders.every((folder) => folder.project_id !== createWorkspaceProject.id) && (
                 <p className="workspace-dialog-note">{t("app.thisWillBeAnEmptyWorkspaceWithCode")}</p>
               )}
+              </div>
             </div>
             {message && <p className="dialog-error">{message}</p>}
 
+            </div>
             <footer>
               <button type="button" className="dialog-cancel" onClick={closeCreateWorkspaceDialog} disabled={isBusy}>{t("app.cancel")}</button>
               <button

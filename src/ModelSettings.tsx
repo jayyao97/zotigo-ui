@@ -28,7 +28,7 @@ export function ModelSettings({hostName, hostId, onEditingChange}: {hostName:str
   useEffect(()=>{
     let active=true;setLoading(true);setError("");
     void api.getModelSettings(hostId).then(data=>{if(active)setSettings(data);})
-      .catch(()=>{if(active)setError(t("models.loadError"));})
+      .catch(cause=>{if(active)setError(t("models.loadError") + (cause instanceof Error ? " " + cause.message : ""));})
       .finally(()=>{if(active)setLoading(false);});
     return ()=>{active=false;};
   },[api,reload,hostId]);
@@ -53,7 +53,7 @@ export function ModelSettings({hostName, hostId, onEditingChange}: {hostName:str
         if(!alive.current)return;
         setSettings(result);setDraft(undefined);setKey("");setClearKey(false);setDeleting(undefined);setStatus(t("models.saved"));
       }
-    } catch(cause) {if(alive.current)setError((cause instanceof Error ? cause.message : t("models.connection"))+" "+t("models.conflict"));}
+    } catch(cause) {if(alive.current)setError(cause instanceof Error ? cause.message : t("models.connection"));}
     finally {inFlight.current=false;if(alive.current){setBusy(false);setTesting(false);}}
   }
   const thinkingLevels = draft?.provider === "openai"
