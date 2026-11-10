@@ -53,3 +53,31 @@ test("saved hosts keep secrets private and concurrent operations retain their or
     assert.throws(() => saveHost({ name: "Bad", baseUrl: "http://user:password@host" }), /credentials/);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+test("host capability checks overlap instead of taking three network round trips", { timeout: 5000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const { testHost } = await import("../backend/hosts");
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-host-check-"));
+  const waiting: import("node:http").ServerResponse[] = [];
+  const paths: string[] = [];
+  const server = createServer((request, response) => {
+    assert.equal(request.headers.authorization, "Bearer fixture-token");
+    paths.push(request.url!); waiting.push(response);
+    if (waiting.length === 3) for (const reply of waiting) {
+      reply.writeHead(200, { "Content-Type": "application/json" });
+      reply.end(JSON.stringify({ code: "ok", data: { protocol_version: "1" } }));
+    }
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  try {
+    initializeHosts(directory);
+    const host = saveHost({ name: "Fixture", baseUrl: `http://127.0.0.1:${address.port}`, token: "fixture-token" });
+    await testHost(host.id);
+    assert.deepEqual(paths.sort(), ["/files/capabilities", "/health", "/projects"]);
+  } finally {
+    server.closeAllConnections(); server.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

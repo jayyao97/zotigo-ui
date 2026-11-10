@@ -22,6 +22,7 @@ test("legacy UI order imports new nodes first, and later clients use only daemon
   let imports = 0;
   let projectOrder: NavigationItem[] = projects.map(({ id }) => ({ kind: "project", id }));
   const server = createServer(async (request, response) => {
+    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
     let data: unknown;
     if (request.url === "/catalog/navigation/import") {
       const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk);
@@ -59,6 +60,7 @@ test("catalog clients share daemon data but never overwrite each other's selecti
   const original = getDaemonConfig().baseUrl;
   const projects = ["a", "b"].map((id) => ({ id, name: id, created_at: "2026-01-01", updated_at: "2026-01-01" }));
   const server = createServer((request, response) => {
+    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
     const project = projects.find((item) => request.url === `/projects/${item.id}`);
     const data = request.url === "/catalog/navigation" ? { projects: [], workspaces: [], pinned: [], legacy_order_imported: true } : request.url === "/projects" ? { projects }
       : project ? { ...project, sources: [] }
@@ -147,4 +149,33 @@ test("old catalog responses wait for a pending choice rather than undoing optimi
   const background = client.begin("desktop:get-state").project({ selectedProjectId: "p", selectedWorkspaceId: "w", selectedConversationId: "b" });
   failure.cancel();
   assert.equal((await background).selectedConversationId, "b");
+});
+
+test("catalog snapshot loads the whole sidebar in one request and does not hide server errors", async () => {
+  const original = getDaemonConfig().baseUrl;
+  const requests: string[] = [];
+  let status = 200;
+  const project = { id: "a", name: "A", created_at: "2026-01-01", updated_at: "2026-01-01", sources: [] };
+  const server = createServer((request, response) => {
+    requests.push(request.url!);
+    response.writeHead(status, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ code: status === 200 ? "ok" : "error", data: {
+      projects: [project], workspaces: [], sessions: [],
+      navigation: { projects: [{ kind: "project", id: "a" }], workspaces: [], pinned: [], legacy_order_imported: true },
+    } }));
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+  try {
+    const state = await createCatalogService(createSelectionStore(null)).getCatalogDesktopState();
+    assert.equal(state.projects[0].id, "a");
+    assert.deepEqual(requests, ["/catalog/snapshot"]);
+    status = 500; requests.length = 0;
+    await assert.rejects(createCatalogService(createSelectionStore(null)).getCatalogDesktopState());
+    assert.deepEqual(requests, ["/catalog/snapshot"]);
+  } finally {
+    server.closeAllConnections(); server.close(); await once(server, "close");
+    setDaemonBaseUrl(original);
+  }
 });

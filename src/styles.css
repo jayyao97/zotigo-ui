@@ -4194,7 +4194,19 @@ label.managed-repository-row:hover { background: rgb(255 255 255 / 0.025); }
 .source-mode-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
 .source-mode-actions button { min-height: 26px; border: 0; border-radius: var(--radius-md); background: rgb(255 255 255 / 0.05); color: var(--text-muted); padding: 0 7px; font-size: 10px; }
 .source-direct-warning { grid-column: 2 / -1; color: var(--orange) !important; }
-.create-workspace-dialog { width: min(610px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; }
+.create-workspace-dialog { display: flex; flex-direction: column; width: min(610px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); overflow: hidden; }
+.create-workspace-dialog > header,
+.create-workspace-dialog .workspace-dialog-body > .workspace-dialog-field,
+.create-workspace-dialog > footer,
+.create-workspace-dialog > .dialog-error { flex-shrink: 0; }
+.create-workspace-dialog .workspace-dialog-body > .workspace-sources-field { display: flex; flex-direction: column; min-height: 0; }
+.create-workspace-dialog .workspace-dialog-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.create-workspace-dialog .workspace-source-list { display: grid; gap: 8px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text-muted) 55%, transparent) transparent; }
+@media (max-height: 600px) {
+  .create-workspace-dialog .workspace-dialog-body { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--text-dim) transparent; }
+  .create-workspace-dialog .workspace-dialog-body > .workspace-sources-field { flex-shrink: 0; }
+  .create-workspace-dialog .workspace-source-list { max-height: 240px; min-height: 120px; }
+}
 
 
 .sidebar-session { position: relative; }

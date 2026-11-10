@@ -384,3 +384,52 @@ test("Sync lives in Settings, reports errors and refreshes the mounted sidebar a
     await act(async () => root.unmount()); restore();
   }
 });
+
+test("switching back shows only that host's cached sidebar while its refresh is pending", async () => {
+  const { discardHostVolatileState } = await import("../src/App");
+  discardHostVolatileState();
+  const restore = installDom();
+  const base = hostClient();
+  const time = "2026-01-01T00:00:00Z";
+  const states = Object.fromEntries(["local", "dev"].map(host => [host, { ...emptyState,
+    conversations: [{ id: `${host}-session`, project_id: null, workspace_id: null, title: `${host} private conversation`, created_at: time, updated_at: time }],
+  }]));
+  let pendingHost: string | undefined;
+  let release: (() => void) | undefined;
+  const load = async () => {
+    const host = base.activeHost();
+    if (host === pendingHost) await new Promise<void>(resolve => { release = resolve; });
+    return states[host];
+  };
+  const api = { ...base.api, getDesktopState: load, selectProject: load,
+    selectConversation: async (id: string | null) => ({ ...states[base.activeHost()], selectedConversationId: id }),
+  };
+  const root = await mountHostShell(api);
+  const choose = async (name: string) => {
+    await act(async () => click(document.querySelector('[aria-label="Switch host"]')!));
+    const button = [...document.querySelectorAll<HTMLButtonElement>(".host-menu-popover button")].find(b => b.textContent?.includes(name));
+    assert.ok(button); await act(async () => click(button)); await flush();
+  };
+  try {
+    assert.match(document.body.textContent!, /local private conversation/);
+    await choose("dev");
+    assert.match(document.body.textContent!, /dev private conversation/);
+    assert.doesNotMatch(document.body.textContent!, /local private conversation/);
+    pendingHost = "local";
+    await choose("Local");
+    assert.ok(release, "refresh should be pending");
+    assert.match(document.body.textContent!, /local private conversation/);
+    assert.doesNotMatch(document.body.textContent!, /dev private conversation/);
+    const cachedRow = [...document.querySelectorAll(".sidebar-session")].find(row => row.textContent?.includes("local private conversation"));
+    assert.ok(cachedRow);
+    await act(async () => click(cachedRow.querySelector("button")!)); await flush();
+    assert.match(document.querySelector(".sidebar-session.selected")?.textContent ?? "", /local private conversation/);
+    pendingHost = undefined;
+    await act(async () => release?.()); await flush();
+    assert.match(document.querySelector(".sidebar-session.selected")?.textContent ?? "", /local private conversation/, "late initial snapshot must not clear a newer selection");
+  } finally {
+    release?.();
+    await act(async () => root.unmount());
+    discardHostVolatileState(); restore();
+  }
+});

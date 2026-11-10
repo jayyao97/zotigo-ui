@@ -11,7 +11,9 @@ export function bindClientGeneration(api: ClientApi, isCurrent: () => boolean): 
           // Unmount cleanup must not cancel the newly selected host's stream.
           if ((key === "unsubscribeSessionEvents" || key === "unsubscribeFileEvents")) return Promise.resolve();
           if ((key === "onSessionEvent" || key === "onFileEvent")) return () => {};
-          throw new Error("Host changed. Retry this action on the selected host.");
+          // RPC methods promise a result. Reject asynchronously so a late React
+          // effect can handle cancellation through its normal .catch path.
+          return Promise.reject(new Error("Host changed. Retry this action on the selected host."));
         }
         return Reflect.apply(value, target, args);
       };

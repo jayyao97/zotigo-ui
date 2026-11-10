@@ -7,6 +7,7 @@ import type { AddWorkspaceSourceInput, CreateProjectInput, CreateWorkspaceInput,
 import { getCatalogOrder, getCatalogSelection, setCatalogSelection } from "./preferencesStore";
 import {
   getCatalogNavigation,
+  getCatalogSnapshot,
   importCatalogNavigation,
   reorderCatalogNavigation,
   setCatalogNavigationPinned,
@@ -47,10 +48,16 @@ export interface CatalogSelectionStore {
 export function createCatalogService(selection: CatalogSelectionStore = { getCatalogSelection, setCatalogSelection }) {
   const { getCatalogSelection, setCatalogSelection } = selection;
   async function getCatalogDesktopState(options: { syncCodex?: boolean } = {}): Promise<DesktopState> {
-    const projects = await listCatalogProjects();
-    let navigation = await getCatalogNavigation();
-
-    const [projectCatalogs, projections] = await Promise.all([
+    // Explicit/background runtime synchronization is separate from the read-only snapshot.
+    if (options.syncCodex) await listCatalogSessions(options);
+    const snapshot = await getCatalogSnapshot();
+    const [projects, initialNavigation] = snapshot
+      ? [snapshot.projects.map(({ sources: _sources, ...project }) => project), snapshot.navigation] as const
+      : await Promise.all([listCatalogProjects(), getCatalogNavigation()]);
+    let navigation = initialNavigation;
+    const [projectCatalogs, projections] = snapshot
+      ? [snapshot.projects.map(detail => ({ detail, workspaces: snapshot.workspaces.filter(workspace => workspace.project_id === detail.id) })), snapshot.sessions] as const
+      : await Promise.all([
       mapWithConcurrency(projects, catalogRequestConcurrency, async (project) => {
         const [detail, workspaces] = await Promise.all([
           getCatalogProject(project.id),
@@ -58,7 +65,7 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
         ]);
         return { detail, workspaces };
       }),
-      listCatalogSessions(options),
+      listCatalogSessions(),
     ]);
     if (!navigation.legacyOrderImported) {
       const savedPins = getCatalogOrder("pinnedSessions");
