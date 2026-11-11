@@ -491,6 +491,7 @@ export interface CatalogWorkspaceSourceInput {
 }
 
 export interface CatalogWorkspaceSource {
+  repository_id?: string;
   source: CatalogSource;
   mode?: FolderSourceMode;
   target_path: string;

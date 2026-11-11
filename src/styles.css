@@ -4256,6 +4256,7 @@ label.managed-repository-row:hover { background: rgb(255 255 255 / 0.025); }
 }
 .workspace-sources-dialog header p { margin-top: 4px; color: var(--text-muted); font-size: 12px; }
 .workspace-binding-list, .workspace-add-source { display: grid; gap: 7px; margin-top: 14px; }
+.workspace-binding-list { max-height: 240px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text-muted) 55%, transparent) transparent; }
 .workspace-binding-list > span, .workspace-add-source > span { color: var(--text-muted); font-size: 12px; font-weight: 500; }
 .workspace-binding-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; min-height: 48px; align-items: center; gap: 9px; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 7px 10px; }
 .workspace-binding-row > span { display: grid; min-width: 0; gap: 2px; }

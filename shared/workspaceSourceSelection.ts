@@ -9,7 +9,7 @@ export function workspaceBranchSuggestion(bindings: CatalogWorkspaceSource[]): s
 
 export function workspaceHasRepository(bindings: CatalogWorkspaceSource[], source: DesktopProjectRepository): boolean {
   return bindings.some(binding => binding.source.id === source.id
-    || Boolean(source.repository_id && binding.source.repository_id === source.repository_id));
+    || Boolean(source.repository_id && (binding.repository_id ?? binding.source.repository_id) === source.repository_id));
 }
 
 export function initialWorkspaceSourceSelection(

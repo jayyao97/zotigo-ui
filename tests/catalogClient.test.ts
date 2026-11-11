@@ -232,6 +232,7 @@ test("inspects a Source without requiring a Project", async () => {
 test("lists and adds daemon-owned Workspace Source bindings", async () => {
   const sources = await listCatalogWorkspaceSources("workspace-1");
   assert.equal(sources[0]?.branch_name, "feature/custom");
+  assert.equal(sources[0]?.repository_id, "managed-identity");
   await addCatalogWorkspaceSource("workspace-1", { source_id: "source-1", base_ref: "main", branch_name: "feature/custom" });
   assert.deepEqual(requests.at(-1), {
     method: "POST",
@@ -538,6 +539,7 @@ function workspaceSource() {
     base_ref: "main",
     base_commit: "abc123",
     branch_name: "feature/custom",
+    repository_id: "managed-identity",
     status: "ready",
   };
 }

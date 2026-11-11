@@ -8,6 +8,7 @@ type Props = {
   client: Pick<ClientApi, "listRepositories" | "createRepository">;
   selectedIds?: string[];
   linkedIds?: string[];
+  hideLinked?: boolean;
   onChange?: (ids: string[]) => void;
   disabled?: boolean;
   onBusyChange?: (busy: boolean) => void;
@@ -67,7 +68,7 @@ export function RepositoryBaseField({ client, repository, value, onChange, disab
   </label>;
 }
 
-export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = [], onChange, disabled = false, onBusyChange }: Props) {
+export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = [], hideLinked = false, onChange, disabled = false, onBusyChange }: Props) {
   useLocale();
   const [repositories, setRepositories] = useState<ManagedRepository[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,7 +154,7 @@ export function ManagedRepositoryPicker({ client, selectedIds = [], linkedIds = 
 
   const search = query.trim().toLocaleLowerCase();
   const visibleRepositories = repositories.filter(repository =>
-    `${repository.name}\n${repository.remote_url}`.toLocaleLowerCase().includes(search));
+    (!hideLinked || !linkedIds.includes(repository.id)) && `${repository.name}\n${repository.remote_url}`.toLocaleLowerCase().includes(search));
 
   return <section className="managed-repositories" aria-label={t("repositories.title")}>
     <div className="managed-repositories-heading"><span>{t("repositories.title")}</span><button type="button" title={t("app.reload")} aria-label={t("app.reload")} disabled={disabled || loading || adding} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={13} /></button></div>

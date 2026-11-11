@@ -1,3 +1,4 @@
+import { observeLongTasks, traceInteraction, traceNextPaint } from "./performanceDiagnostics";
 import { LayoutGrid } from "lucide-react";
 import { WorkspacePanelHome } from "./WorkspacePanelHome";
 import { PendingInteractionNotice } from "./conversation/PendingInteractionNotice";
@@ -5,7 +6,9 @@ import { stateLabel } from "../shared/i18n/display";
 import { useLocale } from "./i18n";
 import { getLocale, t } from "../shared/i18n/index";
 import { SidebarResizeHandle, loadSidebarWidth } from "./SidebarResizeHandle";
+import { SessionHistoryCache, type SessionHistory } from "./sessionHistoryCache";
 import { retainSessionContextUsage } from "./sessionContextCache";
+import { addWorkspaceRepositories } from "../shared/addWorkspaceRepositories";
 import { referencePrompt } from "../shared/conversationReferences";
 import { InputQueue } from "./conversation/InputQueue";
 import { CompletionTriggerNavigation } from "./conversation/CompletionTriggerNavigation";
@@ -269,18 +272,12 @@ type ConversationContextMenu = {
   x: number;
   y: number;
 };
-type SessionHistoryCacheEntry = {
-  items: DisplayItem[];
-  prevCursor: string | null;
-};
 
 const pollIntervalMs = 5000;
 const catalogReconciliationIntervalMs = 30_000;
 const codexCatalogSyncIntervalMs = 5 * 60_000;
 const initialCodexCatalogSyncDelayMs = 15_000;
 const sessionDeltaFlushIntervalMs = 50;
-const maxSessionHistoryCacheEntries = 3;
-const inactiveSessionHistoryItemLimit = 200;
 const volatileStateByHost = new Map<string, HostVolatileState>();
 let volatileStateGeneration = 0;
 
@@ -621,7 +618,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const conversationAutoScrollFrameRef = useRef<number | null>(null);
   const sessionItemsPrevCursorRef = useRef<string | null>(null);
   const [sessionItemsLoadedForSessionId, setSessionItemsLoadedForSessionId] = useState<string | null>(null);
-  const sessionHistoryCacheRef = useRef(new Map<string, SessionHistoryCacheEntry>());
+  const sessionHistoryCacheRef = useRef(new SessionHistoryCache());
+  const switchTraceRef = useRef<ReturnType<typeof traceInteraction> | null>(null);
+  useEffect(observeLongTasks, []);
   const sessionHistoryLoadRequestRef = useRef(0);
   const sessionHistoryBackfillRef = useRef<{ sessionId: string; historyRequestId: number } | null>(null);
   const sessionHistoryBackfillNeededRef = useRef<string | null>(null);
@@ -1204,6 +1203,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     promptRecovery.current.clear();
     setSessionItemsError(null);
     if (!selectedBinding) {
+      sessionHistoryCacheRef.current.activate(null);
       sessionItemsPrevCursorRef.current = null;
       sessionItemsRef.current = [];
       setSessionItems([]);
@@ -1214,7 +1214,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
     let active = true;
     const sessionId = selectedBinding.daemon_session_id;
-    trimInactiveSessionHistories(sessionId);
+    sessionHistoryCacheRef.current.activate(sessionId);
     const cachedHistory = cachedSessionHistory(sessionId);
     sessionItemsPrevCursorRef.current = cachedHistory?.prevCursor ?? null;
     sessionItemsRef.current = cachedHistory?.items ?? [];
@@ -1266,7 +1266,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       );
       void client.subscribeSessionEvents(sessionId, lastSequence);
     };
-    void refreshSessionItems(selectedBinding, { historyRequestId }).then((items) => {
+    void refreshSessionItems(selectedBinding, { historyRequestId, quiet: Boolean(cachedHistory) }).then((items) => {
       subscribe(items);
     });
 
@@ -1426,12 +1426,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setDesktopState(update);
   }
 
-  function cachedSessionHistory(sessionId: string): SessionHistoryCacheEntry | null {
-    const cached = sessionHistoryCacheRef.current.get(sessionId) ?? null;
-    if (!cached) return null;
-    sessionHistoryCacheRef.current.delete(sessionId);
-    sessionHistoryCacheRef.current.set(sessionId, cached);
-    return cached;
+  function cachedSessionHistory(sessionId: string): SessionHistory | null {
+    return sessionHistoryCacheRef.current.get(sessionId) ?? null;
   }
 
   function mergeCachedSessionHistory(
@@ -1448,29 +1444,12 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       items: merged,
       prevCursor: prevCursor === undefined ? cached?.prevCursor ?? null : prevCursor,
     };
-    sessionHistoryCacheRef.current.delete(sessionId);
     sessionHistoryCacheRef.current.set(sessionId, entry);
-    while (sessionHistoryCacheRef.current.size > maxSessionHistoryCacheEntries) {
-      const oldestSessionId = sessionHistoryCacheRef.current.keys().next().value;
-      if (!oldestSessionId) break;
-      sessionHistoryCacheRef.current.delete(oldestSessionId);
-    }
     if (selectedSessionIdRef.current === sessionId) {
       sessionItemsRef.current = merged;
       setSessionItems(merged);
     }
     return merged;
-  }
-
-  function trimInactiveSessionHistories(activeSessionId: string): void {
-    for (const [sessionId, entry] of sessionHistoryCacheRef.current) {
-      if (sessionId === activeSessionId || entry.items.length <= inactiveSessionHistoryItemLimit) continue;
-      const items = entry.items.slice(-inactiveSessionHistoryItemLimit);
-      sessionHistoryCacheRef.current.set(sessionId, {
-        items,
-        prevCursor: String(items[0].sequence),
-      });
-    }
   }
 
   useEffect(() => {
@@ -1595,12 +1574,15 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       && sessionHistoryLoadRequestRef.current === historyRequestId
     );
     if (!options.quiet) {
-      setSessionItemsLoading(true);
+      setSessionItemsLoading(!cachedSessionHistory(binding.daemon_session_id));
       setSessionItemsError(null);
     }
 
     try {
+      const trace = options.historyRequestId !== undefined ? switchTraceRef.current : null;
+      trace?.("history-request");
       const response = await client.listSessionItems(binding.daemon_session_id, { limit: 200 });
+      trace?.("history-response", { count: response.items.length });
       if (!isCurrentRequest()) {
         return [];
       }
@@ -1625,6 +1607,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       applyDurableItemEffects(binding, response.items);
       if (!sessionHistoryBackfillNeededRef.current) setSessionItemsError(null);
       scheduleCurrentTurnHistoryBackfill(binding, historyRequestId, mergedItems, prevCursor);
+      if (trace) traceNextPaint(trace, "history-paint-opportunity");
       return mergedItems;
     } catch (error) {
       if (isCurrentRequest()) {
@@ -1664,6 +1647,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   ): Promise<void> {
     let mergedItems = initialItems;
     let prevCursor = initialCursor;
+    const trace = switchTraceRef.current;
+    trace?.("backfill-start", { count: initialItems.length });
     try {
       while (prevCursor && hasUnresolvedTurnItems(mergedItems)) {
         const older = await client.listSessionItems(binding.daemon_session_id, {
@@ -1692,6 +1677,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           ? binding.daemon_session_id
           : null;
         if (!backfillStillNeeded) setSessionItemsError(null);
+        trace?.("backfill-complete", { count: cached?.items.length ?? 0 });
+        if (trace) traceNextPaint(trace, "backfill-paint-opportunity");
       }
     } catch (error) {
       if (
@@ -2057,6 +2044,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     if (!conversation || sourceState.selectedConversationId === id) {
       return;
     }
+    switchTraceRef.current = traceInteraction("session-switch");
     setProjectOverviewId(null);
     setMessage(null);
     const binding = sourceState.bindings.find((candidate) => candidate.conversation_id === id);
@@ -2064,6 +2052,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     sessionItemsRef.current = cachedHistory?.items ?? [];
     setSessionItems(cachedHistory?.items ?? []);
     setSessionItemsLoading(Boolean(binding) && !cachedHistory);
+    switchTraceRef.current?.("cache", { cached: Boolean(cachedHistory), count: cachedHistory?.items.length ?? 0 });
+    if (switchTraceRef.current) traceNextPaint(switchTraceRef.current, "initial-paint-opportunity");
     setEphemeralBlocks([]);
     setOptimisticPromptItems([]);
     promptAnchors.current.clear();
@@ -2279,7 +2269,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
   }
 
-  async function addSourcesToProject(projectId: string) {
+  async function addSourcesToProject(projectId: string, fromWorkspace = false) {
+    if (!fromWorkspace) closeWorkspaceSources();
     setMessage(null);
     setNewProjectSources([]);
     setNewProjectRepositoryIds([]);
@@ -2289,11 +2280,20 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   async function confirmAddSources() {
     if (!addSourcesProjectId || repositoryAdding) return;
     setIsBusy(true);
+    setMessage(null);
     try {
-      applyDesktopState(await client.addProjectSources(addSourcesProjectId, [...newProjectRepositoryIds.map(repositoryId => ({ repositoryId })), ...newProjectSources.map(projectSourceInput)]));
+      if (workspaceSourcesTarget) {
+        await addWorkspaceRepositories(client, workspaceSourcesTarget, newProjectRepositoryIds, applyDesktopState);
+        await loadWorkspaceSources(workspaceSourcesTarget.id);
+      } else {
+        applyDesktopState(await client.addProjectSources(addSourcesProjectId, [...newProjectRepositoryIds.map(repositoryId => ({ repositoryId })), ...newProjectSources.map(projectSourceInput)]));
+      }
       setAddSourcesProjectId(null);
       setNewProjectSources([]);
-    } catch (error) { setMessage(errorMessage(error)); }
+    } catch (error) {
+      setMessage(errorMessage(error));
+      if (workspaceSourcesTarget) await loadWorkspaceSources(workspaceSourcesTarget.id);
+    }
     finally { setIsBusy(false); }
   }
 
@@ -2370,12 +2370,15 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       return;
     }
 
+    const trace = traceInteraction("new-session");
     const submittedDraftKey = composerDraftKey;
     const submittedDraft = activeComposerDraft;
     const submittedAttachments = submittedDraft.attachments;
     const submittedSkills = submittedDraft.selectedSkillNames;
     const preview = optimisticPromptDisplayItem({ id: createOptimisticPromptId(), text: trimmedPrompt || submittedAttachments.map(item => item.name).join("\n"), steering: false, createdAt: new Date().toISOString() });
     setNewPromptPreview({ draftKey: submittedDraftKey, item: preview });
+    trace("optimistic-state");
+    traceNextPaint(trace, "optimistic-paint-opportunity");
     newPromptRecovery.current = {
       restore: () => {
         updateComposerDraft(submittedDraftKey, current => restoreSubmittedDraft(current, submittedDraft));
@@ -2396,6 +2399,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       const provisionalTitle = titleFromPrompt(trimmedPrompt);
       const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
       const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
+      trace("request");
       const result = await client.createConversationWithSession({
         projectId: desktopState.selectedProjectId,
         workspaceId: desktopState.selectedWorkspaceId,
@@ -2416,6 +2420,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               approvalPolicy: selectedApprovalPolicy ?? "auto",
             }),
       });
+      trace("response");
       applyDesktopActionResult(result);
       if (result.error) {
         const retryDraftKey = draftKeyForSelection({
@@ -2575,6 +2580,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       }
     }
 
+    const trace = traceInteraction("send-message");
     closeSearchWindow();
     const conversationId = selectedConversation.id;
     const submittedDraftKey = composerDraftKey;
@@ -2610,6 +2616,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       promptAnchors.current,
     ));
     setOptimisticPromptItems((current) => [...current, optimisticItem]);
+    trace("optimistic-state");
+    traceNextPaint(trace, "optimistic-paint-opportunity");
     updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
     setPreviewAttachmentId(null);
     const scope = promptScope.current;
@@ -2638,6 +2646,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
         const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
         dispatched = true;
+        trace("request");
         const result = await client.sendConversationMessage({
           mode,
           conversationId,
@@ -2648,6 +2657,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           files: files.length > 0 ? files : undefined,
           approvalPolicy: selectedSession ? undefined : selectedApprovalPolicy ?? "auto",
         });
+        trace("response");
         if (promptScope.current !== scope) return;
         applyDesktopActionResult(result);
         if (result.error) {
@@ -3565,6 +3575,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                   <button type="button" role="menuitem" onClick={() => void toggleNavigationPinned({ kind: "workspace", id: workspace.id })}>
                     <Pin size={13} strokeWidth={1.8} /><span>{pinned ? t("app.unpinWorkspace") : t("app.pinWorkspace")}</span>
                   </button>
+                  {workspace.status === "ready" && <button type="button" role="menuitem" onClick={() => { setWorkspaceMenuId(null); void openWorkspaceSources(workspace); }}>
+                    <FolderPlus size={13} strokeWidth={1.8} /><span>{t("workspace.addRepository")}</span>
+                  </button>}
                   {<button
                     type="button"
                     role="menuitem"
@@ -4820,8 +4833,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       {addSourcesProjectId && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy && !repositoryAdding) setAddSourcesProjectId(null); }} onKeyDown={event => { if (event.key === "Escape" && !isBusy && !repositoryAdding) setAddSourcesProjectId(null); }}>
           <div className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="add-sources-title">
-            <header><div><h2 id="add-sources-title">{t("app.addSources")}</h2><p>{desktopState.projects.find(project => project.id === addSourcesProjectId)?.name}</p></div><button autoFocus type="button" className="dialog-close" disabled={isBusy || repositoryAdding} onClick={() => setAddSourcesProjectId(null)} aria-label={t("app.close2")}><X size={15} /></button></header>
-            <ManagedRepositoryPicker client={client} selectedIds={newProjectRepositoryIds} linkedIds={desktopState.repositories.filter(source => source.project_id === addSourcesProjectId && source.repository_id).map(source => source.repository_id!)} onChange={setNewProjectRepositoryIds} disabled={isBusy} onBusyChange={setRepositoryAdding} />
+            <header><div><h2 id="add-sources-title">{t(workspaceSourcesTarget ? "workspace.addRepository" : "app.addSources")}</h2><p>{workspaceSourcesTarget?.title ?? desktopState.projects.find(project => project.id === addSourcesProjectId)?.name}</p></div><button autoFocus type="button" className="dialog-close" disabled={isBusy || repositoryAdding} onClick={() => setAddSourcesProjectId(null)} aria-label={t("app.close2")}><X size={15} /></button></header>
+            <ManagedRepositoryPicker client={client} selectedIds={newProjectRepositoryIds} hideLinked linkedIds={workspaceSourcesTarget ? workspaceSources.map(binding => binding.repository_id ?? binding.source.repository_id).filter((id): id is string => Boolean(id)) : desktopState.repositories.filter(source => source.project_id === addSourcesProjectId && source.repository_id).map(source => source.repository_id!)} onChange={setNewProjectRepositoryIds} disabled={isBusy} onBusyChange={setRepositoryAdding} />
             <div className="project-source-list">{newProjectSources.map((draft) => <div className="project-source-row source-choice-row" key={draft.candidate.selectedPath}>
               {draft.candidate.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
               <span><strong>{draft.candidate.name}</strong><small>{draft.candidate.canonicalPath}</small></span>
@@ -4830,9 +4843,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 : <div className="source-mode-actions"><em>{folderModeLabel(draft.folderMode)}</em>{draft.folderMode === "direct" ? <><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "copy" } : item))}>{t("app.useACopy")}</button><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "reference" } : item))}>{t("app.useAsReference")}</button></> : <button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "direct" } : item))}>{t("app.useDirectly")}</button>}</div>}
               {draft.candidate.kind === "folder" && draft.folderMode === "direct" && <small className="source-direct-warning">{t("app.workspaceChangesWillAppearInTheOriginalFolder")}</small>}
             </div>)}</div>
-            <button type="button" className="project-folder-picker compact" disabled={isBusy || repositoryAdding} onClick={() => void chooseNewProjectSources()}><Plus size={14} />{t("app.addFolder")}</button>
+            {!workspaceSourcesTarget && <button type="button" className="project-folder-picker compact" disabled={isBusy || repositoryAdding} onClick={() => void chooseNewProjectSources()}><Plus size={14} />{t("app.addFolder")}</button>}
             {message && <p className="dialog-error">{message}</p>}
-            <footer><button type="button" className="dialog-cancel" disabled={isBusy || repositoryAdding} onClick={() => setAddSourcesProjectId(null)}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={isBusy || repositoryAdding || (!newProjectSources.length && !newProjectRepositoryIds.length)} onClick={() => void confirmAddSources()}>{t("app.addSources")}</button></footer>
+            <footer><button type="button" className="dialog-cancel" disabled={isBusy || repositoryAdding} onClick={() => setAddSourcesProjectId(null)}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={isBusy || repositoryAdding || (!newProjectSources.length && !newProjectRepositoryIds.length)} onClick={() => void confirmAddSources()}>{t(workspaceSourcesTarget ? "workspace.addRepository" : "app.addSources")}</button></footer>
           </div>
         </div>
       )}
@@ -4952,7 +4965,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         </div>
       )}
 
-      {workspaceSourcesTarget && (() => {
+      {workspaceSourcesTarget && !addSourcesProjectId && (() => {
         const boundIds = new Set(workspaceSources.map((binding) => binding.source.id));
         const availableRepositories = desktopState.repositories.filter((source) => source.project_id === workspaceSourcesTarget.project_id && !workspaceHasRepository(workspaceSources, source));
         const availableFolders = desktopState.folders.filter((source) => source.project_id === workspaceSourcesTarget.project_id && !boundIds.has(source.id));
@@ -4965,25 +4978,14 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) closeWorkspaceSources(); }}>
           <div className="create-project-dialog workspace-sources-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-sources-title">
             <header><div><h2 id="workspace-sources-title">{t("app.workspaceSources")}</h2><p>{workspaceSourcesTarget.title}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={closeWorkspaceSources} aria-label={t("app.close2")}><X size={15} /></button></header>
-            <section className="workspace-binding-list">
-              <span>{t("app.dependencies")}</span>
-              {workspaceSourcesLoading && <p className="workspace-dialog-note">{t("app.loadingWorkspaceSources")}</p>}
-              {!workspaceSourcesLoading && workspaceSourcesLoadError && <div className="workspace-source-load-error"><p>{workspaceSourcesLoadError}</p><button type="button" onClick={() => void loadWorkspaceSources(workspaceSourcesTarget.id)}>{t("app.reload")}</button></div>}
-              {!workspaceSourcesLoading && workspaceSources.map((binding) => <div className="workspace-binding-row" key={binding.source.id}>
-                {binding.source.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
-                <span><strong>{workspaceSourceName(binding)}</strong><small>{binding.source.kind === "git" ? `${binding.base_ref} → ${binding.branch_name}` : `${binding.mode} → ${binding.target_path}`}</small>{binding.used_cached_base && <small className="workspace-cache-notice">{binding.base_synced_at ? t("repositories.workspaceUsedCache", { time: formatDateTime(binding.base_synced_at) }) : t("repositories.workspaceUsedCacheUnknown")}</small>}{binding.error && <small className="error">{binding.error}</small>}</span>
-                <div className="workspace-binding-status"><em className={binding.status === "error" ? "error" : ""}>{stateLabel(binding.status)}</em>{binding.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retry2")}</button>}</div>
-              </div>)}
-              {!workspaceSourcesLoading && !workspaceSourcesLoadError && workspaceSources.length === 0 && <p className="workspace-dialog-note">{t("app.thisWorkspaceHasNoSourcesYet")}</p>}
-            </section>
             {!workspaceSourcesLoadError && workspaceSourcesTarget.status === "ready" && <section className="workspace-add-source">
-              <span>{t("app.addDependency")}</span>
+              <span>{t("workspace.addRepository")}</span>
               {!workspaceSourcesLoading && (availableRepositories.length > 0 || availableFolders.length > 0) ? <>
                 <label className="repository-search"><Search size={14} aria-hidden="true" /><input type="search" value={addWorkspaceSourceQuery} disabled={isBusy} aria-label={t("workspace.searchSources")} placeholder={t("workspace.searchSources")} onInput={event => setAddWorkspaceSourceQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></label>
                 {matchingRepositories.length === 0 && matchingFolders.length === 0 && <p className="workspace-dialog-note">{t("workspace.noMatchingSources")}</p>}
                 <label className="workspace-dialog-field">
                   <span>{t("app.projectSource")}</span>
-                  <select value={workspaceSourceId} onChange={(event) => selectWorkspaceSource(event.target.value)}>
+                  <select disabled={isBusy} value={workspaceSourceId} onChange={(event) => selectWorkspaceSource(event.target.value)}>
                     <option value="">{t("app.chooseASource")}</option>
                     {selectedOutsideSearch && <option value={selectedSource.id}>{t("workspace.selectedOutsideSearch", { name: selectedSource.name })}</option>}
                     {matchingRepositories.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.git")}</option>)}
@@ -4995,8 +4997,19 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 </div>}
                 {selectedFolder && <label className="workspace-dialog-field"><span>{t("app.folderMode")}</span><select value={workspaceSourceMode} onChange={(event) => setWorkspaceSourceMode(event.target.value as FolderSourceMode)}><option value="direct">{t("app.direct")}</option><option value="copy">{t("app.copy")}</option><option value="reference">{t("app.reference")}</option></select></label>}
               </> : !workspaceSourcesLoading && <p className="workspace-dialog-note">{t("app.everySourceInThisProjectIsAlreadyBound")}</p>}
-              <button type="button" className="workspace-add-project-source" onClick={() => { const projectId = workspaceSourcesTarget.project_id; closeWorkspaceSources(); void addSourcesToProject(projectId); }} disabled={isBusy}><FolderPlus size={14} /> {t("app.sourceNotListedAddItToTheProject")}</button>
+              <button type="button" className="workspace-add-project-source" onClick={() => { void addSourcesToProject(workspaceSourcesTarget.project_id, true); }} disabled={isBusy || workspaceSourcesLoading}><FolderPlus size={14} /> {t("workspace.otherRepository")}</button>
             </section>}
+            <section className="workspace-binding-list">
+              <span>{t("app.dependencies")}</span>
+              {workspaceSourcesLoading && <p className="workspace-dialog-note">{t("app.loadingWorkspaceSources")}</p>}
+              {!workspaceSourcesLoading && workspaceSourcesLoadError && <div className="workspace-source-load-error"><p>{workspaceSourcesLoadError}</p><button type="button" onClick={() => void loadWorkspaceSources(workspaceSourcesTarget.id)}>{t("app.reload")}</button></div>}
+              {!workspaceSourcesLoading && workspaceSources.map((binding) => <div className="workspace-binding-row" key={binding.source.id}>
+                {binding.source.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
+                <span><strong>{workspaceSourceName(binding)}</strong><small>{binding.source.kind === "git" ? `${binding.base_ref} → ${binding.branch_name}` : `${binding.mode} → ${binding.target_path}`}</small>{binding.used_cached_base && <small className="workspace-cache-notice">{binding.base_synced_at ? t("repositories.workspaceUsedCache", { time: formatDateTime(binding.base_synced_at) }) : t("repositories.workspaceUsedCacheUnknown")}</small>}{binding.error && <small className="error">{binding.error}</small>}</span>
+                <div className="workspace-binding-status"><em className={binding.status === "error" ? "error" : ""}>{stateLabel(binding.status)}</em>{binding.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retry2")}</button>}</div>
+              </div>)}
+              {!workspaceSourcesLoading && !workspaceSourcesLoadError && workspaceSources.length === 0 && <p className="workspace-dialog-note">{t("app.thisWorkspaceHasNoSourcesYet")}</p>}
+            </section>
             {!workspaceSourcesLoadError && workspaceSourcesTarget.status !== "ready" && <div className="workspace-source-unavailable"><p>{t("workspace.unready", { state: stateLabel(workspaceSourcesTarget.status) })}</p>{workspaceSourcesTarget.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retryWorkspace2")}</button>}</div>}
             {message && <p className="dialog-error">{message}</p>}
             <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={closeWorkspaceSources}>{t("app.close2")}</button><button type="button" className="dialog-submit" disabled={isBusy || workspaceSourcesTarget.status !== "ready" || workspaceSourcesLoading || Boolean(workspaceSourcesLoadError) || !workspaceSourceId || Boolean(selectedRepository && !selectedRepository.repository_id && !workspaceSourceBaseRef.trim())} onClick={() => void confirmAddWorkspaceSource()}>{t("app.addSource")}</button></footer>

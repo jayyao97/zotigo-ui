@@ -1181,6 +1181,7 @@ function parseCatalogWorkspaceSource(value: unknown, context: string): CatalogWo
   }
   return {
     source: parseCatalogSource(record.source, `${context} source`),
+    repository_id: expectOptionalString(record.repository_id, `${context} repository_id`),
     mode,
     target_path: expectString(record.target_path, `${context} target_path`),
     base_ref: expectOptionalString(record.base_ref, `${context} base_ref`),
