@@ -38,6 +38,8 @@ test("repository picker reuses a library entry and prevents adding an already li
     assert.equal(checkbox.checked, true);
     assert.equal(checkbox.disabled, true);
     assert.match(document.body.textContent!, /Already added/);
+    await act(async () => root.render(<ManagedRepositoryPicker client={client} linkedIds={[repository.id]} hideLinked onChange={() => {}} />));
+    assert.equal(document.querySelector(".managed-repository-row"), null);
   } finally { await cleanup(); }
 });
 

@@ -21,6 +21,9 @@ test("migrated workspaces do not offer their legacy repository as a second depen
   assert.equal(workspaceHasRepository(bindings, { id: "other", repository_id: "repo-2" } as DesktopProjectRepository), false);
   assert.equal(workspaceHasRepository(bindings, { id: "legacy-source" } as DesktopProjectRepository), true);
   assert.equal(workspaceHasRepository(bindings, { id: "unrelated-local" } as DesktopProjectRepository), false);
+  const legacyBindings = [{ repository_id: "repo-1", source: { id: "original-local" } }] as CatalogWorkspaceSource[];
+  assert.equal(workspaceHasRepository(legacyBindings, { id: "managed", repository_id: "repo-1" } as DesktopProjectRepository), true);
+  assert.equal(workspaceHasRepository(legacyBindings, { id: "different", repository_id: "repo-2" } as DesktopProjectRepository), false);
 });
 import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "../src/sidebarDisclosure";
 
