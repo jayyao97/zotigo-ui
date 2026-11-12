@@ -2639,6 +2639,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     const send = async () => {
       if (sending || promptScope.current !== scope) return;
       sending = true;
+      setMessage(null);
       setIsBusy(true);
       setOptimisticPromptItems(current => current.map(item => item.id === optimisticId ? { ...item, delivery: { state: "sending" } } : item));
       let dispatched = false;

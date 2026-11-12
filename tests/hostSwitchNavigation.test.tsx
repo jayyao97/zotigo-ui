@@ -144,6 +144,42 @@ async function chooseDevHost() {
   await flush();
 }
 
+test("retry clears the previous send warning while pending and preserves a new failure", async () => {
+  const restore = installDom();
+  const time = "2026-01-01T00:00:00Z";
+  const state: DesktopState = { ...emptyState, selectedConversationId: "retry-test", conversations: [
+    { id: "retry-test", project_id: null, workspace_id: null, title: "Retry session", created_at: time, updated_at: time },
+  ] };
+  const client = hostClient(false, state);
+  let finish!: (result: Awaited<ReturnType<typeof client.api.sendConversationMessage>>) => void;
+  client.api.sendConversationMessage = () => new Promise(resolve => { finish = resolve; });
+  const root = await mountHostShell(client.api);
+  const warning = () => document.querySelector(".assistant-note.warning")?.textContent;
+  const retry = async () => {
+    const button = [...document.querySelectorAll(".user-message-stack button")].find(button => button.textContent === "Retry");
+    assert.ok(button);
+    await act(async () => click(button));
+    assert.equal(warning(), undefined, "previous warning clears before the network response");
+  };
+  try {
+    const editor = EditorView.findFromDOM(document.querySelector(".cm-content")!)!;
+    await act(async () => editor.dispatch({ changes: { from: 0, insert: "hello" } }));
+    await act(async () => document.querySelector("form.composer")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await act(async () => finish({ state, error: "message requires an online worker" }));
+    assert.equal(warning(), "message requires an online worker");
+    await retry();
+    await act(async () => finish({ state, error: "connection interrupted" }));
+    assert.equal(warning(), "connection interrupted");
+    await retry();
+    await act(async () => finish({ state, command: { id: "accepted", sequence: 1, type: "message", text: "hello", created_at: time } }));
+    await flush();
+    assert.equal(warning(), undefined, "successful retry must not retain the old warning");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
 test("sidebar sections collapse independently and ungrouped sessions exist without projects", async () => {
   const restore = installDom();
   const time = "2026-01-01T00:00:00Z";
