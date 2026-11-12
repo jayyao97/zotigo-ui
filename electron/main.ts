@@ -8,6 +8,8 @@ import { createApplicationService } from "../backend/applicationService";
 import { closePreferencesStore, getWindowBoundsPreference, initializePreferencesStore, setWindowBoundsPreference } from "../backend/preferencesStore";
 import { startManagedZotigodIfNeeded, stopManagedZotigod } from "./daemonManager";
 import { resolveDevServerUrl } from "./devServerUrl";
+import { DesktopDiagnostics } from "./diagnostics";
+import { PerformanceLog } from "../backend/performanceLog";
 import { startLogging } from "../backend/logging";
 import { loadInstalledLocalHost } from "./localHostConfig";
 
@@ -22,6 +24,9 @@ const minimumWindowHeight = 680;
 
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
+let diagnostics: DesktopDiagnostics | undefined;
+let diagnosticsClosing = false;
+let diagnosticsClosed = false;
 let applicationService: ReturnType<typeof createApplicationService>;
 const hostApplications = new Map<string, ReturnType<typeof createApplicationService>>();
 
@@ -89,7 +94,10 @@ async function createMainWindow(): Promise<void> {
     if (window.isDestroyed() || window.webContents.isDestroyed()) return;
     Menu.buildFromTemplate(imageContextMenu(params, window.webContents, locale)).popup({ window });
   });
+  mainWindow.on("unresponsive", () => diagnostics?.mark("window-unresponsive"));
+  mainWindow.on("responsive", () => diagnostics?.mark("window-responsive"));
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    diagnostics?.mark("renderer-gone", { reason: details.reason, exitCode: details.exitCode });
     console.error("renderer_gone reason=%s exit_code=%d", details.reason, details.exitCode);
   });
   mainWindow.webContents.on("did-fail-load", (_event, code, description) => {
@@ -148,6 +156,10 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   configureDaemonImageAuth(session.defaultSession);
   const userDataPath = app.getPath("userData");
   initializePreferencesStore(userDataPath);
+  const performanceLog = new PerformanceLog(path.join(userDataPath, "diagnostics"), app.getVersion());
+  try { await performanceLog.initialize(); } catch { performanceLog.error = true; }
+  diagnostics = new DesktopDiagnostics(performanceLog);
+  diagnostics.register(() => mainWindow);
   registerIpcHandlers();
   if (!app.isPackaged) {
     await startManagedZotigodIfNeeded(app.getAppPath(), userDataPath);
@@ -168,7 +180,15 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => { /* Closing windows does not quit the app. */ });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  if (diagnostics && !diagnosticsClosed) {
+    event.preventDefault();
+    if (!diagnosticsClosing) {
+      diagnosticsClosing = true;
+      void diagnostics.shutdown(mainWindow).finally(() => { diagnosticsClosed = true; app.quit(); });
+    }
+    return;
+  }
   quitting = true;
   applicationService?.dispose();
   for (const application of hostApplications.values()) application.dispose();
@@ -193,6 +213,7 @@ function registerIpcHandlers(): void {
     },
     downloadImage: (url) => { mainWindow?.webContents.downloadURL(url); },
   }, (envelope) => {
+    if (envelope.status) diagnostics?.mark("session-connection", { host: diagnostics.host(hostId), status: envelope.status });
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sessions:event", { ...envelope, hostId });
   }, undefined, (envelope) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("files:event", { ...envelope, hostId });
@@ -200,21 +221,26 @@ function registerIpcHandlers(): void {
   applicationService = createForHost("local");
   hostApplications.set("local", applicationService);
   for (const channel of applicationService.channels) {
-    ipcMain.handle(channel, (event, ...args: unknown[]) => {
+    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
         return { ok: false, error: "Untrusted application caller" };
       }
       const request = args[0] as { hostId?: unknown; args?: unknown };
       if (!request || typeof request.hostId !== "string" || !Array.isArray(request.args)) return { ok: false, error: "Invalid host request" };
       const hostId = request.hostId; const values = request.args;
+      const started = performance.now();
+      const host = diagnostics?.host(hostId);
+      let ok = false;
       try {
-        if (channel.startsWith("hosts:") && channel !== "hosts:inspect") return applicationService.invoke(channel, values);
-        return withHost(hostId, () => {
+        if (channel.startsWith("hosts:") && channel !== "hosts:inspect") { const result = await applicationService.invoke(channel, values); ok = result.ok; return result; }
+        const result = await withHost(hostId, () => {
           let application = hostApplications.get(hostId);
           if (!application) { application = createForHost(hostId); hostApplications.set(hostId, application); }
           return application.invoke(channel, values);
         });
+        ok = result.ok; return result;
       } catch { return { ok: false, error: "Host is no longer available." }; }
+      finally { diagnostics?.mark("application-request", { channel, host, ok, elapsedMs: Math.round(performance.now() - started) }); }
     });
   }
 }

@@ -1,13 +1,28 @@
+import type { DiagnosticSample, DiagnosticsApi } from "../shared/diagnostics";
 type Sample = { operation: number; action: string; stage: string; at: number; elapsedMs: number; count?: number; cached?: boolean };
 const samples: Sample[] = [];
+let persistentDiagnostics: DiagnosticsApi | undefined;
+export function initializePerformanceDiagnostics(api: DiagnosticsApi | undefined): () => void {
+  persistentDiagnostics = api;
+  const error = () => record({ operation: 0, action: "renderer", stage: "error", at: Math.round(performance.now()), elapsedMs: 0 });
+  const rejection = () => record({ operation: 0, action: "renderer", stage: "unhandled-rejection", at: Math.round(performance.now()), elapsedMs: 0 });
+  window.addEventListener("error", error);
+  window.addEventListener("unhandledrejection", rejection);
+  return () => { persistentDiagnostics = undefined; window.removeEventListener("error", error); window.removeEventListener("unhandledrejection", rejection); };
+}
+function record(sample: Sample, context?: string) {
+  samples.push(sample);
+  if (samples.length > 300) samples.splice(0, samples.length - 300);
+  void persistentDiagnostics?.append([{ ...sample, timeOrigin: performance.timeOrigin } as DiagnosticSample], context).catch(() => {});
+}
 let sequence = 0;
 
 export function traceInteraction(action: "session-switch" | "send-message" | "new-session") {
   const operation = ++sequence;
+  const context = persistentDiagnostics?.context();
   const started = performance.now();
   const mark = (stage: string, details: { count?: number; cached?: boolean } = {}) => {
-    samples.push({ operation, action, stage, at: Math.round(performance.now()), elapsedMs: Math.round(performance.now() - started), ...details });
-    if (samples.length > 300) samples.splice(0, samples.length - 300);
+    record({ operation, action, stage, at: Math.round(performance.now()), elapsedMs: Math.round(performance.now() - started), ...details }, context);
   };
   mark("start");
   return mark;
@@ -22,9 +37,8 @@ export function observeLongTasks(): () => void {
   if (typeof PerformanceObserver === "undefined" || !PerformanceObserver.supportedEntryTypes.includes("longtask")) return () => {};
   const observer = new PerformanceObserver(list => {
     for (const entry of list.getEntries()) {
-      samples.push({ operation: 0, action: "main-thread", stage: "long-task", at: Math.round(entry.startTime), elapsedMs: Math.round(entry.duration) });
+      record({ operation: 0, action: "main-thread", stage: "long-task", at: Math.round(entry.startTime), elapsedMs: Math.round(entry.duration) });
     }
-    if (samples.length > 300) samples.splice(0, samples.length - 300);
   });
   observer.observe({ entryTypes: ["longtask"] });
   return () => observer.disconnect();

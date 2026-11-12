@@ -5967,3 +5967,7 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .completion-open-link:hover > span:nth-child(2) { text-decoration-color: currentColor; }
 .completion-open-link > svg { color: var(--text-dim); }
 .completion-open-link:focus-visible, .completion-cancel:focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; }
+
+.diagnostics-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.diagnostics-status { margin: 0; padding: 0 16px 16px; color: var(--text-muted); font-size: 12px; }
+.settings-row .diagnostics-toggle { flex: 0 0 18px; width: 18px; height: 18px; min-height: 0; padding: 0; margin: 0; accent-color: var(--text); cursor: pointer; }

@@ -301,6 +301,7 @@ export interface TranslationResult {
 }
 
 export interface ClientApi {
+  diagnostics?: import("./diagnostics").DiagnosticsApi;
   closeWindow?: () => Promise<void>;
   uploadAttachment(sessionId: string, file: MessageFileInput): Promise<string>;
 	listChannelConnections(): Promise<import("./channels").ChannelConnection[]>;
