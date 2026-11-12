@@ -24,6 +24,7 @@ import Copy from "lucide-react-native/icons/copy";
 import { memo, useState } from "react";
 import {
   Alert,
+  ActivityIndicator,
   Linking,
   Platform,
   Pressable,
@@ -421,7 +422,7 @@ export const MessageCard = memo(function MessageCard({
               />
             </View>
           )}
-          {item.delivery && <Text style={styles.muted}>{item.delivery.state === "sending" ? t("conversationTimeline.sending") : item.delivery.error}</Text>}
+          {item.delivery && (item.delivery.state === "sending" ? <ActivityIndicator size="small" color={colors.muted} accessibilityLabel={t("conversationTimeline.sending")} /> : <Text style={styles.muted}>{item.delivery.error}</Text>)}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             {timestamp && (
               <Text accessibilityLabel={timestamp.full} style={styles.muted}>

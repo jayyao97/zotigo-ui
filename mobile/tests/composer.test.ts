@@ -216,3 +216,40 @@ test("failed accepted-state persistence keeps cleanup pointed at accepted state"
   await store.write(current.current);
   assert.deepEqual(await store.read(), { draft: emptyDraft() });
 });
+
+for (const outcome of ["accepted", "rejected", "unknown"] as const) {
+  test(`returning to a session waits for its detached ${outcome} submission`, async () => {
+    const values = new Map<string, string>();
+    const storage: Storage = {
+      get: async key => values.get(key) ?? null,
+      set: async (key, value) => { values.set(key, value); },
+      remove: async key => { values.delete(key); },
+    };
+    const store = new ComposerStore(storage, "home", "session");
+    const draft = { ...emptyDraft(), text: "Keep sending after navigation" };
+    const current = { current: { draft, attempt: submissionAttempt({ draft }, "same-id", false) } as ComposerState };
+    let release!: () => void;
+    const response = new Promise<void>(resolve => { release = resolve; });
+    const request = store.submit(async () => {
+      await store.write(current.current);
+      await response;
+      if (outcome === "accepted") await store.transition(current, { draft: emptyDraft() });
+      if (outcome === "rejected") await store.transition(current, { draft });
+      if (outcome !== "accepted") throw new Error(outcome);
+    });
+    const settled = request.catch(() => {});
+    let reopened = false;
+    const nextPage = new ComposerStore(storage, "home", "session");
+    const read = nextPage.read().then(value => { reopened = true; return value; });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(reopened, false);
+    await assert.rejects(nextPage.submit(async () => {}), /already being sent/);
+    // Same session ID on another host must remain independent.
+    assert.equal((await new ComposerStore(storage, "work", "session").read()).attempt, undefined);
+    release();
+    await settled;
+    const restored = await read;
+    assert.equal(restored.draft.text, outcome === "accepted" ? "" : draft.text);
+    assert.equal(restored.attempt?.client_message_id, outcome === "unknown" ? "same-id" : undefined);
+  });
+}

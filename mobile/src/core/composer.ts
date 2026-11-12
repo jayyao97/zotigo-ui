@@ -75,6 +75,9 @@ export function submissionAttempt(
     }
   );
 }
+// In-flight submissions belong to the host/session, not its mounted screen.
+const submissions = new WeakMap<Storage, Map<string, Promise<unknown>>>();
+
 export class ComposerStore {
   private queue = Promise.resolve();
   readonly key: string;
@@ -85,7 +88,21 @@ export class ComposerStore {
   ) {
     this.key = `composer.v1.${host}.${session}`;
   }
+  async submit<T>(action: () => Promise<T>): Promise<T> {
+    let active = submissions.get(this.storage);
+    if (!active) submissions.set(this.storage, active = new Map());
+    if (active.has(this.key)) throw new Error("A message is already being sent.");
+    const task = Promise.resolve().then(action);
+    active.set(this.key, task);
+    try {
+      return await task;
+    } finally {
+      active.delete(this.key);
+    }
+  }
   async read(): Promise<ComposerState> {
+    // A reopened page must not edit a draft still owned by the outgoing request.
+    await submissions.get(this.storage)?.get(this.key)?.catch(() => {});
     await this.queue;
     const raw = await this.storage.get(this.key);
     if (!raw) return { draft: emptyDraft() };

@@ -5,7 +5,8 @@
   "apple": {
     "modules": [
       "SelectableTextModule",
-      "SkillInputModule"
+      "SkillInputModule",
+      "KeyboardInsetModule"
     ]
   }
 }

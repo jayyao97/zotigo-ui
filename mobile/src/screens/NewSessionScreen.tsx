@@ -99,6 +99,7 @@ export function NewSessionScreen() {
   const [images, setImages] = useState<MessageImageInput[]>([]);
   const [skillNames, setSkillNames] = useState<string[]>([]);
   const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const header = useHeaderHeight();
   const [catalog, setCatalog] = useState<AgentCatalogResponse>();
   const [profiles, setProfiles] = useState<ProfilesResponse>();
@@ -347,6 +348,7 @@ export function NewSessionScreen() {
   }
   return (
     <KeyboardFrameView
+      onKeyboardVisibleChange={setKeyboardVisible}
       keyboardVerticalOffset={header}
       style={{
         flex: 1,
@@ -371,7 +373,7 @@ export function NewSessionScreen() {
       <View
         style={{
           padding: 12,
-          paddingBottom: Math.max(insets.bottom, 12),
+          paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 12),
           gap: 8,
         }}
       >
