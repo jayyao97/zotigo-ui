@@ -1,11 +1,13 @@
+import { hosts } from "../platform/storage";
+import { createDaemon } from "../platform/client";
 import { SettingsPage, SettingsGroup, SettingRow } from "../components/SettingsLayout";
 import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { t } from "@zotigo/shared/i18n/index";
 import type { ModelProfile, ModelSettings, ModelSettingsChange } from "@zotigo/shared/modelSettings";
-import { useDaemon } from "../platform/context";
+import { DaemonContext, useDaemon } from "../platform/context";
 import { useLocale } from "../platform/i18n";
-import { ApiError } from "../core/client";
+import { ApiError, type Host } from "../core/client";
 import { modelDraftError } from "../core/modelSettings";
 import { Action, Loading, Notice, TextField, styles } from "../components/ui";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
@@ -13,6 +15,32 @@ import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
 const blank = (): ModelProfile => ({ name: "", provider: "openai", model: "", base_url: "", thinking_level: "", context_window: 0, max_output_tokens: null, mode: "", has_api_key: false });
 
 export function ModelSettingsScreen() {
+  const workbenchClient = useDaemon();
+  const [client, setClient] = useState(workbenchClient);
+  const [list, setList] = useState<Host[]>([]);
+  const [selecting, setSelecting] = useState(false);
+  const [error, setError] = useState("");
+  const alive = useRef(false);
+  const lock = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    void hosts.list().then(value => { if (alive.current) setList(value); }).catch(() => { if (alive.current) setError(t("models.connection")); });
+    return () => { alive.current = false; };
+  }, []);
+  useEffect(() => () => { if (client !== workbenchClient) client.dispose(); }, [client, workbenchClient]);
+  async function select(host: Host) {
+    if (lock.current || host.id === client.connection.id) return;
+    lock.current = true; setSelecting(true); setError("");
+    try {
+      const connection = await hosts.connection(host);
+      if (alive.current) setClient(host.id === workbenchClient.connection.id ? workbenchClient : createDaemon(connection));
+    } catch { if (alive.current) setError(t("models.connection")); }
+    finally { lock.current = false; if (alive.current) setSelecting(false); }
+  }
+  return <DaemonContext.Provider value={client}><ModelSettingsContent key={client.connection.id} hostList={list} selecting={selecting} hostError={error} onSelect={host => void select(host)} /></DaemonContext.Provider>;
+}
+
+function ModelSettingsContent({ hostList, selecting, hostError, onSelect }: { hostList: Host[]; selecting: boolean; hostError: string; onSelect: (host: Host) => void }) {
   const locale = useLocale();
   const client = useDaemon();
   const [settings, setSettings] = useState<ModelSettings>();
@@ -21,6 +49,7 @@ export function ModelSettingsScreen() {
   const [apiKey, setApiKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const [choosingHost, setChoosingHost] = useState(false);
   const [choice, setChoice] = useState<"provider" | "thinking_level" | "mode">();
   const [deleting, setDeleting] = useState<ModelProfile>();
   const [busy, setBusy] = useState(false);
@@ -82,6 +111,11 @@ export function ModelSettingsScreen() {
   const original = settings?.profiles.find(profile => profile.name === draft?.name);
   const saved = settings?.profiles.find(profile => profile.name === draft?.name && profile.provider === draft?.provider);
   return <SettingsPage>
+    <SettingsGroup><SettingRow title={t("settings.targetHost")} value={client.connection.name} onPress={draft || busy || selecting ? undefined : () => setChoosingHost(true)} last /></SettingsGroup>
+    <Notice text={hostError} error />
+    <BottomSheet visible={choosingHost} title={t("settings.targetHost")} onClose={() => setChoosingHost(false)}>
+      {hostList.map(host => <ChoiceRow key={host.id} title={host.name} selected={client.connection.id === host.id} disabled={selecting} onPress={() => { setChoosingHost(false); onSelect(host); }} />)}
+    </BottomSheet>
     <View style={{ gap: 4 }}>
       <Text style={[styles.text, { fontWeight: "600" }]}>{draft ? editing ? draft.name : t("models.add") : t("models.host", { host: client.connection.name })}</Text>
       {!draft && <Text style={styles.muted}>{t("models.codex")}</Text>}

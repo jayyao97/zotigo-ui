@@ -1,3 +1,4 @@
+import { CompletionNotifications } from "../components/CompletionNotifications";
 import { interactionState } from "@zotigo/shared/interactionState";
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
@@ -201,7 +202,7 @@ function ConversationContent() {
     else open();
   }
   const [optionPane, setOptionPane] = useState<
-    "session" | "model" | "policy" | "context"
+    "session" | "model" | "policy" | "context" | "notifications"
   >("session");
   const [pinned, setPinned] = useState<boolean | null>(null);
   const [agents, setAgents] = useState<AgentCatalogResponse>();
@@ -420,6 +421,7 @@ function ConversationContent() {
     if (succeeded && focused.current && !client.signal.aborted) onSuccess?.();
   }
   function send(mode = defaultSendMode.mode) {
+    setError("");
     setSendCanLeave(true);
     return composer.submit(() => sendRequest(mode));
   }
@@ -1246,7 +1248,7 @@ function ConversationContent() {
         scroll={optionPane !== "model"}
         disabled={busy}
         title={
-          optionPane === "model"
+          optionPane === "notifications" ? t("completionTriggers.title") : optionPane === "model"
             ? t("mobile.modelAndReasoning")
             : optionPane === "policy"
               ? t("channelsPage.permissions")
@@ -1259,6 +1261,7 @@ function ConversationContent() {
         }}
       >
         <Notice text={error} error />
+        {options && optionPane === "notifications" && <CompletionNotifications sessionId={id} />}
         {optionPane === "model" && (
           <Notice
             text={t("mobile.currentValue", {p0: [state.session?.model || state.session?.profile || t("directoryBrowser.unavailable"), state.session?.reasoning_effort].filter(Boolean).join(" · ")})}
@@ -1284,6 +1287,7 @@ function ConversationContent() {
           )}
           {optionPane === "session" && (
             <Section title={t("app.session")}>
+              <Action label={t("completionTriggers.title")} secondary onPress={() => setOptionPane("notifications")} />
               <Text selectable style={styles.muted}>
                 {id}
                 {"\n"}
@@ -1391,6 +1395,7 @@ function ConversationContent() {
                 }
               />
               <RuntimePicker
+                unavailableAgents={agents?.unavailable_agents}
                 onConfigureModels={() => { setOptions(false); nav.navigate("Profiles"); }}
                 key={`${state.session.agent}:${state.session.model}:${state.session.profile}:${state.session.reasoning_effort}`}
                 agents={

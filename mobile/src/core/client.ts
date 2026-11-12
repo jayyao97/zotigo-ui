@@ -7,6 +7,7 @@ import {
 import type * as D from "@zotigo/shared/zotigod";
 import type {
   DirectoryListing,
+  ClientApi, ManagedRepository, RepositoryBranch,
   TextFileSnapshot,
   ImageFileSnapshot,
   VideoFileSnapshot,
@@ -326,6 +327,27 @@ export class DaemonClient {
   }
 
   // Only public, explicitly named endpoints are exposed to screens.
+  listCompletionTriggers = async (id: string): Promise<Awaited<ReturnType<ClientApi["listCompletionTriggers"]>>> => {
+    try {
+      const { items } = await this.request<{ items: NonNullable<Awaited<ReturnType<ClientApi["listCompletionTriggers"]>>> }>(`/sessions/${enc(id)}/completion-triggers?include_history=true`);
+      if (!Array.isArray(items) || items.some(item => !item || typeof item.id !== "string" || typeof item.title !== "string" || typeof item.on_fire !== "string" || typeof item.expires_at !== "string" || (item.state !== undefined && !["pending", "fired", "cancelled", "expired"].includes(item.state)))) throw new Error("Invalid completion triggers");
+      return items;
+    } catch (error) {
+      if (error instanceof ApiError && [404, 405].includes(error.status)) return null;
+      throw error;
+    }
+  };
+  cancelCompletionTrigger = (id: string, triggerId: string) =>
+    this.request(`/sessions/${enc(id)}/completion-triggers/${enc(triggerId)}`, "DELETE");
+  repositories = async () => (await this.request<{ repositories: ManagedRepository[] }>("/repositories")).repositories;
+  createRepository = (remoteUrl: string) => this.request<ManagedRepository>("/repositories", "POST", { remote_url: remoteUrl }, undefined, 15000);
+  linkRepository = (projectId: string, repositoryId: string) =>
+    this.request<D.CatalogSource>(`/projects/${enc(projectId)}/sources`, "POST", { repository_id: repositoryId }, undefined, 120000);
+  repositoryBranches = async (projectId: string, sourceId: string, refresh = false) => {
+    const { branches } = await this.request<{ branches: RepositoryBranch[] }>(`/projects/${enc(projectId)}/sources/${enc(sourceId)}/branches`, refresh ? "POST" : "GET", undefined, undefined, 15000);
+    if (!Array.isArray(branches) || branches.some(branch => !branch || typeof branch.name !== "string" || typeof branch.ref !== "string" || !["remote", "imported", "local"].includes(branch.kind))) throw new Error("Invalid repository branches");
+    return branches;
+  };
   health = () => this.request<D.HealthResponse>("/health");
   agents = () => this.request<D.AgentCatalogResponse>("/agents");
   prepareCodex = () =>

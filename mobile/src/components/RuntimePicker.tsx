@@ -9,7 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import type { AgentKind, ProfilesResponse } from "@zotigo/shared/zotigod";
+import type { AgentCatalogEntry, AgentKind, ProfilesResponse } from "@zotigo/shared/zotigod";
 import { favoriteKey, type ModelFavorite } from "@zotigo/shared/modelFavorites";
 import { compatibleReasoningEffort } from "@zotigo/shared/modelSelection";
 import {
@@ -24,6 +24,7 @@ import { Action, colors, Loading, Notice, styles } from "./ui";
 
 export function RuntimePicker({
   agents,
+  unavailableAgents = [],
   profiles,
   value,
   fixedAgent,
@@ -34,6 +35,7 @@ export function RuntimePicker({
   onConfigureModels,
 }: {
   agents: PickerAgent[];
+  unavailableAgents?: AgentCatalogEntry[];
   profilesLoading?: boolean;
   onConfigureModels?: () => void;
   profiles?: ProfilesResponse;
@@ -129,6 +131,7 @@ export function RuntimePicker({
         contentContainerStyle={{ gap: 4 }}
       >
         <Notice text={favorites.error} error />
+        {unavailableAgents.map(agent => <Notice key={agent.id} text={`${agent.label}: ${agent.reason ?? t("favoriteModelSettings.codexUnavailable")}`} error />)}
         {tab === "favorites" && (
           <>
             {!saved.length && (

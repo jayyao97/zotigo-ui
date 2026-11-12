@@ -333,6 +333,7 @@ export function ModelsScreen() {
         )}
         {section === "ModelCatalog" && (
           <Section title={t("favoriteModelSettings.codexModels")}>
+            {agents?.unavailable_agents?.map(agent => <Notice key={agent.id} text={`${agent.label}: ${agent.reason ?? t("favoriteModelSettings.codexUnavailable")}`} error />)}
             <Action label={t("mobile.refresh")} disabled={busy} onPress={prepare} />
             <SettingsGroup>
               {agents?.agents
@@ -355,6 +356,7 @@ export function ModelsScreen() {
         >
           {adding && (
             <RuntimePicker
+                unavailableAgents={agents?.unavailable_agents}
               agents={agents?.agents ?? []}
               profiles={profiles}
               value={{ agent: "codex", model: "", reasoningEffort: "medium" }}
