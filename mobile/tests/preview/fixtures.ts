@@ -22,6 +22,8 @@ type Fault =
   | "save-conflict"
   | "send-rejected";
 type HostState = {
+  repositories?: import("@zotigo/shared/clientTypes").ManagedRepository[];
+  cancelledNotifications?: Set<string>;
   channelPolicies?: Record<string, string>;
   fault: Fault;
   pins: { kind: string; id: string }[];
@@ -572,6 +574,19 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       sessions: [...host.sessions.keys()].map((id) => projection(host, id)),
     });
   }
+  if (path === "/repositories") {
+    host.repositories ??= [{ id: "repo-ready", name: "zotigo-ui", remote_url: "https://example.test/zotigo-ui.git", default_branch: "master", canonical_path: "/repositories/zotigo-ui", last_synced_at: now, created_at: now, updated_at: now }];
+    if (method === "POST") {
+      const repository = { id: `repo-${host.repositories.length}`, name: String(body.remote_url).split("/").at(-1) ?? "repository", remote_url: String(body.remote_url), default_branch: "master", canonical_path: "/repositories/new", last_synced_at: now, created_at: now, updated_at: now };
+      host.repositories.push(repository);
+      return envelope(repository);
+    }
+    return envelope({ repositories: host.repositories });
+  }
+  if (/^\/projects\/[^/]+\/sources\/[^/]+\/branches$/.test(path)) return envelope({ branches: [
+    { name: "master", ref: "refs/remotes/origin/master", kind: "remote", is_default: true },
+    { name: "feat/mobile-app", ref: "refs/heads/feat/mobile-app", kind: "imported" },
+  ] });
   if (path === "/projects" && method === "POST") {
     const project = {
       id: "project-" + (host.projects.length + 1),
@@ -625,7 +640,10 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
         id: "source-" + project.sources.length,
         project_id: project.id,
         kind: "git" as const,
-        canonical_path: String(body.path),
+        canonical_path: body.repository_id ? "/repositories/zotigo-ui" : String(body.path),
+        repository_id: body.repository_id ? String(body.repository_id) : undefined,
+        last_synced_at: body.repository_id ? now : undefined,
+        default_branch: body.repository_id ? "master" : undefined,
         source_key: String(body.path),
         created_at: now,
         updated_at: now,
@@ -898,6 +916,12 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       session = host.sessions.get(id);
     if (!session) return failure("Session missing.", 404);
     if (!action) return envelope(session.runtime);
+    if (action === "completion-triggers") return envelope({ items: [{ id: "notification-1", title: "Build checks", on_fire: "Summarize the build results when the checks finish.", expires_at: "2099-11-12T10:00:00Z", state: host.cancelledNotifications?.has(id) ? "cancelled" : "pending" }] });
+    if (action === "completion-triggers/notification-1" && method === "DELETE") {
+      (host.cancelledNotifications ??= new Set()).add(id);
+      return new Response(null, { status: 204 });
+    }
+
     if (action === "title-suggestion")
       return envelope({ title: "Review mobile host isolation" });
     if (action === "search") {

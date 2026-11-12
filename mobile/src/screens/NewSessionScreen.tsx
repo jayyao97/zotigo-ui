@@ -107,7 +107,7 @@ export function NewSessionScreen() {
   const [profile, setProfile] = useState("");
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
-  const [policy, setPolicy] = useState<ApprovalPolicy>("auto");
+  const [policy, setPolicy] = useState<ApprovalPolicy>("bypass_permissions");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [createdSession, setCreatedSession] = useState<string>();
@@ -644,6 +644,7 @@ export function NewSessionScreen() {
               />
             )}
             <RuntimePicker
+                unavailableAgents={catalog?.unavailable_agents}
               onConfigureModels={() => { setPanel(null); nav.navigate("Profiles"); }}
               agents={catalog?.agents ?? []}
               profiles={profiles}

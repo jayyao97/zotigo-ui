@@ -1,3 +1,5 @@
+import { RepositoryPicker, repositoryStatus } from "../components/RepositoryPicker";
+import type { RepositoryBranch } from "@zotigo/shared/clientTypes";
 import { stateLabel } from "@zotigo/shared/i18n/display";
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
@@ -681,14 +683,28 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
 }
 function SourceOptions({
   source,
+  projectId,
   value,
   onChange,
 }: {
   source: CatalogSource;
+  projectId: string;
   value?: CatalogWorkspaceSourceInput;
   onChange: (value?: CatalogWorkspaceSourceInput) => void;
 }) {
   useLocale();
+  const daemon = useDaemon();
+  const [branches, setBranches] = useState<RepositoryBranch[]>([]);
+  const [open, setOpen] = useState(false);
+  const [branchError, setBranchError] = useState("");
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setLoading(true);
+    daemon.repositoryBranches(projectId, source.id).then(items => { if (active) { setBranches(items); setBranchError(""); } }).catch(() => { if (active) setBranchError(t("repositories.branchListFailed")); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [daemon, projectId, source.id, open]);
   return (
     <View>
       <View style={css.line}>
@@ -723,12 +739,21 @@ function SourceOptions({
         (source.kind === "git" ? (
           <>
             <TextField
-              label={t("mobile.baseRefOptional")}
+              label={t("repositories.autoBranch")}
+              placeholder={source.default_branch ?? ""}
               value={value.base_ref ?? ""}
               onChangeText={(v) =>
                 onChange({ ...value, base_ref: v || undefined })
               }
             />
+            <Action label={t(open ? "repositories.hideBranches" : "repositories.chooseBranch")} secondary onPress={() => setOpen(!open)} />
+            {open && <>
+              <Notice text={loading ? t("repositories.loadingBranches") : branchError} error={!!branchError} />
+              <Row title={t("repositories.useDefault")} onPress={() => { onChange({ ...value, base_ref: undefined }); setOpen(false); }} />
+              {branches.map(branch => <Row key={branch.ref} title={branch.name} subtitle={t(`repositories.branches.${branch.kind}`)} onPress={() => { onChange({ ...value, base_ref: branch.ref }); setOpen(false); }} />)}
+              {!loading && !branchError && !branches.length && <Notice text={t("repositories.noBranches")} />}
+              {branches.some(branch => branch.kind === "imported") && <Notice text={t("repositories.importedSnapshotHelp")} />}
+            </>}
             <TextField
               label={t("mobile.branchNameOptional")}
               value={value.branch_name ?? ""}
@@ -793,6 +818,7 @@ function WorkspaceForm({
         keyExtractor={(s) => s.id}
         renderItem={({ item }) => (
           <SourceOptions
+            projectId={project.id}
             source={item}
             value={selected[item.id]}
             onChange={(value) =>
@@ -1026,6 +1052,7 @@ function AttachSourceForm({
         }
         renderItem={({ item }) => (
           <SourceOptions
+            projectId={projectId}
             source={item}
             value={selected?.source_id === item.id ? selected : undefined}
             onChange={setSelected}
@@ -1165,6 +1192,7 @@ export function WorkspaceScreen() {
                 />
               </View>
             </View>
+            {load.data?.sources.filter(source => source.used_cached_base).map(source => <Notice key={source.source.id} text={source.base_synced_at ? t("repositories.workspaceUsedCache", { time: new Date(source.base_synced_at).toLocaleString() }) : t("repositories.workspaceUsedCacheUnknown")} />)}
             <Notice
               text={load.error || action.error || workspace?.error || ""}
               error
@@ -1347,7 +1375,7 @@ export function SourcesScreen() {
         <Section title={item.kind}>
           <Row
             title={pathLabel(item.canonical_path)}
-            subtitle={item.folder_mode}
+            subtitle={item.repository_id ? repositoryStatus(item) : item.folder_mode}
           />
           <Text selectable style={css.muted}>
             {item.canonical_path}
@@ -1419,6 +1447,11 @@ export function SourcePickerScreen() {
       keyExtractor={(entry) => entry.path}
       ListHeaderComponent={
         <>
+          <Section title={t("repositories.library")}>
+            <RepositoryPicker projectId={params.projectId} onLinked={() => nav.goBack()} />
+          </Section>
+          <Text style={css.title}>{t("repositories.localSources")}</Text>
+          <Notice text={t("repositories.localHelp")} />
           <TextField
             label={t("mobile.directoryOnDaemon")}
             value={path}
