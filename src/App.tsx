@@ -526,7 +526,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [initialModelSelection] = useState(() => loadLastModelSelection(clientScope));
   const [draftProfile, setDraftProfile] = useState(initialModelSelection?.agent === "zotigo" ? initialModelSelection.profile : "");
   const [profileOverrides, setProfileOverrides] = useState<Record<string, string>>({});
-  const [draftApprovalPolicy, setDraftApprovalPolicy] = useState<ApprovalPolicy>("auto");
+  const [draftApprovalPolicy, setDraftApprovalPolicy] = useState<ApprovalPolicy>("bypass_permissions");
   const [approvalPolicyOverrides, setApprovalPolicyOverrides] = useState<Record<string, ApprovalPolicy>>({});
   const submittingApprovalIdsRef = useRef(new Set<string>());
   const submittingInteractionIdsRef = useRef(new Set<string>());

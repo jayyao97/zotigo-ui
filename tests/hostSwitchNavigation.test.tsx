@@ -144,6 +144,31 @@ async function chooseDevHost() {
   await flush();
 }
 
+for (const override of [false, true]) test(`new sessions default to full access and respect explicit auto selection (${override})`, async () => {
+  const restore = installDom();
+  const client = hostClient();
+  let submitted: Parameters<typeof client.api.createConversationWithSession>[0] | undefined;
+  client.api.createConversationWithSession = async input => { submitted = input; return { state: emptyState }; };
+  const root = await mountHostShell(client.api);
+  try {
+    assert.equal(document.querySelector(".approval-policy-trigger")?.textContent, "Full access");
+    if (override) {
+      await act(async () => click(document.querySelector(".approval-policy-trigger")!));
+      const auto = [...document.querySelectorAll(".approval-policy-menu button")].find(button => button.querySelector("strong")?.textContent === "Auto");
+      assert.ok(auto);
+      await act(async () => click(auto));
+    }
+    const editor = EditorView.findFromDOM(document.querySelector(".cm-content")!)!;
+    await act(async () => editor.dispatch({ changes: { from: 0, insert: "hello" } }));
+    await act(async () => document.querySelector("form.new-chat-composer")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    assert.ok(submitted);
+    assert.equal(submitted.approvalPolicy, override ? "auto" : "bypass_permissions");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
 test("retry clears the previous send warning while pending and preserves a new failure", async () => {
   const restore = installDom();
   const time = "2026-01-01T00:00:00Z";
