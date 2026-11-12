@@ -157,6 +157,7 @@ function ConversationContent() {
   const timeline = useMemo(() => new Timeline(client, id), [client, id]);
   const state = useSyncExternalStore(timeline.subscribe, timeline.snapshot);
   const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const header = useHeaderHeight();
   const composer = useMemo(
     () => new ComposerStore(storage, client.connection.id, id),
@@ -344,7 +345,7 @@ function ConversationContent() {
     },
     [composer],
   );
-  const draft = saved.draft;
+  const draft = busy && sendCanLeave ? emptyDraft() : saved.draft;
   const update = useCallback(
     (patch: Partial<Draft>) => {
       const next = {
@@ -418,88 +419,102 @@ function ConversationContent() {
     }
     if (succeeded && focused.current && !client.signal.aborted) onSuccess?.();
   }
-  async function send(mode = defaultSendMode.mode) {
+  function send(mode = defaultSendMode.mode) {
+    setSendCanLeave(true);
+    return composer.submit(() => sendRequest(mode));
+  }
+  async function sendRequest(mode: "queue" | "steering") {
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = undefined;
-    await prepareAttachments(client, id, draftRef, composer, (value) => {
-      if (alive.current) setSaved(value);
+    const promptId = draftRef.current.attempt?.client_message_id ?? randomUUID();
+    const initial = draftRef.current;
+    const preview = optimisticPromptDisplayItem({
+      id: promptId, text: initial.attempt?.text ?? [initial.draft.text, ...(initial.draft.files ?? []).map(file => file.name)].filter(Boolean).join("\n\n"),
+      skills: initial.draft.skills,
+      steering: initial.attempt?.steer ?? (mode === "steering" && !!activeTurn(timeline.snapshot().items)),
+      createdAt: new Date().toISOString(),
+      images: initial.draft.images.map(image => ({ url: `data:${image.mime_type};base64,${image.data_base64}` })),
     });
-    const current = draftRef.current;
-    const attempt = submissionAttempt(
-      current,
-      randomUUID(),
-      mode === "steering" && !!activeTurn(timeline.snapshot().items),
-      mode === "queue" ? "queue" : undefined,
-    );
-    const promptId = attempt.client_message_id;
-    if (attempt.mode !== "queue" && !promptAnchors.current.has(promptId)) {
+    preview.queuedPreview = initial.attempt ? initial.attempt.mode === "queue" : mode === "queue";
+    if (!preview.queuedPreview && !promptAnchors.current.has(promptId)) {
       const snapshot = timeline.snapshot();
       promptAnchors.current.set(promptId, capturePromptTimelineAnchor(
         snapshot.items.at(-1)?.sequence ?? 0, snapshot.previews.map(item => item.id), promptAnchors.current,
       ));
     }
-    const preview = optimisticPromptDisplayItem({
-      id: promptId, text: attempt.text, skills: attempt.skills,
-      steering: attempt.steer, createdAt: new Date().toISOString(),
-      images: attempt.images?.map(image => ({ url: `data:${image.mime_type};base64,${image.data_base64}` })),
-    });
-    preview.queuedPreview = attempt.mode === "queue";
-    const pending = { draft: current.draft, attempt };
-    draftRef.current = pending;
-    setSaved(pending);
-    revision.current++;
-    await composer.write(pending); // Persist exact payload/id before dispatch so a timeout is retryable.
     if (alive.current) setPromptPreviews(items => [...items.filter(item => item.id !== promptId), preview]);
-    if (alive.current) setSendCanLeave(true);
+    let prepared = false;
     try {
-      const command = await client.send(
-        id,
-        {
-          text: attempt.text,
-          skills: attempt.skills,
-          images: attempt.images,
-          client_message_id: attempt.client_message_id,
-        },
-        attempt.mode ?? attempt.steer,
+      await prepareAttachments(client, id, draftRef, composer, (value) => {
+        if (alive.current) setSaved(value);
+      });
+      const current = draftRef.current;
+      const attempt = submissionAttempt(
+        current,
+        promptId,
+        mode === "steering" && !!activeTurn(timeline.snapshot().items),
+        mode === "queue" ? "queue" : undefined,
       );
-      // A reopened screen owns the persisted attempt now. Do not let this old
-      // request overwrite its draft; retrying the saved ID is idempotent.
-      if (!alive.current) return;
-      const acknowledged = acknowledgeOptimisticPrompt(preview, command, timeline.snapshot().items);
-      const anchor = promptAnchors.current.get(promptId);
-      promptAnchors.current.delete(promptId);
-      if (anchor && acknowledged) promptAnchors.current.set(command.id, anchor);
-      setPromptPreviews(items => [...items.filter(item => item.id !== promptId), ...(acknowledged ? [{ ...acknowledged, queuedPreview: preview.queuedPreview, queueConfirmed: preview.queuedPreview }] : [])]);
-      setQueueRevision((value) => value + 1);
-      const empty = { draft: emptyDraft() };
-      const persisted = composer.transition(draftRef, empty);
-      if (alive.current) setSaved(empty);
-      await persisted;
-    } catch (e) {
-      if (!alive.current) return;
-      setPromptPreviews(items => items.map(item => item.id === promptId ? { ...item, delivery: { state: "failed", error: t("mobile.deliveryUnknown") } } : item));
-      // Validation is definitely rejected; network/5xx remains uncertain and retains the same id.
-      if (
-        e instanceof ApiError &&
-        e.status >= 400 &&
-        e.status < 500 &&
-        e.code !== "command_id_conflict"
-      ) {
-        setPromptPreviews(items => items.filter(item => item.id !== promptId));
-        promptAnchors.current.delete(promptId);
-        const restored = { draft: current.draft };
-        const persisted = composer.transition(draftRef, restored);
-        if (alive.current) setSaved(restored);
-        await persisted;
-      }
-      if (
-        attempt.mode === "queue" &&
-        e instanceof ApiError &&
-        [404, 405].includes(e.status)
-      )
-        throw new Error(
-          t("mobile.thisDaemonDoesNotSupportQueuedMessagesYetUpdateTheDaemonOrSwitchToSteer"),
+
+      const pending = { draft: current.draft, attempt };
+      draftRef.current = pending;
+      if (alive.current) setSaved(pending);
+      revision.current++;
+      await composer.write(pending); // Persist exact payload/id before dispatch so a timeout is retryable.
+      prepared = true;
+      try {
+        const command = await client.send(
+          id,
+          {
+            text: attempt.text,
+            skills: attempt.skills,
+            images: attempt.images,
+            client_message_id: attempt.client_message_id,
+          },
+          attempt.mode ?? attempt.steer,
         );
+        // Finish persistence even after navigation. Reopened pages wait for this
+        // submission before taking ownership of the draft.
+        if (alive.current) {
+          const acknowledged = acknowledgeOptimisticPrompt(preview, command, timeline.snapshot().items);
+          const anchor = promptAnchors.current.get(promptId);
+          promptAnchors.current.delete(promptId);
+          if (anchor && acknowledged) promptAnchors.current.set(command.id, anchor);
+          setPromptPreviews(items => [...items.filter(item => item.id !== promptId), ...(acknowledged ? [{ ...acknowledged, queuedPreview: preview.queuedPreview, queueConfirmed: preview.queuedPreview }] : [])]);
+          setQueueRevision((value) => value + 1);
+        }
+        const empty = { draft: emptyDraft() };
+        const persisted = composer.transition(draftRef, empty);
+        if (alive.current) setSaved(empty);
+        await persisted;
+      } catch (e) {
+        if (alive.current) setPromptPreviews(items => items.map(item => item.id === promptId ? { ...item, delivery: { state: "failed", error: t("mobile.deliveryUnknown") } } : item));
+        // Validation is definitely rejected; network/5xx remains uncertain and retains the same id.
+        if (
+          e instanceof ApiError &&
+          e.status >= 400 &&
+          e.status < 500 &&
+          e.code !== "command_id_conflict"
+        ) {
+          if (alive.current) setPromptPreviews(items => items.filter(item => item.id !== promptId));
+          promptAnchors.current.delete(promptId);
+          const restored = { draft: current.draft };
+          const persisted = composer.transition(draftRef, restored);
+          if (alive.current) setSaved(restored);
+          await persisted;
+        }
+        if (
+          attempt.mode === "queue" &&
+          e instanceof ApiError &&
+          [404, 405].includes(e.status)
+        )
+          throw new Error(
+            t("mobile.thisDaemonDoesNotSupportQueuedMessagesYetUpdateTheDaemonOrSwitchToSteer"),
+          );
+        throw e;
+      }
+    } catch (e) {
+      if (!prepared && alive.current) setPromptPreviews(items => items.filter(item => item.id !== promptId));
       throw e;
     }
   }
@@ -834,6 +849,7 @@ function ConversationContent() {
   );
   return (
     <KeyboardFrameView
+      onKeyboardVisibleChange={setKeyboardVisible}
       style={[
         styles.screen,
         { width: "100%", maxWidth: 860, alignSelf: "center" },
@@ -1020,7 +1036,7 @@ function ConversationContent() {
       <View
         style={{
           padding: 12,
-          paddingBottom: Math.max(insets.bottom, 12),
+          paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 12),
           gap: 8,
           backgroundColor: colors.background,
         }}
@@ -1222,39 +1238,7 @@ function ConversationContent() {
             )}
           </View>
         </View>
-        {saved.attempt && !busy && (
-          <Action
-            label={t("mobile.discardPendingSubmission")}
-            danger
-            secondary
-            disabled={busy}
-            onPress={() =>
-              Alert.alert(
-                t("mobile.discardPendingSubmission"),
-                t("mobile.theDaemonMayAlreadyHaveReceivedItCheckHistoryBeforeSendingAgain"),
-                [
-                  { text: t("app.cancel"), style: "cancel" },
-                  {
-                    text: t("mobile.discard"),
-                    style: "destructive",
-                    onPress: () =>
-                      void run(async () => {
-                        const promptId = draftRef.current.attempt?.client_message_id;
-                        if (promptId) {
-                          setPromptPreviews(items => items.filter(item => item.id !== promptId));
-                          promptAnchors.current.delete(promptId);
-                        }
-                        const next = { draft: emptyDraft() };
-                        const persisted = composer.transition(draftRef, next);
-                        setSaved(next);
-                        await persisted;
-                      }),
-                  },
-                ],
-              )
-            }
-          />
-        )}
+
       </View>
       <BottomSheet
         anchorRef={composerAnchor}

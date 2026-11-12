@@ -12,7 +12,7 @@ const provider = readFileSync(
   join(ios, "Pods/Target Support Files/Pods-Zotigo/ExpoModulesProvider.swift"),
   "utf8",
 );
-for (const module of ["SelectableTextModule", "SkillInputModule"]) {
+for (const module of ["SelectableTextModule", "SkillInputModule", "KeyboardInsetModule"]) {
   if (!provider.includes(`${module}.self`)) {
     throw new Error(`Missing ${module} in ExpoModulesProvider. Rerun pod install.`);
   }
