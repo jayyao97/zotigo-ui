@@ -449,6 +449,11 @@ export class DaemonClient {
       projects: import("@zotigo/shared/clientTypes").NavigationItem[];
       workspaces: import("@zotigo/shared/clientTypes").NavigationItem[];
     }>("/catalog/navigation");
+  pinProject = (id: string, pinned: boolean) =>
+    this.request("/catalog/navigation/pin", "PUT", {
+      item: { kind: "project", id },
+      pinned,
+    });
   pinWorkspace = (id: string, pinned: boolean) =>
     this.request("/catalog/navigation/pin", "PUT", {
       item: { kind: "workspace", id },

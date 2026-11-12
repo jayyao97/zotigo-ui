@@ -148,6 +148,7 @@ export function catalogRows(
   );
   if (
     pinned.length ||
+    pins.some(p => p.kind === "project" && projects.some(project => project.id === p.id)) ||
     pins.some(
       (p) =>
         p.kind === "workspace" &&
@@ -230,6 +231,49 @@ export function catalogRows(
   const pinnedWorkspaceIds = new Set(
     pins.filter((p) => p.kind === "workspace").map((p) => p.id),
   );
+  const projectBranch = (project: CatalogProject): CatalogRow[] => {
+    const projectRows: CatalogRow[] = [];
+    const projectMatches = matches(project.name);
+    const children = activeWorkspaces.filter(
+      (w) => w.project_id === project.id,
+    );
+    const matchingChildren = children.filter(
+      (w) =>
+        projectMatches ||
+        matches(w.title) ||
+        sessions.some(
+          (s) =>
+            s.organization?.workspace_id === w.id &&
+            matchingSessions.has(sessionId(s)),
+        ),
+    );
+    if (search && !projectMatches && !matchingChildren.length) return [];
+    const key = `project:${project.id}`;
+    projectRows.push({
+      kind: "project",
+      key,
+      value: project,
+      open: open(key),
+    });
+    if (!open(key)) return projectRows;
+    if (workspaceErrors[project.id])
+      projectRows.push({
+        kind: "notice",
+        key: `${key}:error`,
+        title: workspaceErrors[project.id],
+      });
+    else if (!children.length)
+      projectRows.push({
+        kind: "notice",
+        key: `${key}:empty`,
+        title: t("mobile.noWorkspacesYet"),
+      });
+    for (const workspace of matchingChildren) {
+      if (!pinnedWorkspaceIds.has(workspace.id))
+        projectRows.push(...workspaceRows(workspace, projectMatches));
+    }
+    return projectRows;
+  };
   if (open("pinned"))
     for (const pin of [
       ...pins,
@@ -240,6 +284,11 @@ export function catalogRows(
         )
         .map((s) => ({ kind: "session", id: sessionId(s) })),
     ]) {
+      if (pin.kind === "project") {
+        const project = projects.find(project => project.id === pin.id);
+        if (project) rows.push(...projectBranch(project));
+        continue;
+      }
       if (pin.kind === "session") {
         const session = pinned.find((s) => sessionId(s) === pin.id);
         if (session) addSessions([session], "pinned", false);
@@ -260,48 +309,7 @@ export function catalogRows(
       )
         rows.push(...workspaceRows(workspace, false, 0));
     }
-  const projectRows: CatalogRow[] = [];
-  for (const project of projects) {
-    const projectMatches = matches(project.name);
-    const children = activeWorkspaces.filter(
-      (w) => w.project_id === project.id,
-    );
-    const matchingChildren = children.filter(
-      (w) =>
-        projectMatches ||
-        matches(w.title) ||
-        sessions.some(
-          (s) =>
-            s.organization?.workspace_id === w.id &&
-            matchingSessions.has(sessionId(s)),
-        ),
-    );
-    if (search && !projectMatches && !matchingChildren.length) continue;
-    const key = `project:${project.id}`;
-    projectRows.push({
-      kind: "project",
-      key,
-      value: project,
-      open: open(key),
-    });
-    if (!open(key)) continue;
-    if (workspaceErrors[project.id])
-      projectRows.push({
-        kind: "notice",
-        key: `${key}:error`,
-        title: workspaceErrors[project.id],
-      });
-    else if (!children.length)
-      projectRows.push({
-        kind: "notice",
-        key: `${key}:empty`,
-        title: t("mobile.noWorkspacesYet"),
-      });
-    for (const workspace of matchingChildren) {
-      if (!pinnedWorkspaceIds.has(workspace.id))
-        projectRows.push(...workspaceRows(workspace, projectMatches));
-    }
-  }
+  const projectRows = projects.filter(project => !pins.some(pin => pin.kind === "project" && pin.id === project.id)).flatMap(projectBranch);
   if (projectRows.length) {
     rows.push({
       kind: "heading",
@@ -334,68 +342,40 @@ export function catalogRows(
   return rows;
 }
 
-// Pinned branches flow normally. Project trees keep their two ancestor rows visible.
+// Match the React sidebar: section → project → workspace; directly pinned
+// workspaces have no project ancestor. Siblings push each sticky row out.
 export type CatalogLayout = { y: number; height: number };
 export function stickyCatalogRows(
   rows: CatalogRow[],
   layouts: ReadonlyMap<string, CatalogLayout>,
   offset: number,
 ): { row: CatalogRow; top: number }[] {
-  let project = -1;
-  for (let i = 0; i < rows.length; i++) {
-    const layout = layouts.get(rows[i].key);
-    if (
-      layout &&
-      layout.y <= offset &&
-      (rows[i].kind === "project" || rows[i].kind === "heading")
-    )
-      project = rows[i].kind === "project" ? i : -1;
-  }
-  if (project < 0) return [];
-  const header = layouts.get(rows[project].key)!;
-  const boundary = rows.findIndex(
-    (r, i) => i > project && (r.kind === "project" || r.kind === "heading"),
-  );
-  const end =
-    boundary < 0
-      ? Infinity
-      : (layouts.get(rows[boundary].key)?.y ?? Infinity);
-  if (end <= offset) return [];
-  const result = [
-    { row: rows[project], top: Math.min(0, end - offset - header.height) },
-  ];
-  let workspace = -1;
-  for (
-    let i = project + 1;
-    i < (boundary < 0 ? rows.length : boundary);
-    i++
-  ) {
-    const row = rows[i],
-      layout = layouts.get(row.key);
-    if (
-      row.kind === "workspace" &&
-      row.depth > 0 &&
-      layout &&
-      layout.y <= offset + header.height
-    )
-      workspace = i;
-  }
-  if (workspace >= 0) {
-    const layout = layouts.get(rows[workspace].key)!;
-    const next = rows.findIndex(
-      (r, i) =>
-        i > workspace &&
-        (r.kind === "workspace" ||
-          r.kind === "project" ||
-          r.kind === "heading"),
-    );
-    const bottom =
-      next < 0 ? Infinity : (layouts.get(rows[next].key)?.y ?? Infinity);
-    if (bottom > offset + header.height)
-      result.push({
-        row: rows[workspace],
-        top: Math.min(header.height, bottom - offset - layout.height),
-      });
+  const level = (row: CatalogRow): number => row.kind === "heading" ? 0
+    : row.kind === "project" ? 1
+    : row.kind === "workspace" ? row.depth + 1
+    : row.kind === "notice" ? (row.depth ?? 1) + 1 : row.depth + 1;
+  const result: { row: CatalogRow; top: number }[] = [];
+  let start = 0;
+  let end = rows.length;
+  let top = 0;
+  for (let depth = 0; depth < 3; depth++) {
+    let candidate = -1;
+    for (let i = start; i < end; i++) {
+      const layout = layouts.get(rows[i].key);
+      if (level(rows[i]) === depth && layout && layout.y <= offset + top) candidate = i;
+    }
+    if (candidate < 0) break;
+    const row = rows[candidate];
+    if (row.kind !== "heading" && row.kind !== "project" && row.kind !== "workspace") break;
+    let boundary = candidate + 1;
+    while (boundary < end && level(rows[boundary]) > depth) boundary++;
+    const bottom = boundary < rows.length ? layouts.get(rows[boundary].key)?.y ?? Infinity : Infinity;
+    const layout = layouts.get(row.key)!;
+    if (bottom <= offset + top) break;
+    result.push({ row, top: Math.min(top, bottom - offset - layout.height) });
+    top += layout.height;
+    start = candidate + 1;
+    end = boundary;
   }
   return result;
 }

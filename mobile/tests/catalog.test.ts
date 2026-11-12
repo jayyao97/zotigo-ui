@@ -224,7 +224,7 @@ test("pinned workspace starts at root depth and its children have one indent", (
   assert.equal(normal.find((r) => r.kind === "session")?.depth, 2);
 });
 
-test("project and workspace stick in two rows, switch at boundaries, and skip pinned trees", () => {
+test("section, project and workspace stick in three rows, including pinned trees", () => {
   const rows = catalogRows(
     [project],
     [workspace, { ...workspace, id: "w2", title: "Second" }],
@@ -242,8 +242,9 @@ test("project and workspace stick in two rows, switch at boundaries, and skip pi
       r.top,
     ]),
     [
-      ["project:p", 0],
-      ["workspace:w", 44],
+      ["projects", 0],
+      ["project:p", 44],
+      ["workspace:w", 78],
     ],
   );
   const secondY = layouts.get("workspace:w2")!.y;
@@ -264,7 +265,7 @@ test("project and workspace stick in two rows, switch at boundaries, and skip pi
   const pinnedLayouts = new Map(
     pinned.map((r, i) => [r.key, { y: i * 44, height: 44 }]),
   );
-  assert.deepEqual(stickyCatalogRows(pinned, pinnedLayouts, 50), []);
+  assert.deepEqual(stickyCatalogRows(pinned, pinnedLayouts, 50).map(({ row, top }) => [row.key, top]), [["pinned", 0], ["workspace:w", 38]]);
 });
 
 test("daemon navigation controls mixed pins and project/workspace order", () => {
@@ -340,3 +341,22 @@ test("workspace sessions follow daemon position before recency", () => {
     ["first", "second", "new"],
   );
 });
+
+ test("pinned projects follow mixed server order, omit their normal copy and keep nested pins unique", () => {
+   const pins = [{ kind: "session", id: "top" }, { kind: "project", id: "p" }, { kind: "workspace", id: "w2" }];
+   const rows = catalogRows([project], [workspace, { ...workspace, id: "w2" }], [item("one"), item("top", { pinned_at: "2026-01-01" })], "", new Set(), {}, new Set(), pins);
+   assert.deepEqual(rows.filter(row => ["project", "workspace", "session"].includes(row.kind)).map(row => row.key), ["pinned:top", "project:p", "workspace:w", "workspace:w:one", "workspace:w2"]);
+   assert.equal(new Set(rows.map(row => row.key)).size, rows.length);
+   const collapsed = catalogRows([project], [workspace], [item("one")], "", new Set(["pinned"]), {}, new Set(), [{ kind: "project", id: "p" }]);
+   assert.deepEqual(collapsed.map(row => row.key), ["pinned"]);
+ });
+
+ test("sticky pinned workspace ends before the next standalone pinned session", () => {
+   const rows = catalogRows([project], [workspace], [item("one"), item("top", { pinned_at: "2026-01-01" })], "", new Set(), {}, new Set(), [{ kind: "workspace", id: "w" }, { kind: "session", id: "top" }]);
+   const layouts = new Map(rows.map((row, index) => [row.key, { y: index * 44, height: 44 }]));
+   const boundary = layouts.get("pinned:top")!.y;
+   assert.deepEqual(stickyCatalogRows(rows, layouts, boundary - 44).map(entry => entry.row.key), ["pinned"]);
+   const before = stickyCatalogRows(rows, layouts, boundary - 64);
+   assert.equal(before.at(-1)?.row.key, "workspace:w");
+   assert.equal(before.at(-1)?.top, 20);
+ });

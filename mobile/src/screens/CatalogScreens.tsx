@@ -415,6 +415,8 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${item.open ? t("common.collapse") : t("common.expand")} ${item.title}`}
+          accessibilityElementsHidden={!overlay && sticky.some(entry => entry.row.key === item.key)}
+          importantForAccessibility={!overlay && sticky.some(entry => entry.row.key === item.key) ? "no-hide-descendants" : "auto"}
           accessibilityState={{ expanded: item.open }}
           onPress={() => toggle(item.key)}
           style={[
@@ -562,7 +564,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
                 top,
                 left: 0,
                 right: 0,
-                zIndex: 2 - index,
+                zIndex: 3 - index,
                 backgroundColor: "#181818",
                 borderBottomWidth: StyleSheet.hairlineWidth,
                 borderBottomColor: "#383838",
@@ -882,11 +884,12 @@ export function ProjectScreen() {
   const action = useMutation();
   const load = useCatalogLoad(
     useCallback(async () => {
-      const [project, workspaces] = await Promise.all([
+      const [project, workspaces, navigation] = await Promise.all([
         daemon.project(params.id),
         daemon.workspaces(params.id),
+        daemon.navigation(),
       ]);
-      return { project, workspaces };
+      return { project, workspaces, navigation };
     }, [daemon, params.id]),
   );
   return (
@@ -967,6 +970,15 @@ export function ProjectScreen() {
                   onPress={() => setPanel(null)}
                 />
               </View>
+              <Action
+                label={load.data?.navigation.pinned.some(item => item.kind === "project" && item.id === params.id) ? t("app.unpinProject") : t("app.pinProject")}
+                secondary
+                disabled={action.busy || !load.data}
+                onPress={() => void action.run(async () => {
+                  await daemon.pinProject(params.id, !load.data?.navigation.pinned.some(item => item.kind === "project" && item.id === params.id));
+                  await load.refresh();
+                })}
+              />
               <Row
                 title={t("mobile.projectSources")}
                 onPress={
