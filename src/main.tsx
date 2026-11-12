@@ -1,3 +1,4 @@
+import { initializePerformanceDiagnostics } from "./performanceDiagnostics";
 import { initializeLanguage } from "./i18n";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -8,6 +9,8 @@ import "./styles.css";
 
 document.documentElement.dataset.platform = window.zotigo ? "desktop" : "web";
 
+const disposeDiagnostics = initializePerformanceDiagnostics(window.zotigo?.diagnostics);
+if (import.meta.hot) import.meta.hot.dispose(disposeDiagnostics);
 const disposeLanguage = initializeLanguage();
 if (import.meta.hot) import.meta.hot.dispose(disposeLanguage);
 

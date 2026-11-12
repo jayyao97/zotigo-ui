@@ -1,4 +1,4 @@
-import { exportPerformanceDiagnostics } from "./performanceDiagnostics";
+import { DiagnosticSettings } from "./DiagnosticSettings";
 import { changeLanguage, useLocale } from "./i18n";
 import { useEffect, useState } from "react";
 import { useClient } from "./ClientContext";
@@ -170,13 +170,7 @@ export function SettingsPage({
               </div>
             </div>
           </section>
-          <section className="settings-section" aria-labelledby="performance-settings-heading">
-            <h2 id="performance-settings-heading">{t("diagnostics.title")}</h2>
-            <div className="settings-card"><div className="settings-row">
-              <span><strong>{t("diagnostics.export")}</strong><small>{t("diagnostics.help")}</small></span>
-              <button type="button" className="settings-secondary-button" onClick={exportPerformanceDiagnostics}>{t("diagnostics.export")}</button>
-            </div></div>
-          </section>
+          <DiagnosticSettings />
           </>}
         </div>
       </section>
