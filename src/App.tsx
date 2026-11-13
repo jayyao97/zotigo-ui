@@ -137,6 +137,7 @@ import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, De
 import { initialWorkspaceSourceSelection, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentReference, attachmentSizeError, modelImageTypes, type MessageFileInput } from "../shared/messageFiles";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
+import { RecentSessions } from "./RecentSessions";
 import { SidebarSection } from "./SidebarSection";
 import { updateSidebarClipping } from "./sidebarClipping";
 import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "./sidebarDisclosure";
@@ -444,6 +445,17 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [message, setMessage] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<DesktopConversation | null>(null);
   const [archivingSession, setArchivingSession] = useState(false);
+  const [recentSessionsOpen, setRecentSessionsOpen] = useState(() => {
+    try { return localStorage.getItem("zotigo:sidebar-recent") === "true"; } catch { return false; }
+  });
+  function showRecentSessions(open: boolean) {
+    leaveChannelsImmediately();
+    setRecentSessionsOpen(open);
+    setConversationContextMenu(null);
+    setProjectMenuId(null); setWorkspaceMenuId(null);
+    navigationScrollRef.current?.scrollTo({ top: 0 });
+    try { localStorage.setItem("zotigo:sidebar-recent", String(open)); } catch { /* Keep the in-memory view. */ }
+  }
   const [sidebarActionError, setSidebarActionError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [pauseRequestedTurnId, setPauseRequestedTurnId] = useState<string | null>(null);
@@ -3907,13 +3919,13 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           <HostMenu />
           <div className="brand-actions">
             <button type="button" aria-label={t("app.search")} onClick={() => setSearchOpen(true)} title={t("app.searchKCtrlK")}><Search size={15} strokeWidth={1.8} /></button>
-            <button type="button" aria-label={t("app.notifications")} disabled title={t("app.notificationsAreNotAvailableYet")}><Bell size={15} strokeWidth={1.8} /></button>
+            <button type="button" className="recent-sessions-toggle" aria-label={t("recentSessions.title")} aria-pressed={recentSessionsOpen && !channelsOpen && !repositoriesOpen} title={t("recentSessions.title")} onClick={() => showRecentSessions(!(recentSessionsOpen && !channelsOpen && !repositoriesOpen))}><Bell size={15} strokeWidth={1.8} /></button>
             {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle sidebar-navigation-close" type="button" onClick={() => setWebNavigationOpen(false)} aria-label={t("app.closeNavigation")} title={t("app.closeNavigation")}><X size={18} /></button>}
           </div>
         </div>
 
         <nav className="utility-nav" aria-label={t("app.navigation")}>
-          <button type="button" aria-label={t("app.home")} aria-pressed={!channelsOpen && !repositoriesOpen} className={!channelsOpen && !repositoriesOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setWebNavigationOpen(false); }}>
+          <button type="button" aria-label={t("app.home")} aria-pressed={!channelsOpen && !repositoriesOpen} className={!channelsOpen && !repositoriesOpen ? "selected" : ""} onClick={() => { showRecentSessions(false); setWebNavigationOpen(false); }}>
             <House size={18} strokeWidth={1.8} />
             <span className="utility-nav-label">{t("app.home")}</span>
           </button>
@@ -3937,6 +3949,12 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
         <div className="sidebar-lower-stack">
         <div ref={navigationScrollRef} className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
+        {recentSessionsOpen ? <RecentSessions state={desktopState} sessions={sessions} onSearch={() => setSearchOpen(true)} renderItem={({ conversation, context, unread }) => <ConversationNavItem
+          key={conversation.id} conversation={conversation} detail={context || t("app.ungroupedSessions")}
+          selected={conversation.id === selectedConversation?.id} working={workingConversationIds.has(conversation.id)} unread={unread}
+          onSelect={() => void selectConversation(conversation.id)} onContextMenu={event => openConversationContextMenu(event, conversation.id)}
+          onRename={() => openRenameConversationDialog(conversation)} onPin={() => void toggleConversationPinned(conversation)} onArchive={() => void archiveConversation(conversation)}
+        />} /> : <>
         <SidebarSection name="pinned" title={t("app.pinned")}>
           {pinnedItems.length === 0 ? (
             <p className="sidebar-empty">{t("app.noPinnedItems")}</p>
@@ -3998,6 +4016,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             </div>
           </SidebarSection>
         )}
+
+        </>}
 
         {sidebarActionError && (
           <div className="sidebar-action-error" role="alert">
@@ -5294,6 +5314,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
 function ConversationNavItem({
   conversation,
+  detail,
   selected,
   working,
   unread,
@@ -5305,6 +5326,7 @@ function ConversationNavItem({
   sort,
 }: {
   conversation: DesktopConversation;
+  detail?: string;
   selected: boolean;
   working: boolean;
   unread: boolean;
@@ -5357,6 +5379,7 @@ function ConversationNavItem({
         <span className="sidebar-session-title" ref={titleViewportRef}>
           <span ref={titleTextRef}>{conversation.title}</span>
         </span>
+        {detail && <small className="recent-session-context">{detail}</small>}
       </button>
       {working && <LoaderCircle className="sidebar-session-spinner" size={13} strokeWidth={1.9} aria-label={t("app.running")} />}
       {!working && unread && <span className="sidebar-session-unread" aria-label={t("app.unread")} />}

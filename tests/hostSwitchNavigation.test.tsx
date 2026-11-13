@@ -205,6 +205,38 @@ test("retry clears the previous send warning while pending and preserves a new f
   }
 });
 
+test("recent sessions toggles with the bell, keeps unread first, selects sessions and returns to the tree", async () => {
+  const restore = installDom();
+  const today = new Date().toISOString();
+  const old = new Date(Date.now() - 20 * 86400000).toISOString();
+  const state: DesktopState = { ...emptyState, conversations: [
+    { id: "recent", title: "Recent read session", project_id: null, workspace_id: null, created_at: today, updated_at: today },
+    { id: "unread", title: "Unread older session", project_id: null, workspace_id: null, created_at: old, updated_at: old },
+    { id: "old", title: "Old read session", project_id: null, workspace_id: null, created_at: old, updated_at: old },
+  ] };
+  const client = hostClient(false, state);
+  client.api.listSessions = async () => [{ id: "unread", created_at: old, state: "ended", live: false, working: false, read_state: { unread: true, version: 2, read_version: 1, completed_sequence: 3 } }];
+  const root = await mountHostShell(client.api);
+  try {
+    const bell = document.querySelector<HTMLButtonElement>(".recent-sessions-toggle")!;
+    assert.equal(bell.disabled, false);
+    await act(async () => click(bell));
+    assert.equal(bell.getAttribute("aria-pressed"), "true");
+    assert.equal(document.querySelector(".projects-section"), null);
+    assert.deepEqual([...document.querySelectorAll(".recent-session-navigation .sidebar-session-title")].map(node => node.textContent), ["Unread older session", "Recent read session"]);
+    assert.ok(document.querySelector(".recent-session-navigation .sidebar-session-unread"));
+    await act(async () => click(document.querySelectorAll(".recent-session-navigation .sidebar-session > button")[1]));
+    assert.match(document.querySelector(".recent-session-navigation .sidebar-session.selected")?.textContent ?? "", /Recent read session/);
+    await act(async () => click(bell));
+    assert.ok(document.querySelector(".projects-section"));
+    assert.ok(document.querySelector(".ungrouped-section")?.textContent?.includes("Old read session"));
+    await act(async () => click(bell));
+    await act(async () => click(document.querySelector('.utility-nav [aria-label="Home"]')!));
+    assert.equal(bell.getAttribute("aria-pressed"), "false");
+    assert.ok(document.querySelector(".projects-section"));
+  } finally { await act(async () => root.unmount()); restore(); }
+});
+
 test("sidebar sections collapse independently and ungrouped sessions exist without projects", async () => {
   const restore = installDom();
   const time = "2026-01-01T00:00:00Z";
