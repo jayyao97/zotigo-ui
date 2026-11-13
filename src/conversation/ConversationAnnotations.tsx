@@ -123,7 +123,14 @@ export function ConversationAnnotations({ root, references, editingId, onEdit, o
   return createPortal(<>
     {anchors.map(({ id, marker }) => <button type="button" data-annotation-control className="annotation-marker" key={id} aria-label={t("conversationAnnotations.editAnnotation", { p0: references.findIndex(value => value.id === id) + 1 })} style={{ left: Math.min(marker.right, (root.current?.getBoundingClientRect().right ?? window.innerWidth) - 32), top: marker.top - 20 }} onClick={() => onEdit(id)}>{references.findIndex(value => value.id === id) + 1}</button>)}
     {current && anchor && <div key={current.id} ref={popup} className="annotation-editor" role="dialog" aria-label={t("conversationAnnotations.editAnnotation2")} style={position}>
-      <textarea autoFocus aria-label={t("conversationAnnotations.annotationComment")} placeholder={t("conversationAnnotations.addAnOptionalComment")} value={current.comment} onChange={event => onChange(references.map(value => value.id === current.id ? { ...value, comment: event.target.value } : value))} />
+      <textarea autoFocus aria-label={t("conversationAnnotations.annotationComment")} placeholder={t("conversationAnnotations.addAnOptionalComment")} value={current.comment} onChange={event => onChange(references.map(value => value.id === current.id ? { ...value, comment: event.target.value } : value))}
+        onKeyDown={event => {
+          if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onEdit(null);
+        }}
+      />
       <footer><button type="button" aria-label={t("conversationAnnotations.deleteAnnotation")} onClick={() => { onChange(references.filter(value => value.id !== current.id)); onEdit(null); }}><Trash2 size={16} /></button><span /><button type="button" onClick={() => { onChange(references.map(value => value.id === current.id ? { ...value, comment: originalComment.current } : value)); onEdit(null); }}>{t("app.cancel")}</button><button type="button" onClick={() => onEdit(null)}>{t("app.save")}</button></footer>
     </div>}
   </>, document.body);
