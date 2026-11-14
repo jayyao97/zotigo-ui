@@ -8,7 +8,7 @@ import { WorkspacePanelHome } from "./WorkspacePanelHome";
 import { PendingInteractionNotice } from "./conversation/PendingInteractionNotice";
 import { stateLabel } from "../shared/i18n/display";
 import { useLocale } from "./i18n";
-import { getLocale, t } from "../shared/i18n/index";
+import { t } from "../shared/i18n/index";
 import { SidebarResizeHandle, loadSidebarWidth } from "./SidebarResizeHandle";
 import { SessionHistoryCache, type SessionHistory } from "./sessionHistoryCache";
 import { retainSessionContextUsage } from "./sessionContextCache";
@@ -42,7 +42,6 @@ import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
 import {
-  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -52,7 +51,6 @@ import {
   type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
   Suspense,
-  lazy,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -82,7 +80,6 @@ import {
   House,
   Image,
   Laptop,
-  LoaderCircle,
   MoreHorizontal,
   PanelLeft,
   PanelRight,
@@ -136,10 +133,10 @@ import {
   workingConversationIds as workingConversationIdsForSessions,
   type EphemeralDisplayBlock,
 } from "../shared/sessionDisplay";
-import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, MessageImageInput, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
-import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopProjectRepository, DesktopState, DesktopWorkspace, ProjectSourceInput, SourceCandidate, WorkspaceFileOpenResult } from "../shared/clientTypes";
+import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
+import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { initialWorkspaceSourceSelection, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
-import { attachmentReference, attachmentSizeError, modelImageTypes, type MessageFileInput } from "../shared/messageFiles";
+import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
 import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
 import { RecentSessions } from "./RecentSessions";
 import { SidebarSection } from "./SidebarSection";
@@ -199,83 +196,31 @@ import {
   emptyComposerDraft,
   restoreSubmittedDraft,
   updateComposerDrafts,
-  type ComposerDraftState,
 } from "./composerDrafts";
 import { conversationIsVisible, canAcknowledgeSession, mergeReadState, mergeSessionReadStates } from "./unreadSessions";
+import type { ComposerDraft, ConversationContextMenu, ProjectSourceDraft, SidebarDragItem, SidebarDropTarget, SidebarSortProps, WorkspaceRepositoryDraft, ConnectionState } from "./app/appTypes";
+import { appendUploadedReferences, attachmentToMessageFile, attachmentToMessageImage, revokeDraftAttachments } from "./app/composerAttachments";
+import { clearResolvedApprovalPolicyOverrides, connectionLabel, errorMessage, fileNameForPath, folderModeLabel, formatDateTime, isMarkdownFile, isNearScrollBottom, projectForConversation, projectSourceInput, sameJsonValue, sessionFromBinding, upsertSession, workspaceSourceName } from "./app/appHelpers";
+import { StateBadge } from "./app/StateBadge";
+import { StatusPill } from "./app/StatusPill";
+import { ConversationNavItem } from "./sidebar/ConversationNavItem";
+import { ProjectOverview } from "./project/ProjectOverview";
+import { OpenWorkspaceFileTab } from "./workspace/OpenWorkspaceFileTab";
+import { ArchiveWorkspaceDialog } from "./workspace/ArchiveWorkspaceDialog";
+import { DeleteWorkspaceDialog } from "./workspace/DeleteWorkspaceDialog";
+import { RenameWorkspaceDialog } from "./workspace/RenameWorkspaceDialog";
+import { DeleteProjectDialog } from "./project/DeleteProjectDialog";
+import { RenameProjectDialog } from "./project/RenameProjectDialog";
+import { RenameConversationDialog } from "./sidebar/RenameConversationDialog";
+import { SessionContextMenu } from "./sidebar/SessionContextMenu";
+import { RemoveSourceDialog } from "./project/RemoveSourceDialog";
 
-const FileEditorTab = lazy(() => import("./FileEditorTab").then((module) => ({ default: module.FileEditorTab })));
-const FileVideoTab = lazy(() => import("./FileVideoTab").then((module) => ({ default: module.FileVideoTab })));
-const FileImageTab = lazy(() => import("./FileImageTab").then((module) => ({ default: module.FileImageTab })));
-
-type ConnectionState = "checking" | "online" | "offline";
-type WorkspaceRepositoryDraft = {
-  repository: DesktopProjectRepository;
-  selected: boolean;
-  baseRef: string;
-};
-type ProjectSourceDraft = {
-  candidate: SourceCandidate;
-  folderMode: FolderSourceMode;
-};
-type SidebarDragItem = {
-  kind: "project" | "workspace" | "workspace-session" | "pinned-session";
-  id: string;
-  scopeId: string;
-};
-type SidebarDropTarget = SidebarDragItem & { position: DropPosition };
-type SidebarSortProps = {
-  draggable: boolean;
-  dragging: boolean;
-  dropPosition?: DropPosition;
-  onDragStart: (event: DragEvent<HTMLElement>) => void;
-  onDragOver: (event: DragEvent<HTMLElement>) => void;
-  onDrop: (event: DragEvent<HTMLElement>) => void;
-  onDragEnd: () => void;
-};
-
-function OpenWorkspaceFileTab({ active, state, line, column, onDraftChange, onModeChange, onSave, onRefresh }: {
-  onRefresh: () => void;
-  active: boolean;
-  state: OpenFileState;
-  line?: number;
-  column?: number;
-  onDraftChange: (draft: string) => void;
-  onModeChange: (mode: FileEditorMode) => void;
-  onSave: () => void;
-}) {
-  useLocale();
-  if (state.kind === "video") return <FileVideoTab active={active} file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
-  if (state.kind === "image") return <FileImageTab file={state.file} workspaceRoot={state.workspaceRoot} onRefresh={onRefresh} refreshError={state.refreshError} />;
-  return <FileEditorTab
-    sessionId={state.sessionId}
-    file={state.file}
-    draft={state.draft}
-    mode={state.mode}
-    saveStatus={state.saveStatus}
-    saveError={state.saveError}
-    refreshError={state.refreshError}
-    diskChanged={state.diskChanged}
-    onRefresh={onRefresh}
-    workspaceRoot={state.workspaceRoot}
-    line={line}
-    column={column}
-    onDraftChange={onDraftChange}
-    onModeChange={onModeChange}
-    onSave={onSave}
-  />;
-}
-type ComposerDraft = ComposerDraftState<ComposerAttachment>;
 type HostVolatileState = {
   desktopState: DesktopState;
   sessions: ZotigoSession[];
   composerDrafts: Record<string, ComposerDraft>;
   openFiles: Record<string, OpenFileState>;
   sessionSidePanels: SessionSidePanels;
-};
-type ConversationContextMenu = {
-  conversationId: string;
-  x: number;
-  y: number;
 };
 
 const pollIntervalMs = 5000;
@@ -286,14 +231,6 @@ const sessionDeltaFlushIntervalMs = 50;
 const volatileStateByHost = new Map<string, HostVolatileState>();
 let volatileStateGeneration = 0;
 
-function revokeDraftAttachments(drafts: Record<string, ComposerDraft>): void {
-  for (const draft of Object.values(drafts)) {
-    for (const attachment of draft.attachments) {
-      if (attachment.url) URL.revokeObjectURL(attachment.url);
-    }
-  }
-}
-
 export function discardHostVolatileState(clientScope?: string): void {
   if (clientScope === undefined) volatileStateGeneration++;
   const states = clientScope === undefined
@@ -303,10 +240,6 @@ export function discardHostVolatileState(clientScope?: string): void {
     revokeDraftAttachments(state.composerDrafts);
     volatileStateByHost.delete(scope);
   }
-}
-
-function isMarkdownFile(filePath: string): boolean {
-  return /\.(?:md|markdown|mdown|mkd)$/i.test(filePath);
 }
 
 const emptyDesktopState: DesktopState = {
@@ -320,39 +253,6 @@ const emptyDesktopState: DesktopState = {
   selectedWorkspaceId: null,
   selectedConversationId: null,
 };
-
-function isNearScrollBottom(element: HTMLElement): boolean {
-  return element.scrollHeight - element.scrollTop - element.clientHeight < 96;
-}
-
-async function attachmentToMessageImage(attachment: ComposerAttachment): Promise<MessageImageInput> {
-  return {
-    mime_type: attachment.mimeType,
-    data_base64: await readFileAsBase64(attachment.file),
-  };
-}
-
-function appendUploadedReferences(text: string, attachments: ComposerAttachment[]): string {
-  const references = attachments.flatMap(file => file.upload?.state === "ready" ? [attachmentReference(file.name, file.upload.path)] : []);
-  return references.length ? [text, "Attached files (use tools to read or analyze):", ...references].filter(Boolean).join("\n\n") : text;
-}
-
-async function attachmentToMessageFile(attachment: ComposerAttachment): Promise<MessageFileInput> {
-  return { name: attachment.name, data_base64: await readFileAsBase64(attachment.file) };
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      const value = typeof reader.result === "string" ? reader.result : "";
-      const commaIndex = value.indexOf(",");
-      resolve(commaIndex >= 0 ? value.slice(commaIndex + 1) : value);
-    });
-    reader.addEventListener("error", () => reject(reader.error ?? new Error(t("app.failedToReadAttachment"))));
-    reader.readAsDataURL(file);
-  });
-}
 
 export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   useLocale();
@@ -3926,7 +3826,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     sidePanelOpen && !channelsOpen && !repositoriesOpen && activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined,
     hostSwitchingRef);
 
-
   return (
     <MarkdownImageContext.Provider value={markdownImageContext}>
     <CompletionTriggerNavigation.Provider value={triggerId => showPanelTab({ id: "notifications", kind: "notifications", triggerId })}>
@@ -4082,68 +3981,35 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       </aside>
 
       {conversationContextMenu && contextMenuConversation && (
-        <div
-          className="workspace-action-menu session-context-menu"
-          role="menu"
-          style={{ left: conversationContextMenu.x, top: conversationContextMenu.y }}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              const conversationId = contextMenuConversation.id;
-              if (unreadConversationIds.has(conversationId)) markConversationRead(conversationId);
-              else markConversationUnread(conversationId);
-              setConversationContextMenu(null);
-            }}
-          >
-            {unreadConversationIds.has(contextMenuConversation.id) ? (
-              <><Check size={14} strokeWidth={1.8} /><span>{t("app.markAsRead")}</span></>
-            ) : (
-              <><Circle size={14} strokeWidth={1.8} /><span>{t("app.markAsUnread")}</span></>
-            )}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setConversationContextMenu(null);
-              void toggleConversationPinned(contextMenuConversation);
-            }}
-          >
-            <Pin size={14} strokeWidth={1.8} />
-            <span>{contextMenuConversation.pinned_at ? t("app.unpin") : t("app.pin")}</span>
-          </button>
-          <div className="workspace-action-menu-separator" />
-          <button type="button" role="menuitem" disabled={isBusy} onClick={() => {
+        <SessionContextMenu
+          x={conversationContextMenu.x}
+          y={conversationContextMenu.y}
+          unread={unreadConversationIds.has(contextMenuConversation.id)}
+          pinned={Boolean(contextMenuConversation.pinned_at)}
+          isBusy={isBusy}
+          onToggleRead={() => {
+            const conversationId = contextMenuConversation.id;
+            if (unreadConversationIds.has(conversationId)) markConversationRead(conversationId);
+            else markConversationUnread(conversationId);
+            setConversationContextMenu(null);
+          }}
+          onTogglePinned={() => {
+            setConversationContextMenu(null);
+            void toggleConversationPinned(contextMenuConversation);
+          }}
+          onFork={() => {
             setConversationContextMenu(null);
             void forkConversation(contextMenuConversation.id);
-          }}>
-            <GitBranch size={14} strokeWidth={1.8} /><span>{t("app.forkSession")}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setConversationContextMenu(null);
-              openRenameConversationDialog(contextMenuConversation);
-            }}
-          >
-            <SquarePen size={14} strokeWidth={1.8} />
-            <span>{t("app.rename")}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setConversationContextMenu(null);
-              void archiveConversation(contextMenuConversation);
-            }}
-          >
-            <Archive size={14} strokeWidth={1.8} />
-            <span>{t("app.archive")}</span>
-          </button>
-        </div>
+          }}
+          onRename={() => {
+            setConversationContextMenu(null);
+            openRenameConversationDialog(contextMenuConversation);
+          }}
+          onArchive={() => {
+            setConversationContextMenu(null);
+            void archiveConversation(contextMenuConversation);
+          }}
+        />
       )}
 
       {channelsOpen && channelsSidebarRoot && <ChannelsPage favorites={savedModelFavorites} hostName={hostName} projects={desktopState.projects} workspaces={desktopState.workspaces} agents={runtimeAgents} sessions={sessions} sessionCatalog={desktopState.conversations} navigationRoot={channelsSidebarRoot} navigationButtonRef={channelsNavigationButton} navigationOpen={webNavigationOpen} sessionVisible={channelsSessionVisible} selectedSessionId={selectedSession?.id} onOpenNavigation={() => setWebNavigationOpen(true)} onShowConfiguration={() => setChannelsSessionVisible(false)} onBack={closeChannels} onOpenSession={async (id, leaveChannels) => {
@@ -4880,14 +4746,13 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       {archiveTarget && <ConfirmActionDialog title={t("app.archive2", { p0: archiveTarget.title })} description={t("app.historyIsKeptAnyChannelBindingWillBe")} action={t("app.archiveSessionAction")} busy={archivingSession} error={sidebarActionError} onCancel={() => setArchiveTarget(null)} onConfirm={() => void confirmArchiveSession()} />}
 
       {removeSourceTarget && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) setRemoveSourceTarget(null); }} onKeyDown={(event) => { if (event.key === "Escape" && !isBusy) setRemoveSourceTarget(null); }}>
-          <div className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="remove-source-title">
-            <header><div><h2 id="remove-source-title">{t("app.removeSourceFromProject")}</h2><p>{removeSourceTarget.name}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={() => setRemoveSourceTarget(null)} aria-label={t("app.close2")}><X size={15} /></button></header>
-            <p className="archive-workspace-copy">{t("app.thisOnlyRemovesTheSourceFromThisProject")}</p>
-            {message && <p className="dialog-error">{message}</p>}
-            <footer><button autoFocus type="button" className="dialog-cancel" disabled={isBusy} onClick={() => setRemoveSourceTarget(null)}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={isBusy} onClick={() => void confirmRemoveSource()}>{isBusy ? t("app.removing") : t("app.removeFromProject")}</button></footer>
-          </div>
-        </div>
+        <RemoveSourceDialog
+          sourceName={removeSourceTarget.name}
+          message={message}
+          isBusy={isBusy}
+          onClose={() => setRemoveSourceTarget(null)}
+          onConfirm={() => void confirmRemoveSource()}
+        />
       )}
 
       {addSourcesProjectId && (
@@ -5078,529 +4943,81 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       })()}
 
       {archiveWorkspaceTarget && workspaceArchivePreview && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeArchiveWorkspaceDialog(); }}>
-          <div className="create-project-dialog archive-workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="archive-workspace-title">
-            <header>
-              <div>
-                <h2 id="archive-workspace-title">{t("app.archiveWorkspace")}</h2>
-                <p>{archiveWorkspaceTarget.title}</p>
-              </div>
-              <button type="button" className="dialog-close" onClick={closeArchiveWorkspaceDialog} disabled={isBusy} aria-label={t("app.close2")}><X size={15} /></button>
-            </header>
-            <p className="archive-workspace-copy">{t("app.sessionsGitBranchesArtifactsAndNotesAreKept")}</p>
-            <div className="archive-workspace-path-row">
-              <code className="archive-workspace-path">{workspaceArchivePreview.root_path}</code>
-              <button type="button" className="copy-path-button" title={t("app.copyPath")} aria-label={t("app.copyWorkspacePath")} onClick={() => void copyWorkspacePath(workspaceArchivePreview.root_path)}>
-                {copiedWorkspacePath === workspaceArchivePreview.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
-              </button>
-              {<button type="button" onClick={() => { browseFiles(workspaceArchivePreview.root_path); setWorkspaceArchivePreview(null); }}><FolderOpen size={14} strokeWidth={1.8} /><span>{t("app.browseFiles")}</span></button>}
-            </div>
-            {workspaceArchivePreview.worktree_paths.length > 0 && (
-              <section className="archive-workspace-summary">
-                <strong>{t("workspace.removeWorktrees", { count: workspaceArchivePreview.worktree_paths.length })}</strong>
-                {workspaceArchivePreview.worktree_paths.map((worktreePath) => <small key={worktreePath}>{worktreePath}</small>)}
-              </section>
-            )}
-            {workspaceArchivePreview.dirty_worktree_paths.length > 0 && (
-              <section className="archive-workspace-warning"><ShieldAlert size={16} /><span><strong>{t("app.uncommittedChangesFound")}</strong><small>{t("app.commitOrDiscardChangesInTheseWorktreesBefore")}</small>{workspaceArchivePreview.dirty_worktree_paths.map((worktreePath) => <code key={worktreePath}>{worktreePath}</code>)}</span></section>
-            )}
-            {workspaceLifecycleError && <p className="dialog-error">{workspaceLifecycleError}</p>}
-            <footer>
-              <button type="button" className="dialog-cancel" onClick={closeArchiveWorkspaceDialog} disabled={isBusy}>{t("app.cancel")}</button>
-              <button type="button" className="dialog-submit destructive" onClick={() => void confirmArchiveWorkspace()} disabled={isBusy || workspaceArchivePreview.dirty_worktree_paths.length > 0}>{isBusy ? t("app.archiving") : t("app.archiveWorkspace2")}</button>
-            </footer>
-          </div>
-        </div>
+        <ArchiveWorkspaceDialog
+          workspaceTitle={archiveWorkspaceTarget.title}
+          preview={workspaceArchivePreview}
+          copiedWorkspacePath={copiedWorkspacePath}
+          error={workspaceLifecycleError}
+          isBusy={isBusy}
+          onClose={closeArchiveWorkspaceDialog}
+          onCopyPath={() => void copyWorkspacePath(workspaceArchivePreview.root_path)}
+          onBrowseFiles={() => { browseFiles(workspaceArchivePreview.root_path); setWorkspaceArchivePreview(null); }}
+          onConfirm={() => void confirmArchiveWorkspace()}
+        />
       )}
 
       {deleteProjectTarget && projectDeletePreview && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteProjectDialog(); }} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeDeleteProjectDialog(); } }}>
-          <div className="create-project-dialog archive-workspace-dialog delete-workspace-dialog delete-project-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-title">
-            <header>
-              <div><h2 id="delete-project-title">{t("app.deleteProject2")}</h2><p>{deleteProjectTarget.name}</p></div>
-              <button type="button" className="dialog-close" disabled={isBusy} onClick={closeDeleteProjectDialog} aria-label={t("app.close2")}><X size={15} /></button>
-            </header>
-            <p className="archive-workspace-copy">{t("app.theProjectAndItsSourceRegistrationsWillBe")}</p>
-            <section className="archive-workspace-warning delete-workspace-warning">
-              <ShieldAlert size={17} />
-              <span>
-                <strong>{t("app.thisCannotBeUndone")}</strong>
-                <small>{projectDeletePreview.workspace_ids.length === 0 ? t("app.thisProjectHasNoWorkspacesNoWorkspaceFiles") : t("app.workspacesIncludingArchivedOnesAndTheirManagedFiles", { p0: projectDeletePreview.workspace_ids.length })}</small>
-                {projectDeletePreview.dirty_worktree_paths.length > 0 && <small>{t("workspace.discardChanges", { count: projectDeletePreview.dirty_worktree_paths.length })}</small>}
-              </span>
-            </section>
-            {projectDeletePreview.workspace_roots.length > 0 && <details><summary>{t("app.workspaceDirectoriesToDelete")}</summary><ul>{projectDeletePreview.workspace_roots.map((path) => <li key={path} style={{ overflowWrap: "anywhere" }}>{path}</li>)}</ul></details>}
-            <label className="delete-workspace-confirmation">
-              <span>{t("app.type")}{" "}<strong>{deleteProjectTarget.name}</strong> {t("app.toConfirm")}</span>
-              <input value={deleteProjectConfirmation} onChange={(event) => setDeleteProjectConfirmation(event.target.value)} disabled={isBusy} />
-            </label>
-            {workspaceLifecycleError && <p className="dialog-error" role="alert">{workspaceLifecycleError}</p>}
-            <footer>
-              <button autoFocus type="button" className="dialog-cancel" disabled={isBusy} onClick={closeDeleteProjectDialog}>{t("app.cancel")}</button>
-              <button type="button" className="dialog-submit destructive" disabled={isBusy || deleteProjectConfirmation !== deleteProjectTarget.name} onClick={() => void confirmDeleteProject()}>{isBusy ? t("app.deleting") : t("app.deleteProject")}</button>
-            </footer>
-          </div>
-        </div>
+        <DeleteProjectDialog
+          projectName={deleteProjectTarget.name}
+          preview={projectDeletePreview}
+          confirmation={deleteProjectConfirmation}
+          error={workspaceLifecycleError}
+          isBusy={isBusy}
+          onConfirmationChange={setDeleteProjectConfirmation}
+          onClose={closeDeleteProjectDialog}
+          onConfirm={() => void confirmDeleteProject()}
+        />
       )}
 
       {deleteWorkspaceTarget && workspaceDeletePreview && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteWorkspaceDialog(); }}>
-          <div className="create-project-dialog archive-workspace-dialog delete-workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-workspace-title">
-            <header>
-              <div>
-                <h2 id="delete-workspace-title">{t("app.deleteWorkspace")}</h2>
-                <p>{deleteWorkspaceTarget.title}</p>
-              </div>
-              <button type="button" className="dialog-close" onClick={closeDeleteWorkspaceDialog} disabled={isBusy} aria-label={t("app.close2")}><X size={15} /></button>
-            </header>
-            <p className="archive-workspace-copy">{t("app.workspaceFilesCopiedFoldersAndLinkedWorktreesWill")}</p>
-            <div className="archive-workspace-path-row">
-              <code className="archive-workspace-path">{workspaceDeletePreview.root_path}</code>
-              <button type="button" className="copy-path-button" title={t("app.copyPath")} aria-label={t("app.copyWorkspacePath")} onClick={() => void copyWorkspacePath(workspaceDeletePreview.root_path)}>
-                {copiedWorkspacePath === workspaceDeletePreview.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
-              </button>
-              {<button type="button" onClick={() => { browseFiles(workspaceDeletePreview.root_path); setWorkspaceDeletePreview(null); }}><FolderOpen size={14} strokeWidth={1.8} /><span>{t("app.browseFiles")}</span></button>}
-            </div>
-            <section className="archive-workspace-warning delete-workspace-warning">
-              <ShieldAlert size={16} />
-              <span>
-                <strong>{t("app.thisCannotBeUndone")}</strong>
-                <small>{t("app.allManagedWorkspaceFilesWillBeRemovedSessions")}</small>
-                {workspaceDeletePreview.dirty_worktree_paths.length > 0 && <small>{t("workspace.discardChanges", { count: workspaceDeletePreview.dirty_worktree_paths.length })}</small>}
-              </span>
-            </section>
-            <label className="delete-workspace-confirmation">
-              <span>{t("app.type")}{" "}<strong>{deleteWorkspaceTarget.title}</strong> {t("app.toConfirm")}</span>
-              <input autoFocus value={deleteWorkspaceConfirmation} onChange={(event) => setDeleteWorkspaceConfirmation(event.target.value)} disabled={isBusy} />
-            </label>
-            {workspaceLifecycleError && <p className="dialog-error">{workspaceLifecycleError}</p>}
-            <footer>
-              <button type="button" className="dialog-cancel" onClick={closeDeleteWorkspaceDialog} disabled={isBusy}>{t("app.cancel")}</button>
-              <button type="button" className="dialog-submit destructive" onClick={() => void confirmDeleteWorkspace()} disabled={isBusy || deleteWorkspaceConfirmation !== deleteWorkspaceTarget.title}>{isBusy ? t("app.deleting") : t("app.deleteWorkspace2")}</button>
-            </footer>
-          </div>
-        </div>
+        <DeleteWorkspaceDialog
+          workspaceTitle={deleteWorkspaceTarget.title}
+          preview={workspaceDeletePreview}
+          confirmation={deleteWorkspaceConfirmation}
+          copiedWorkspacePath={copiedWorkspacePath}
+          error={workspaceLifecycleError}
+          isBusy={isBusy}
+          onConfirmationChange={setDeleteWorkspaceConfirmation}
+          onClose={closeDeleteWorkspaceDialog}
+          onCopyPath={() => void copyWorkspacePath(workspaceDeletePreview.root_path)}
+          onBrowseFiles={() => { browseFiles(workspaceDeletePreview.root_path); setWorkspaceDeletePreview(null); }}
+          onConfirm={() => void confirmDeleteWorkspace()}
+        />
       )}
 
       {renameDialogConversation && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeRenameConversationDialog();
-            }
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              closeRenameConversationDialog();
-            }
-          }}
-        >
-          <form
-            className="rename-conversation-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rename-conversation-title"
-            onSubmit={(event) => void submitRenameConversationDialog(event)}
-          >
-            <header>
-              <div>
-                <h2 id="rename-conversation-title">{t("app.renameChat")}</h2>
-                <p>{t("app.keepItShortAndEasyToRecognize")}</p>
-              </div>
-              <button
-                type="button"
-                className="dialog-close"
-                onClick={closeRenameConversationDialog}
-                disabled={isSavingConversationTitle}
-                aria-label={t("app.close2")}
-              >
-                <X size={15} strokeWidth={1.8} />
-              </button>
-            </header>
-
-            <label>
-              <span className="sr-only">{t("app.conversationTitle")}</span>
-              <input
-                autoFocus
-                value={renameDialogTitleDraft}
-                onChange={(event) => setRenameDialogTitleDraft(event.target.value)}
-                onFocus={(event) => event.currentTarget.select()}
-                disabled={isSavingConversationTitle}
-              />
-            </label>
-
-            <footer>
-              <button
-                type="button"
-                className="dialog-cancel"
-                onClick={closeRenameConversationDialog}
-                disabled={isSavingConversationTitle}
-              >
-                {t("app.cancel")}</button>
-              <button
-                type="submit"
-                className="dialog-submit"
-                disabled={isSavingConversationTitle || !renameDialogTitleDraft.trim()}
-              >
-                {t("app.save")}</button>
-            </footer>
-          </form>
-        </div>
+        <RenameConversationDialog
+          titleDraft={renameDialogTitleDraft}
+          isSaving={isSavingConversationTitle}
+          onTitleDraftChange={setRenameDialogTitleDraft}
+          onClose={closeRenameConversationDialog}
+          onSubmit={(event) => void submitRenameConversationDialog(event)}
+        />
       )}
 
       {renameDialogProject && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeRenameProjectDialog();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") closeRenameProjectDialog();
-          }}
-        >
-          <form
-            className="rename-conversation-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rename-project-title"
-            onSubmit={(event) => void submitRenameProjectDialog(event)}
-          >
-            <header>
-              <div>
-                <h2 id="rename-project-title">{t("app.renameProject")}</h2>
-                <p>{t("app.thisChangesTheDisplayNameOnly")}</p>
-              </div>
-              <button type="button" className="dialog-close" onClick={closeRenameProjectDialog} disabled={isSavingProjectName} aria-label={t("app.close2")}>
-                <X size={15} strokeWidth={1.8} />
-              </button>
-            </header>
-            <label>
-              <span className="sr-only">{t("app.projectName")}</span>
-              <input
-                autoFocus
-                value={renameDialogProjectNameDraft}
-                onChange={(event) => setRenameDialogProjectNameDraft(event.target.value)}
-                onFocus={(event) => event.currentTarget.select()}
-                disabled={isSavingProjectName}
-              />
-            </label>
-            {message && <p className="dialog-error">{message}</p>}
-            <footer>
-              <button type="button" className="dialog-cancel" onClick={closeRenameProjectDialog} disabled={isSavingProjectName}>{t("app.cancel")}</button>
-              <button type="submit" className="dialog-submit" disabled={isSavingProjectName || !renameDialogProjectNameDraft.trim()}>
-                {isSavingProjectName ? t("app.saving") : t("app.save")}
-              </button>
-            </footer>
-          </form>
-        </div>
+        <RenameProjectDialog
+          nameDraft={renameDialogProjectNameDraft}
+          message={message}
+          isSaving={isSavingProjectName}
+          onNameDraftChange={setRenameDialogProjectNameDraft}
+          onClose={closeRenameProjectDialog}
+          onSubmit={(event) => void submitRenameProjectDialog(event)}
+        />
       )}
 
       {renameDialogWorkspace && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeRenameWorkspaceDialog();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") closeRenameWorkspaceDialog();
-          }}
-        >
-          <form
-            className="rename-conversation-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rename-workspace-title"
-            onSubmit={(event) => void submitRenameWorkspaceDialog(event)}
-          >
-            <header>
-              <div>
-                <h2 id="rename-workspace-title">{t("app.renameWorkspace")}</h2>
-                <p>{t("app.thisChangesTheDisplayNameOnly")}</p>
-              </div>
-              <button type="button" className="dialog-close" onClick={closeRenameWorkspaceDialog} disabled={isSavingWorkspaceTitle} aria-label={t("app.close2")}>
-                <X size={15} strokeWidth={1.8} />
-              </button>
-            </header>
-            <label>
-              <span className="sr-only">{t("app.workspaceName")}</span>
-              <input
-                autoFocus
-                value={renameDialogWorkspaceTitleDraft}
-                onChange={(event) => setRenameDialogWorkspaceTitleDraft(event.target.value)}
-                onFocus={(event) => event.currentTarget.select()}
-                disabled={isSavingWorkspaceTitle}
-              />
-            </label>
-            {message && <p className="dialog-error">{message}</p>}
-            <footer>
-              <button type="button" className="dialog-cancel" onClick={closeRenameWorkspaceDialog} disabled={isSavingWorkspaceTitle}>{t("app.cancel")}</button>
-              <button type="submit" className="dialog-submit" disabled={isSavingWorkspaceTitle || !renameDialogWorkspaceTitleDraft.trim()}>
-                {isSavingWorkspaceTitle ? t("app.saving") : t("app.save")}
-              </button>
-            </footer>
-          </form>
-        </div>
+        <RenameWorkspaceDialog
+          titleDraft={renameDialogWorkspaceTitleDraft}
+          message={message}
+          isSaving={isSavingWorkspaceTitle}
+          onTitleDraftChange={setRenameDialogWorkspaceTitleDraft}
+          onClose={closeRenameWorkspaceDialog}
+          onSubmit={(event) => void submitRenameWorkspaceDialog(event)}
+        />
       )}
     </main>
     </CompletionTriggerNavigation.Provider>
     </MarkdownImageContext.Provider>
   );
-}
-
-function ConversationNavItem({
-  conversation,
-  detail,
-  selected,
-  working,
-  unread,
-  onSelect,
-  onContextMenu,
-  onRename,
-  onPin,
-  onArchive,
-  sort,
-}: {
-  conversation: DesktopConversation;
-  detail?: string;
-  selected: boolean;
-  working: boolean;
-  unread: boolean;
-  onSelect: () => void;
-  onContextMenu: (event: ReactMouseEvent) => void;
-  onRename: () => void;
-  onPin: () => void;
-  onArchive: () => void;
-  sort?: SidebarSortProps;
-}) {
-  useLocale();
-  const titleViewportRef = useRef<HTMLSpanElement | null>(null);
-  const titleTextRef = useRef<HTMLSpanElement | null>(null);
-
-  function startTitleScroll() {
-    requestAnimationFrame(() => {
-      const viewport = titleViewportRef.current;
-      const text = titleTextRef.current;
-      if (!viewport || !text) return;
-      if (!viewport.closest(".sidebar-session")?.matches(":hover")) return;
-      const distance = Math.max(0, text.scrollWidth - viewport.clientWidth);
-      text.style.setProperty("--sidebar-title-distance", `${distance}px`);
-      text.style.setProperty("--sidebar-title-duration", `${Math.max(3, Math.min(9, distance / 24 + 2))}s`);
-      text.classList.toggle("scrolling", distance > 0);
-    });
-  }
-
-  function stopTitleScroll() {
-    titleTextRef.current?.classList.remove("scrolling");
-  }
-
-  return (
-    <div
-      className={`sidebar-session ${selected ? "selected" : ""} ${sort?.dragging ? "dragging" : ""} ${sort?.dropPosition ? `drop-${sort.dropPosition}` : ""}`}
-      onMouseEnter={startTitleScroll}
-      onMouseLeave={stopTitleScroll}
-      onContextMenu={onContextMenu}
-      draggable={sort?.draggable}
-      onDragStart={sort?.onDragStart}
-      onDragOver={sort?.onDragOver}
-      onDrop={sort?.onDrop}
-      onDragEnd={sort?.onDragEnd}
-    >
-      <button
-        type="button"
-        onClick={onSelect}
-        onDoubleClick={onRename}
-        title={conversation.title}
-      >
-        <span className="sidebar-session-title" ref={titleViewportRef}>
-          <span ref={titleTextRef}>{conversation.title}</span>
-        </span>
-        {detail && <small className="recent-session-context">{detail}</small>}
-      </button>
-      {working && <LoaderCircle className="sidebar-session-spinner" size={13} strokeWidth={1.9} aria-label={t("app.running")} />}
-      {!working && unread && <span className="sidebar-session-unread" aria-label={t("app.unread")} />}
-      <div className="sidebar-session-actions">
-        <button className="sidebar-session-touch-menu" type="button" onClick={onContextMenu} aria-label={t("app.moreActionsFor", { p0: conversation.title })}>
-          <MoreHorizontal size={18} strokeWidth={1.8} />
-        </button>
-        <button type="button" onClick={onPin} title={conversation.pinned_at ? t("app.unpin") : t("app.pin")} aria-label={`${conversation.pinned_at ? t("app.unpin") : t("app.pin")} ${conversation.title}`}>
-          <Pin size={12} strokeWidth={1.8} fill={conversation.pinned_at ? "currentColor" : "none"} />
-        </button>
-        <button type="button" onClick={onArchive} title={t("app.archive")} aria-label={t("app.archive3", { p0: conversation.title })}>
-          <Archive size={12} strokeWidth={1.8} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ProjectOverview({
-  project, state, message, onAddSources, onRename, onRemoveSource,
-  onCreateWorkspace, onManageWorkspaceSources, onOpenPath,
-}: {
-  project: DesktopProject;
-  state: DesktopState;
-  message: string | null;
-  onAddSources: () => void;
-  onRename: () => void;
-  onRemoveSource: (kind: "git" | "folder", sourceId: string, name: string) => void;
-  onCreateWorkspace: () => void;
-  onManageWorkspaceSources: (workspace: DesktopWorkspace) => void;
-  onOpenPath?: (path: string) => void;
-}) {
-  useLocale();
-  const repositories = state.repositories.filter((source) => source.project_id === project.id);
-  const folders = state.folders.filter((source) => source.project_id === project.id);
-  const workspaces = state.workspaces.filter((workspace) => workspace.project_id === project.id);
-  return <div className="project-overview">
-    <header>
-      <div><FolderOpen size={22} /><span><button type="button" className="project-overview-title" onClick={onRename} title={t("app.renameProject")}><h2>{project.name}</h2><SquarePen size={14} /></button><p>{t("app.sourcesAndWorkspacesManagedByZotigod")}</p></span></div>
-      <button type="button" className="dialog-submit" onClick={onCreateWorkspace}><Plus size={14} /> {t("app.newWorkspace")}</button>
-    </header>
-    {message && <p className="dialog-error">{message}</p>}
-    <section className="project-overview-card">
-      <div className="project-overview-heading"><h3>{t("app.sources")}</h3><button type="button" onClick={onAddSources}><Plus size={13} /> {t("app.addSource2")}</button></div>
-      {repositories.map((source) => <div className="project-source-row" key={source.id}>
-        <GitBranch size={15} />{source.repository_id ? <span className="managed-project-source"><strong>{source.name}</strong><small>{source.remote_url}</small></span> : <button type="button" className="source-path-button" disabled={!onOpenPath} title={t("app.browseFiles")} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>}
-        <button type="button" onClick={() => onRemoveSource("git", source.id, source.name)} aria-label={t("app.removeFromProject2", { p0: source.name })}><X size={13} /></button>
-      </div>)}
-      {folders.map((source) => <div className="project-source-row" key={source.id}>
-          <Folder size={15} /><button type="button" className="source-path-button" disabled={!onOpenPath} title={t("app.browseFiles")} onClick={() => onOpenPath?.(source.source_path)}><strong>{source.name}</strong><small>{source.source_path}</small></button>
-          <div className="source-row-actions"><em>{folderModeLabel(source.default_mode)}</em></div><button type="button" onClick={() => onRemoveSource("folder", source.id, source.name)} aria-label={t("app.removeFromProject2", { p0: source.name })}><X size={13} /></button>
-        </div>)}
-      {repositories.length === 0 && folders.length === 0 && <p className="project-overview-empty">{t("app.noSourcesEmptyWorkspacesAreSupported")}</p>}
-    </section>
-    <section className="project-overview-card">
-      <div className="project-overview-heading"><h3>{t("app.workspaces")}</h3></div>
-      {workspaces.map((workspace) => <div className="workspace-overview-row" key={workspace.id}>
-        <GitBranch size={15} /><span><strong>{workspace.title}</strong><small>{workspace.root_path}</small></span>
-        <><button type="button" onClick={() => onManageWorkspaceSources(workspace)}>{t("app.sources")}</button>{onOpenPath && <><button type="button" onClick={() => onOpenPath(pathJoinForUi(workspace.root_path, "artifacts"))}>{t("app.artifacts")}</button><button type="button" onClick={() => onOpenPath(pathJoinForUi(workspace.root_path, "notes"))}>{t("app.notes")}</button></>}</>
-      </div>)}
-      {workspaces.length === 0 && <p className="project-overview-empty">{t("app.noWorkspacesYet")}</p>}
-    </section>
-  </div>;
-}
-
-function workspaceSourceName(binding: CatalogWorkspaceSource): string {
-  const parts = binding.source.canonical_path.split(/[\\/]/).filter(Boolean);
-  return parts.at(-1) ?? binding.source.source_key;
-}
-
-function pathJoinForUi(root: string, child: string): string {
-  return `${root.replace(/\/$/, "")}/${child}`;
-}
-
-function fileNameForPath(filePath: string): string {
-  return filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? filePath;
-}
-
-function folderModeLabel(mode: FolderSourceMode): string {
-  if (mode === "copy") return t("app.independentCopyByDefault");
-  if (mode === "reference") return t("app.referenceByDefault");
-  return t("app.directByDefault");
-}
-
-function projectSourceInput(draft: ProjectSourceDraft): ProjectSourceInput {
-  return {
-    path: draft.candidate.selectedPath,
-    ...(draft.candidate.kind === "folder" ? { folderMode: draft.folderMode } : {}),
-  };
-}
-
-function StateBadge({ state }: { state: ZotigoSession["state"] | "idle" }) {
-  useLocale();
-  return <span className={`state-badge ${state}`}>{stateLabel(state)}</span>;
-}
-
-function StatusPill({ state }: { state: ConnectionState }) {
-  useLocale();
-  return (
-    <span className={`status-pill ${state}`}>
-      <span />
-      {connectionLabel(state)}
-    </span>
-  );
-}
-
-function connectionLabel(state: ConnectionState): string {
-  if (state === "checking") {
-    return t("app.checking2");
-  }
-  return state === "online" ? t("app.online") : t("app.offline");
-}
-
-function projectForConversation(conversation: DesktopConversation, projects: DesktopProject[]): DesktopProject | null {
-  if (!conversation.project_id) {
-    return null;
-  }
-  return projects.find((project) => project.id === conversation.project_id) ?? null;
-}
-
-function sessionFromBinding(binding: DaemonSessionBinding): ZotigoSession {
-  const state = binding.state ?? "created";
-  return {
-    id: binding.daemon_session_id,
-    state,
-    live: state !== "offline",
-    working: false,
-    created_at: binding.daemon_created_at ?? binding.created_at,
-    started_at: binding.daemon_started_at,
-    ended_at: binding.daemon_ended_at,
-    error: binding.error,
-  };
-}
-
-function clearResolvedApprovalPolicyOverrides(
-  overrides: Record<string, ApprovalPolicy>,
-  sessions: ZotigoSession[],
-): Record<string, ApprovalPolicy> {
-  let next = overrides;
-  for (const session of sessions) {
-    const override = next[session.id];
-    const abandoned = session.state === "offline" || session.state === "ended" || session.state === "failed";
-    if (!override || (session.approval_policy !== override && !abandoned)) {
-      continue;
-    }
-    if (next === overrides) {
-      next = { ...overrides };
-    }
-    delete next[session.id];
-  }
-  return next;
-}
-
-function upsertSession(sessions: ZotigoSession[], session: ZotigoSession): ZotigoSession[] {
-  if (sessions.some((current) => current.id === session.id)) {
-    return sessions.map((current) => (current.id === session.id ? { ...session, read_state: mergeReadState(current.read_state, session.read_state) } : current));
-  }
-  return [session, ...sessions];
-}
-
-function sameJsonValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString(getLocale(), {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }
