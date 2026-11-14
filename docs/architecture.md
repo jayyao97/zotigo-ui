@@ -84,8 +84,10 @@ operation seam.
 ### Inside `src/`
 
 Feature folders exist where a feature has grown several files:
-`conversation/` (timeline, composer, tools, annotations), `channels/`, `web/`.
-Everything else is flat. `App.tsx` is the composition root and is far too
+`conversation/` (timeline, composer, tools, annotations), `sidebar/`,
+`project/`, `workspace/`, `inspector/`, `channels/`, `web/`, and `app/` for
+types and helpers shared by the pieces extracted from `App.tsx`. Older files
+are still flat. `App.tsx` is the composition root and is far too
 large; see Known debt.
 
 State is React local state plus a few small modules that persist a single
@@ -115,12 +117,28 @@ do not belong here.
 
 ## Known debt
 
-- `src/App.tsx` is about 5,600 lines: routing, sidebar, workspace and
-  conversation orchestration, and many handlers in one component. The intended
-  direction is to extract leaf components first and stateful hooks last, one
-  reviewable step at a time, each verified in the running app. It was not done
-  as part of the cleanup that produced this document because it cannot be
-  verified by the test suite alone.
+- `src/App.tsx` is still about 4,300 lines (it was 5,600). Dialogs, menus,
+  inspector lists, the utility rail and the title were extracted as stateless
+  components, and the self-contained state clusters as hooks (rename dialogs,
+  workspace/project lifecycle dialogs, project source drafts, channels
+  navigation, sidebar sort order, search shortcut). What remains is the part
+  that is genuinely one state machine today, roughly:
+  - session event stream, delta flushing and history backfill (~450 lines)
+  - send / steer / queue / submit and conversation creation (~450)
+  - catalog bootstrap, polling, reconciliation and Codex sync (~350)
+  - composer drafts, skills and attachments (~300)
+  - side panel, file open and scroll effects (~350)
+  - host volatile-state save/restore, session paging, unread tracking (~250)
+  - create-workspace drafts and the workspace-sources panel (~270)
+  - JSX: the two sidebar render functions, the conversation body, the side
+    panel and dialog call sites (~1,200)
+  These clusters share effects whose order matters (for example the selection
+  change effect resets title, pause and file-open state together, and the
+  catalog bootstrap effect also loads sidebar disclosure state). Extracting
+  them means first splitting those shared effects, one at a time, each checked
+  in the running app. Rules that held for every extraction so far, and should
+  keep holding: a hook is called where its first hook was; effects keep their
+  relative order; nothing is memoised or un-memoised in the same change.
 - `shared/sessionDisplay.ts` `optimisticSteeringDisplayItem` is used only by
   tests, as a fixture for ordering tests. Either the renderer should use it or
   the tests should build that item directly.

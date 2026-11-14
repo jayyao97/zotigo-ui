@@ -6,7 +6,6 @@ import { observeLongTasks, traceInteraction, traceNextPaint } from "./performanc
 import { LayoutGrid } from "lucide-react";
 import { WorkspacePanelHome } from "./WorkspacePanelHome";
 import { PendingInteractionNotice } from "./conversation/PendingInteractionNotice";
-import { stateLabel } from "../shared/i18n/display";
 import { useLocale } from "./i18n";
 import { t } from "../shared/i18n/index";
 import { SidebarResizeHandle, loadSidebarWidth } from "./SidebarResizeHandle";
@@ -69,15 +68,11 @@ import {
   ArrowRight,
   ArrowUp,
   Bell,
-  Blocks,
-  CalendarClock,
   Circle,
   FileText,
-  Folder,
   FolderOpen,
   FolderPlus,
   GitBranch,
-  House,
   Image,
   MoreHorizontal,
   PanelLeft,
@@ -184,7 +179,7 @@ import type { ThinkingDisplayMode } from "./thinkingDisplay";
 import { shouldSmoothStreaming } from "./streamingText";
 import { ChannelsPage } from "./channels/ChannelsPage";
 import { ProjectDisclosureIcon } from "./SidebarDisclosureIcons";
-import { ManagedRepositoryPicker, RepositoryBaseField } from "./ManagedRepositoryPicker";
+import { ManagedRepositoryPicker } from "./ManagedRepositoryPicker";
 import {
   composerDraftKey as draftKeyForSelection,
   emptyComposerDraft,
@@ -194,7 +189,7 @@ import {
 import { conversationIsVisible, canAcknowledgeSession, mergeReadState, mergeSessionReadStates } from "./unreadSessions";
 import type { ComposerDraft, ConversationContextMenu, SidebarDragItem, WorkspaceRepositoryDraft, ConnectionState } from "./app/appTypes";
 import { appendUploadedReferences, attachmentToMessageFile, attachmentToMessageImage, revokeDraftAttachments } from "./app/composerAttachments";
-import { clearResolvedApprovalPolicyOverrides, connectionLabel, errorMessage, fileNameForPath, folderModeLabel, formatDateTime, isMarkdownFile, isNearScrollBottom, projectSourceInput, sameJsonValue, sessionFromBinding, upsertSession, workspaceSourceName } from "./app/appHelpers";
+import { clearResolvedApprovalPolicyOverrides, connectionLabel, errorMessage, fileNameForPath, isMarkdownFile, isNearScrollBottom, projectSourceInput, sameJsonValue, sessionFromBinding, upsertSession } from "./app/appHelpers";
 import { ConversationNavItem } from "./sidebar/ConversationNavItem";
 import { ProjectOverview } from "./project/ProjectOverview";
 import { OpenWorkspaceFileTab } from "./workspace/OpenWorkspaceFileTab";
@@ -215,6 +210,15 @@ import { AddSourcesDialog } from "./project/AddSourcesDialog";
 import { WorkspaceActionMenu } from "./sidebar/WorkspaceActionMenu";
 import { ProjectActionMenu } from "./sidebar/ProjectActionMenu";
 import { RemoveSourceDialog } from "./project/RemoveSourceDialog";
+import { SidebarUtilityNav } from "./sidebar/SidebarUtilityNav";
+import { ConversationTitle } from "./conversation/ConversationTitle";
+import { SessionInspector } from "./inspector/SessionInspector";
+import { WorkspaceBindingList } from "./workspace/WorkspaceBindingList";
+import { WorkspaceAddSourceSection } from "./workspace/WorkspaceAddSourceSection";
+import { WorkspaceSourcesDialog } from "./workspace/WorkspaceSourcesDialog";
+import { CreateWorkspaceSourcesField } from "./workspace/CreateWorkspaceSourcesField";
+import { CreateWorkspaceDialog } from "./workspace/CreateWorkspaceDialog";
+import { CreateProjectDialog } from "./project/CreateProjectDialog";
 
 type HostVolatileState = {
   desktopState: DesktopState;
@@ -3416,24 +3420,14 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           </div>
         </div>
 
-        <nav className="utility-nav" aria-label={t("app.navigation")}>
-          <button type="button" aria-label={t("app.home")} aria-pressed={!channelsOpen && !repositoriesOpen} className={!channelsOpen && !repositoriesOpen ? "selected" : ""} onClick={() => { showRecentSessions(false); setWebNavigationOpen(false); }}>
-            <House size={18} strokeWidth={1.8} />
-            <span className="utility-nav-label">{t("app.home")}</span>
-          </button>
-          <button type="button" aria-disabled="true" aria-label={t("app.scheduledNotAvailableYet")} className="utility-placeholder">
-            <CalendarClock size={15} strokeWidth={1.8} />
-            <span className="utility-nav-label">{t("app.scheduled")}</span>
-          </button>
-          <button ref={channelsEntryButton} type="button" aria-label={t("app.channels")} aria-pressed={channelsOpen} className={channelsOpen ? "selected" : ""} onClick={() => { openChannels(); setProjectOverviewId(null); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
-            <Blocks size={15} strokeWidth={1.8} />
-            <span className="utility-nav-label">{t("app.channels")}</span>
-          </button>
-          <button type="button" aria-label={t("repositories.library")} aria-pressed={repositoriesOpen} className={repositoriesOpen ? "selected" : ""} onClick={() => { leaveChannelsImmediately(); setRepositoriesOpen(true); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}>
-            <GitBranch size={16} strokeWidth={1.8} />
-            <span className="utility-nav-label">{t("repositories.library")}</span>
-          </button>
-        </nav>
+        <SidebarUtilityNav
+          channelsOpen={channelsOpen}
+          repositoriesOpen={repositoriesOpen}
+          channelsEntryButton={channelsEntryButton}
+          onHome={() => { showRecentSessions(false); setWebNavigationOpen(false); }}
+          onChannels={() => { openChannels(); setProjectOverviewId(null); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}
+          onRepositories={() => { leaveChannelsImmediately(); setRepositoriesOpen(true); setWebNavigationOpen(false); setConversationContextMenu(null); setDetailsOpen(false); setSidePanelOpen(false); }}
+        />
 
         <button className="sidebar-new-session" type="button" onClick={() => void openNewConversation()} disabled={isBusy}>
           <SquarePen size={16} strokeWidth={1.8} /><span>{t("app.newSession")}</span>
@@ -3603,46 +3597,17 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         <header className="conversation-titlebar">
           {kind === "web" && <button ref={webNavigationButton} className="web-navigation-toggle" type="button" onClick={() => setWebNavigationOpen(true)} aria-label={t("app.openNavigation")} aria-expanded={webNavigationOpen}><PanelLeft size={18} /></button>}
           {selectedConversation ? (
-            <>
-              <div className="title-with-icon">
-                <FileText className="doc-icon" size={15} strokeWidth={1.8} />
-                {isEditingConversationTitle ? (
-                  <input
-                    ref={conversationTitleInputRef}
-                    className="conversation-title-input"
-                    value={conversationTitleDraft}
-                    disabled={isSavingConversationTitle}
-                    onChange={(event) => setConversationTitleDraft(event.target.value)}
-                    onBlur={() => void saveConversationTitle()}
-                    onKeyDown={(event) => {
-                      if (event.nativeEvent.isComposing) {
-                        return;
-                      }
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void saveConversationTitle();
-                      } else if (event.key === "Escape") {
-                        event.preventDefault();
-                        cancelConversationTitleEdit();
-                      }
-                    }}
-                    aria-label={t("app.conversationTitle")}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className="conversation-title-button"
-                    onDoubleClick={beginConversationTitleEdit}
-                    title={t("app.renameConversation")}
-                  >
-                    <h1>{selectedConversation.title}</h1>
-                  </button>
-                )}
-              </div>
-              <button type="button" className="icon-button" aria-label={t("app.moreActions")} disabled title={t("app.moreActionsAreNotAvailableYet")}>
-                <MoreHorizontal size={17} strokeWidth={1.8} />
-              </button>
-            </>
+            <ConversationTitle
+              title={selectedConversation.title}
+              isEditing={isEditingConversationTitle}
+              draft={conversationTitleDraft}
+              isSaving={isSavingConversationTitle}
+              inputRef={conversationTitleInputRef}
+              onDraftChange={setConversationTitleDraft}
+              onSave={() => void saveConversationTitle()}
+              onCancel={cancelConversationTitleEdit}
+              onBeginEdit={beginConversationTitleEdit}
+            />
           ) : null}
           <div className="workspace-panel-actions">
             {selectedBinding && <ConversationTools
@@ -3967,16 +3932,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         )}
       </section>
 
-      {detailsOpen && !channelsOpen && !repositoriesOpen && <aside className="inspector" aria-label={t("app.sessionDetails")}>
-        <section className="inspector-card">
-          <div className="inspector-heading">
-            <h2>{t("app.environment")}</h2>
-            <button type="button" className="icon-button" aria-label={t("app.closeSessionDetails")} onClick={() => setDetailsOpen(false)}><X size={14} /></button>
-            <button type="button" className="icon-button" aria-label={t("app.refreshEnvironment")} onClick={() => void refreshSessions({ syncCodex: true })} disabled={isBusy}>
-              <RefreshCw size={14} strokeWidth={1.8} />
-            </button>
-          </div>
-
+      {detailsOpen && !channelsOpen && !repositoriesOpen && <SessionInspector isBusy={isBusy} onClose={() => setDetailsOpen(false)} onRefresh={() => void refreshSessions({ syncCodex: true })}>
           <SessionEnvironmentList
             connectionState={connectionState}
             remote={remote}
@@ -4020,8 +3976,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               />
             </>
           )}
-        </section>
-      </aside>}
+      </SessionInspector>}
 
       {(
         <aside inert={channelsOpen || repositoriesOpen || !sidePanelOpen} aria-hidden={channelsOpen || repositoriesOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label={t("app.sidePanel")}>
@@ -4129,73 +4084,23 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       )}
 
       {createProjectOpen && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeCreateProjectDialog();
-            }
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              closeCreateProjectDialog();
-            }
-          }}
-        >
-          <form className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="create-project-title" onSubmit={(event) => void createNamedProject(event)}>
-            <header>
-              <h2 id="create-project-title">{t("app.createProject")}</h2>
-              <button type="button" className="dialog-close" onClick={closeCreateProjectDialog} disabled={isBusy || repositoryAdding} aria-label={t("app.close2")}>
-                <X size={15} strokeWidth={1.8} />
-              </button>
-            </header>
-
-            <label className="project-name-field">
-              <span className="sr-only">{t("app.projectName")}</span>
-              <Folder size={15} strokeWidth={1.8} />
-              <input
-                autoFocus
-                value={newProjectName}
-                onChange={(event) => setNewProjectName(event.target.value)}
-                placeholder={t("app.projectName")}
-                disabled={isBusy}
-              />
-            </label>
-
-            <ManagedRepositoryPicker client={client} selectedIds={newProjectRepositoryIds} onChange={setNewProjectRepositoryIds} disabled={isBusy} onBusyChange={setRepositoryAdding} />
-            <div className="project-folder-field">
-              <span>{t("repositories.localSources")}{" "}<small>{t("app.optional")}</small></span>
-              {newProjectSources.length > 0 && (
-                <div className="project-source-list">
-                  {newProjectSources.map((draft) => (
-                    <div className="project-source-row source-choice-row" key={draft.candidate.selectedPath}>
-                      {draft.candidate.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
-                      <span><strong>{draft.candidate.name}</strong><small>{draft.candidate.canonicalPath}</small></span>
-                      {draft.candidate.kind === "git"
-                        ? <div className="source-mode-actions"><em>{t("app.gitRepository")}</em></div>
-                        : <div className="source-mode-actions"><em>{folderModeLabel(draft.folderMode)}</em>{draft.folderMode === "direct" ? <><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "copy" } : item))}>{t("app.useACopy")}</button><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "reference" } : item))}>{t("app.useAsReference")}</button></> : <button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "direct" } : item))}>{t("app.useDirectly")}</button>}</div>}
-                      <button type="button" onClick={() => setNewProjectSources((current) => current.filter((item) => item.candidate.selectedPath !== draft.candidate.selectedPath))} aria-label={t("app.remove", { p0: draft.candidate.name })}><X size={14} /></button>
-                      {draft.candidate.kind === "folder" && draft.folderMode === "direct" && <small className="source-direct-warning">{t("app.workspaceChangesWillAppearInTheOriginalFolder")}</small>}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button type="button" className="project-folder-picker compact" onClick={() => void chooseNewProjectSources()} disabled={isBusy || repositoryAdding}>
-                <Plus size={16} strokeWidth={1.8} />
-                <span>{t("app.addFolder")}</span>
-              </button>
-              <small className="project-dialog-help">{t("repositories.localHelp")}</small>
-            </div>
-
-            {message && <p className="dialog-error">{message}</p>}
-
-            <footer>
-              <button type="button" className="dialog-cancel" onClick={closeCreateProjectDialog} disabled={isBusy || repositoryAdding}>{t("app.cancel")}</button>
-              <button type="submit" className="dialog-submit" disabled={isBusy || repositoryAdding || !newProjectName.trim()}>{t("app.createProject")}</button>
-            </footer>
-          </form>
-        </div>
+        <CreateProjectDialog
+          client={client}
+          name={newProjectName}
+          selectedRepositoryIds={newProjectRepositoryIds}
+          sources={newProjectSources}
+          message={message}
+          isBusy={isBusy}
+          repositoryAdding={repositoryAdding}
+          onClose={closeCreateProjectDialog}
+          onSubmit={(event) => void createNamedProject(event)}
+          onNameChange={setNewProjectName}
+          onRepositoryIdsChange={setNewProjectRepositoryIds}
+          onRepositoryBusyChange={setRepositoryAdding}
+          onFolderModeChange={(selectedPath, folderMode) => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === selectedPath ? { ...item, folderMode } : item))}
+          onRemoveSource={(selectedPath) => setNewProjectSources((current) => current.filter((item) => item.candidate.selectedPath !== selectedPath))}
+          onAddFolder={() => void chooseNewProjectSources()}
+        />
       )}
 
       {archiveTarget && <ConfirmActionDialog title={t("app.archive2", { p0: archiveTarget.title })} description={t("app.historyIsKeptAnyChannelBindingWillBe")} action={t("app.archiveSessionAction")} busy={archivingSession} error={sidebarActionError} onCancel={() => setArchiveTarget(null)} onConfirm={() => void confirmArchiveSession()} />}
@@ -4231,118 +4136,38 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       )}
 
       {createWorkspaceProject && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeCreateWorkspaceDialog();
-            }
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              closeCreateWorkspaceDialog();
-            }
-          }}
+        <CreateWorkspaceDialog
+          project={createWorkspaceProject}
+          title={newWorkspaceTitle}
+          branch={newWorkspaceBranch}
+          workspaceRepositories={workspaceRepositories}
+          message={message}
+          isBusy={isBusy}
+          onClose={closeCreateWorkspaceDialog}
+          onSubmit={(event) => void submitCreateWorkspace(event)}
+          onTitleChange={updateNewWorkspaceTitle}
+          onBranchChange={setNewWorkspaceBranch}
         >
-          <form
-            className="create-project-dialog create-workspace-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-workspace-title"
-            onSubmit={(event) => void submitCreateWorkspace(event)}
-          >
-            <header>
-              <div>
-                <h2 id="create-workspace-title">{t("app.createWorkspace")}</h2>
-                <p>{createWorkspaceProject.name}</p>
-              </div>
-              <button type="button" className="dialog-close" onClick={closeCreateWorkspaceDialog} disabled={isBusy} aria-label={t("app.close2")}>
-                <X size={15} strokeWidth={1.8} />
-              </button>
-            </header>
-
-            <div className="workspace-dialog-body">
-            <label className="workspace-dialog-field">
-              <span>{t("app.workspaceName")}</span>
-              <input
-                autoFocus
-                value={newWorkspaceTitle}
-                onChange={(event) => updateNewWorkspaceTitle(event.target.value)}
-                placeholder={t("app.fixStreamingToolResults")}
-                disabled={isBusy}
-              />
-            </label>
-
-            <label className="workspace-dialog-field">
-              <span>{t("workspace.newBranch")}</span>
-              <input value={newWorkspaceBranch} onChange={event => setNewWorkspaceBranch(event.target.value)} placeholder={t("workspace.newBranchPlaceholder")} disabled={isBusy} />
-            </label>
-
-            <div className="workspace-sources-field">
-              <div className="workspace-sources-heading">
-                <span>{t(desktopState.folders.some(folder => folder.project_id === createWorkspaceProject.id) ? "app.sources" : "repositories.title")}</span>
-                <div>
-                  <button type="button" disabled={isBusy || !canSelectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(true)}>{t(workspaceSourceQuery.trim() ? "workspace.selectMatches" : "app.selectAll")}</button>
-                  <button type="button" disabled={isBusy || !canDeselectAllWorkspaceSources} onClick={() => selectAllWorkspaceSources(false)}>{t(workspaceSourceQuery.trim() ? "workspace.deselectMatches" : "app.deselectAll")}</button>
-                </div>
-              </div>
-              {(workspaceRepositories.length > 0 || desktopState.folders.some((folder) => folder.project_id === createWorkspaceProject.id)) && (
-                <small className="workspace-sources-help">{t("app.availableSourcesAreSelectedByDefaultUncheckAnything")}</small>
-              )}
-              <label className="repository-search"><Search size={14} aria-hidden="true" /><input type="search" value={workspaceSourceQuery} disabled={isBusy} aria-label={t("workspace.searchSources")} placeholder={t("workspace.searchSources")} onInput={event => setWorkspaceSourceQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></label>
-              <small className="workspace-sources-help">{t("workspace.selectedSourceCount", { count: selectedWorkspaceSourceCount })}</small>
-              {workspaceSourceQuery.trim() && visibleWorkspaceRepositories.length === 0 && visibleWorkspaceFolders.length === 0 && <p className="workspace-dialog-note">{t("workspace.noMatchingSources")}</p>}
-              <div className="workspace-source-list">
-              {visibleWorkspaceRepositories.map((draft) => (
-                <div className={`workspace-source-card ${draft.selected ? "selected" : ""}`} key={draft.repository.id}>
-                  <label className="workspace-source-toggle">
-                    <input type="checkbox" checked={draft.selected} disabled={draft.repository.availability !== "available"} onChange={(event) => {
-                      const selected = event.target.checked;
-                      setWorkspaceRepositories((current) => current.map((candidate) => candidate.repository.id === draft.repository.id ? { ...candidate, selected } : candidate));
-                    }} />
-                    <GitBranch size={15} />
-                    <strong>{draft.repository.name}</strong>
-                  </label>
-                  {draft.repository.availability !== "available" && <p className="workspace-dialog-note">{t("app.unavailableReconnectOrRepairThisSourceBeforeUsing")}</p>}
-                  {draft.selected && (
-                    <div className="workspace-source-settings">
-                      <RepositoryBaseField client={client} repository={draft.repository} value={draft.baseRef} disabled={isBusy} onChange={value => updateRepositoryBaseRef(draft.repository.id, value)} />
-                    </div>
-                  )}
-                </div>
-              ))}
-              {visibleWorkspaceFolders.map((folder) => (
-                <div className={`workspace-source-card ${workspaceFolderModes[folder.id] ? "selected" : ""}`} key={folder.id}>
-                  <label className="workspace-source-toggle"><input type="checkbox" checked={Boolean(workspaceFolderModes[folder.id])} disabled={folder.availability !== "available"} onChange={(event) => setWorkspaceFolderModes((current) => ({ ...current, [folder.id]: event.target.checked ? folder.default_mode : "" }))} /><Folder size={15} /><strong>{folder.name}</strong></label>
-                  {folder.availability !== "available" && <p className="workspace-dialog-note">{t("app.unavailableReconnectOrRepairThisSourceBeforeUsing")}</p>}
-                  {workspaceFolderModes[folder.id] === "direct" && <p className="workspace-direct-warning"><ShieldAlert size={14} /> {t("app.directChangesAppearImmediatelyInTheOriginalFolder")}</p>}
-                  {workspaceFolderModes[folder.id] === "copy" && <p className="workspace-dialog-note">{t("app.independentCopyChangesStayInsideThisWorkspace")}</p>}
-                  {workspaceFolderModes[folder.id] === "reference" && <p className="workspace-dialog-note">{t("app.referenceSnapshotAReadOnlyCopyIsPlaced")}</p>}
-                </div>
-              ))}
-              {workspaceRepositories.length === 0 && desktopState.folders.every((folder) => folder.project_id !== createWorkspaceProject.id) && (
-                <p className="workspace-dialog-note">{t("app.thisWillBeAnEmptyWorkspaceWithCode")}</p>
-              )}
-              </div>
-            </div>
-            {message && <p className="dialog-error">{message}</p>}
-
-            </div>
-            <footer>
-              <button type="button" className="dialog-cancel" onClick={closeCreateWorkspaceDialog} disabled={isBusy}>{t("app.cancel")}</button>
-              <button
-                type="submit"
-                className="dialog-submit"
-                disabled={
-                  isBusy || !newWorkspaceTitle.trim() || workspaceRepositories.some((draft) => draft.selected && !draft.repository.repository_id && !draft.baseRef.trim())
-                }
-              >
-                {isBusy ? t("app.creating") : t("app.createWorkspace")}
-              </button>
-            </footer>
-          </form>
-        </div>
+            <CreateWorkspaceSourcesField
+              client={client}
+              project={createWorkspaceProject}
+              folders={desktopState.folders}
+              sourceQuery={workspaceSourceQuery}
+              canSelectAll={canSelectAllWorkspaceSources}
+              canDeselectAll={canDeselectAllWorkspaceSources}
+              workspaceRepositories={workspaceRepositories}
+              visibleRepositories={visibleWorkspaceRepositories}
+              visibleFolders={visibleWorkspaceFolders}
+              folderModes={workspaceFolderModes}
+              selectedSourceCount={selectedWorkspaceSourceCount}
+              isBusy={isBusy}
+              onSelectAll={selectAllWorkspaceSources}
+              onSourceQueryChange={setWorkspaceSourceQuery}
+              onRepositorySelectedChange={(repositoryId, selected) => setWorkspaceRepositories((current) => current.map((candidate) => candidate.repository.id === repositoryId ? { ...candidate, selected } : candidate))}
+              onRepositoryBaseRefChange={updateRepositoryBaseRef}
+              onFolderModeChange={(folderId, mode) => setWorkspaceFolderModes((current) => ({ ...current, [folderId]: mode }))}
+            />
+        </CreateWorkspaceDialog>
       )}
 
       {workspaceSourcesTarget && !addSourcesProjectId && (() => {
@@ -4354,47 +4179,49 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         const matchingRepositories = availableRepositories.filter(source => workspaceSourceMatches(source, addWorkspaceSourceQuery));
         const matchingFolders = availableFolders.filter(source => workspaceSourceMatches(source, addWorkspaceSourceQuery));
         const selectedSource = selectedRepository ?? selectedFolder;
-        const selectedOutsideSearch = selectedSource && !workspaceSourceMatches(selectedSource, addWorkspaceSourceQuery);
-        return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy) closeWorkspaceSources(); }}>
-          <div className="create-project-dialog workspace-sources-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-sources-title">
-            <header><div><h2 id="workspace-sources-title">{t("app.workspaceSources")}</h2><p>{workspaceSourcesTarget.title}</p></div><button type="button" className="dialog-close" disabled={isBusy} onClick={closeWorkspaceSources} aria-label={t("app.close2")}><X size={15} /></button></header>
-            {!workspaceSourcesLoadError && workspaceSourcesTarget.status === "ready" && <section className="workspace-add-source">
-              <span>{t("workspace.addRepository")}</span>
-              {!workspaceSourcesLoading && (availableRepositories.length > 0 || availableFolders.length > 0) ? <>
-                <label className="repository-search"><Search size={14} aria-hidden="true" /><input type="search" value={addWorkspaceSourceQuery} disabled={isBusy} aria-label={t("workspace.searchSources")} placeholder={t("workspace.searchSources")} onInput={event => setAddWorkspaceSourceQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} /></label>
-                {matchingRepositories.length === 0 && matchingFolders.length === 0 && <p className="workspace-dialog-note">{t("workspace.noMatchingSources")}</p>}
-                <label className="workspace-dialog-field">
-                  <span>{t("app.projectSource")}</span>
-                  <select disabled={isBusy} value={workspaceSourceId} onChange={(event) => selectWorkspaceSource(event.target.value)}>
-                    <option value="">{t("app.chooseASource")}</option>
-                    {selectedOutsideSearch && <option value={selectedSource.id}>{t("workspace.selectedOutsideSearch", { name: selectedSource.name })}</option>}
-                    {matchingRepositories.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.git")}</option>)}
-                    {matchingFolders.map((source) => <option value={source.id} key={source.id}>{source.name} {t("app.folder")}</option>)}
-                  </select>
-                </label>
-                {selectedRepository && <div className="workspace-dialog-grid single-column">
-                  <RepositoryBaseField client={client} repository={selectedRepository} value={workspaceSourceBaseRef} disabled={isBusy} onChange={setWorkspaceSourceBaseRef} />
-                </div>}
-                {selectedFolder && <label className="workspace-dialog-field"><span>{t("app.folderMode")}</span><select value={workspaceSourceMode} onChange={(event) => setWorkspaceSourceMode(event.target.value as FolderSourceMode)}><option value="direct">{t("app.direct")}</option><option value="copy">{t("app.copy")}</option><option value="reference">{t("app.reference")}</option></select></label>}
-              </> : !workspaceSourcesLoading && <p className="workspace-dialog-note">{t("app.everySourceInThisProjectIsAlreadyBound")}</p>}
-              <button type="button" className="workspace-add-project-source" onClick={() => { void addSourcesToProject(workspaceSourcesTarget.project_id, true); }} disabled={isBusy || workspaceSourcesLoading}><FolderPlus size={14} /> {t("workspace.otherRepository")}</button>
-            </section>}
-            <section className="workspace-binding-list">
-              <span>{t("app.dependencies")}</span>
-              {workspaceSourcesLoading && <p className="workspace-dialog-note">{t("app.loadingWorkspaceSources")}</p>}
-              {!workspaceSourcesLoading && workspaceSourcesLoadError && <div className="workspace-source-load-error"><p>{workspaceSourcesLoadError}</p><button type="button" onClick={() => void loadWorkspaceSources(workspaceSourcesTarget.id)}>{t("app.reload")}</button></div>}
-              {!workspaceSourcesLoading && workspaceSources.map((binding) => <div className="workspace-binding-row" key={binding.source.id}>
-                {binding.source.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
-                <span><strong>{workspaceSourceName(binding)}</strong><small>{binding.source.kind === "git" ? `${binding.base_ref} → ${binding.branch_name}` : `${binding.mode} → ${binding.target_path}`}</small>{binding.used_cached_base && <small className="workspace-cache-notice">{binding.base_synced_at ? t("repositories.workspaceUsedCache", { time: formatDateTime(binding.base_synced_at) }) : t("repositories.workspaceUsedCacheUnknown")}</small>}{binding.error && <small className="error">{binding.error}</small>}</span>
-                <div className="workspace-binding-status"><em className={binding.status === "error" ? "error" : ""}>{stateLabel(binding.status)}</em>{binding.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retry2")}</button>}</div>
-              </div>)}
-              {!workspaceSourcesLoading && !workspaceSourcesLoadError && workspaceSources.length === 0 && <p className="workspace-dialog-note">{t("app.thisWorkspaceHasNoSourcesYet")}</p>}
-            </section>
-            {!workspaceSourcesLoadError && workspaceSourcesTarget.status !== "ready" && <div className="workspace-source-unavailable"><p>{t("workspace.unready", { state: stateLabel(workspaceSourcesTarget.status) })}</p>{workspaceSourcesTarget.status === "error" && <button type="button" disabled={isBusy} onClick={() => void retryWorkspaceSourceBindings()}><RefreshCw size={12} /> {t("app.retryWorkspace2")}</button>}</div>}
-            {message && <p className="dialog-error">{message}</p>}
-            <footer><button type="button" className="dialog-cancel" disabled={isBusy} onClick={closeWorkspaceSources}>{t("app.close2")}</button><button type="button" className="dialog-submit" disabled={isBusy || workspaceSourcesTarget.status !== "ready" || workspaceSourcesLoading || Boolean(workspaceSourcesLoadError) || !workspaceSourceId || Boolean(selectedRepository && !selectedRepository.repository_id && !workspaceSourceBaseRef.trim())} onClick={() => void confirmAddWorkspaceSource()}>{t("app.addSource")}</button></footer>
-          </div>
-        </div>;
+        return <WorkspaceSourcesDialog
+          target={workspaceSourcesTarget}
+          isBusy={isBusy}
+          loading={workspaceSourcesLoading}
+          loadError={workspaceSourcesLoadError}
+          sourceId={workspaceSourceId}
+          selectedRepository={selectedRepository}
+          baseRef={workspaceSourceBaseRef}
+          message={message}
+          onClose={closeWorkspaceSources}
+          onRetry={() => void retryWorkspaceSourceBindings()}
+          onConfirm={() => void confirmAddWorkspaceSource()}
+        >
+            {!workspaceSourcesLoadError && workspaceSourcesTarget.status === "ready" && <WorkspaceAddSourceSection
+              client={client}
+              isBusy={isBusy}
+              loading={workspaceSourcesLoading}
+              availableRepositories={availableRepositories}
+              availableFolders={availableFolders}
+              matchingRepositories={matchingRepositories}
+              matchingFolders={matchingFolders}
+              selectedSource={selectedSource}
+              selectedRepository={selectedRepository}
+              selectedFolder={selectedFolder}
+              query={addWorkspaceSourceQuery}
+              sourceId={workspaceSourceId}
+              baseRef={workspaceSourceBaseRef}
+              mode={workspaceSourceMode}
+              onQueryChange={setAddWorkspaceSourceQuery}
+              onSelectSource={selectWorkspaceSource}
+              onBaseRefChange={setWorkspaceSourceBaseRef}
+              onModeChange={setWorkspaceSourceMode}
+              onAddOtherRepository={() => { void addSourcesToProject(workspaceSourcesTarget.project_id, true); }}
+            />}
+            <WorkspaceBindingList
+              sources={workspaceSources}
+              loading={workspaceSourcesLoading}
+              loadError={workspaceSourcesLoadError}
+              isBusy={isBusy}
+              onReload={() => void loadWorkspaceSources(workspaceSourcesTarget.id)}
+              onRetry={() => void retryWorkspaceSourceBindings()}
+            />
+        </WorkspaceSourcesDialog>;
       })()}
 
       {archiveWorkspaceTarget && workspaceArchivePreview && (
