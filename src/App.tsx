@@ -130,7 +130,7 @@ import {
   workingConversationIds as workingConversationIdsForSessions,
   type EphemeralDisplayBlock,
 } from "../shared/sessionDisplay";
-import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, WorkspaceArchivePreview, FolderSourceMode, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
+import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, FolderSourceMode, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { initialWorkspaceSourceSelection, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
@@ -154,7 +154,6 @@ import {
 } from "../shared/sidePanelSizing";
 import type { FileEditorMode } from "./FileEditorTab";
 import { hostSwitchHasActiveSave, normalizeHostFilesForRestore } from "./hostVolatileState";
-import type { ProjectDeletePreview } from "../shared/zotigod";
 import { ImagePreview } from "./ImagePreview";
 import { clipboardFiles } from "./clipboardFiles";
 import { matchingSkills, editorSkillTokens, skillPromptText, skillCommandQuery, insertSkillCommand } from "../shared/skillCommands";
@@ -193,7 +192,7 @@ import {
   updateComposerDrafts,
 } from "./composerDrafts";
 import { conversationIsVisible, canAcknowledgeSession, mergeReadState, mergeSessionReadStates } from "./unreadSessions";
-import type { ComposerDraft, ConversationContextMenu, ProjectSourceDraft, SidebarDragItem, WorkspaceRepositoryDraft, ConnectionState } from "./app/appTypes";
+import type { ComposerDraft, ConversationContextMenu, SidebarDragItem, WorkspaceRepositoryDraft, ConnectionState } from "./app/appTypes";
 import { appendUploadedReferences, attachmentToMessageFile, attachmentToMessageImage, revokeDraftAttachments } from "./app/composerAttachments";
 import { clearResolvedApprovalPolicyOverrides, connectionLabel, errorMessage, fileNameForPath, folderModeLabel, formatDateTime, isMarkdownFile, isNearScrollBottom, projectSourceInput, sameJsonValue, sessionFromBinding, upsertSession, workspaceSourceName } from "./app/appHelpers";
 import { ConversationNavItem } from "./sidebar/ConversationNavItem";
@@ -203,6 +202,9 @@ import { ArchiveWorkspaceDialog } from "./workspace/ArchiveWorkspaceDialog";
 import { DeleteWorkspaceDialog } from "./workspace/DeleteWorkspaceDialog";
 import { RenameWorkspaceDialog } from "./workspace/RenameWorkspaceDialog";
 import { DeleteProjectDialog } from "./project/DeleteProjectDialog";
+import { useChannelsNavigation } from "./channels/useChannelsNavigation";
+import { useProjectSourceDrafts } from "./project/useProjectSourceDrafts";
+import { useWorkspaceLifecycleDialogs } from "./workspace/useWorkspaceLifecycleDialogs";
 import { RenameProjectDialog } from "./project/RenameProjectDialog";
 import { RenameConversationDialog } from "./sidebar/RenameConversationDialog";
 import { SessionContextMenu } from "./sidebar/SessionContextMenu";
@@ -263,66 +265,16 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const { api: client, kind, remote, signOut } = useClient();
   const { searchOpen, setSearchOpen } = useSearchPaletteShortcut();
   const [webNavigationOpen, setWebNavigationOpen] = useState(false);
-  const [channelsOpen, setChannelsOpen] = useState(false);
-  const [repositoriesOpen, setRepositoriesOpen] = useState(false);
-  const [channelsSidebarActive, setChannelsSidebarActive] = useState(false);
-  const [channelsSessionVisible, setChannelsSessionVisible] = useState(false);
+  const {
+    channelsOpen, repositoriesOpen, setRepositoriesOpen, channelsSidebarActive, channelsSessionVisible, setChannelsSessionVisible,
+    channelsNavigationRequest, channelsEntryButton, openChannels, closeChannels, leaveChannelsImmediately,
+  } = useChannelsNavigation();
   const [channelsSidebarRoot, setChannelsSidebarRoot] = useState<HTMLDivElement | null>(null);
-  const channelsTransitionTimer = useRef<number | null>(null);
-  const channelsEntryFrames = useRef<number[]>([]);
-  const channelsNavigationRequest = useRef(0);
   const webNavigationButton = useRef<HTMLButtonElement>(null);
   const channelsNavigationButton = useRef<HTMLButtonElement>(null);
   const repositoriesNavigationButton = useRef<HTMLButtonElement>(null);
-  const channelsEntryButton = useRef<HTMLButtonElement>(null);
   const webNavigationCloseButton = useRef<HTMLButtonElement>(null);
   const previousWebNavigationOpen = useRef(false);
-  const cancelChannelsTransition = useCallback(() => {
-    if (channelsTransitionTimer.current !== null) window.clearTimeout(channelsTransitionTimer.current);
-    channelsTransitionTimer.current = null;
-    channelsEntryFrames.current.forEach((frame) => window.cancelAnimationFrame(frame));
-    channelsEntryFrames.current = [];
-  }, []);
-  const openChannels = useCallback(() => {
-    setRepositoriesOpen(false);
-    if (channelsOpen && channelsSidebarActive) return;
-    channelsNavigationRequest.current++;
-    cancelChannelsTransition();
-    setChannelsSessionVisible(false);
-    setChannelsOpen(true);
-    setChannelsSidebarActive(false);
-    const first = window.requestAnimationFrame(() => {
-      const second = window.requestAnimationFrame(() => {
-        channelsEntryFrames.current = [];
-        setChannelsSidebarActive(true);
-      });
-      channelsEntryFrames.current = [second];
-    });
-    channelsEntryFrames.current = [first];
-  }, [cancelChannelsTransition, channelsOpen, channelsSidebarActive]);
-  const closeChannels = useCallback(() => {
-    channelsNavigationRequest.current++;
-    cancelChannelsTransition();
-    setChannelsSidebarActive(false);
-    channelsTransitionTimer.current = window.setTimeout(() => {
-      channelsTransitionTimer.current = null;
-      setChannelsOpen(false);
-      setChannelsSessionVisible(false);
-      window.requestAnimationFrame(() => channelsEntryButton.current?.focus());
-    }, 200);
-  }, [cancelChannelsTransition]);
-  const leaveChannelsImmediately = useCallback(() => {
-    setRepositoriesOpen(false);
-    channelsNavigationRequest.current++;
-    cancelChannelsTransition();
-    setChannelsSidebarActive(false);
-    setChannelsOpen(false);
-    setChannelsSessionVisible(false);
-  }, [cancelChannelsTransition]);
-  useEffect(() => () => {
-    channelsNavigationRequest.current++;
-    cancelChannelsTransition();
-  }, [cancelChannelsTransition]);
   useEffect(() => {
     if (webNavigationOpen) webNavigationCloseButton.current?.focus();
     else if (previousWebNavigationOpen.current) {
@@ -354,12 +306,14 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [sidebarActionError, setSidebarActionError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [pauseRequestedTurnId, setPauseRequestedTurnId] = useState<string | null>(null);
-  const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectSources, setNewProjectSources] = useState<ProjectSourceDraft[]>([]);
-  const [newProjectRepositoryIds, setNewProjectRepositoryIds] = useState<string[]>([]);
-  const [repositoryAdding, setRepositoryAdding] = useState(false);
-  const [addSourcesProjectId, setAddSourcesProjectId] = useState<string | null>(null);
+  const {
+    createProjectOpen, newProjectName, setNewProjectName, newProjectSources, setNewProjectSources,
+    newProjectRepositoryIds, setNewProjectRepositoryIds, repositoryAdding, setRepositoryAdding,
+    addSourcesProjectId, setAddSourcesProjectId,
+    openCreateProjectDialog, closeCreateProjectDialog, chooseNewProjectSources, createNamedProject, addSourcesToProject,
+  } = useProjectSourceDrafts({
+    client, isBusy, setIsBusy, setMessage, applyDesktopState, setRepositoriesOpen, closeWorkspaceSources,
+  });
   const { removeSourceTarget, setRemoveSourceTarget, confirmRemoveSource } = useRemoveSourceDialog({ client, applyDesktopState, setMessage, setIsBusy });
   const [createWorkspaceProjectId, setCreateWorkspaceProjectId] = useState<string | null>(null);
   const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
@@ -379,16 +333,19 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
   const [workspaceMenuId, setWorkspaceMenuId] = useState<string | null>(null);
   const [sidebarActionMenuOpensUp, setSidebarActionMenuOpensUp] = useState(false);
-  const [archiveWorkspaceTarget, setArchiveWorkspaceTarget] = useState<DesktopWorkspace | null>(null);
-  const [workspaceArchivePreview, setWorkspaceArchivePreview] = useState<WorkspaceArchivePreview | null>(null);
-  const [deleteProjectTarget, setDeleteProjectTarget] = useState<DesktopProject | null>(null);
-  const [projectDeletePreview, setProjectDeletePreview] = useState<ProjectDeletePreview | null>(null);
-  const [deleteProjectConfirmation, setDeleteProjectConfirmation] = useState("");
-  const [deleteWorkspaceTarget, setDeleteWorkspaceTarget] = useState<DesktopWorkspace | null>(null);
-  const [workspaceDeletePreview, setWorkspaceDeletePreview] = useState<WorkspaceArchivePreview | null>(null);
-  const [workspaceLifecycleError, setWorkspaceLifecycleError] = useState<string | null>(null);
-  const [deleteWorkspaceConfirmation, setDeleteWorkspaceConfirmation] = useState("");
-  const [copiedWorkspacePath, setCopiedWorkspacePath] = useState<string | null>(null);
+  const {
+    archiveWorkspaceTarget, workspaceArchivePreview, setWorkspaceArchivePreview,
+    deleteProjectTarget, projectDeletePreview, deleteProjectConfirmation, setDeleteProjectConfirmation,
+    deleteWorkspaceTarget, workspaceDeletePreview, setWorkspaceDeletePreview,
+    workspaceLifecycleError, deleteWorkspaceConfirmation, setDeleteWorkspaceConfirmation, copiedWorkspacePath,
+    openArchiveWorkspaceDialog, closeArchiveWorkspaceDialog, confirmArchiveWorkspace,
+    openDeleteProjectDialog, closeDeleteProjectDialog, confirmDeleteProject,
+    openDeleteWorkspaceDialog, closeDeleteWorkspaceDialog, confirmDeleteWorkspace,
+    copyWorkspacePath,
+  } = useWorkspaceLifecycleDialogs({
+    client, isBusy, setIsBusy, applyDesktopState, setSidebarActionError, setProjectMenuId, setWorkspaceMenuId,
+    clearProjectOverview, clearProjectOverviewIfShowing,
+  });
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(new Set());
   const [collapsedWorkspaceIds, setCollapsedWorkspaceIds] = useState<Set<string>>(new Set());
   const [projectOverviewId, setProjectOverviewId] = useState<string | null>(null);
@@ -1577,58 +1534,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
   }
 
-  function openCreateProjectDialog() {
-    setMessage(null);
-    setNewProjectName("");
-    setNewProjectSources([]);
-    setNewProjectRepositoryIds([]);
-    setCreateProjectOpen(true);
-  }
-
-  function closeCreateProjectDialog() {
-    if (isBusy || repositoryAdding) {
-      return;
-    }
-    setCreateProjectOpen(false);
-  }
-
-  async function chooseNewProjectSources() {
-    setMessage(null);
-    try {
-      const candidates = await client.chooseSourceFolders();
-      setNewProjectSources((current) => {
-        const paths = new Set(current.map((draft) => draft.candidate.selectedPath));
-        return [...current, ...candidates.filter((candidate) => !paths.has(candidate.selectedPath)).map((candidate) => ({ candidate, folderMode: "direct" as const }))];
-      });
-    } catch (error) {
-      setMessage(errorMessage(error));
-    }
-  }
-
-  async function createNamedProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = newProjectName.trim();
-    if (!name || repositoryAdding) {
-      return;
-    }
-
-    setIsBusy(true);
-    setMessage(null);
-    try {
-      applyDesktopState(await client.createProject({
-        name,
-        sources: [...newProjectRepositoryIds.map(repositoryId => ({ repositoryId })), ...newProjectSources.map(projectSourceInput)],
-      }));
-      setCreateProjectOpen(false);
-      setRepositoriesOpen(false);
-    } catch (error) {
-      setMessage(errorMessage(error));
-      applyDesktopState(await client.getDesktopState());
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
   function openCreateWorkspaceDialog(project: DesktopProject) {
     const repositories = desktopState.repositories.filter((candidate) => candidate.project_id === project.id);
     const folders = desktopState.folders.filter((candidate) => candidate.project_id === project.id);
@@ -1997,156 +1902,12 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
   }
 
-  async function openArchiveWorkspaceDialog(workspace: DesktopWorkspace) {
-    setWorkspaceMenuId(null);
-    setSidebarActionError(null);
-    setWorkspaceLifecycleError(null);
-    setIsBusy(true);
-    try {
-      const preview = await client.previewWorkspaceArchive(workspace.id);
-      setWorkspaceArchivePreview(preview);
-      setArchiveWorkspaceTarget(workspace);
-      setCopiedWorkspacePath(null);
-    } catch (error) {
-      setSidebarActionError(t("app.couldNotInspect", { p0: workspace.title, p1: errorMessage(error) }));
-    } finally {
-      setIsBusy(false);
-    }
+  function clearProjectOverview() {
+    setProjectOverviewId(null);
   }
 
-  function closeArchiveWorkspaceDialog() {
-    if (isBusy) return;
-    setArchiveWorkspaceTarget(null);
-    setWorkspaceArchivePreview(null);
-    setWorkspaceLifecycleError(null);
-    setCopiedWorkspacePath(null);
-  }
-
-  async function confirmArchiveWorkspace() {
-    if (!archiveWorkspaceTarget || !workspaceArchivePreview) return;
-    setWorkspaceLifecycleError(null);
-    setIsBusy(true);
-    try {
-      const state = await client.archiveWorkspace(archiveWorkspaceTarget.id);
-      applyDesktopState(state);
-      setProjectOverviewId(null);
-      setArchiveWorkspaceTarget(null);
-      setWorkspaceArchivePreview(null);
-      setCopiedWorkspacePath(null);
-    } catch (error) {
-      setWorkspaceLifecycleError(errorMessage(error));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function openDeleteProjectDialog(project: DesktopProject) {
-    setProjectMenuId(null);
-    setSidebarActionError(null);
-    setWorkspaceLifecycleError(null);
-    setIsBusy(true);
-    try {
-      const preview = await client.previewProjectDelete(project.id);
-      setProjectDeletePreview(preview);
-      setDeleteProjectTarget(project);
-      setDeleteProjectConfirmation("");
-    } catch (error) {
-      setSidebarActionError(t("app.couldNotInspect", { p0: project.name, p1: errorMessage(error) }));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  function closeDeleteProjectDialog() {
-    if (isBusy) return;
-    setDeleteProjectTarget(null);
-    setProjectDeletePreview(null);
-    setDeleteProjectConfirmation("");
-    setWorkspaceLifecycleError(null);
-  }
-
-  async function confirmDeleteProject() {
-    if (isBusy || !deleteProjectTarget || !projectDeletePreview || deleteProjectConfirmation !== deleteProjectTarget.name) return;
-    setWorkspaceLifecycleError(null);
-    setIsBusy(true);
-    try {
-      const state = await client.deleteProject({ id: deleteProjectTarget.id, confirmation: deleteProjectConfirmation });
-      applyDesktopState(state);
-      if (projectOverviewId === deleteProjectTarget.id) setProjectOverviewId(null);
-      setDeleteProjectTarget(null);
-      setProjectDeletePreview(null);
-      setDeleteProjectConfirmation("");
-    } catch (error) {
-      setWorkspaceLifecycleError(errorMessage(error));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function openDeleteWorkspaceDialog(workspace: DesktopWorkspace) {
-    setWorkspaceMenuId(null);
-    setSidebarActionError(null);
-    setWorkspaceLifecycleError(null);
-    setIsBusy(true);
-    try {
-      const preview = await client.previewWorkspaceDelete(workspace.id);
-      setWorkspaceDeletePreview(preview);
-      setDeleteWorkspaceTarget(workspace);
-      setDeleteWorkspaceConfirmation("");
-      setCopiedWorkspacePath(null);
-    } catch (error) {
-      setSidebarActionError(t("app.couldNotInspect", { p0: workspace.title, p1: errorMessage(error) }));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  function closeDeleteWorkspaceDialog() {
-    if (isBusy) return;
-    setDeleteWorkspaceTarget(null);
-    setWorkspaceDeletePreview(null);
-    setWorkspaceLifecycleError(null);
-    setDeleteWorkspaceConfirmation("");
-    setCopiedWorkspacePath(null);
-  }
-
-  async function confirmDeleteWorkspace() {
-    if (!deleteWorkspaceTarget || !workspaceDeletePreview) return;
-    setWorkspaceLifecycleError(null);
-    setIsBusy(true);
-    try {
-      const state = await client.deleteWorkspace({
-        id: deleteWorkspaceTarget.id,
-        confirmation: deleteWorkspaceConfirmation,
-      });
-      applyDesktopState(state);
-      setProjectOverviewId(null);
-      setDeleteWorkspaceTarget(null);
-      setWorkspaceDeletePreview(null);
-      setDeleteWorkspaceConfirmation("");
-      setCopiedWorkspacePath(null);
-    } catch (error) {
-      setWorkspaceLifecycleError(errorMessage(error));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function copyWorkspacePath(pathValue: string) {
-    try {
-      await navigator.clipboard.writeText(pathValue);
-      setCopiedWorkspacePath(pathValue);
-    } catch (error) {
-      setWorkspaceLifecycleError(errorMessage(error));
-    }
-  }
-
-  async function addSourcesToProject(projectId: string, fromWorkspace = false) {
-    if (!fromWorkspace) closeWorkspaceSources();
-    setMessage(null);
-    setNewProjectSources([]);
-    setNewProjectRepositoryIds([]);
-    setAddSourcesProjectId(projectId);
+  function clearProjectOverviewIfShowing(projectId: string) {
+    if (projectOverviewId === projectId) setProjectOverviewId(null);
   }
 
   async function confirmAddSources() {
