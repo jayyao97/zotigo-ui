@@ -63,15 +63,10 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Archive,
   Bell,
   Blocks,
   CalendarClock,
-  Check,
-  ChevronDown,
-  ChevronRight,
   Circle,
-  Copy,
   FileText,
   Folder,
   FolderOpen,
@@ -79,7 +74,6 @@ import {
   GitBranch,
   House,
   Image,
-  Laptop,
   MoreHorizontal,
   PanelLeft,
   PanelRight,
@@ -90,11 +84,9 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Server,
   ShieldAlert,
   Square,
   SquarePen,
-  Trash2,
   X,
 } from "lucide-react";
 import { titleFromPrompt } from "../shared/conversationTitle";
@@ -181,7 +173,6 @@ import {
   compatibleReasoningEffort,
   ComposerAttachmentStrip,
   ComposerSkills,
-  codexModelLabel,
   NewSessionPrompt,
   RuntimeSettingsPicker,
   type ComposerAttachment,
@@ -200,9 +191,7 @@ import {
 import { conversationIsVisible, canAcknowledgeSession, mergeReadState, mergeSessionReadStates } from "./unreadSessions";
 import type { ComposerDraft, ConversationContextMenu, ProjectSourceDraft, SidebarDragItem, SidebarDropTarget, SidebarSortProps, WorkspaceRepositoryDraft, ConnectionState } from "./app/appTypes";
 import { appendUploadedReferences, attachmentToMessageFile, attachmentToMessageImage, revokeDraftAttachments } from "./app/composerAttachments";
-import { clearResolvedApprovalPolicyOverrides, connectionLabel, errorMessage, fileNameForPath, folderModeLabel, formatDateTime, isMarkdownFile, isNearScrollBottom, projectForConversation, projectSourceInput, sameJsonValue, sessionFromBinding, upsertSession, workspaceSourceName } from "./app/appHelpers";
-import { StateBadge } from "./app/StateBadge";
-import { StatusPill } from "./app/StatusPill";
+import { clearResolvedApprovalPolicyOverrides, connectionLabel, errorMessage, fileNameForPath, folderModeLabel, formatDateTime, isMarkdownFile, isNearScrollBottom, projectSourceInput, sameJsonValue, sessionFromBinding, upsertSession, workspaceSourceName } from "./app/appHelpers";
 import { ConversationNavItem } from "./sidebar/ConversationNavItem";
 import { ProjectOverview } from "./project/ProjectOverview";
 import { OpenWorkspaceFileTab } from "./workspace/OpenWorkspaceFileTab";
@@ -213,6 +202,12 @@ import { DeleteProjectDialog } from "./project/DeleteProjectDialog";
 import { RenameProjectDialog } from "./project/RenameProjectDialog";
 import { RenameConversationDialog } from "./sidebar/RenameConversationDialog";
 import { SessionContextMenu } from "./sidebar/SessionContextMenu";
+import { SessionEnvironmentList } from "./inspector/SessionEnvironmentList";
+import { SubagentSummaryButton } from "./inspector/SubagentSummaryButton";
+import { SessionDetailList } from "./inspector/SessionDetailList";
+import { AddSourcesDialog } from "./project/AddSourcesDialog";
+import { WorkspaceActionMenu } from "./sidebar/WorkspaceActionMenu";
+import { ProjectActionMenu } from "./sidebar/ProjectActionMenu";
 import { RemoveSourceDialog } from "./project/RemoveSourceDialog";
 
 type HostVolatileState = {
@@ -3516,53 +3511,26 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 <MoreHorizontal size={14} strokeWidth={1.8} />
               </button>
               {workspaceMenuId === workspace.id && (
-                <div
-                  ref={sidebarActionMenuRef}
-                  className={`workspace-action-menu ${sidebarActionMenuOpensUp ? "opens-up" : ""}`}
-                  role="menu"
-                >
-                  <button type="button" role="menuitem" onClick={() => void toggleNavigationPinned({ kind: "workspace", id: workspace.id })}>
-                    <Pin size={13} strokeWidth={1.8} /><span>{pinned ? t("app.unpinWorkspace") : t("app.pinWorkspace")}</span>
-                  </button>
-                  {workspace.status === "ready" && <button type="button" role="menuitem" onClick={() => { setWorkspaceMenuId(null); void openWorkspaceSources(workspace); }}>
-                    <FolderPlus size={13} strokeWidth={1.8} /><span>{t("workspace.addRepository")}</span>
-                  </button>}
-                  {<button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setWorkspaceMenuId(null);
-                      browseFiles(workspace.root_path);
-                    }}
-                  >
-                    <FolderOpen size={13} strokeWidth={1.8} />
-                    <span>{t("app.browseFiles")}</span>
-                  </button>}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setWorkspaceMenuId(null);
-                      void copyWorkspacePath(workspace.root_path);
-                    }}
-                  >
-                    <Copy size={13} strokeWidth={1.8} />
-                    <span>{kind === "web" ? t("app.copyServerPath") : t("app.copyAbsolutePath")}</span>
-                  </button>
-                  <div className="workspace-action-menu-separator" role="separator" />
-                  <button type="button" role="menuitem" onClick={() => openRenameWorkspaceDialog(workspace)}>
-                    <SquarePen size={13} strokeWidth={1.8} />
-                    <span>{t("app.rename")}</span>
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => void openArchiveWorkspaceDialog(workspace)}>
-                    <Archive size={13} strokeWidth={1.8} />
-                    <span>{t("app.archive")}</span>
-                  </button>
-                  <button type="button" role="menuitem" className="destructive" onClick={() => void openDeleteWorkspaceDialog(workspace)}>
-                    <Trash2 size={13} strokeWidth={1.8} />
-                    <span>{t("app.delete")}</span>
-                  </button>
-                </div>
+                <WorkspaceActionMenu
+                  menuRef={sidebarActionMenuRef}
+                  opensUp={sidebarActionMenuOpensUp}
+                  pinned={pinned}
+                  ready={workspace.status === "ready"}
+                  kind={kind}
+                  onTogglePinned={() => void toggleNavigationPinned({ kind: "workspace", id: workspace.id })}
+                  onAddRepository={() => { setWorkspaceMenuId(null); void openWorkspaceSources(workspace); }}
+                  onBrowseFiles={() => {
+                    setWorkspaceMenuId(null);
+                    browseFiles(workspace.root_path);
+                  }}
+                  onCopyPath={() => {
+                    setWorkspaceMenuId(null);
+                    void copyWorkspacePath(workspace.root_path);
+                  }}
+                  onRename={() => openRenameWorkspaceDialog(workspace)}
+                  onArchive={() => void openArchiveWorkspaceDialog(workspace)}
+                  onDelete={() => void openDeleteWorkspaceDialog(workspace)}
+                />
               )}
               <button
                 type="button"
@@ -3676,31 +3644,17 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               <MoreHorizontal size={14} strokeWidth={1.8} />
             </button>
             {projectMenuId === project.id && (
-              <div
-                ref={sidebarActionMenuRef}
-                className={`workspace-action-menu project-action-menu ${sidebarActionMenuOpensUp ? "opens-up" : ""}`}
-                role="menu"
-              >
-                <button type="button" role="menuitem" onClick={() => void toggleNavigationPinned({ kind: "project", id: project.id })}>
-                  <Pin size={13} strokeWidth={1.8} /><span>{pinned ? t("app.unpinProject") : t("app.pinProject")}</span>
-                </button>
-                <button type="button" role="menuitem" onClick={() => { setProjectMenuId(null); void openProjectOverview(project); }}>
-                  <FileText size={13} strokeWidth={1.8} />
-                  <span>{t("app.openOverview")}</span>
-                </button>
-                <button type="button" role="menuitem" onClick={() => { setProjectMenuId(null); void addSourcesToProject(project.id); }}>
-                  <FolderPlus size={13} strokeWidth={1.8} />
-                  <span>{t("app.addSources")}</span>
-                </button>
-                <button type="button" role="menuitem" onClick={() => openRenameProjectDialog(project)}>
-                  <SquarePen size={13} strokeWidth={1.8} />
-                  <span>{t("app.rename")}</span>
-                </button>
-                <button type="button" role="menuitem" className="destructive" disabled={isBusy} onClick={() => void openDeleteProjectDialog(project)}>
-                  <Trash2 size={13} strokeWidth={1.8} />
-                  <span>{t("app.deleteProject")}</span>
-                </button>
-              </div>
+              <ProjectActionMenu
+                menuRef={sidebarActionMenuRef}
+                opensUp={sidebarActionMenuOpensUp}
+                pinned={pinned}
+                isBusy={isBusy}
+                onTogglePinned={() => void toggleNavigationPinned({ kind: "project", id: project.id })}
+                onOpenOverview={() => { setProjectMenuId(null); void openProjectOverview(project); }}
+                onAddSources={() => { setProjectMenuId(null); void addSourcesToProject(project.id); }}
+                onRename={() => openRenameProjectDialog(project)}
+                onDelete={() => void openDeleteProjectDialog(project)}
+              />
             )}
             <button
               type="button"
@@ -4420,64 +4374,21 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             </button>
           </div>
 
-          <div className="env-list">
-            <div className="env-row">
-              <Server className="env-icon" size={15} strokeWidth={1.8} />
-              <span>{t("app.daemon")}</span>
-              <StatusPill state={connectionState} />
-            </div>
-            <div className="env-row">
-              <Laptop className="env-icon" size={15} strokeWidth={1.8} />
-              <span>{remote ? t("app.remoteHost") : t("app.localHost")}</span>
-              <ChevronDown className="env-chevron" size={14} strokeWidth={1.8} />
-            </div>
-            <div className="env-row">
-              <Folder className="env-icon" size={15} strokeWidth={1.8} />
-              <span>{selectedProject?.name ?? t("app.scratch")}</span>
-              {selectedWorkspace?.root_path && (
-                <span className="env-row-actions">
-                  <button type="button" className="icon-button" title={t("app.copyWorkspacePath")} aria-label={t("app.copyWorkspacePath")} onClick={() => void copyWorkspacePath(selectedWorkspace.root_path)}>
-                    {copiedWorkspacePath === selectedWorkspace.root_path ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
-                  </button>
-                  <button type="button" className="icon-button" title={t("app.browseWorkspaceFiles")} aria-label={t("app.browseWorkspaceFiles")} onClick={() => browseFiles(selectedWorkspace.root_path)}>
-                    <FolderOpen size={14} />
-                  </button>
-                </span>
-              )}
-            </div>
-            <div className="env-row">
-              <GitBranch className="env-icon" size={15} strokeWidth={1.8} />
-              <span>{selectedWorkspace?.title ?? t("app.noWorkspace")}</span>
-            </div>
-            {selectedSession?.working_directory && selectedSession.working_directory !== selectedWorkspace?.root_path && (
-              <div className="env-row" title={selectedSession.working_directory}>
-                <Folder className="env-icon" size={15} strokeWidth={1.8} />
-                <span>{selectedSession.working_directory}</span>
-                <span className="env-row-actions">
-                  <button type="button" className="icon-button" title={t("app.copyWorkingDirectory")} aria-label={t("app.copyWorkingDirectory")} onClick={() => void copyWorkspacePath(selectedSession.working_directory!)}>
-                    {copiedWorkspacePath === selectedSession.working_directory ? <Check size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
-                  </button>
-                  <button type="button" className="icon-button" title={t("app.browseWorkingDirectory")} aria-label={t("app.browseWorkingDirectory")} onClick={() => browseFiles(selectedSession.working_directory!)}>
-                    <FolderOpen size={14} />
-                  </button>
-                </span>
-              </div>
-            )}
-          </div>
+          <SessionEnvironmentList
+            connectionState={connectionState}
+            remote={remote}
+            projectName={selectedProject?.name}
+            workspace={selectedWorkspace}
+            workingDirectory={selectedSession?.working_directory}
+            copiedWorkspacePath={copiedWorkspacePath}
+            onCopyPath={(path) => void copyWorkspacePath(path)}
+            onBrowseFiles={(path) => browseFiles(path)}
+          />
 
           {subagentRuns.length > 0 && (
             <>
               <div className="inspector-divider" />
-              <button type="button" className="subagent-summary-button" onClick={() => showPanelTab({ id: "subagents", kind: "subagents" })}>
-                <span>
-                  <strong>{t("app.subagents")}</strong>
-                  <small>{t("context.subagentCounts", { active: subagentRuns.filter((run) => run.status === "running" || run.status === "waiting_approval").length, done: subagentRuns.filter((run) => run.status === "completed" || run.status === "failed").length })}</small>
-                </span>
-                <span className="subagent-avatar-stack" aria-hidden="true">
-                  {subagentRuns.slice(0, 4).map((run) => <SubagentAvatar key={run.id} run={run} compact />)}
-                </span>
-                <ChevronRight size={14} strokeWidth={1.8} />
-              </button>
+              <SubagentSummaryButton runs={subagentRuns} onOpen={() => showPanelTab({ id: "subagents", kind: "subagents" })} />
             </>
           )}
 
@@ -4490,79 +4401,20 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                   <Pin size={14} strokeWidth={1.8} fill={selectedConversation.pinned_at ? "currentColor" : "none"} />
                 </button>
               </div>
-              <dl className="detail-list">
-              <div>
-                <dt>{t("app.conversation")}</dt>
-                <dd>{selectedConversation.title}</dd>
-              </div>
-              <div>
-                <dt>{t("app.project")}</dt>
-                <dd>{projectForConversation(selectedConversation, desktopState.projects)?.name ?? t("app.noProject")}</dd>
-              </div>
-              <div>
-                <dt>{t("app.daemonId")}</dt>
-                <dd className="mono">{selectedBinding?.daemon_session_id ?? t("app.notBound")}</dd>
-              </div>
-              <div>
-                <dt>{t("app.state")}</dt>
-                <dd>
-                  {selectedSession ? (
-                    <StateBadge
-                      state={
-                        selectedSession.state === "running" && !sessionItemsLoading && !hasActiveTurn
-                          ? "idle"
-                          : selectedSession.state
-                      }
-                    />
-                  ) : (
-                    t("app.notBound")
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>{t("app.agent")}</dt>
-                <dd>{selectedAgent === "codex" ? t("app.codex") : t("app.zotigo")}</dd>
-              </div>
-              {selectedAgent === "codex" ? (
-                <>
-                  <div>
-                    <dt>{t("app.model")}</dt>
-                    <dd>{codexModelLabel(codexModels, selectedCodexModel)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("app.thinking")}</dt>
-                    <dd>{stateLabel(selectedCodexReasoningEffort) || t("app.notAvailable")}</dd>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <dt>{t("app.profile")}</dt>
-                    <dd>{selectedProfile || t("app.notAvailable")}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("app.access")}</dt>
-                    <dd>{approvalPolicyLabel(selectedApprovalPolicy)}</dd>
-                  </div>
-                </>
-              )}
-              <div>
-                <dt>{t("app.created")}</dt>
-                <dd>{selectedSession ? formatDateTime(selectedSession.created_at) : formatDateTime(selectedConversation.created_at)}</dd>
-              </div>
-              <div>
-                <dt>{t("app.started")}</dt>
-                <dd>{selectedSession?.started_at ? formatDateTime(selectedSession.started_at) : t("app.notStarted")}</dd>
-              </div>
-              <div>
-                <dt>{t("app.ended")}</dt>
-                <dd>{selectedSession?.ended_at ? formatDateTime(selectedSession.ended_at) : t("app.notEnded")}</dd>
-              </div>
-              <div>
-                <dt>{t("app.error")}</dt>
-                <dd>{selectedSession?.error || t("app.none")}</dd>
-              </div>
-              </dl>
+              <SessionDetailList
+                conversation={selectedConversation}
+                projects={desktopState.projects}
+                binding={selectedBinding}
+                session={selectedSession}
+                sessionItemsLoading={sessionItemsLoading}
+                hasActiveTurn={hasActiveTurn}
+                agent={selectedAgent}
+                codexModels={codexModels}
+                codexModel={selectedCodexModel}
+                codexReasoningEffort={selectedCodexReasoningEffort}
+                profile={selectedProfile}
+                approvalPolicy={selectedApprovalPolicy}
+              />
             </>
           )}
         </section>
@@ -4756,23 +4608,23 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       )}
 
       {addSourcesProjectId && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !isBusy && !repositoryAdding) setAddSourcesProjectId(null); }} onKeyDown={event => { if (event.key === "Escape" && !isBusy && !repositoryAdding) setAddSourcesProjectId(null); }}>
-          <div className="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="add-sources-title">
-            <header><div><h2 id="add-sources-title">{t(workspaceSourcesTarget ? "workspace.addRepository" : "app.addSources")}</h2><p>{workspaceSourcesTarget?.title ?? desktopState.projects.find(project => project.id === addSourcesProjectId)?.name}</p></div><button autoFocus type="button" className="dialog-close" disabled={isBusy || repositoryAdding} onClick={() => setAddSourcesProjectId(null)} aria-label={t("app.close2")}><X size={15} /></button></header>
-            <ManagedRepositoryPicker client={client} selectedIds={newProjectRepositoryIds} hideLinked linkedIds={workspaceSourcesTarget ? workspaceSources.map(binding => binding.repository_id ?? binding.source.repository_id).filter((id): id is string => Boolean(id)) : desktopState.repositories.filter(source => source.project_id === addSourcesProjectId && source.repository_id).map(source => source.repository_id!)} onChange={setNewProjectRepositoryIds} disabled={isBusy} onBusyChange={setRepositoryAdding} />
-            <div className="project-source-list">{newProjectSources.map((draft) => <div className="project-source-row source-choice-row" key={draft.candidate.selectedPath}>
-              {draft.candidate.kind === "git" ? <GitBranch size={15} /> : <Folder size={15} />}
-              <span><strong>{draft.candidate.name}</strong><small>{draft.candidate.canonicalPath}</small></span>
-              {draft.candidate.kind === "git"
-                ? <div className="source-mode-actions"><em>{t("app.gitRepository")}</em></div>
-                : <div className="source-mode-actions"><em>{folderModeLabel(draft.folderMode)}</em>{draft.folderMode === "direct" ? <><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "copy" } : item))}>{t("app.useACopy")}</button><button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "reference" } : item))}>{t("app.useAsReference")}</button></> : <button type="button" onClick={() => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === draft.candidate.selectedPath ? { ...item, folderMode: "direct" } : item))}>{t("app.useDirectly")}</button>}</div>}
-              {draft.candidate.kind === "folder" && draft.folderMode === "direct" && <small className="source-direct-warning">{t("app.workspaceChangesWillAppearInTheOriginalFolder")}</small>}
-            </div>)}</div>
-            {!workspaceSourcesTarget && <button type="button" className="project-folder-picker compact" disabled={isBusy || repositoryAdding} onClick={() => void chooseNewProjectSources()}><Plus size={14} />{t("app.addFolder")}</button>}
-            {message && <p className="dialog-error">{message}</p>}
-            <footer><button type="button" className="dialog-cancel" disabled={isBusy || repositoryAdding} onClick={() => setAddSourcesProjectId(null)}>{t("app.cancel")}</button><button type="button" className="dialog-submit" disabled={isBusy || repositoryAdding || (!newProjectSources.length && !newProjectRepositoryIds.length)} onClick={() => void confirmAddSources()}>{t(workspaceSourcesTarget ? "workspace.addRepository" : "app.addSources")}</button></footer>
-          </div>
-        </div>
+        <AddSourcesDialog
+          client={client}
+          forWorkspace={Boolean(workspaceSourcesTarget)}
+          subtitle={workspaceSourcesTarget?.title ?? desktopState.projects.find(project => project.id === addSourcesProjectId)?.name}
+          linkedIds={workspaceSourcesTarget ? workspaceSources.map(binding => binding.repository_id ?? binding.source.repository_id).filter((id): id is string => Boolean(id)) : desktopState.repositories.filter(source => source.project_id === addSourcesProjectId && source.repository_id).map(source => source.repository_id!)}
+          selectedRepositoryIds={newProjectRepositoryIds}
+          sources={newProjectSources}
+          message={message}
+          isBusy={isBusy}
+          repositoryAdding={repositoryAdding}
+          onClose={() => setAddSourcesProjectId(null)}
+          onRepositoryIdsChange={setNewProjectRepositoryIds}
+          onRepositoryBusyChange={setRepositoryAdding}
+          onFolderModeChange={(selectedPath, folderMode) => setNewProjectSources((current) => current.map((item) => item.candidate.selectedPath === selectedPath ? { ...item, folderMode } : item))}
+          onAddFolder={() => void chooseNewProjectSources()}
+          onConfirm={() => void confirmAddSources()}
+        />
       )}
 
       {createWorkspaceProject && (
