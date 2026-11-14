@@ -117,7 +117,6 @@ addWorkspaceSourceToCatalog,
   renameCatalogConversation,
   renameProjectInCatalog,
   renameWorkspaceInCatalog,
-  reorderCatalogPinnedSessions,
   reorderCatalogPinnedItems,
   pinCatalogNavigation,
   reorderCatalogProjects,
@@ -472,9 +471,6 @@ addWorkspaceSourceToCatalog,
   );
   handle("desktop:reorder-workspace-conversations", (conversationIds) =>
     reorderCatalogWorkspaceSessions(assertStringArray(conversationIds, "conversationIds")),
-  );
-  handle("desktop:reorder-pinned-conversations", (conversationIds) =>
-    reorderCatalogPinnedSessions(assertStringArray(conversationIds, "conversationIds")),
   );
   handle("desktop:set-navigation-pinned", (item, pinned) =>
     pinCatalogNavigation(parseNavigationItem(item), assertBoolean(pinned, "pinned")),

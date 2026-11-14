@@ -1,12 +1,6 @@
 import type { CatalogWorkspaceSource, FolderSourceMode } from "./zotigod";
 import type { DesktopProjectFolder, DesktopProjectRepository } from "./clientTypes";
 
-export function workspaceBranchSuggestion(bindings: CatalogWorkspaceSource[]): string {
-  const branches = new Set(bindings.filter(binding => binding.source.kind === "git")
-    .map(binding => binding.branch_name?.trim()).filter((branch): branch is string => Boolean(branch)));
-  return branches.size === 1 ? [...branches][0] : "";
-}
-
 export function workspaceHasRepository(bindings: CatalogWorkspaceSource[], source: DesktopProjectRepository): boolean {
   return bindings.some(binding => binding.source.id === source.id
     || Boolean(source.repository_id && (binding.repository_id ?? binding.source.repository_id) === source.repository_id));
