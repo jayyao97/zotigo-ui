@@ -27,6 +27,11 @@ import type { OpenFileState } from "./openFileState";
 import { useLiveFiles } from "./useLiveFiles";
 import { useToast } from "./Toast";
 import { useConversationTitle } from "./useConversationTitle";
+import { useSidebarSortOrder } from "./sidebar/useSidebarSortOrder";
+import { useRemoveSourceDialog } from "./project/useRemoveSourceDialog";
+import { useSearchPaletteShortcut } from "./app/useSearchPaletteShortcut";
+import { useRenameProjectDialog } from "./project/useRenameProjectDialog";
+import { useRenameWorkspaceDialog } from "./workspace/useRenameWorkspaceDialog";
 import { useTimelineActions } from "./conversation/useTimelineActions";
 import type { NavigationItem } from "../shared/clientTypes";
 import { loadLastModelSelection, saveLastModelSelection } from "./lastModelSelection";
@@ -129,7 +134,6 @@ import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolic
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { initialWorkspaceSourceSelection, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
-import { reorderSidebarIds, type DropPosition } from "../shared/sidebarOrdering";
 import { RecentSessions } from "./RecentSessions";
 import { SidebarSection } from "./SidebarSection";
 import { updateSidebarClipping } from "./sidebarClipping";
@@ -189,7 +193,7 @@ import {
   updateComposerDrafts,
 } from "./composerDrafts";
 import { conversationIsVisible, canAcknowledgeSession, mergeReadState, mergeSessionReadStates } from "./unreadSessions";
-import type { ComposerDraft, ConversationContextMenu, ProjectSourceDraft, SidebarDragItem, SidebarDropTarget, SidebarSortProps, WorkspaceRepositoryDraft, ConnectionState } from "./app/appTypes";
+import type { ComposerDraft, ConversationContextMenu, ProjectSourceDraft, SidebarDragItem, WorkspaceRepositoryDraft, ConnectionState } from "./app/appTypes";
 import { appendUploadedReferences, attachmentToMessageFile, attachmentToMessageImage, revokeDraftAttachments } from "./app/composerAttachments";
 import { clearResolvedApprovalPolicyOverrides, connectionLabel, errorMessage, fileNameForPath, folderModeLabel, formatDateTime, isMarkdownFile, isNearScrollBottom, projectSourceInput, sameJsonValue, sessionFromBinding, upsertSession, workspaceSourceName } from "./app/appHelpers";
 import { ConversationNavItem } from "./sidebar/ConversationNavItem";
@@ -257,15 +261,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
-  const [searchOpen, setSearchOpen] = useState(false);
-  useEffect(() => {
-    const openSearch = (event: globalThis.KeyboardEvent) => {
-      if (document.querySelector("dialog[open]:not(.search-palette)")) return;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !event.altKey && !event.isComposing) { event.preventDefault(); setSearchOpen((open) => !open); }
-    };
-    window.addEventListener("keydown", openSearch);
-    return () => window.removeEventListener("keydown", openSearch);
-  }, []);
+  const { searchOpen, setSearchOpen } = useSearchPaletteShortcut();
   const [webNavigationOpen, setWebNavigationOpen] = useState(false);
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [repositoriesOpen, setRepositoriesOpen] = useState(false);
@@ -364,7 +360,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [newProjectRepositoryIds, setNewProjectRepositoryIds] = useState<string[]>([]);
   const [repositoryAdding, setRepositoryAdding] = useState(false);
   const [addSourcesProjectId, setAddSourcesProjectId] = useState<string | null>(null);
-  const [removeSourceTarget, setRemoveSourceTarget] = useState<{ kind: "git" | "folder"; id: string; name: string } | null>(null);
+  const { removeSourceTarget, setRemoveSourceTarget, confirmRemoveSource } = useRemoveSourceDialog({ client, applyDesktopState, setMessage, setIsBusy });
   const [createWorkspaceProjectId, setCreateWorkspaceProjectId] = useState<string | null>(null);
   const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
   const [newWorkspaceBranch, setNewWorkspaceBranch] = useState("");
@@ -396,8 +392,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(new Set());
   const [collapsedWorkspaceIds, setCollapsedWorkspaceIds] = useState<Set<string>>(new Set());
   const [projectOverviewId, setProjectOverviewId] = useState<string | null>(null);
-  const [sidebarDragItem, setSidebarDragItem] = useState<SidebarDragItem | null>(null);
-  const [sidebarDropTarget, setSidebarDropTarget] = useState<SidebarDropTarget | null>(null);
+  const { sidebarSortProps } = useSidebarSortOrder({ isBusy, persistSidebarOrder });
   const [sessionItems, setSessionItems] = useState<DisplayItem[]>([]);
   const [ephemeralBlocks, setEphemeralBlocksState] = useState<EphemeralDisplayBlock[]>([]);
   const ephemeralBlocksRef = useRef<EphemeralDisplayBlock[]>([]);
@@ -454,12 +449,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [conversationTitleDraft, setConversationTitleDraft] = useState("");
   const [renameDialogConversationId, setRenameDialogConversationId] = useState<string | null>(null);
   const [renameDialogTitleDraft, setRenameDialogTitleDraft] = useState("");
-  const [renameDialogProjectId, setRenameDialogProjectId] = useState<string | null>(null);
-  const [renameDialogProjectNameDraft, setRenameDialogProjectNameDraft] = useState("");
-  const [isSavingProjectName, setIsSavingProjectName] = useState(false);
-  const [renameDialogWorkspaceId, setRenameDialogWorkspaceId] = useState<string | null>(null);
-  const [renameDialogWorkspaceTitleDraft, setRenameDialogWorkspaceTitleDraft] = useState("");
-  const [isSavingWorkspaceTitle, setIsSavingWorkspaceTitle] = useState(false);
+  const { renameDialogProject, renameDialogProjectNameDraft, setRenameDialogProjectNameDraft, isSavingProjectName, openRenameProjectDialog, closeRenameProjectDialog, submitRenameProjectDialog } = useRenameProjectDialog({ projects: desktopState.projects, client, applyDesktopState, setMessage, setProjectMenuId });
+  const { renameDialogWorkspace, renameDialogWorkspaceTitleDraft, setRenameDialogWorkspaceTitleDraft, isSavingWorkspaceTitle, openRenameWorkspaceDialog, closeRenameWorkspaceDialog, submitRenameWorkspaceDialog } = useRenameWorkspaceDialog({ workspaces: desktopState.workspaces, client, applyDesktopState, setMessage, setWorkspaceMenuId });
   const { panels: sessionSidePanels, sidePanelTabs, setSidePanelTabs, sidePanelOpen, setSidePanelOpen,
     sidePanelExpanded, setSidePanelExpanded, directoryLocation, setDirectoryLocation, fileOpenInOtherSession,
   } = useSessionSidePanel(desktopState.selectedConversationId ?? "new", restoredHostState?.sessionSidePanels);
@@ -545,7 +536,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const sessionItemsRef = useRef<DisplayItem[]>([]);
   const selectedSessionIdRef = useRef<string | null>(null);
   const sessionEventsConnectedRef = useRef(false);
-  const sidebarDragItemRef = useRef<SidebarDragItem | null>(null);
   const sidebarDisclosureLoadedRef = useRef(false);
   const sidebarActionMenuRef = useRef<HTMLDivElement | null>(null);
   const navigationScrollRef = useRef<HTMLDivElement | null>(null);
@@ -727,14 +717,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       desktopState.conversations.find((conversation) => conversation.id === renameDialogConversationId) ?? null,
     [desktopState.conversations, renameDialogConversationId],
   );
-  const renameDialogProject = useMemo(
-    () => desktopState.projects.find((project) => project.id === renameDialogProjectId) ?? null,
-    [desktopState.projects, renameDialogProjectId],
-  );
-  const renameDialogWorkspace = useMemo(
-    () => desktopState.workspaces.find((workspace) => workspace.id === renameDialogWorkspaceId) ?? null,
-    [desktopState.workspaces, renameDialogWorkspaceId],
-  );
   const createWorkspaceProject = useMemo(
     () => desktopState.projects.find((project) => project.id === createWorkspaceProjectId) ?? null,
     [createWorkspaceProjectId, desktopState.projects],
@@ -866,56 +848,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       && isConversationAtBottom && !searchWindow && !sessionItemsError
       && sessionItemsLoadedForSessionId === session.id)) markConversationRead(session.id);
   }, [selectedSession, sessionItems, sessionItemsLoadedForSessionId, foreground, surfaceActive, conversationVisible, isConversationAtBottom, searchWindow, sessionItemsError]);
-
-  function sidebarSortProps(item: SidebarDragItem, orderedIds: string[], fixedPosition?: DropPosition): SidebarSortProps {
-    const isCurrentTarget = sidebarDropTarget?.kind === item.kind
-      && sidebarDropTarget.scopeId === item.scopeId
-      && sidebarDropTarget.id === item.id;
-    return {
-      draggable: !isBusy,
-      dragging: sidebarDragItem?.kind === item.kind && sidebarDragItem.scopeId === item.scopeId && sidebarDragItem.id === item.id,
-      dropPosition: isCurrentTarget ? sidebarDropTarget.position : undefined,
-      onDragStart: (event) => {
-        if (event.target instanceof Element && event.target.closest(".project-collapse-button, .workspace-collapse-button, .project-row-actions, .workspace-row-actions, .sidebar-session-actions")) {
-          event.preventDefault();
-          return;
-        }
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", item.id);
-        sidebarDragItemRef.current = item;
-        setSidebarDragItem(item);
-        setSidebarDropTarget(null);
-      },
-      onDragOver: (event) => {
-        const dragged = sidebarDragItemRef.current;
-        if (!dragged || dragged.kind !== item.kind || dragged.scopeId !== item.scopeId || dragged.id === item.id) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        const bounds = event.currentTarget.getBoundingClientRect();
-        const position = fixedPosition ?? (event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
-        setSidebarDropTarget({ ...item, position });
-      },
-      onDrop: (event) => {
-        const dragged = sidebarDragItemRef.current;
-        if (!dragged || dragged.kind !== item.kind || dragged.scopeId !== item.scopeId) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const bounds = event.currentTarget.getBoundingClientRect();
-        const position = fixedPosition ?? (event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
-        sidebarDragItemRef.current = null;
-        setSidebarDragItem(null);
-        setSidebarDropTarget(null);
-        const reorderedIds = reorderSidebarIds(orderedIds, dragged.id, item.id, position);
-        if (reorderedIds === orderedIds || reorderedIds.every((id, index) => id === orderedIds[index])) return;
-        void persistSidebarOrder(item.kind, item.scopeId, reorderedIds);
-      },
-      onDragEnd: () => {
-        sidebarDragItemRef.current = null;
-        setSidebarDragItem(null);
-        setSidebarDropTarget(null);
-      },
-    };
-  }
 
   async function persistSidebarOrder(kind: SidebarDragItem["kind"], scopeId: string, orderedIds: string[]) {
     try {
@@ -2237,18 +2169,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     finally { setIsBusy(false); }
   }
 
-  async function confirmRemoveSource() {
-    if (!removeSourceTarget) return;
-    setIsBusy(true);
-    setMessage(null);
-    try {
-      applyDesktopState(await client.removeProjectSource(removeSourceTarget.kind, removeSourceTarget.id));
-      setRemoveSourceTarget(null);
-    }
-    catch (error) { setMessage(errorMessage(error)); }
-    finally { setIsBusy(false); }
-  }
-
   function updateComposerDraft(key: string, update: (draft: ComposerDraft) => ComposerDraft) {
     setComposerDrafts((current) => updateComposerDrafts(current, key, update));
   }
@@ -3175,45 +3095,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
   }
 
-  function openRenameProjectDialog(project: DesktopProject) {
-    setProjectMenuId(null);
-    setMessage(null);
-    setRenameDialogProjectId(project.id);
-    setRenameDialogProjectNameDraft(project.name);
-  }
-
-  function closeRenameProjectDialog() {
-    if (isSavingProjectName) return;
-    setRenameDialogProjectId(null);
-    setRenameDialogProjectNameDraft("");
-  }
-
-  async function submitRenameProjectDialog(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!renameDialogProject || isSavingProjectName) return;
-    const name = renameDialogProjectNameDraft.trim();
-    if (!name) {
-      setMessage(t("app.projectNameIsRequired"));
-      return;
-    }
-    if (name === renameDialogProject.name) {
-      closeRenameProjectDialog();
-      return;
-    }
-
-    setIsSavingProjectName(true);
-    setMessage(null);
-    try {
-      applyDesktopState(await client.renameProject(renameDialogProject.id, name));
-      setRenameDialogProjectId(null);
-      setRenameDialogProjectNameDraft("");
-    } catch (error) {
-      setMessage(errorMessage(error));
-    } finally {
-      setIsSavingProjectName(false);
-    }
-  }
-
   function toggleWorkspaceCollapsed(id: string) {
     setCollapsedWorkspaceIds((current) => {
       const next = new Set(current);
@@ -3221,45 +3102,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       else next.add(id);
       return next;
     });
-  }
-
-  function openRenameWorkspaceDialog(workspace: DesktopWorkspace) {
-    setWorkspaceMenuId(null);
-    setMessage(null);
-    setRenameDialogWorkspaceId(workspace.id);
-    setRenameDialogWorkspaceTitleDraft(workspace.title);
-  }
-
-  function closeRenameWorkspaceDialog() {
-    if (isSavingWorkspaceTitle) return;
-    setRenameDialogWorkspaceId(null);
-    setRenameDialogWorkspaceTitleDraft("");
-  }
-
-  async function submitRenameWorkspaceDialog(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!renameDialogWorkspace || isSavingWorkspaceTitle) return;
-    const title = renameDialogWorkspaceTitleDraft.trim();
-    if (!title) {
-      setMessage(t("app.workspaceNameIsRequired"));
-      return;
-    }
-    if (title === renameDialogWorkspace.title) {
-      closeRenameWorkspaceDialog();
-      return;
-    }
-
-    setIsSavingWorkspaceTitle(true);
-    setMessage(null);
-    try {
-      applyDesktopState(await client.renameWorkspace(renameDialogWorkspace.id, title));
-      setRenameDialogWorkspaceId(null);
-      setRenameDialogWorkspaceTitleDraft("");
-    } catch (error) {
-      setMessage(errorMessage(error));
-    } finally {
-      setIsSavingWorkspaceTitle(false);
-    }
   }
 
   function scheduleFileSave(filePath: string) {
