@@ -32,6 +32,8 @@ Client validation exposed a daemon recovery bug that can replay an already execu
 | `electron/` | Native window, preload/IPC, native dialogs and OS integration |
 | `web/`, `src/web/` | Web server authentication, HTTP/SSE transport, login and server-path selection |
 
+See [docs/architecture.md](docs/architecture.md) for the process model, the dependency rule between these directories, and why each layer exists.
+
 Desktop and Web share catalog data through zotigod. Browser selection is scoped to a tab and survives reload when session storage is available. It does not change Desktop's selected conversation. Both clients share a daemon-backed source picker and workspace file panel. Browser image downloads use the authenticated image endpoint.
 
 ## Search and remote hosts

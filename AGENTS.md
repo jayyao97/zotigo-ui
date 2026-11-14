@@ -25,6 +25,7 @@ Keep the exact contract aligned with `zotigo/docs/zotigod-api.md`. Do not call i
 - For UI changes, first read `.codex/skills/zotigo-codex-design-system/SKILL.md` and follow it unless the user explicitly asks for a different direction.
 - Keep renderer Node access disabled. Use preload to expose narrow, typed APIs.
 - Bind daemon requests and long-lived subscriptions to an immutable host context; never use a process-global selected host. Keep credentials in the backend and scope connection-specific preferences by host. UI language and layout preferences belong to the client, independent of the selected host.
+- Follow the layer rule in `docs/architecture.md` (`src → shared`, `backend → shared`, `electron`/`web` → `backend`, `shared`); `tests/layering.test.ts` enforces it.
 - Keep zotigod HTTP calls in `backend/`, not scattered through React components. Desktop IPC and Web HTTP adapters call the same application service.
 - Share React components across platforms. Folder picking uses `DirectoryBrowser` and the selected daemon, including Local. Other OS integration belongs in Electron; Web authentication and browser transport belong in the Web adapter.
 - Manage user-facing renderer copy through typed keys in `shared/i18n/`; include English and Chinese, accessibility labels, and full-sentence interpolation. Follow `docs/localization.md`. Keep protocol values and user/model content unchanged.
