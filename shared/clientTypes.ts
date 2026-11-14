@@ -151,7 +151,18 @@ export interface NavigationItem {
   id: string;
 }
 
+export interface SessionQuery {
+  workspaceId?: string; projectId?: string; ungrouped?: boolean; pinned?: boolean;
+  unread?: boolean; since?: string; channel?: "all" | "none" | "pinned";
+  query?: string; cursor?: string; limit?: number; ids?: string[]; syncCodex?: boolean;
+}
+export interface SessionPage {
+  conversations: DesktopConversation[]; bindings: DaemonSessionBinding[];
+  sessions: ZotigoSession[]; nextCursor?: string;
+}
+
 export interface DesktopState {
+  sessionQueryVersion?: number;
   pinnedItems?: NavigationItem[];
   projects: DesktopProject[];
   repositories: DesktopProjectRepository[];
@@ -220,7 +231,7 @@ export interface SendConversationMessageInput {
 }
 
 export interface DesktopActionResult {
-  state: DesktopState;
+  state?: DesktopState;
   session?: ZotigoSession;
   command?: SessionCommandResponse;
   error?: string;
@@ -331,6 +342,8 @@ export interface ClientApi {
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;
   getAgents(): Promise<AgentCatalogResponse>;
   prepareCodex(): Promise<AgentCatalogEntry>;
+  querySessions?(query: SessionQuery): Promise<SessionPage>;
+  saveSelection?(input: { projectId: string | null; workspaceId: string | null; sessionId: string | null }): Promise<void>;
   listSessions(): Promise<ZotigoSession[]>;
   getSession(id: string): Promise<ZotigoSession>;
   pauseSession(id: string, turnId: string): Promise<SessionCommandResponse>;

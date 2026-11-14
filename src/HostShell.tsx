@@ -1,3 +1,4 @@
+import { useActivityChannelMode } from "./activitySettings";
 import { runningUpdates } from "./machineUpdates";
 import { useLocale } from "./i18n";
 import { t } from "../shared/i18n/index";
@@ -66,6 +67,9 @@ export function HostShell() {
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const [translationLanguage, setTranslationLanguage] = useTranslationLanguage(selected);
   const [translationProfile, setTranslationProfile] = useTranslationProfile(selected);
+  const [querySupport, setQuerySupport] = useState<{host:string;supported:boolean} | null>(null);
+  const onSessionQuerySupport = useCallback((supported:boolean) => setQuerySupport(current => current?.host===selected && current.supported===supported ? current : {host:selected,supported}), [selected]);
+  const [activityChannelMode, setActivityChannelMode] = useActivityChannelMode(selected);
   const [defaultSendMode, setDefaultSendMode] = useDefaultSendMode(selected);
   const [thinkingDisplay, setThinkingDisplay] = useState<ThinkingDisplayMode>(() => {
     try { return parseThinkingDisplayMode(localStorage.getItem(thinkingDisplayStorageKey)); }
@@ -181,9 +185,10 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ToastProvider key={selected}><ModelFavoritesProvider host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} />
+          <App onSessionQuerySupport={onSessionQuerySupport} activityChannelMode={activityChannelMode} onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} />
         </div>
         {surface === "settings" && <SettingsPage
+          activityFilterSupported={querySupport?.host === selected ? querySupport.supported : undefined} activityChannelMode={activityChannelMode} onActivityChannelModeChange={setActivityChannelMode}
           hosts={profiles}
           updateApi={api}
           initialPage={modelSetup ? "models" : "general"}

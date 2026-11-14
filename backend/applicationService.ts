@@ -1,3 +1,5 @@
+import { setCatalogSelection } from "./preferencesStore";
+import { queryCatalogSessions } from "./zotigod";
 import { attachmentSizeError, parseMessageFiles, type MessageFileInput } from "../shared/messageFiles";
 import { createFileEvents } from "./fileEvents";
 import { parseModelSettingsChange } from "../shared/modelSettings";
@@ -79,7 +81,7 @@ import {
   resolveLocalPathReference,
   saveAuthorizedTextFile,
 } from "./localFileService";
-import { createCatalogService, type CatalogSelectionStore } from "./catalogService";
+import { projectSessionRows, createCatalogService, type CatalogSelectionStore } from "./catalogService";
 
 import { createSessionEvents } from "./sessionEvents";
 import type { SessionEventEnvelope } from "../shared/clientTypes";
@@ -237,6 +239,16 @@ addWorkspaceSourceToCatalog,
   handle("sessions:unsubscribe-events", () => events.stop());
   handle("files:subscribe-events", (id, files) => fileEvents.start(assertString(id, "subscriptionId"), parseWatchedFiles(files)));
   handle("files:unsubscribe-events", () => fileEvents.stop());
+  handle("desktop:query-sessions", async input => {
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid session query");
+    const page = await queryCatalogSessions(input as import("../shared/clientTypes").SessionQuery);
+    return { ...projectSessionRows(page.sessions), nextCursor: page.nextCursor };
+  });
+  handle("desktop:save-selection", async input => {
+    const value = input as { projectId: string | null; workspaceId: string | null; sessionId: string | null };
+    const next = {projectId: assertNullableString(value.projectId, "projectId"), workspaceId: assertNullableString(value.workspaceId, "workspaceId"), sessionId: assertNullableString(value.sessionId, "sessionId")};
+    if (selection) selection.setCatalogSelection(next); else setCatalogSelection(next);
+  });
   handle("desktop:get-state", () => getCatalogDesktopState());
   handle("desktop:sync-state", () => getCatalogDesktopState({ syncCodex: true }));
   handle("desktop:create-project", async (input) => createProjectInCatalog(parseCreateProjectInput(input)));
@@ -406,9 +418,9 @@ addWorkspaceSourceToCatalog,
         messageInput.files,
         messageInput.mode,
       );
-      return { state: await getCatalogDesktopState(), ...result };
+      return { ...result };
     } catch (error) {
-      return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: inputDeliveryFailure(error) };
+      return { error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: inputDeliveryFailure(error) };
     }
   });
   handle("sessions:translate", (id, text, language, profile) => {

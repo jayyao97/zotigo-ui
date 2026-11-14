@@ -2,18 +2,33 @@ import { useLocale } from "./i18n";
 import { t } from "../shared/i18n/index";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderPlus, MessageSquare, Search, SquarePen } from "lucide-react";
-import type { DesktopState } from "../shared/clientTypes";
+import type { ClientApi, SessionPage, DesktopState } from "../shared/clientTypes";
 import { searchConversations } from "../shared/searchConversations";
 
-export function SearchPalette({ state, onClose, onSelect, onNewConversation, onNewProject }: {
-  state: DesktopState; onClose(): void; onSelect(id: string): void;
+export function SearchPalette({ state, client, onPage, onClose, onSelect, onNewConversation, onNewProject }: {
+  state: DesktopState; client?: ClientApi; onPage?(page: SessionPage): void; onClose(): void; onSelect(id: string): void;
   onNewConversation(): void; onNewProject(): void;
 }) {
   useLocale();
   const dialog = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
-  const matches = useMemo(() => searchConversations(state, query).slice(0, 50), [state, query]);
+  const [remote, setRemote] = useState<SessionPage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const pageCallback = useRef(onPage); pageCallback.current = onPage;
+  useEffect(() => {
+    if (!client?.querySessions) return;
+    let disposed = false;
+    setLoading(true); setRemote(null); setError("");
+    const timer = setTimeout(() => { void client.querySessions!({query, limit: 50}).then(page => {
+      if (disposed) return;
+      setRemote(page); pageCallback.current?.(page);
+    }).catch(cause => { if (!disposed) setError(cause instanceof Error ? cause.message : String(cause)); })
+      .finally(() => { if (!disposed) setLoading(false); }); }, 200);
+    return () => { disposed=true; clearTimeout(timer); };
+  }, [client, query]);
+  const matches = useMemo(() => searchConversations(client ? {...state, conversations: remote?.conversations ?? []} : state, client ? "" : query).slice(0, 50), [state, query, client, remote]);
   const actions = [
     { id: "new-session", title: t("app.newSession"), icon: SquarePen, run: onNewConversation },
     { id: "new-project", title: t("searchPalette.newProject"), icon: FolderPlus, run: onNewProject },
@@ -54,7 +69,9 @@ export function SearchPalette({ state, onClose, onSelect, onNewConversation, onN
         return <div key={action.id} id={`search-result-${index}`} data-index={index} role="option" aria-selected={active === index}
           className="search-palette-row" onMouseMove={() => setSelected(index)} onClick={() => choose(index)}><Icon size={17} /><span>{action.title}</span></div>;
       })}
-      {!count && <p className="search-palette-empty">{t("searchPalette.noMatchingSessionsOrCommands")}</p>}
+      {error && <p role="alert">{error}</p>}
+      {loading && <p className="search-palette-empty">{t("activity.loading")}</p>}
+      {!loading && !count && <p className="search-palette-empty">{t("searchPalette.noMatchingSessionsOrCommands")}</p>}
     </div>
   </dialog>;
 }

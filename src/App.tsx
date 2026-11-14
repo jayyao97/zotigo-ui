@@ -1,3 +1,7 @@
+import { useVisibleWorkspaces } from "./useVisibleWorkspaces";
+import { useSessionPages } from "./useSessionPages";
+import type { ChannelActivityMode } from "./activitySettings";
+import { mergeSessionPage, mergeCatalogStructure } from "../shared/sessionPages";
 import { observeLongTasks, traceInteraction, traceNextPaint } from "./performanceDiagnostics";
 import { LayoutGrid } from "lucide-react";
 import { WorkspacePanelHome } from "./WorkspacePanelHome";
@@ -275,7 +279,7 @@ type ConversationContextMenu = {
 };
 
 const pollIntervalMs = 5000;
-const catalogReconciliationIntervalMs = 30_000;
+const catalogReconciliationIntervalMs = 120_000;
 const codexCatalogSyncIntervalMs = 5 * 60_000;
 const initialCodexCatalogSyncDelayMs = 15_000;
 const sessionDeltaFlushIntervalMs = 50;
@@ -350,7 +354,7 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
+export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   useLocale();
   const [queueRefresh, setQueueRefresh] = useState(0);
   const submitModeRef = useRef<SendMode | null>(null);
@@ -652,6 +656,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const navigationScrollRef = useRef<HTMLDivElement | null>(null);
   const lastCodexCatalogSyncAttemptAtRef = useRef(0);
   const desktopStateLoadedRef = useRef(false);
+  const sessionQueryVersionRef = useRef<number | undefined>(undefined);
   const desktopStateGenerationRef = useRef(0);
   const lastCatalogRefreshAttemptAtRef = useRef(0);
   const codexCatalogSyncNotBeforeRef = useRef(Date.now() + initialCodexCatalogSyncDelayMs);
@@ -1036,9 +1041,20 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       applyDesktopState(await client.getDesktopState());
     }
   }
+  const visibleWorkspaces = useVisibleWorkspaces(navigationScrollRef, `${recentSessionsOpen}:${desktopState.workspaces.map(item => item.id).join(",")}:${[...collapsedProjectIds].join(",")}:${[...collapsedWorkspaceIds].join(",")}`);
+  const pagedNavigation = useSessionPages({ client, enabled: desktopState.sessionQueryVersion === 1,
+    activity: recentSessionsOpen && !channelsOpen && !repositoriesOpen, channel: activityChannelMode,
+    workspaces: desktopState.workspaces.filter(workspace => visibleWorkspaces.has(workspace.id) && !collapsedWorkspaceIds.has(workspace.id) && (!collapsedProjectIds.has(workspace.project_id) || isNavigationPinned("workspace", workspace.id))).map(workspace => workspace.id),
+    active: surfaceActive && !channelsOpen && !repositoriesOpen,
+    onConnection: online => setConnectionState(online ? "online" : "offline"),
+    onPage: page => {
+      setDesktopState(current => mergeSessionPage(current, page));
+      setSessions(current => { const ids = new Set(page.sessions.map(session => session.id)); return mergeSessionReadStates(current, retainSessionContextUsage(current, [...current.filter(session => !ids.has(session.id)), ...page.sessions])); });
+    },
+  });
   const ungroupedConversations = useMemo(
-    () => desktopState.conversations.filter((conversation) => conversation.workspace_id === null && !conversation.pinned_at),
-    [desktopState.conversations],
+    () => desktopState.conversations.filter((conversation) => conversation.workspace_id === null && !conversation.pinned_at && (desktopState.sessionQueryVersion !== 1 || !pagedNavigation.ids("ungrouped") || pagedNavigation.ids("ungrouped")!.includes(conversation.id))),
+    [desktopState, pagedNavigation],
   );
   const selectedActiveTurnId = selectedActiveTurn?.turn?.id ?? null;
   const hasActiveTurn = sessionAllowsActiveTurn(selectedSession?.state) && selectedActiveTurn !== null;
@@ -1148,7 +1164,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         setDaemonUrl(config.baseUrl);
         // Cached rows are interactive before this request returns. A delayed
         // initial snapshot must not undo a newer selection or catalog mutation.
-        if (catalogSnapshotIsCurrent(initialDesktopGeneration, desktopStateGenerationRef.current)) setDesktopState(state);
+        if (catalogSnapshotIsCurrent(initialDesktopGeneration, desktopStateGenerationRef.current)) setDesktopState(current => mergeCatalogStructure(current, state));
+        sessionQueryVersionRef.current = state.sessionQueryVersion;
+        onSessionQuerySupport?.(state.sessionQueryVersion === 1);
         lastCatalogRefreshAttemptAtRef.current = Date.now();
         let savedDisclosure: string | null = null;
         try { savedDisclosure = localStorage.getItem(sidebarDisclosureStorageKey(clientScope)); } catch { /* Use defaults. */ }
@@ -1178,7 +1196,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      if (document.hidden || sessionRefreshesInFlightRef.current > 0) return;
+      if (document.hidden || !desktopStateLoadedRef.current || sessionRefreshesInFlightRef.current > 0) return;
       const now = Date.now();
       void refreshSessions({
         quiet: true,
@@ -1193,7 +1211,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }, pollIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [selectedBinding?.daemon_session_id, sessionItemsLoadedForSessionId]);
+  }, [selectedBinding?.daemon_session_id, sessionItemsLoadedForSessionId, desktopState.sessionQueryVersion]);
 
   useEffect(() => {
     // Fetch usage on selection rather than waiting for the polling interval.
@@ -1435,7 +1453,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   function applyDesktopState(update: SetStateAction<DesktopState>) {
     desktopStateGenerationRef.current += 1;
     lastCatalogRefreshAttemptAtRef.current = Date.now();
-    setDesktopState(update);
+    setDesktopState(current => typeof update === "function" ? update(current) : mergeCatalogStructure(current, update));
   }
 
   function cachedSessionHistory(sessionId: string): SessionHistory | null {
@@ -1469,6 +1487,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }, [catalogSyncRevision]);
 
   async function refreshSessions(options: { quiet?: boolean; syncCodex?: boolean; refreshCatalog?: boolean } = {}): Promise<void> {
+    if (desktopState.sessionQueryVersion === 1 && !options.quiet) pagedNavigation.refresh();
     const requestId = ++sessionRefreshRequestIdRef.current;
     const desktopStateGeneration = desktopStateGenerationRef.current;
     sessionRefreshesInFlightRef.current += 1;
@@ -1488,6 +1507,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       if (options.syncCodex) lastCodexCatalogSyncAttemptAtRef.current = Date.now();
       if (shouldRefreshCatalog) lastCatalogRefreshAttemptAtRef.current = Date.now();
       let catalogError: unknown;
+      let detailError: unknown;
       const desktopStatePromise = shouldRefreshCatalog
         ? options.syncCodex && client.syncDesktopState
           ? client.syncDesktopState().catch((error: unknown) => {
@@ -1500,25 +1520,28 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             })
         : Promise.resolve(null);
       const [listedSessions, nextDesktopState, selectedSessionDetail] = await Promise.all([
-        client.listSessions(),
+        sessionQueryVersionRef.current === 1 ? Promise.resolve([]) : client.listSessions(),
         desktopStatePromise,
-        selectedBinding ? client.getSession(selectedBinding.daemon_session_id).catch(() => null) : Promise.resolve(null),
+        selectedBinding ? client.getSession(selectedBinding.daemon_session_id).catch((error: unknown) => { detailError = error; return null; }) : Promise.resolve(null),
       ]);
       const nextSessions = selectedSessionDetail ? upsertSession(listedSessions, selectedSessionDetail) : listedSessions;
       if (requestId < latestAppliedSessionRefreshIdRef.current) {
         return;
       }
       latestAppliedSessionRefreshIdRef.current = requestId;
-      setConnectionState("online");
+      if (catalogError || detailError) setConnectionState("offline");
+      else if (nextDesktopState || selectedSessionDetail || sessionQueryVersionRef.current !== 1) setConnectionState("online");
       if (!desktopStateLoadedRef.current) {
         desktopStateLoadedRef.current = true;
         codexCatalogSyncNotBeforeRef.current = Date.now() + initialCodexCatalogSyncDelayMs;
       }
+      if (nextDesktopState) { sessionQueryVersionRef.current = nextDesktopState.sessionQueryVersion; onSessionQuerySupport?.(nextDesktopState.sessionQueryVersion === 1); }
       if (nextDesktopState && catalogSnapshotIsCurrent(desktopStateGeneration, desktopStateGenerationRef.current)) {
-        setDesktopState((current) => sameJsonValue(current, nextDesktopState) ? current : nextDesktopState);
+        setDesktopState((current) => sameJsonValue(current, nextDesktopState) ? current : mergeCatalogStructure(current, nextDesktopState));
       }
       setSessions((current) => {
-        const merged = mergeSessionReadStates(current, retainSessionContextUsage(current, nextSessions, selectedSessionDetail?.id));
+        const scopedSessions = sessionQueryVersionRef.current === 1 ? (selectedSessionDetail ? upsertSession(current, selectedSessionDetail) : current) : nextSessions;
+        const merged = mergeSessionReadStates(current, retainSessionContextUsage(current, scopedSessions, selectedSessionDetail?.id));
         return sameJsonValue(current, merged) ? current : merged;
       });
       setApprovalPolicyOverrides((current) => clearResolvedApprovalPolicyOverrides(current, nextSessions));
@@ -1898,7 +1921,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setRepositoriesOpen(false);
     setWebNavigationOpen(false);
     setMessage(null);
-    applyDesktopState(await client.selectProject(id));
+    if (client.saveSelection) {
+      const next = {projectId:id,workspaceId:null,sessionId:null};
+      await client.saveSelection(next);
+      applyDesktopState(current => ({...current,selectedProjectId:id,selectedWorkspaceId:null,selectedConversationId:null}));
+    } else applyDesktopState(await client.selectProject(id));
   }
 
   async function openProjectOverview(project: DesktopProject) {
@@ -2008,7 +2035,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setWebNavigationOpen(false);
     setProjectOverviewId(null);
     setMessage(null);
-    applyDesktopState(await client.selectWorkspace(id));
+    const workspace = desktopState.workspaces.find(item => item.id === id);
+    if (client.saveSelection && workspace) {
+      await client.saveSelection({projectId:workspace.project_id,workspaceId:id,sessionId:null});
+      applyDesktopState(current => ({...current,selectedProjectId:workspace.project_id,selectedWorkspaceId:id,selectedConversationId:null}));
+    } else applyDesktopState(await client.selectWorkspace(id));
   }
 
   function markConversationRead(conversationId: string) {
@@ -2078,6 +2109,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       selectedWorkspaceId: conversation.workspace_id,
       selectedConversationId: id,
     }));
+    if (client.saveSelection) {
+      void client.saveSelection({ projectId: conversation.project_id, workspaceId: conversation.workspace_id, sessionId: id }).catch(error => setMessage(errorMessage(error)));
+      return;
+    }
     void client.selectConversation(id)
       .then((state) => {
         applyDesktopState((current) => current.selectedConversationId === id ? state : current);
@@ -2095,8 +2130,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setWebNavigationOpen(false);
     setProjectOverviewId(null);
     setMessage(null);
-    await client.selectProject(null);
-    applyDesktopState(await client.selectConversation(null));
+    await selectProject(null);
   }
 
   async function openNewConversationForWorkspace(workspace: DesktopWorkspace) {
@@ -2104,8 +2138,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setWebNavigationOpen(false);
     setProjectOverviewId(null);
     setMessage(null);
-    await client.selectWorkspace(workspace.id);
-    applyDesktopState(await client.selectConversation(null));
+    await selectWorkspace(workspace.id);
   }
 
   useEffect(() => {
@@ -2436,9 +2469,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       applyDesktopActionResult(result);
       if (result.error) {
         const retryDraftKey = draftKeyForSelection({
-          conversationId: result.state.selectedConversationId,
-          projectId: result.state.selectedProjectId,
-          workspaceId: result.state.selectedWorkspaceId,
+          conversationId: result.state?.selectedConversationId ?? null,
+          projectId: result.state?.selectedProjectId ?? null,
+          workspaceId: result.state?.selectedWorkspaceId ?? null,
         });
         setNewPromptPreview({ draftKey: retryDraftKey, item: { ...preview, delivery: { state: result.deliveryState === "rejected" ? "rejected" : "failed", error: result.error } } });
         if (newPromptRecovery.current) {
@@ -3093,7 +3126,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }
 
   function applyDesktopActionResult(result: DesktopActionResult) {
-    applyDesktopState(result.state);
+    if (result.state) applyDesktopState(result.state);
     const session = result.session;
     if (session) {
       setSessions((current) => upsertSession(current, session));
@@ -3132,8 +3165,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       const result = await client.forkConversation(conversationId, requestId, throughTurnId);
       applyDesktopActionResult(result);
       if (result.error) throw new Error(result.error);
-      const binding = result.state.bindings.find((value) => value.daemon_session_id === result.session?.id);
-      if (binding) {
+      const binding = result.state?.bindings.find((value) => value.daemon_session_id === result.session?.id);
+      if (binding && result.state) {
         selectConversation(binding.conversation_id, result.state);
         window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
       }
@@ -3154,6 +3187,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setSidebarActionError(null);
     try {
       applyDesktopState(await client.archiveConversation(conversation.id));
+      setDesktopState(current => ({...current, conversations: current.conversations.filter(item => item.id !== conversation.id), bindings: current.bindings.filter(item => item.conversation_id !== conversation.id)}));
+      pagedNavigation.refresh();
       setArchiveTarget(null);
     } catch (error) {
       setSidebarActionError(t("app.couldNotArchive", { p0: conversation.title, p1: errorMessage(error) }));
@@ -3512,7 +3547,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
   function renderWorkspaceNavigation(workspace: DesktopWorkspace, pinned = false) {
     const workspaceConversations = desktopState.conversations.filter(
-      (conversation) => conversation.workspace_id === workspace.id && !conversation.pinned_at,
+      (conversation) => conversation.workspace_id === workspace.id && !conversation.pinned_at && (desktopState.sessionQueryVersion !== 1 || !pagedNavigation.ids(workspace.id) || pagedNavigation.ids(workspace.id)!.includes(conversation.id) || conversation.id === selectedConversation?.id),
     );
     const orderedWorkspaceIds = pinned ? pinnedKeys : desktopState.workspaces.filter((candidate) => candidate.project_id === workspace.project_id && !isNavigationPinned("workspace", candidate.id)).map((candidate) => candidate.id);
     const workspaceSort = sidebarSortProps(
@@ -3527,6 +3562,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     const workspaceOpen = !collapsedWorkspaceIds.has(workspace.id);
     return (
       <div
+        data-workspace-id={workspace.id}
         className={`workspace-group ${workspaceSort.dropPosition === "after" ? "drop-after" : ""}`}
         key={workspace.id}
         onDragOver={(event) => {
@@ -3647,8 +3683,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             </div>
           )}
         </div>
-        {workspaceConversations.length > 0 && <SidebarCollapse open={workspaceOpen}>
-          <WorkspaceSessionList>
+        {(workspaceConversations.length > 0 || desktopState.sessionQueryVersion === 1) && <SidebarCollapse open={workspaceOpen}>
+          <WorkspaceSessionList hasMore={pagedNavigation.hasMore(workspace.id)} onMore={() => pagedNavigation.loadMore(workspace.id)}>
             {workspaceConversations.map((conversation) => (
               <ConversationNavItem
                 key={conversation.id}
@@ -3906,7 +3942,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         }
       }}
     >
-      {searchOpen && <SearchPalette state={desktopState} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
+      {searchOpen && <SearchPalette state={desktopState} client={desktopState.sessionQueryVersion === 1 ? client : undefined} onPage={page => setDesktopState(current => mergeSessionPage(current, page))} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
         <SidebarResizeHandle frameRef={appFrameRef} width={sidebarWidth} onWidth={setSidebarWidth} onResizing={setIsSidebarResizing} />
         <div className="sidebar-chrome" aria-hidden="true">
@@ -3949,7 +3985,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
         <div className="sidebar-lower-stack">
         <div ref={navigationScrollRef} className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
-        {recentSessionsOpen ? <RecentSessions state={desktopState} sessions={sessions} onSearch={() => setSearchOpen(true)} renderItem={({ conversation, context, unread }) => <ConversationNavItem
+        {recentSessionsOpen ? <RecentSessions state={desktopState.sessionQueryVersion === 1 ? { ...desktopState, conversations: desktopState.conversations.filter(item => pagedNavigation.activityIDs.has(item.id)) } : desktopState} sessions={sessions} more={pagedNavigation.activityMore} onMore={pagedNavigation.loadActivityMore} error={pagedNavigation.error} onSearch={() => setSearchOpen(true)} renderItem={({ conversation, context, unread }) => <ConversationNavItem
           key={conversation.id} conversation={conversation} detail={context || t("app.ungroupedSessions")}
           selected={conversation.id === selectedConversation?.id} working={workingConversationIds.has(conversation.id)} unread={unread}
           onSelect={() => void selectConversation(conversation.id)} onContextMenu={event => openConversationContextMenu(event, conversation.id)}
@@ -3980,6 +4016,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               })}
             </div>
           )}
+          {pagedNavigation.hasMore("pinned") && <button className="workspace-sessions-more" onClick={() => pagedNavigation.loadMore("pinned")}>{t("conversationTimeline.showMore")}</button>}
         </SidebarSection>
 
         <SidebarSection name="projects" title={t("app.projects")} actions={
@@ -4014,11 +4051,13 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               />
             ))}
             </div>
+          {pagedNavigation.hasMore("ungrouped") && <button className="workspace-sessions-more" onClick={() => pagedNavigation.loadMore("ungrouped")}>{t("conversationTimeline.showMore")}</button>}
           </SidebarSection>
         )}
 
         </>}
 
+        {!recentSessionsOpen && pagedNavigation.error && <p role="alert" className="sidebar-empty">{pagedNavigation.error}</p>}
         {sidebarActionError && (
           <div className="sidebar-action-error" role="alert">
             <ShieldAlert size={14} strokeWidth={1.8} />
