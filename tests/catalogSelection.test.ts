@@ -22,7 +22,7 @@ test("legacy UI order imports new nodes first, and later clients use only daemon
   let imports = 0;
   let projectOrder: NavigationItem[] = projects.map(({ id }) => ({ kind: "project", id }));
   const server = createServer(async (request, response) => {
-    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
     let data: unknown;
     if (request.url === "/catalog/navigation/import") {
       const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk);
@@ -60,7 +60,7 @@ test("catalog clients share daemon data but never overwrite each other's selecti
   const original = getDaemonConfig().baseUrl;
   const projects = ["a", "b"].map((id) => ({ id, name: id, created_at: "2026-01-01", updated_at: "2026-01-01" }));
   const server = createServer((request, response) => {
-    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
     const project = projects.find((item) => request.url === `/projects/${item.id}`);
     const data = request.url === "/catalog/navigation" ? { projects: [], workspaces: [], pinned: [], legacy_order_imported: true } : request.url === "/projects" ? { projects }
       : project ? { ...project, sources: [] }
@@ -170,12 +170,22 @@ test("catalog snapshot loads the whole sidebar in one request and does not hide 
   try {
     const state = await createCatalogService(createSelectionStore(null)).getCatalogDesktopState();
     assert.equal(state.projects[0].id, "a");
-    assert.deepEqual(requests, ["/catalog/snapshot"]);
+    assert.deepEqual(requests, ["/catalog/snapshot?sessions=none"]);
     status = 500; requests.length = 0;
     await assert.rejects(createCatalogService(createSelectionStore(null)).getCatalogDesktopState());
-    assert.deepEqual(requests, ["/catalog/snapshot"]);
+    assert.deepEqual(requests, ["/catalog/snapshot?sessions=none"]);
   } finally {
     server.closeAllConnections(); server.close(); await once(server, "close");
     setDaemonBaseUrl(original);
   }
+});
+
+
+test("saving a lightweight selection protects Web selection against older replies", async () => {
+  const browser = createBrowserSelection({getItem:()=>null,setItem:()=>{}});
+  const old = browser.begin("desktop:get-state");
+  const selected = {projectId:"p",workspaceId:"w",sessionId:"new"};
+  browser.begin("desktop:save-selection").accept(selected);
+  old.accept({projectId:null,workspaceId:null,sessionId:"old"});
+  assert.deepEqual(browser.begin("desktop:get-state").selection,selected);
 });

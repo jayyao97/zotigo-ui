@@ -1,3 +1,4 @@
+import { mergeSessionPage } from "../shared/sessionPages";
 import path from "node:path";
 import type { NavigationItem } from "../shared/clientTypes";
 import { mapWithConcurrency } from "../shared/asyncConcurrency";
@@ -7,6 +8,8 @@ import type { AddWorkspaceSourceInput, CreateProjectInput, CreateWorkspaceInput,
 import { getCatalogOrder, getCatalogSelection, setCatalogSelection } from "./preferencesStore";
 import {
   getCatalogNavigation,
+  getCatalogSession,
+  queryCatalogSessions,
   getCatalogSnapshot,
   importCatalogNavigation,
   reorderCatalogNavigation,
@@ -49,8 +52,16 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
   const { getCatalogSelection, setCatalogSelection } = selection;
   async function getCatalogDesktopState(options: { syncCodex?: boolean } = {}): Promise<DesktopState> {
     // Explicit/background runtime synchronization is separate from the read-only snapshot.
-    if (options.syncCodex) await listCatalogSessions(options);
-    const snapshot = await getCatalogSnapshot();
+    let snapshot = await getCatalogSnapshot();
+    if (options.syncCodex) {
+      if (snapshot?.sessionQueryVersion === 1) await queryCatalogSessions({syncCodex: true, limit: 1});
+      else { await listCatalogSessions(options); snapshot = await getCatalogSnapshot(); }
+    }
+    if (snapshot?.sessionQueryVersion === 1) {
+      const selected = getCatalogSelection().sessionId;
+      const page = await queryCatalogSessions(selected ? { ids: [selected], limit: 1 } : { limit: 20 });
+      snapshot.sessions = page.sessions;
+    }
     const [projects, initialNavigation] = snapshot
       ? [snapshot.projects.map(({ sources: _sources, ...project }) => project), snapshot.navigation] as const
       : await Promise.all([listCatalogProjects(), getCatalogNavigation()]);
@@ -87,34 +98,7 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     const repositories = details.flatMap(projectRepositories);
     const folders = details.flatMap(projectFolders);
     const workspaces = orderSidebarItems(workspaceGroups.flat(), navigation.workspaces.map((item) => item.id));
-    const conversations = projections.flatMap((projection): DesktopConversation[] => {
-      if (!projection.runtime) return [];
-      const organization = projection.organization;
-      return [{
-        id: projection.runtime.id,
-        project_id: organization?.project_id ?? null,
-        workspace_id: organization?.workspace_id ?? null,
-        title: organization?.title?.trim() || promptTitle(projection.runtime.last_prompt) || "New session",
-        pinned_at: organization?.pinned_at ?? undefined,
-        pinned_order: organization?.pinned_position ?? undefined,
-        workspace_position: organization?.workspace_position ?? undefined,
-        created_at: organization?.created_at ?? projection.runtime.created_at,
-        updated_at: latestTimestamp(organization?.updated_at, projection.runtime.updated_at, projection.runtime.created_at),
-      }];
-    });
-    const orderedConversations = conversations.sort((left, right) =>
-      (left.workspace_position ?? Number.MAX_SAFE_INTEGER) - (right.workspace_position ?? Number.MAX_SAFE_INTEGER)
-      || right.updated_at.localeCompare(left.updated_at) || left.id.localeCompare(right.id));
-    const bindings: DaemonSessionBinding[] = projections.flatMap((projection) => projection.runtime ? [{
-      conversation_id: projection.runtime.id,
-      daemon_session_id: projection.runtime.id,
-      state: projection.runtime.state,
-      error: projection.runtime.error,
-      daemon_created_at: projection.runtime.created_at,
-      daemon_started_at: projection.runtime.started_at,
-      daemon_ended_at: projection.runtime.ended_at,
-      created_at: projection.runtime.created_at,
-    }] : []);
+    const { conversations: orderedConversations, bindings } = projectSessionRows(projections);
     const orderedProjects = orderSidebarItems(projects, navigation.projects.map((item) => item.id));
     const selection = reconcileSelection(
       getCatalogSelection(),
@@ -124,6 +108,7 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     );
     setCatalogSelection(selection);
     return {
+      sessionQueryVersion: snapshot?.sessionQueryVersion,
       pinnedItems: navigation.pinned,
       projects: orderedProjects,
       repositories,
@@ -135,10 +120,6 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
       selectedWorkspaceId: selection.workspaceId,
       selectedConversationId: selection.sessionId,
     };
-  }
-
-  function latestTimestamp(...values: Array<string | undefined>): string {
-    return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? "";
   }
 
   async function createProjectInCatalog(input: CreateProjectInput): Promise<DesktopState> {
@@ -269,28 +250,21 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
       const selection = getCatalogSelection();
       setCatalogSelection({ ...selection, sessionId: null });
     } else {
-      const state = await getCatalogDesktopState();
-      const conversation = state.conversations.find((candidate) => candidate.id === id);
-      if (!conversation) throw new Error(`session not found: ${id}`);
-      setCatalogSelection({ projectId: conversation.project_id, workspaceId: conversation.workspace_id, sessionId: id });
-      return {
-        ...state,
-        selectedProjectId: conversation.project_id,
-        selectedWorkspaceId: conversation.workspace_id,
-        selectedConversationId: id,
-      };
+      const projection = await getCatalogSession(id);
+      if (!projection.runtime || projection.availability === "archived") throw new Error(`session not found: ${id}`);
+      setCatalogSelection({ projectId: projection.organization?.project_id ?? null, workspaceId: projection.organization?.workspace_id ?? null, sessionId: id });
     }
     return getCatalogDesktopState();
   }
 
   async function renameCatalogConversation(id: string, title: string): Promise<DesktopState> {
-    await setCatalogSessionTitle(id, title);
-    return getCatalogDesktopState();
+    const projection = await setCatalogSessionTitle(id, title);
+    return mergeSessionPage(await getCatalogDesktopState(), projectSessionRows([projection]));
   }
 
   async function pinCatalogConversation(id: string, pinned: boolean): Promise<DesktopState> {
-    await setCatalogSessionPinned(id, pinned);
-    return getCatalogDesktopState();
+    const projection = await setCatalogSessionPinned(id, pinned);
+    return mergeSessionPage(await getCatalogDesktopState(), projectSessionRows([projection]));
   }
 
   async function archiveCatalogConversation(id: string): Promise<DesktopState> {
@@ -420,4 +394,38 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
 export function promptTitle(prompt: string | undefined): string {
   const text = (prompt ?? "").replace(/\s+/g, " ").trim();
   return text.length > 60 ? `${text.slice(0, 57)}...` : text;
+}
+
+export function projectSessionRows(projections: import("../shared/zotigod").CatalogSessionProjection[]): import("../shared/clientTypes").SessionPage {
+  const latestTimestamp = (...values: Array<string | undefined>) => values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? "";
+    const conversations = projections.flatMap((projection): DesktopConversation[] => {
+      if (!projection.runtime) return [];
+      const organization = projection.organization;
+      return [{
+        id: projection.runtime.id,
+        project_id: organization?.project_id ?? null,
+        workspace_id: organization?.workspace_id ?? null,
+        title: organization?.title?.trim() || promptTitle(projection.runtime.last_prompt) || "New session",
+        pinned_at: organization?.pinned_at ?? undefined,
+        pinned_order: organization?.pinned_position ?? undefined,
+        workspace_position: organization?.workspace_position ?? undefined,
+        created_at: organization?.created_at ?? projection.runtime.created_at,
+        updated_at: latestTimestamp(organization?.updated_at, projection.runtime.updated_at, projection.runtime.created_at),
+      }];
+    });
+    const orderedConversations = conversations.sort((left, right) =>
+      (left.workspace_position ?? Number.MAX_SAFE_INTEGER) - (right.workspace_position ?? Number.MAX_SAFE_INTEGER)
+      || right.updated_at.localeCompare(left.updated_at) || left.id.localeCompare(right.id));
+    const bindings: DaemonSessionBinding[] = projections.flatMap((projection) => projection.runtime ? [{
+      conversation_id: projection.runtime.id,
+      daemon_session_id: projection.runtime.id,
+      state: projection.runtime.state,
+      error: projection.runtime.error,
+      daemon_created_at: projection.runtime.created_at,
+      daemon_started_at: projection.runtime.started_at,
+      daemon_ended_at: projection.runtime.ended_at,
+      created_at: projection.runtime.created_at,
+    }] : []);
+
+  return { conversations: orderedConversations, bindings, sessions: projections.flatMap(projection => projection.runtime ? [projection.runtime] : []) };
 }

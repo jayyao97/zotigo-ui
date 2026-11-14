@@ -1,3 +1,4 @@
+import type { ChannelActivityMode } from "./activitySettings";
 import { DiagnosticSettings } from "./DiagnosticSettings";
 import { changeLanguage, useLocale } from "./i18n";
 import { useEffect, useState } from "react";
@@ -16,6 +17,9 @@ import { ArrowLeft, Settings, Server, RefreshCw } from "lucide-react";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 
 export function SettingsPage({
+  activityFilterSupported,
+  activityChannelMode = "pinned",
+  onActivityChannelModeChange,
   initialPage = "general",
   hostName,
   hosts,
@@ -36,6 +40,9 @@ export function SettingsPage({
   onManageHosts,
   onBack,
 }: {
+  activityFilterSupported?: boolean;
+  activityChannelMode?: ChannelActivityMode;
+  onActivityChannelModeChange?: (mode: ChannelActivityMode) => void;
   initialPage?: "general" | "models";
   hostName: string;
   hosts: HostProfile[];
@@ -92,6 +99,17 @@ export function SettingsPage({
             {hosts.some(host => host.id === modelHost) && <ModelSettings key={modelHost} hostId={modelHost} hostName={modelHost === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : hosts.find(host => host.id === modelHost)!.name} onEditingChange={setModelEditing}/>}
           </> : <>
           <h1>{t("settingsPage.general")}</h1>
+          <section className="settings-section">
+            <div className="settings-card"><label className="settings-row">
+              <span><strong>{t("activity.channelSetting")}</strong><small>{t("activity.channelSettingHelp", {host: hostName})}</small></span>
+              <select disabled={!activityFilterSupported} aria-label={t("activity.channelSetting")} value={activityChannelMode} onChange={event => onActivityChannelModeChange?.(event.target.value as ChannelActivityMode)}>
+                <option value="pinned">{t("activity.channelPinned")}</option>
+                <option value="all">{t("activity.channelAll")}</option>
+                <option value="none">{t("activity.channelNone")}</option>
+              </select>
+            </label></div>
+            {activityFilterSupported === false && <p className="settings-help">{t("activity.upgradeRequired")}</p>}
+          </section>
           <section className="settings-section"><div className="settings-card"><div className="settings-row"><span><strong>{t("models.title")}</strong><small>{t("settings.modelsHostHelp")}</small></span><button className="settings-secondary-button" onClick={() => setPage("models")}>{t("models.open")}</button></div></div></section>
 
           <section className="settings-section" aria-labelledby="language-settings-heading">

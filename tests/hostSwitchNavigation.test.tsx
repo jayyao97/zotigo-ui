@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { EditorView } from "@codemirror/view";
 
 import { createClientApi } from "../shared/clientApi";
-import type { DesktopState, NavigationItem } from "../shared/clientTypes";
+import type { DesktopState, NavigationItem, SessionQuery } from "../shared/clientTypes";
 import { ClientContext } from "../src/ClientContext";
 import { HostShell } from "../src/HostShell";
 
@@ -14,6 +14,40 @@ const emptyState: DesktopState = {
   projects: [], repositories: [], folders: [], workspaces: [], conversations: [], bindings: [],
   selectedProjectId: null, selectedWorkspaceId: null, selectedConversationId: null,
 };
+
+test("paginated activity never fetches the full session list and selection never refreshes the catalog", async () => {
+  const restore = installDom();
+  const callbacks = new Map<number, () => void>();
+  const originalInterval = window.setInterval;
+  window.setInterval = ((handler: () => void, ms: number) => { callbacks.set(ms, handler); return originalInterval(handler, ms); }) as typeof window.setInterval;
+  const client = hostClient(false, {...emptyState, sessionQueryVersion: 1});
+  let fullLists = 0, snapshots = 0;
+  const getState = client.api.getDesktopState;
+  client.api.getDesktopState = async () => { snapshots++; return getState(); };
+  client.api.listSessions = async () => { fullLists++; return []; };
+  const queries: SessionQuery[] = [];
+  const now = new Date().toISOString();
+  const conversation = {id:"own",title:"My completed task",project_id:null,workspace_id:null,created_at:now,updated_at:now};
+  client.api.querySessions = async query => {
+    queries.push(query);
+    return {conversations: query.unread ? [conversation] : [], bindings: [], sessions: [{id:"own",created_at:now,state:"ended",live:false,working:false,read_state:{unread:true,version:1,read_version:0,completed_sequence:1}}]};
+  };
+  const root = await mountHostShell(client.api);
+  try {
+    assert.equal(fullLists,0,"initial closure must use discovered capabilities");
+    await act(async () => click(document.querySelector(".recent-sessions-toggle")!)); await flush();
+    assert.ok(queries.some(query => query.unread === true && query.channel === "pinned"));
+    assert.ok(queries.some(query => query.unread === false && query.since));
+    assert.match(document.querySelector(".recent-session-navigation")!.textContent!,/My completed task/);
+    const before = snapshots;
+    await act(async () => click(document.querySelector(".recent-session-navigation .sidebar-session > button")!)); await flush();
+    assert.equal(snapshots,before);
+    assert.ok(client.calls.some(call=>call.channel==="desktop:save-selection"));
+    await act(async () => { callbacks.get(5000)?.(); }); await flush();
+    assert.equal(fullLists,0,"periodic status poll must remain scoped");
+    assert.match(document.querySelector(".recent-session-navigation")!.textContent!,/My completed task/);
+  } finally { await act(async () => root.unmount()); window.setInterval=originalInterval; restore(); }
+});
 
 function installDom() {
   const dom = new JSDOM("<!doctype html><html><body><div id=root></div></body></html>", {
@@ -99,6 +133,11 @@ function hostClient(failDev = false, initialState = emptyState, sync?: () => Pro
       if (channel === "desktop:reorder-pinned-items") {
         state = { ...state, pinnedItems: args[0] as NavigationItem[] };
         return state as T;
+      }
+      if (channel === "desktop:save-selection") {
+        const next = args[0] as {projectId: string | null; workspaceId: string | null; sessionId: string | null};
+        state = {...state, selectedProjectId: next.projectId, selectedWorkspaceId: next.workspaceId, selectedConversationId: next.sessionId};
+        return undefined as T;
       }
       if (channel === "desktop:select-project") {
         state = { ...state, selectedProjectId: args[0] as string | null, selectedWorkspaceId: null };

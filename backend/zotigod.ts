@@ -434,7 +434,7 @@ function parseCatalogNavigation(value: unknown) {
 
 export async function getCatalogSnapshot() {
   let value: unknown;
-  try { value = await requestJSON("/catalog/snapshot"); }
+  try { value = await requestJSON("/catalog/snapshot?sessions=none"); }
   catch (error) {
     // Older daemons keep their original catalog API. Do not mask authentication,
     // timeout or server failures by retrying through a different path.
@@ -443,6 +443,7 @@ export async function getCatalogSnapshot() {
   }
   const record = expectRecord(value, "catalog snapshot");
   return {
+    sessionQueryVersion: record.session_query_version === 1 ? 1 : undefined,
     projects: expectArray(record.projects, "snapshot projects").map((item, i) => parseCatalogProjectDetail(item, `snapshot projects[${i}]`)),
     workspaces: expectArray(record.workspaces, "snapshot workspaces").map((item, i) => parseCatalogWorkspace(item, `snapshot workspaces[${i}]`)),
     navigation: parseCatalogNavigation(record.navigation),
@@ -1997,4 +1998,17 @@ export async function searchSession(id: string, query: string): Promise<import("
 export function getSessionItemWindow(id: string, target: number | string): Promise<SessionItemsResponse> {
   const query = typeof target === "number" ? `sequence=${target}` : `message_id=${encodeURIComponent(target)}`;
   return requestJSON(`/sessions/${encodeURIComponent(id)}/items/window?${query}`, { signal: AbortSignal.timeout(5000) }).then(value => parseSessionItemsResponse(value, "message window"));
+}
+
+export async function queryCatalogSessions(input: import("../shared/clientTypes").SessionQuery) {
+  const params = new URLSearchParams({page: "true", limit: String(input.limit ?? 50)});
+  for (const [key, value] of Object.entries({workspace_id: input.workspaceId, project_id: input.projectId, ungrouped: input.ungrouped, pinned: input.pinned, unread: input.unread, since: input.since, channel: input.channel, q: input.query, cursor: input.cursor, ids: input.ids?.join(","), sync_codex: input.syncCodex})) {
+    if (value !== undefined) params.set(key, String(value));
+  }
+  const record = expectRecord(await requestJSON(`/catalog/sessions?${params}`), "session page");
+  if (record.query_version !== 1) throw new Error("Daemon does not support paginated session queries");
+  return { sessions: expectArray(record.sessions, "session page sessions").map((value, index) => parseCatalogSessionProjection(value, `session page ${index}`)), nextCursor: typeof record.next_cursor === "string" ? record.next_cursor : undefined };
+}
+export async function getCatalogSession(id: string): Promise<CatalogSessionProjection> {
+  return parseCatalogSessionProjection(await requestJSON(`/catalog/sessions/${encodeURIComponent(id)}`), "catalog session");
 }

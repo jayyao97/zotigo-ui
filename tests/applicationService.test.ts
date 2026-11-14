@@ -116,7 +116,7 @@ test("Project deletion crosses the shared client boundary and clears only its ow
   const project = { id: "p", name: "Project", created_at: "2026-01-01", updated_at: "2026-01-01" };
   const other = { ...project, id: "other", name: "Other project" };
   const daemon = createServer(async (request, response) => {
-    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
     let data: unknown = {};
     if (request.url === "/projects/p/delete-preview") data = {
       project_id: "p", workspace_ids: [], workspace_roots: [], dirty_worktree_paths: [],
@@ -236,7 +236,7 @@ test("Codex conversation creation forwards the selected approval policy", async 
   const original = getDaemonConfig().baseUrl;
   let createBody: unknown;
   const daemon = createServer(async (request, response) => {
-    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
     if (request.method === "POST" && request.url === "/sessions") {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       createBody = JSON.parse(Buffer.concat(chunks).toString());
@@ -434,7 +434,7 @@ test("explicit local links preview outside text read-only and never launch unsup
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "explicit-preview-"));
   const oldUrl = getDaemonConfig().baseUrl;
   const daemon = createServer((request, response) => {
-    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
     const data = request.url === "/catalog/navigation" ? { projects: [], workspaces: [], pinned: [], legacy_order_imported: true } : request.url === "/projects" ? { projects: [] } : { sessions: [] };
     response.end(JSON.stringify({ code: "ok", data }));
   });
@@ -458,10 +458,12 @@ test("prompt identity survives the client boundary and message-to-steering fallb
   const { optimisticPromptDisplayItem, reconcileOptimisticSteering } = await import("../shared/sessionDisplay");
   const original = getDaemonConfig().baseUrl;
   let steering = false;
+  let catalogRequests = 0;
   const received: string[] = [];
   let pending = [optimisticPromptDisplayItem({ id: "optimistic-prompt-once", text: "same text", steering: false, createdAt: "2026-01-01T00:00:00Z" })];
   const daemon = createServer(async (request, response) => {
-    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
+    if (request.url?.startsWith("/catalog/") || request.url === "/projects") catalogRequests++;
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
     let data: unknown = {};
     if (request.url === "/sessions/s" && request.method === "GET") data = { id: "s", state: "running", approval_policy: "auto", live: true, working: true, created_at: "2026-01-01T00:00:00Z" };
     if (request.method === "POST") {
@@ -508,6 +510,7 @@ test("prompt identity survives the client boundary and message-to-steering fallb
       assert.deepEqual(pending, []);
     }
     assert.deepEqual(received, Array(3).fill("optimistic-prompt-once"));
+    assert.equal(catalogRequests, 0, "send acknowledgement must not wait for a catalog refresh");
   } finally {
     setDaemonBaseUrl(original);
     daemon.close(); await once(daemon, "close");
@@ -522,7 +525,7 @@ test("creation preserves server positions and only reorders for legacy daemons",
     const session = { id: "new", state: "created", approval_policy: "auto", created_at: "2026-01-01" };
     const projection = { runtime: session, organization: null, availability: "available" };
     const daemon = createServer((request, response) => {
-    if (request.url === "/catalog/snapshot") { response.writeHead(404); response.end(); return; }
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
       let data: unknown;
       switch (request.url) {
         case "/sessions": data = { ...session, workspace_position: serverPosition }; break;
@@ -530,6 +533,7 @@ test("creation preserves server positions and only reorders for legacy daemons",
         case "/sessions/new/position": reorderCount++; data = projection; break;
         case "/projects": data = { projects: [] }; break;
         case "/catalog/navigation": data = { projects: [], workspaces: [], pinned: [], legacy_order_imported: true }; break;
+        case "/catalog/sessions/new": data = projection; break;
         case "/catalog/sessions": data = { sessions: [projection] }; break;
         case "/sessions/new/start": data = session; break;
         case "/sessions/new/messages": sent = true; data = { id: "cmd", sequence: 1, type: "message", created_at: "2026-01-01" }; break;

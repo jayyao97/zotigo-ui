@@ -53,6 +53,8 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     listSkills: (sessionId, forceReload) => invoke("daemon:list-skills", sessionId, forceReload),
     getAgents: () => invoke("daemon:get-agents"),
     prepareCodex: () => invoke("daemon:prepare-codex"),
+    querySessions: (query) => invoke("desktop:query-sessions", query),
+    saveSelection: (input) => invoke("desktop:save-selection", input),
     listSessions: () => invoke("sessions:list"),
     getSession: (id: string) => invoke("sessions:get", id),
     pauseSession: (id: string, turnId: string) => invoke("sessions:pause", id, turnId),
