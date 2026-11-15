@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -103,11 +103,14 @@ test("queued messages edit and delete by revision and lock once sending", async 
     assert.equal(document.querySelectorAll("li").length, 1);
     assert.doesNotMatch(document.body.textContent!, /Send this now/);
     let unsupportedCalls = 0;
+    // The queue polls with the global setTimeout (2000ms); a mocked clock advances past one interval without sleeping.
+    mock.timers.enable({ apis: ["setTimeout"] });
     await act(async () => root.render(<InputQueue client={{ ...client, listQueuedInputs: async () => { unsupportedCalls++; return null; } }} sessionId="s" refresh={0} active={true} />));
     assert.equal(document.querySelector(".input-queue"), null);
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 2100)); });
+    await act(async () => { mock.timers.tick(2100); await new Promise(resolve => setImmediate(resolve)); });
     assert.equal(unsupportedCalls, 1, "unsupported queue must not keep polling");
   } finally {
+    mock.timers.reset();
     await act(async () => root.unmount());
     dom.window.close();
     for (const [key, descriptor] of Object.entries(previous)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }

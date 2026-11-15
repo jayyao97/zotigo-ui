@@ -111,11 +111,13 @@ Open the URL printed by the server (default `http://127.0.0.1:8080`) and enter t
 | Environment variable | Default / purpose |
 | --- | --- |
 | `ZOTIGOD_URL` | `http://127.0.0.1:8766`; initial Local host (Web requires this initial endpoint to be loopback) |
+| `ZOTIGOD_AUTH_TOKEN_FILE` | Unset; file containing the Local daemon's Bearer token |
 | `ZOTIGO_WEB_HOST` | `127.0.0.1` |
 | `ZOTIGO_WEB_PORT` | `8080` |
 | `ZOTIGO_WEB_ORIGIN` | `http://127.0.0.1:<port>`; exact browser origin, without a path |
 | `ZOTIGO_WEB_TOKEN` | Overrides the persisted access-token; an explicit token must contain at least 24 characters |
 | `ZOTIGO_WEB_DATA_DIR` | `~/.zotigo/web`; Web preferences, separate from Desktop preferences |
+| `ZOTIGO_WEB_ALLOW_HTTP` | Unset; `1` allows an HTTP origin on a non-loopback bind (see Remote access) |
 
 Keep tokens out of source files, shell history, screenshots and shared logs. A token grants access to the entire configured workspace service, not a restricted project or account. See [security and deployment boundaries](SECURITY.md) before allowing access from another machine.
 

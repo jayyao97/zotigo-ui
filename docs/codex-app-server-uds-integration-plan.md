@@ -692,7 +692,7 @@ Codex UDS client 复用仓库已有 `gorilla/websocket`，通过 custom `NetDial
 Desktop 仓库只修改：
 
 - `shared/zotigod.ts`：Agent catalog、Session agent/settings DTO；
-- `electron/zotigod.ts`：新 public API client；
+- `backend/zotigod.ts`（实现在 `backend/daemon/*`）：新 public API client；
 - preload 的窄 typed API；
 - New Session picker、Session badge、usage banner 和 handoff action。
 
