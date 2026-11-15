@@ -37,7 +37,6 @@ import { loadLastModelSelection, saveLastModelSelection } from "./lastModelSelec
 import { useSavedModelFavorites, type ModelFavorite } from "./modelFavorites";
 import { WorkspaceSessionList } from "./WorkspaceSessionList";
 import { SidebarCollapse } from "./SidebarCollapse";
-import { createForkRequestId } from "../shared/sessionFork";
 import { MarkdownImageContext } from "./MarkdownImage";
 import { useSessionSidePanel, type SessionSidePanels } from "./useSessionSidePanel";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
@@ -45,6 +44,9 @@ import { HostMenu } from "./HostShell";
 import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
+import { useForkConversation } from "./conversation/useForkConversation";
+import { useApprovalPolicySelection } from "./conversation/useApprovalPolicySelection";
+import { useProfileOverrides } from "./conversation/useProfileOverrides";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -102,7 +104,6 @@ import {
   catalogSnapshotIsCurrent,
   scheduledCatalogSyncDue,
 } from "../shared/catalogRefreshPolicy";
-import { approvalPolicyLabel } from "../shared/approvalPolicy";
 import {
   appendDisplayDeltas,
   createOptimisticPromptId,
@@ -125,7 +126,7 @@ import {
   workingConversationIds as workingConversationIdsForSessions,
   type EphemeralDisplayBlock,
 } from "../shared/sessionDisplay";
-import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
+import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
@@ -396,9 +397,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [defaultProfile, setDefaultProfile] = useState("");
   const [initialModelSelection] = useState(() => loadLastModelSelection(clientScope));
   const [draftProfile, setDraftProfile] = useState(initialModelSelection?.agent === "zotigo" ? initialModelSelection.profile : "");
-  const [profileOverrides, setProfileOverrides] = useState<Record<string, string>>({});
-  const [draftApprovalPolicy, setDraftApprovalPolicy] = useState<ApprovalPolicy>("bypass_permissions");
-  const [approvalPolicyOverrides, setApprovalPolicyOverrides] = useState<Record<string, ApprovalPolicy>>({});
+  const { profileOverrides, setProfileOverrides, selectProfile } = useProfileOverrides({ client, setMessage, setIsBusy, setSessions, rememberModelSelection, refreshSessionItems });
+  const { draftApprovalPolicy, approvalPolicyOverrides, setApprovalPolicyOverrides, selectApprovalPolicy } = useApprovalPolicySelection({ client, setMessage, setIsBusy, setSessions, refreshSessionItems, refreshSessions });
   const submittingApprovalIdsRef = useRef(new Set<string>());
   const submittingInteractionIdsRef = useRef(new Set<string>());
   const [submittingApprovalIds, setSubmittingApprovalIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -494,8 +494,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const sessionHistoryBackfillNeededRef = useRef<string | null>(null);
   const olderSessionItemsLoadingRef = useRef(false);
   const composerTextareaRef = useRef<SkillPromptEditorHandle | null>(null);
-  const forkRequestsRef = useRef(new Map<string, string>());
-  const forkInFlightRef = useRef(false);
+  const { forkConversation } = useForkConversation({ client, isBusy, setIsBusy, setMessage, composerTextareaRef, applyDesktopActionResult, selectConversation });
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const stickToBottomRef = useRef(true);
   const sessionItemsRef = useRef<DisplayItem[]>([]);
@@ -695,7 +694,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     if (selectedSession) {
       if (favorite.agent !== selectedAgent) return;
       if (favorite.agent === "codex") void selectSessionCodexSettings(favorite.model, favorite.reasoningEffort);
-      else void selectProfile(favorite.profile);
+      else void selectProfile(selectedSession, selectedBinding, favorite.profile);
     } else {
       rememberModelSelection(favorite);
     }
@@ -1900,77 +1899,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
   }
 
-  async function selectProfile(profile: string) {
-    if (!selectedSession) {
-      rememberModelSelection({ agent: "zotigo", profile });
-      return;
-    }
-
-    setProfileOverrides((current) => ({ ...current, [selectedSession.id]: profile }));
-    setIsBusy(true);
-    setMessage(null);
-    try {
-      const result = await client.changeSessionProfile(selectedSession.id, profile);
-      rememberModelSelection({ agent: "zotigo", profile });
-      setMessage(result.status === "pending" ? t("app.switchingToBeforeTheNextModelGeneration", { p0: profile }) : t("app.profileChangedTo", { p0: profile }));
-      if (result.status === "applied") {
-        const session = await client.getSession(selectedSession.id);
-        setSessions((current) => upsertSession(current, session));
-      }
-      void refreshSessionItems(selectedBinding!, { quiet: true });
-    } catch (error) {
-      setProfileOverrides((current) => {
-        const next = { ...current };
-        delete next[selectedSession.id];
-        return next;
-      });
-      setMessage(errorMessage(error));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function selectApprovalPolicy(approvalPolicy: ApprovalPolicy) {
-    if (!selectedSession) {
-      setDraftApprovalPolicy(approvalPolicy);
-      return;
-    }
-
-    setApprovalPolicyOverrides((current) => ({ ...current, [selectedSession.id]: approvalPolicy }));
-    setIsBusy(true);
-    setMessage(null);
-    try {
-      const result = await client.changeSessionApprovalPolicy(selectedSession.id, approvalPolicy);
-      setMessage(
-        result.status === "pending"
-          ? t("app.switchingAccessTo", { p0: approvalPolicyLabel(approvalPolicy) })
-          : t("app.accessChangedTo", { p0: approvalPolicyLabel(approvalPolicy) }),
-      );
-      if (result.status === "applied") {
-        const session = await client.getSession(selectedSession.id);
-        setSessions((current) => upsertSession(current, session));
-        setApprovalPolicyOverrides((current) => {
-          const next = { ...current };
-          delete next[selectedSession.id];
-          return next;
-        });
-      }
-      void refreshSessionItems(selectedBinding!, { quiet: true });
-      void refreshSessions({ quiet: true });
-    } catch (error) {
-      setApprovalPolicyOverrides((current) => {
-        const next = { ...current };
-        if (next[selectedSession.id] === approvalPolicy) {
-          delete next[selectedSession.id];
-        }
-        return next;
-      });
-      setMessage(errorMessage(error));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
   async function submitSelectedPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const mode = submitModeRef.current ?? defaultSendMode;
@@ -2515,29 +2443,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     } catch (error) {
       setMessage(errorMessage(error));
     }
-  }
-
-  async function forkConversation(conversationId: string, throughTurnId?: string) {
-    if (isBusy || forkInFlightRef.current) return;
-    forkInFlightRef.current = true;
-    setIsBusy(true);
-    setMessage(null);
-    try {
-      const requestKey = JSON.stringify([conversationId, throughTurnId ?? null]);
-      const requestId = forkRequestsRef.current.get(requestKey) ?? createForkRequestId();
-      // Preserve the request identity on an uncertain response, including a catalog refresh failure.
-      forkRequestsRef.current.set(requestKey, requestId);
-      const result = await client.forkConversation(conversationId, requestId, throughTurnId);
-      applyDesktopActionResult(result);
-      if (result.error) throw new Error(result.error);
-      const binding = result.state?.bindings.find((value) => value.daemon_session_id === result.session?.id);
-      if (binding && result.state) {
-        selectConversation(binding.conversation_id, result.state);
-        window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
-      }
-      forkRequestsRef.current.delete(requestKey);
-    } catch (error) { setMessage(errorMessage(error)); }
-    finally { forkInFlightRef.current = false; setIsBusy(false); }
   }
 
   function archiveConversation(conversation: DesktopConversation) {
@@ -3435,7 +3340,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 profiles={profiles}
                 selectedProfile={selectedProfile}
                 profilesLoading={profilesLoading}
-                onSelectProfile={(profile) => void selectProfile(profile)}
+                onSelectProfile={(profile) => void selectProfile(selectedSession, selectedBinding, profile)}
                 agents={runtimeAgents}
                 agentsLoading={runtimeAgentsLoading}
                 selectedAgent={selectedAgent}
@@ -3446,7 +3351,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 onSelectCodexModel={selectCodexModel}
                 onSelectCodexReasoningEffort={(reasoningEffort) => rememberModelSelection({ agent: "codex", model: draftCodexModel, reasoningEffort })}
                 selectedApprovalPolicy={draftApprovalPolicy}
-                onSelectApprovalPolicy={(approvalPolicy) => void selectApprovalPolicy(approvalPolicy)}
+                onSelectApprovalPolicy={(approvalPolicy) => void selectApprovalPolicy(selectedSession, selectedBinding, approvalPolicy)}
                 runtimeAvailable={true}
               />
             )}
@@ -3531,7 +3436,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                   />
                   <ApprovalPolicyPicker
                     value={selectedApprovalPolicy}
-                    onChange={(approvalPolicy) => void selectApprovalPolicy(approvalPolicy)}
+                    onChange={(approvalPolicy) => void selectApprovalPolicy(selectedSession, selectedBinding, approvalPolicy)}
                     disabled={isBusy || hasActiveTurn || selectedApprovalPolicy === null}
                   />
                 </div>
@@ -3570,7 +3475,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                       onSelectAgent={() => {}}
                       profiles={profiles}
                       selectedProfile={selectedProfile}
-                      onSelectProfile={(profile) => void selectProfile(profile)}
+                      onSelectProfile={(profile) => void selectProfile(selectedSession, selectedBinding, profile)}
                       codexModels={[]}
                       selectedCodexModel=""
                       onSelectCodexModel={() => {}}

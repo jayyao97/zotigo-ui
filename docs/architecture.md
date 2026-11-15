@@ -117,12 +117,13 @@ do not belong here.
 
 ## Known debt
 
-- `src/App.tsx` is still about 4,000 lines (it was 5,600). Dialogs, menus,
+- `src/App.tsx` is still about 3,900 lines (it was 5,600). Dialogs, menus,
   inspector lists, the utility rail and the title were extracted as stateless
   components, and the self-contained state clusters as hooks (rename dialogs,
   workspace/project lifecycle dialogs, project source drafts, create-workspace
   drafts and the workspace-sources panel, conversation title editing, sidebar
-  disclosure, channels navigation, sidebar sort order, search shortcut). What
+  disclosure, profile overrides, approval-policy selection, fork, channels
+  navigation, sidebar sort order, search shortcut). What
   remains is the part that is genuinely one state machine today, roughly:
   - session event stream, delta flushing and history backfill (~450 lines)
   - send / steer / queue / submit and conversation creation (~450)
@@ -130,8 +131,9 @@ do not belong here.
   - composer drafts, skills and attachments (~300)
   - side panel, file open and scroll effects (~350)
   - host volatile-state save/restore, session paging, unread tracking (~250)
-  - model / profile / approval-policy selection (~150, not yet examined)
-  - archive session, pin, fork, `confirmAddSources` (~120)
+  - profiles/agents state with its two loader effects, and Codex model
+    selection (~95)
+  - archive session, pin, `confirmAddSources` (~95)
   - JSX: the two sidebar render functions, the conversation body, the side
     panel and dialog call sites (~1,200)
   These clusters share effects whose order matters. Two were untangled without
@@ -141,6 +143,20 @@ do not belong here.
   effect now calls `loadSidebarDisclosure` returned by the hook instead of
   being split (it is async). Values a hook needs that `App` declares later are
   passed as hoisted function declarations (`expandProject`, `isHostSwitching`).
+  Handlers that need the selected session take it as a parameter from the
+  calling render (`selectProfile(selectedSession, selectedBinding, value)`).
+
+  Hook extraction under these rules has reached its limit. The clusters left
+  (profiles loading, unread tracking, composer skills, file open/save) declare
+  their state near the top of `App`, but their effects depend on values derived
+  some 300 lines later (`selectedSession`, `activePrompt`), and several of
+  their refs are written from four or five places. They cannot become one hook
+  called at the first hook's position. Going further needs a different,
+  riskier step first: hoist the `selected*` derivations above the state that
+  the effects use (which moves `useMemo` calls, not effects), or split a
+  cluster into a state hook and a later effects hook. Do that one cluster at a
+  time with the browser flows, or leave it.
+
   Rules that held for every extraction so far, and should keep holding: a hook
   is called where its first hook was; effects keep their relative order; a
   split effect keeps the full dependency array in both halves; nothing is
