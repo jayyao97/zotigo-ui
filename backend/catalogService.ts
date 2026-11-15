@@ -293,11 +293,6 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     return getCatalogDesktopState();
   }
 
-  async function reorderCatalogPinnedSessions(ids: string[]): Promise<DesktopState> {
-    await reorderCatalogNavigation("pinned", ids.map((id) => ({ kind: "session", id })));
-    return getCatalogDesktopState();
-  }
-
   function projectRepositories(project: CatalogProjectDetail): DesktopProjectRepository[] {
     const gitSources = project.sources.filter((source) => source.kind === "git");
     return gitSources.map((source) => ({
@@ -382,7 +377,6 @@ export function createCatalogService(selection: CatalogSelectionStore = { getCat
     reorderCatalogProjects,
     reorderCatalogWorkspaces,
     reorderCatalogWorkspaceSessions,
-    reorderCatalogPinnedSessions,
     reorderCatalogPinnedItems,
     pinCatalogNavigation,
   };

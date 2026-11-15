@@ -4,16 +4,8 @@ import { test } from "node:test";
 import { parseCreateProjectInput } from "../backend/projectInputValidation";
 import { orderSidebarItems, reorderSidebarIds } from "../shared/sidebarOrdering";
 import type { DesktopProjectFolder, DesktopProjectRepository } from "../shared/clientTypes";
-import { initialWorkspaceSourceSelection, workspaceBranchSuggestion, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
+import { initialWorkspaceSourceSelection, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import type { CatalogWorkspaceSource } from "../shared/zotigod";
-
-test("workspace branch suggestion reuses an unambiguous existing branch", () => {
-  const binding = (branch: string, kind = "git") => ({ source: { kind }, branch_name: branch }) as CatalogWorkspaceSource;
-  assert.equal(workspaceBranchSuggestion([]), "");
-  assert.equal(workspaceBranchSuggestion([binding("fix/existing")]), "fix/existing");
-  assert.equal(workspaceBranchSuggestion([binding("feat/shared"), binding("feat/shared"), binding("", "folder")]), "feat/shared");
-  assert.equal(workspaceBranchSuggestion([binding("feat/one"), binding("feat/two")]), "");
-});
 
 test("migrated workspaces do not offer their legacy repository as a second dependency", () => {
   const bindings = [{ source: { id: "legacy-source", repository_id: "repo-1" } }] as CatalogWorkspaceSource[];

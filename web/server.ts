@@ -17,7 +17,7 @@ import { createSelectionStore } from "../shared/catalogSelection";
 
 const maxBodyBytes = 30 * 1024 * 1024; // Five images, up to 20 MiB total, encoded as base64.
 const nativeOnly = new Set([
-  "desktop:choose-source-folders", "desktop:reveal-path", "desktop:download-image",
+  "desktop:reveal-path", "desktop:download-image",
   "sessions:subscribe-events", "sessions:unsubscribe-events", "files:subscribe-events", "files:unsubscribe-events",
 ]);
 

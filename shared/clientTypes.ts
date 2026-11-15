@@ -408,7 +408,6 @@ export interface ClientApi {
   forkConversation(conversationId: string, requestId: string, throughTurnId?: string): Promise<DesktopActionResult>;
   setConversationPinned(conversationId: string, pinned: boolean): Promise<DesktopState>;
   reorderWorkspaceConversations(conversationIds: string[]): Promise<DesktopState>;
-  reorderPinnedConversations(conversationIds: string[]): Promise<DesktopState>;
   reorderPinnedItems(items: NavigationItem[]): Promise<DesktopState>;
   setNavigationPinned(item: NavigationItem, pinned: boolean): Promise<DesktopState>;
   archiveConversation(conversationId: string): Promise<DesktopState>;

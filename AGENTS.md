@@ -10,11 +10,13 @@ Both clients manage a running `zotigod` daemon through public HTTP APIs only. Th
 
 - `GET /health`
 - `/agents` and `/agents/codex/prepare`
-- `/config/profiles` and `/skills`
-- `/projects`, `/sources/inspect`, `/sources/directories`, and `/workspaces`
-- `/files/capabilities`, `/files/open`, `/files/save`, and `/files/list` for remote workspace text files
-- `/catalog/sessions`
-- `/sessions` and public session actions, items, events, approvals, images, and organization endpoints
+- `/config/profiles`, `/config/models`, `/config/models/test`, and `/skills`
+- `/projects`, `/repositories`, `/sources/inspect`, `/sources/directories`, and `/workspaces`
+- `/files/capabilities`, `/files/open`, `/files/save`, and `/files/list` for remote workspace text files; `/files/upload` for message attachments
+- `/catalog/snapshot`, `/catalog/sessions`, and `/catalog/navigation` (with `/order`, `/pin`, and `/import`)
+- `/channels/connections` and `/channels/conversations`
+- `/updates`
+- `/sessions` and public session actions, items, events, approvals, images, queue, and organization endpoints
 
 Keep the exact contract aligned with `zotigo/docs/zotigod-api.md`. Do not call internal worker endpoints from the Electron UI, preload, or client code.
 
@@ -25,11 +27,13 @@ Keep the exact contract aligned with `zotigo/docs/zotigod-api.md`. Do not call i
 - For UI changes, first read `.codex/skills/zotigo-codex-design-system/SKILL.md` and follow it unless the user explicitly asks for a different direction.
 - Keep renderer Node access disabled. Use preload to expose narrow, typed APIs.
 - Bind daemon requests and long-lived subscriptions to an immutable host context; never use a process-global selected host. Keep credentials in the backend and scope connection-specific preferences by host. UI language and layout preferences belong to the client, independent of the selected host.
+- Follow the layer rule in `docs/architecture.md` (`src → shared`, `backend → shared`, `electron`/`web` → `backend`, `shared`); `tests/layering.test.ts` enforces it.
 - Keep zotigod HTTP calls in `backend/`, not scattered through React components. Desktop IPC and Web HTTP adapters call the same application service.
 - Share React components across platforms. Folder picking uses `DirectoryBrowser` and the selected daemon, including Local. Other OS integration belongs in Electron; Web authentication and browser transport belong in the Web adapter.
 - Manage user-facing renderer copy through typed keys in `shared/i18n/`; include English and Chinese, accessibility labels, and full-sentence interpolation. Follow `docs/localization.md`. Keep protocol values and user/model content unchanged.
 - Prefer React local state until there is a concrete need for more state management.
-- Avoid speculative abstractions, broad cleanup, auth, auto-update, code signing, daemon process management, real workers, browser-use, and computer-use unless explicitly requested.
+- Avoid speculative abstractions, broad cleanup, auth, code signing, real workers, browser-use, and computer-use unless explicitly requested.
+- Daemon process management and updates already exist in a narrow form; do not extend them unless explicitly requested. `electron/daemonManager.ts` lets Desktop build (`go build`) and start a loopback `zotigod` from a Zotigo source checkout when none is healthy (`ZOTIGO_DESKTOP_MANAGE_DAEMON=0` disables it); Web never starts a daemon. `backend/clientUpdates.ts` runs the installed `zotigo-update` helper for the client, and daemon updates go through `/updates`.
 
 ## Checks
 

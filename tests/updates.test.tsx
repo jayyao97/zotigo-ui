@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 import fs from "node:fs";
 import { JSDOM } from "jsdom";
 import { act } from "react";
@@ -37,6 +37,9 @@ test("settings select model hosts independently and run an update from one fixed
     },
   } as unknown as ClientApi;
   const root = createRoot(document.getElementById("root")!);
+  // UpdateSettings waits and polls with the global setTimeout (2000ms); the mocked clock is enabled before the first
+  // render so every product timer in this test is created and cleared on the same clock.
+  mock.timers.enable({ apis: ["setTimeout"] });
   let workbenchCurrent = true;
   const workbenchApi = bindClientGeneration(api, () => workbenchCurrent);
   const render = (visibleHosts = hosts) => root.render(<ClientContext.Provider value={{api:workbenchApi,kind:"desktop"}}><SettingsPage updateApi={api} hosts={visibleHosts} initialPage="models" hostName="Outside selection" onSync={()=>{}} syncing={false} syncStatus="" syncError="" translationLanguage="en" onTranslationLanguageChange={()=>{}} translationProfile="" onTranslationProfileChange={()=>{}} thinkingDisplay="expanded" onThinkingDisplayChange={()=>{}} onManageHosts={()=>{}} onBack={()=>{}}/></ClientContext.Provider>);
@@ -72,12 +75,13 @@ test("settings select model hosts independently and run an update from one fixed
     await act(async () => (document.querySelectorAll("nav button")[1] as HTMLButtonElement).click());
     assert.equal(document.querySelectorAll(".settings-section").length, 0);
     workbenchCurrent = false; // Switching the workbench host invalidates its API, not the explicit update destination.
-    await act(async () => {await new Promise(resolve=>setTimeout(resolve,2200));});
+    await act(async () => {mock.timers.tick(2200); await new Promise(resolve=>setImmediate(resolve));});
     await act(async () => (document.querySelectorAll("nav button")[2] as HTMLButtonElement).click());
     assert.ok(applied);
     assert.deepEqual(updates.filter(([,action])=>action==="prepare" || action==="apply"),[["daemon","prepare","remote"],["daemon","apply","remote"]]);
     assert.equal(document.querySelectorAll(".settings-section")[2].querySelector("button")!.textContent,"Check for updates");
   } finally {
+    mock.timers.reset();
     await act(async()=>root.unmount());
     for(const [key,descriptor] of Object.entries(previous)){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}
     dom.window.close();

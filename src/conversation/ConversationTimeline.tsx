@@ -1695,7 +1695,7 @@ function humanizeToolName(value: string): string {
   return t("conversationTimeline.ran2", { p0: value });
 }
 
-export function toTitleCase(value: string): string {
+function toTitleCase(value: string): string {
   return value
     .split("_")
     .filter(Boolean)
