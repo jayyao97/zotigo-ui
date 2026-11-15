@@ -117,28 +117,34 @@ do not belong here.
 
 ## Known debt
 
-- `src/App.tsx` is still about 4,300 lines (it was 5,600). Dialogs, menus,
+- `src/App.tsx` is still about 4,000 lines (it was 5,600). Dialogs, menus,
   inspector lists, the utility rail and the title were extracted as stateless
   components, and the self-contained state clusters as hooks (rename dialogs,
-  workspace/project lifecycle dialogs, project source drafts, channels
-  navigation, sidebar sort order, search shortcut). What remains is the part
-  that is genuinely one state machine today, roughly:
+  workspace/project lifecycle dialogs, project source drafts, create-workspace
+  drafts and the workspace-sources panel, conversation title editing, sidebar
+  disclosure, channels navigation, sidebar sort order, search shortcut). What
+  remains is the part that is genuinely one state machine today, roughly:
   - session event stream, delta flushing and history backfill (~450 lines)
   - send / steer / queue / submit and conversation creation (~450)
-  - catalog bootstrap, polling, reconciliation and Codex sync (~350)
+  - catalog bootstrap, polling, reconciliation and Codex sync (~340)
   - composer drafts, skills and attachments (~300)
   - side panel, file open and scroll effects (~350)
   - host volatile-state save/restore, session paging, unread tracking (~250)
-  - create-workspace drafts and the workspace-sources panel (~270)
+  - model / profile / approval-policy selection (~150, not yet examined)
+  - archive session, pin, fork, `confirmAddSources` (~120)
   - JSX: the two sidebar render functions, the conversation body, the side
     panel and dialog call sites (~1,200)
-  These clusters share effects whose order matters (for example the selection
-  change effect resets title, pause and file-open state together, and the
-  catalog bootstrap effect also loads sidebar disclosure state). Extracting
-  them means first splitting those shared effects, one at a time, each checked
-  in the running app. Rules that held for every extraction so far, and should
-  keep holding: a hook is called where its first hook was; effects keep their
-  relative order; nothing is memoised or un-memoised in the same change.
+  These clusters share effects whose order matters. Two were untangled without
+  reordering anything, and show the two safe techniques: the selection-change
+  effect was split into two adjacent effects with the same dependency array
+  (the title reset is independent of the rest), and the catalog bootstrap
+  effect now calls `loadSidebarDisclosure` returned by the hook instead of
+  being split (it is async). Values a hook needs that `App` declares later are
+  passed as hoisted function declarations (`expandProject`, `isHostSwitching`).
+  Rules that held for every extraction so far, and should keep holding: a hook
+  is called where its first hook was; effects keep their relative order; a
+  split effect keeps the full dependency array in both halves; nothing is
+  memoised or un-memoised in the same change.
 - `shared/sessionDisplay.ts` `optimisticSteeringDisplayItem` is used only by
   tests, as a fixture for ordering tests. Either the renderer should use it or
   the tests should build that item directly.

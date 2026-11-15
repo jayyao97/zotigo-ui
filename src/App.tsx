@@ -125,14 +125,14 @@ import {
   workingConversationIds as workingConversationIdsForSessions,
   type EphemeralDisplayBlock,
 } from "../shared/sessionDisplay";
-import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, CatalogWorkspaceSource, FolderSourceMode, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
+import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, ApprovalPolicy, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, WorkspaceFileOpenResult } from "../shared/clientTypes";
-import { initialWorkspaceSourceSelection, workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
+import { workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
 import { RecentSessions } from "./RecentSessions";
 import { SidebarSection } from "./SidebarSection";
 import { updateSidebarClipping } from "./sidebarClipping";
-import { restoreSidebarDisclosure, serializeSidebarDisclosure, sidebarDisclosureStorageKey } from "./sidebarDisclosure";
+import { useSidebarDisclosure } from "./sidebar/useSidebarDisclosure";
 import {
   closeSidePanelTab,
   retainFileTabs,
@@ -187,7 +187,7 @@ import {
   updateComposerDrafts,
 } from "./composerDrafts";
 import { conversationIsVisible, canAcknowledgeSession, mergeReadState, mergeSessionReadStates } from "./unreadSessions";
-import type { ComposerDraft, ConversationContextMenu, SidebarDragItem, WorkspaceRepositoryDraft, ConnectionState } from "./app/appTypes";
+import type { ComposerDraft, ConversationContextMenu, SidebarDragItem, ConnectionState } from "./app/appTypes";
 import { appendUploadedReferences, attachmentToMessageFile, attachmentToMessageImage, revokeDraftAttachments } from "./app/composerAttachments";
 import { clearResolvedApprovalPolicyOverrides, connectionLabel, errorMessage, fileNameForPath, isMarkdownFile, isNearScrollBottom, projectSourceInput, sameJsonValue, sessionFromBinding, upsertSession } from "./app/appHelpers";
 import { ConversationNavItem } from "./sidebar/ConversationNavItem";
@@ -198,8 +198,10 @@ import { DeleteWorkspaceDialog } from "./workspace/DeleteWorkspaceDialog";
 import { RenameWorkspaceDialog } from "./workspace/RenameWorkspaceDialog";
 import { DeleteProjectDialog } from "./project/DeleteProjectDialog";
 import { useChannelsNavigation } from "./channels/useChannelsNavigation";
+import { useConversationTitleEditing } from "./conversation/useConversationTitleEditing";
 import { useProjectSourceDrafts } from "./project/useProjectSourceDrafts";
 import { useWorkspaceLifecycleDialogs } from "./workspace/useWorkspaceLifecycleDialogs";
+import { useWorkspaceSourceDrafts } from "./workspace/useWorkspaceSourceDrafts";
 import { RenameProjectDialog } from "./project/RenameProjectDialog";
 import { RenameConversationDialog } from "./sidebar/RenameConversationDialog";
 import { SessionContextMenu } from "./sidebar/SessionContextMenu";
@@ -316,24 +318,25 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     addSourcesProjectId, setAddSourcesProjectId,
     openCreateProjectDialog, closeCreateProjectDialog, chooseNewProjectSources, createNamedProject, addSourcesToProject,
   } = useProjectSourceDrafts({
-    client, isBusy, setIsBusy, setMessage, applyDesktopState, setRepositoriesOpen, closeWorkspaceSources,
+    client, isBusy, setIsBusy, setMessage, applyDesktopState, setRepositoriesOpen, closeWorkspaceSources: closeWorkspaceSourcesForProjectDrafts,
   });
   const { removeSourceTarget, setRemoveSourceTarget, confirmRemoveSource } = useRemoveSourceDialog({ client, applyDesktopState, setMessage, setIsBusy });
-  const [createWorkspaceProjectId, setCreateWorkspaceProjectId] = useState<string | null>(null);
-  const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
-  const [newWorkspaceBranch, setNewWorkspaceBranch] = useState("");
-  const [workspaceSourceQuery, setWorkspaceSourceQuery] = useState("");
-  const [addWorkspaceSourceQuery, setAddWorkspaceSourceQuery] = useState("");
-  const [workspaceRepositories, setWorkspaceRepositories] = useState<WorkspaceRepositoryDraft[]>([]);
-  const [workspaceFolderModes, setWorkspaceFolderModes] = useState<Record<string, "" | FolderSourceMode>>({});
-  const [workspaceSourcesTarget, setWorkspaceSourcesTarget] = useState<DesktopWorkspace | null>(null);
-  const [workspaceSources, setWorkspaceSources] = useState<CatalogWorkspaceSource[]>([]);
-  const [workspaceSourcesLoading, setWorkspaceSourcesLoading] = useState(false);
-  const [workspaceSourcesLoadError, setWorkspaceSourcesLoadError] = useState<string | null>(null);
-  const workspaceSourcesRequestRef = useRef(0);
-  const [workspaceSourceId, setWorkspaceSourceId] = useState("");
-  const [workspaceSourceBaseRef, setWorkspaceSourceBaseRef] = useState("HEAD");
-  const [workspaceSourceMode, setWorkspaceSourceMode] = useState<FolderSourceMode>("direct");
+  const {
+    createWorkspaceProject, newWorkspaceTitle, newWorkspaceBranch, setNewWorkspaceBranch,
+    workspaceSourceQuery, setWorkspaceSourceQuery, addWorkspaceSourceQuery, setAddWorkspaceSourceQuery,
+    workspaceRepositories, setWorkspaceRepositories, workspaceFolderModes, setWorkspaceFolderModes,
+    workspaceSourcesTarget, workspaceSources, workspaceSourcesLoading, workspaceSourcesLoadError,
+    workspaceSourceId, workspaceSourceBaseRef, setWorkspaceSourceBaseRef, workspaceSourceMode, setWorkspaceSourceMode,
+    visibleWorkspaceRepositories, visibleWorkspaceFolders, selectedWorkspaceSourceCount,
+    canSelectAllWorkspaceSources, canDeselectAllWorkspaceSources,
+    openCreateWorkspaceDialog, selectAllWorkspaceSources, closeCreateWorkspaceDialog, updateNewWorkspaceTitle,
+    updateRepositoryBaseRef, submitCreateWorkspace,
+    openWorkspaceSources, loadWorkspaceSources, closeWorkspaceSources, selectWorkspaceSource,
+    confirmAddWorkspaceSource, retryWorkspaceSourceBindings,
+  } = useWorkspaceSourceDrafts({
+    client, desktopState, isBusy, setIsBusy, setMessage, applyDesktopState, setRepositoriesOpen,
+    expandProject, isHostSwitching,
+  });
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
   const [workspaceMenuId, setWorkspaceMenuId] = useState<string | null>(null);
   const [sidebarActionMenuOpensUp, setSidebarActionMenuOpensUp] = useState(false);
@@ -350,8 +353,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     client, isBusy, setIsBusy, applyDesktopState, setSidebarActionError, setProjectMenuId, setWorkspaceMenuId,
     clearProjectOverview, clearProjectOverviewIfShowing,
   });
-  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(new Set());
-  const [collapsedWorkspaceIds, setCollapsedWorkspaceIds] = useState<Set<string>>(new Set());
+  const { collapsedProjectIds, setCollapsedProjectIds, collapsedWorkspaceIds, toggleWorkspaceCollapsed, loadSidebarDisclosure } = useSidebarDisclosure({
+    clientScope, projects: desktopState.projects, workspaces: desktopState.workspaces,
+  });
   const [projectOverviewId, setProjectOverviewId] = useState<string | null>(null);
   const { sidebarSortProps } = useSidebarSortOrder({ isBusy, persistSidebarOrder });
   const [sessionItems, setSessionItems] = useState<DisplayItem[]>([]);
@@ -405,11 +409,12 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [draftAgent, setDraftAgent] = useState<AgentKind>(initialModelSelection?.agent ?? "zotigo");
   const [draftCodexModel, setDraftCodexModel] = useState(initialModelSelection?.agent === "codex" ? initialModelSelection.model : "");
   const [draftCodexReasoningEffort, setDraftCodexReasoningEffort] = useState(initialModelSelection?.agent === "codex" ? initialModelSelection.reasoningEffort : "");
-  const [isEditingConversationTitle, setIsEditingConversationTitle] = useState(false);
-  const [isSavingConversationTitle, setIsSavingConversationTitle] = useState(false);
-  const [conversationTitleDraft, setConversationTitleDraft] = useState("");
-  const [renameDialogConversationId, setRenameDialogConversationId] = useState<string | null>(null);
-  const [renameDialogTitleDraft, setRenameDialogTitleDraft] = useState("");
+  const {
+    isEditingConversationTitle, isSavingConversationTitle, conversationTitleDraft, setConversationTitleDraft,
+    conversationTitleInputRef, renameDialogConversation, renameDialogTitleDraft, setRenameDialogTitleDraft,
+    resetConversationTitleDraft, beginConversationTitleEdit, cancelConversationTitleEdit, saveConversationTitle,
+    openRenameConversationDialog, closeRenameConversationDialog, submitRenameConversationDialog,
+  } = useConversationTitleEditing({ conversations: desktopState.conversations, client, applyDesktopState, setMessage });
   const { renameDialogProject, renameDialogProjectNameDraft, setRenameDialogProjectNameDraft, isSavingProjectName, openRenameProjectDialog, closeRenameProjectDialog, submitRenameProjectDialog } = useRenameProjectDialog({ projects: desktopState.projects, client, applyDesktopState, setMessage, setProjectMenuId });
   const { renameDialogWorkspace, renameDialogWorkspaceTitleDraft, setRenameDialogWorkspaceTitleDraft, isSavingWorkspaceTitle, openRenameWorkspaceDialog, closeRenameWorkspaceDialog, submitRenameWorkspaceDialog } = useRenameWorkspaceDialog({ workspaces: desktopState.workspaces, client, applyDesktopState, setMessage, setWorkspaceMenuId });
   const { panels: sessionSidePanels, sidePanelTabs, setSidePanelTabs, sidePanelOpen, setSidePanelOpen,
@@ -488,7 +493,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const sessionHistoryBackfillRef = useRef<{ sessionId: string; historyRequestId: number } | null>(null);
   const sessionHistoryBackfillNeededRef = useRef<string | null>(null);
   const olderSessionItemsLoadingRef = useRef(false);
-  const conversationTitleInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<SkillPromptEditorHandle | null>(null);
   const forkRequestsRef = useRef(new Map<string, string>());
   const forkInFlightRef = useRef(false);
@@ -497,7 +501,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const sessionItemsRef = useRef<DisplayItem[]>([]);
   const selectedSessionIdRef = useRef<string | null>(null);
   const sessionEventsConnectedRef = useRef(false);
-  const sidebarDisclosureLoadedRef = useRef(false);
   const sidebarActionMenuRef = useRef<HTMLDivElement | null>(null);
   const navigationScrollRef = useRef<HTMLDivElement | null>(null);
   const lastCodexCatalogSyncAttemptAtRef = useRef(0);
@@ -673,15 +676,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         : null,
     [desktopState.bindings, selectedConversation],
   );
-  const renameDialogConversation = useMemo(
-    () =>
-      desktopState.conversations.find((conversation) => conversation.id === renameDialogConversationId) ?? null,
-    [desktopState.conversations, renameDialogConversationId],
-  );
-  const createWorkspaceProject = useMemo(
-    () => desktopState.projects.find((project) => project.id === createWorkspaceProjectId) ?? null,
-    [createWorkspaceProjectId, desktopState.projects],
-  );
   const selectedSession = useMemo(() => {
     if (!selectedBinding) {
       return null;
@@ -777,20 +771,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const selectedSkillNames = activeComposerDraft.selectedSkillNames;
 
   useEffect(() => {
-    if (!sidebarDisclosureLoadedRef.current) return;
-    try {
-      localStorage.setItem(
-        sidebarDisclosureStorageKey(clientScope),
-        serializeSidebarDisclosure(
-          { collapsedProjectIds, collapsedWorkspaceIds },
-          desktopState.projects.map((project) => project.id),
-          desktopState.workspaces.map((workspace) => workspace.id),
-        ),
-      );
-    } catch { /* In-memory disclosure state still works. */ }
-  }, [clientScope, collapsedProjectIds, collapsedWorkspaceIds, desktopState.projects, desktopState.workspaces]);
-
-  useEffect(() => {
     const updateVisibility = () => setConversationVisible(conversationIsVisible(conversationScrollRef.current));
     updateVisibility();
     window.addEventListener("resize", updateVisibility);
@@ -881,17 +861,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   sessionItemsRef.current = sessionItems;
   selectedSessionIdRef.current = selectedBinding?.daemon_session_id ?? null;
 
-  useLayoutEffect(() => {
-    if (!isEditingConversationTitle) {
-      return;
-    }
-    conversationTitleInputRef.current?.focus();
-    conversationTitleInputRef.current?.select();
-  }, [isEditingConversationTitle]);
+  useEffect(() => {
+    resetConversationTitleDraft(selectedConversation?.title ?? "");
+  }, [composerDraftKey]);
 
   useEffect(() => {
-    setIsEditingConversationTitle(false);
-    setConversationTitleDraft(selectedConversation?.title ?? "");
     setPauseRequestedTurnId(null);
     fileOpenRequest.current++;
     setFileOpening(false);
@@ -956,16 +930,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         sessionQueryVersionRef.current = state.sessionQueryVersion;
         onSessionQuerySupport?.(state.sessionQueryVersion === 1);
         lastCatalogRefreshAttemptAtRef.current = Date.now();
-        let savedDisclosure: string | null = null;
-        try { savedDisclosure = localStorage.getItem(sidebarDisclosureStorageKey(clientScope)); } catch { /* Use defaults. */ }
-        const disclosure = restoreSidebarDisclosure(
-          savedDisclosure,
+        loadSidebarDisclosure(
           state.projects.map((project) => project.id),
           state.workspaces.map((workspace) => workspace.id),
         );
-        setCollapsedProjectIds(disclosure.collapsedProjectIds);
-        setCollapsedWorkspaceIds(disclosure.collapsedWorkspaceIds);
-        sidebarDisclosureLoadedRef.current = true;
         desktopStateLoadedRef.current = true;
         codexCatalogSyncNotBeforeRef.current = Date.now() + initialCodexCatalogSyncDelayMs;
         void refreshSessions({ quiet: true });
@@ -1538,119 +1506,23 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
   }
 
-  function openCreateWorkspaceDialog(project: DesktopProject) {
-    const repositories = desktopState.repositories.filter((candidate) => candidate.project_id === project.id);
-    const folders = desktopState.folders.filter((candidate) => candidate.project_id === project.id);
-    const selection = initialWorkspaceSourceSelection(repositories, folders);
-    setMessage(null);
-    setNewWorkspaceTitle("");
-    setNewWorkspaceBranch("");
-    setWorkspaceSourceQuery("");
-    setWorkspaceRepositories(repositories.map((repository) => ({
-      repository,
-      selected: selection.repositoryIds.includes(repository.id),
-      baseRef: repository.repository_id ? "" : repository.default_base_ref || "HEAD",
-    })));
-    setWorkspaceFolderModes(selection.folderModes);
-    setCreateWorkspaceProjectId(project.id);
-  }
-
-  const visibleWorkspaceRepositories = workspaceRepositories.filter(draft => workspaceSourceMatches(draft.repository, workspaceSourceQuery));
-  const visibleWorkspaceFolders = desktopState.folders.filter(folder => folder.project_id === createWorkspaceProject?.id && workspaceSourceMatches(folder, workspaceSourceQuery));
-  const availableWorkspaceFolders = visibleWorkspaceFolders.filter(folder => folder.availability === "available");
-  const selectedWorkspaceSourceCount = workspaceRepositories.filter(draft => draft.selected).length + Object.values(workspaceFolderModes).filter(Boolean).length;
-  const canSelectAllWorkspaceSources = visibleWorkspaceRepositories.some((draft) => draft.repository.availability === "available" && !draft.selected)
-    || availableWorkspaceFolders.some((folder) => !workspaceFolderModes[folder.id]);
-  const canDeselectAllWorkspaceSources = visibleWorkspaceRepositories.some((draft) => draft.repository.availability === "available" && draft.selected)
-    || availableWorkspaceFolders.some((folder) => Boolean(workspaceFolderModes[folder.id]));
-
-  function selectAllWorkspaceSources(selected: boolean) {
-    if (!createWorkspaceProject || isBusy) return;
-    setWorkspaceRepositories((current) => current.map((draft) => draft.repository.availability === "available" && workspaceSourceMatches(draft.repository, workspaceSourceQuery) ? { ...draft, selected } : draft));
-    setWorkspaceFolderModes((current) => {
-      const next = { ...current };
-      for (const folder of desktopState.folders) {
-        if (folder.project_id === createWorkspaceProject.id && folder.availability === "available" && workspaceSourceMatches(folder, workspaceSourceQuery)) {
-          next[folder.id] = selected ? current[folder.id] || folder.default_mode : "";
-        }
-      }
+  // Hoisted for useWorkspaceSourceDrafts, which is called before these bindings are declared.
+  function expandProject(projectId: string) {
+    setCollapsedProjectIds((current) => {
+      if (!current.has(projectId)) return current;
+      const next = new Set(current);
+      next.delete(projectId);
       return next;
     });
   }
 
-  function closeCreateWorkspaceDialog() {
-    if (!isBusy) {
-      setCreateWorkspaceProjectId(null);
-    }
+  function isHostSwitching(): boolean {
+    return hostSwitchingRef.current;
   }
 
-  function updateNewWorkspaceTitle(title: string) {
-    setNewWorkspaceTitle(title);
-  }
-
-  function updateRepositoryBaseRef(repositoryId: string, baseRef: string) {
-    setWorkspaceRepositories((current) => current.map((draft) => draft.repository.id === repositoryId
-      ? { ...draft, baseRef }
-      : draft));
-  }
-
-  function submitCreateWorkspace(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void createWorkspaceFromDraft();
-  }
-
-  async function createWorkspaceFromDraft() {
-    if (!createWorkspaceProjectId || !newWorkspaceTitle.trim()) {
-      return;
-    }
-    const projectId = createWorkspaceProjectId;
-    const modes = workspaceFolderModes;
-    let createdWorkspace: DesktopWorkspace | undefined;
-    setIsBusy(true);
-    setMessage(null);
-    try {
-      const folders = Object.entries(modes)
-        .filter((entry): entry is [string, FolderSourceMode] => entry[1] !== "")
-        .map(([folderId, mode]) => ({ folderId, mode }));
-      const state = await client.createWorkspace({
-        projectId,
-        title: newWorkspaceTitle.trim(),
-        branchName: newWorkspaceBranch.trim() || undefined,
-        repositories: workspaceRepositories.filter((draft) => draft.selected).map((draft) => ({
-          repositoryId: draft.repository.id,
-          baseRef: draft.baseRef,
-        })),
-        folders,
-      });
-      applyDesktopState(state);
-      createdWorkspace = state.workspaces.find(workspace => workspace.id === state.selectedWorkspaceId);
-      setCollapsedProjectIds((current) => {
-        if (!current.has(projectId)) return current;
-        const next = new Set(current);
-        next.delete(projectId);
-        return next;
-      });
-      setCreateWorkspaceProjectId(null);
-      setRepositoriesOpen(false);
-    } catch (error) {
-      setMessage(errorMessage(error));
-      applyDesktopState(await client.getDesktopState());
-    } finally {
-      setIsBusy(false);
-    }
-    if (createdWorkspace && !hostSwitchingRef.current) {
-      const requestId = ++workspaceSourcesRequestRef.current;
-      try {
-        const sources = await client.getWorkspaceSources(createdWorkspace.id);
-        if (!hostSwitchingRef.current && workspaceSourcesRequestRef.current === requestId && sources.some(source => source.used_cached_base)) {
-          await openWorkspaceSources(createdWorkspace, sources);
-        }
-      } catch (error) {
-        if (!hostSwitchingRef.current && workspaceSourcesRequestRef.current === requestId) {
-          setMessage(t("repositories.createdSourcesUnavailable", { error: errorMessage(error) }));
-        }
-      }
-    }
+  // Hoisted for useProjectSourceDrafts, which is called before useWorkspaceSourceDrafts.
+  function closeWorkspaceSourcesForProjectDrafts() {
+    closeWorkspaceSources();
   }
 
   async function selectProject(id: string | null) {
@@ -1668,93 +1540,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     leaveChannelsImmediately();
     setProjectOverviewId(project.id);
     await selectProject(project.id);
-  }
-
-  async function openWorkspaceSources(workspace: DesktopWorkspace, loadedSources?: CatalogWorkspaceSource[]) {
-    setMessage(null);
-    setWorkspaceSourcesTarget(workspace);
-    setWorkspaceSources(loadedSources ?? []);
-    setWorkspaceSourceId("");
-    setAddWorkspaceSourceQuery("");
-    setWorkspaceSourceBaseRef("HEAD");
-    if (loadedSources) {
-      workspaceSourcesRequestRef.current++;
-      setWorkspaceSourcesLoadError(null);
-      setWorkspaceSourcesLoading(false);
-    } else {
-      await loadWorkspaceSources(workspace.id);
-    }
-  }
-
-  async function loadWorkspaceSources(workspaceId: string) {
-    const requestId = ++workspaceSourcesRequestRef.current;
-    setWorkspaceSourcesLoading(true);
-    setWorkspaceSourcesLoadError(null);
-    try {
-      const sources = await client.getWorkspaceSources(workspaceId);
-      if (workspaceSourcesRequestRef.current === requestId) setWorkspaceSources(sources);
-    } catch (error) {
-      if (workspaceSourcesRequestRef.current === requestId) {
-        setWorkspaceSources([]);
-        setWorkspaceSourcesLoadError(errorMessage(error));
-      }
-    } finally {
-      if (workspaceSourcesRequestRef.current === requestId) setWorkspaceSourcesLoading(false);
-    }
-  }
-
-  function closeWorkspaceSources() {
-    workspaceSourcesRequestRef.current += 1;
-    setWorkspaceSourcesTarget(null);
-    setWorkspaceSourcesLoading(false);
-  }
-
-  function selectWorkspaceSource(sourceId: string) {
-    setWorkspaceSourceId(sourceId);
-    const repository = desktopState.repositories.find((source) => source.id === sourceId);
-    const folder = desktopState.folders.find((source) => source.id === sourceId);
-    setWorkspaceSourceBaseRef(repository?.repository_id ? "" : repository?.default_base_ref || "HEAD");
-    setWorkspaceSourceMode(folder?.default_mode ?? "direct");
-  }
-
-  async function confirmAddWorkspaceSource() {
-    if (!workspaceSourcesTarget || !workspaceSourceId) return;
-    const repository = desktopState.repositories.find((source) => source.id === workspaceSourceId);
-    const folder = desktopState.folders.find((source) => source.id === workspaceSourceId);
-    setIsBusy(true);
-    setMessage(null);
-    try {
-      const sources = await client.addWorkspaceSource(workspaceSourcesTarget.id, {
-        sourceId: workspaceSourceId,
-        ...(repository ? { baseRef: workspaceSourceBaseRef } : {}),
-        ...(folder ? { mode: workspaceSourceMode } : {}),
-      });
-      setWorkspaceSources(sources);
-      setWorkspaceSourceId("");
-    } catch (error) {
-      setMessage(errorMessage(error));
-      await loadWorkspaceSources(workspaceSourcesTarget.id);
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function retryWorkspaceSourceBindings() {
-    if (!workspaceSourcesTarget) return;
-    setIsBusy(true);
-    setMessage(null);
-    try {
-      const state = await client.retryWorkspace(workspaceSourcesTarget.id);
-      applyDesktopState(state);
-      const repaired = state.workspaces.find((workspace) => workspace.id === workspaceSourcesTarget.id);
-      if (repaired) setWorkspaceSourcesTarget(repaired);
-      await loadWorkspaceSources(workspaceSourcesTarget.id);
-    } catch (error) {
-      setMessage(errorMessage(error));
-      await loadWorkspaceSources(workspaceSourcesTarget.id);
-    } finally {
-      setIsBusy(false);
-    }
   }
 
   function toggleProjectOpen(projectId: string) {
@@ -2777,98 +2562,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
   }
 
-  function beginConversationTitleEdit() {
-    if (!selectedConversation) {
-      return;
-    }
-    setMessage(null);
-    setConversationTitleDraft(selectedConversation.title);
-    setIsEditingConversationTitle(true);
-  }
-
-  function cancelConversationTitleEdit() {
-    setConversationTitleDraft(selectedConversation?.title ?? "");
-    setIsEditingConversationTitle(false);
-  }
-
-  async function persistConversationTitle(conversationId: string, draft: string): Promise<string | null> {
-    if (isSavingConversationTitle) {
-      return null;
-    }
-    const title = draft.trim();
-    if (!title) {
-      setMessage(t("app.conversationTitleIsRequired"));
-      return null;
-    }
-
-    setIsSavingConversationTitle(true);
-    setMessage(null);
-    try {
-      applyDesktopState(await client.renameConversation(conversationId, title));
-      return title;
-    } catch (error) {
-      setMessage(errorMessage(error));
-      return null;
-    } finally {
-      setIsSavingConversationTitle(false);
-    }
-  }
-
-  async function saveConversationTitle() {
-    if (!selectedConversation) {
-      return;
-    }
-    if (conversationTitleDraft.trim() === selectedConversation.title) {
-      setIsEditingConversationTitle(false);
-      return;
-    }
-    const title = await persistConversationTitle(selectedConversation.id, conversationTitleDraft);
-    if (title) {
-      setConversationTitleDraft(title);
-      setIsEditingConversationTitle(false);
-    } else {
-      conversationTitleInputRef.current?.focus();
-    }
-  }
-
-  function openRenameConversationDialog(conversation: DesktopConversation) {
-    setMessage(null);
-    setRenameDialogConversationId(conversation.id);
-    setRenameDialogTitleDraft(conversation.title);
-  }
-
-  function closeRenameConversationDialog() {
-    if (isSavingConversationTitle) {
-      return;
-    }
-    setRenameDialogConversationId(null);
-    setRenameDialogTitleDraft("");
-  }
-
-  async function submitRenameConversationDialog(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!renameDialogConversation) {
-      return;
-    }
-    if (renameDialogTitleDraft.trim() === renameDialogConversation.title) {
-      closeRenameConversationDialog();
-      return;
-    }
-    const title = await persistConversationTitle(renameDialogConversation.id, renameDialogTitleDraft);
-    if (title) {
-      closeRenameConversationDialog();
-    }
-  }
-
-  function toggleWorkspaceCollapsed(id: string) {
-    setCollapsedWorkspaceIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
   function scheduleFileSave(filePath: string) {
     if (hostSwitchingRef.current) return;
     const existing = fileSaveTimersRef.current.get(filePath);
@@ -3604,9 +3297,9 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               isSaving={isSavingConversationTitle}
               inputRef={conversationTitleInputRef}
               onDraftChange={setConversationTitleDraft}
-              onSave={() => void saveConversationTitle()}
-              onCancel={cancelConversationTitleEdit}
-              onBeginEdit={beginConversationTitleEdit}
+              onSave={() => void saveConversationTitle(selectedConversation)}
+              onCancel={() => cancelConversationTitleEdit(selectedConversation)}
+              onBeginEdit={() => beginConversationTitleEdit(selectedConversation)}
             />
           ) : null}
           <div className="workspace-panel-actions">
