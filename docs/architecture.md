@@ -158,9 +158,19 @@ do not belong here.
   time with the browser flows, or leave it.
 
   Rules that held for every extraction so far, and should keep holding: a hook
-  is called where its first hook was; effects keep their relative order; a
-  split effect keeps the full dependency array in both halves; nothing is
-  memoised or un-memoised in the same change.
+  is called where its first hook was; an effect may only move across effects
+  that share no state or refs with it; a split effect keeps the full
+  dependency array in both halves; nothing is memoised or un-memoised in the
+  same change.
+
+  Two effects did move, because their hook is called where its first
+  `useState` was. The sidebar-disclosure persistence effect
+  (`useSidebarDisclosure`) went from the 12th passive effect to the 4th. The
+  conversation-title input focus/select layout effect
+  (`useConversationTitleEditing`) went from the 4th layout effect to the 1st.
+  Each was checked against the effects it crossed (eight passive effects, three
+  layout effects): none reads or writes the state or ref the moved effect
+  uses. The only shared name is `clientScope`, which all of them only read.
 - `requestJSON` reports the module-level base URL in its non-JSON error message
   even when a remote host handled the request.
 - `openDaemonFile`, `saveDaemonFile`, `previewDaemonImage` and

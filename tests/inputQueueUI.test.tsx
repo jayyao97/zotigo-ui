@@ -105,6 +105,15 @@ test("queued messages edit and delete by revision and lock once sending", async 
     let unsupportedCalls = 0;
     // The queue polls with the global setTimeout (2000ms); a mocked clock advances past one interval without sleeping.
     mock.timers.enable({ apis: ["setTimeout"] });
+    // Positive control: a supported queue (returns a list, not null) re-polls exactly once after the same tick.
+    // If the product stopped using the mocked timer, this fails, so the negative assertion below cannot pass vacuously.
+    let supportedCalls = 0;
+    const supportedClient = { ...client, listQueuedInputs: async () => { supportedCalls++; return []; } };
+    await act(async () => root.render(<InputQueue client={supportedClient} sessionId="s" refresh={0} active={true} />));
+    const supportedCallsBeforeTick = supportedCalls;
+    assert.ok(supportedCallsBeforeTick >= 1, "a supported queue polls when rendered");
+    await act(async () => { mock.timers.tick(2100); await new Promise(resolve => setImmediate(resolve)); });
+    assert.equal(supportedCalls, supportedCallsBeforeTick + 1, "the mocked clock must drive the queue's poll timer: one more poll after one interval");
     await act(async () => root.render(<InputQueue client={{ ...client, listQueuedInputs: async () => { unsupportedCalls++; return null; } }} sessionId="s" refresh={0} active={true} />));
     assert.equal(document.querySelector(".input-queue"), null);
     await act(async () => { mock.timers.tick(2100); await new Promise(resolve => setImmediate(resolve)); });
