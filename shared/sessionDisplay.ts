@@ -351,45 +351,6 @@ export function historyBackfillCursor(
     : cachedPrevCursor;
 }
 
-export function optimisticSteeringDisplayItem(
-  command: SessionCommandResponse,
-  responseSessionID: string | undefined,
-  selectedSessionID: string | null,
-  durableItems: DisplayItem[],
-): DisplayItem | null {
-  if (command.type !== "steering" || !responseSessionID || responseSessionID !== selectedSessionID) {
-    return null;
-  }
-  if (command.turn_id && durableItems.some(
-    (item) => isFinalTurnItem(item) && item.turn?.id === command.turn_id,
-  )) {
-    return null;
-  }
-  const content: NonNullable<DisplayItem["content"]> = [];
-  if (command.text) {
-    content.push({ type: "text", text: command.text });
-  }
-  for (const image of command.images ?? []) {
-    content.push({ type: "image", image });
-  }
-  const item: DisplayItem = {
-    id: command.id,
-    sequence: Number.MAX_SAFE_INTEGER,
-    type: "steering_message",
-    role: "user",
-    content,
-    turn: command.turn_id ? { id: command.turn_id } : undefined,
-    command: {
-      type: "steering",
-      text: command.text,
-      images: command.images,
-      turn_id: command.turn_id,
-    },
-    created_at: command.created_at,
-  };
-  return reconcileOptimisticSteering([item], durableItems)[0] ?? null;
-}
-
 export function createOptimisticPromptId(): string {
   // Unlike randomUUID, getRandomValues is available on remote HTTP pages.
   const bytes = crypto.getRandomValues(new Uint8Array(16));

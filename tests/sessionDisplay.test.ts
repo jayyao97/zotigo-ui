@@ -16,7 +16,6 @@ import {
   historyBackfillCursor,
   latestPendingToolCall,
   mergeDisplayItems,
-  optimisticSteeringDisplayItem,
   optimisticPromptDisplayItem,
   acknowledgeOptimisticPrompt,
   orderLateTurnItems,
@@ -159,15 +158,16 @@ test("a paused turn does not move optimistic steering ahead of resumed activity"
   const resumedTool = assistant("resumed-tool", 4, [
     { type: "tool_call", tool_call: { id: "call-1", name: "shell" } },
   ]);
-  const steering = optimisticSteeringDisplayItem({
+  const steering: DisplayItem = {
     id: "steering-1",
-    sequence: 0,
-    type: "steering",
-    text: "skip the test",
-    turn_id: "turn-1",
+    sequence: Number.MAX_SAFE_INTEGER,
+    type: "steering_message",
+    role: "user",
+    content: [{ type: "text", text: "skip the test" }],
+    turn: { id: "turn-1" },
+    command: { type: "steering", text: "skip the test", images: undefined, turn_id: "turn-1" },
     created_at: new Date(2).toISOString(),
-  }, "session-1", "session-1", [started, paused, resumedTool]);
-  assert.ok(steering);
+  };
 
   assert.deepEqual(
     orderLateTurnItems([started, paused, resumedTool, steering]).map((item) => item.id),
@@ -230,58 +230,17 @@ test("history backfill starts at the latest page only when cached history misses
   assert.equal(historyBackfillCursor([previousTurn, currentStart], "1", [currentStart, currentAnswer], "450"), "1");
 });
 
-test("steering command becomes an optimistic user item until the durable item arrives", () => {
-  const command = {
-    id: "steering-1",
-    sequence: 0,
-    type: "steering",
-    text: "change direction",
-    images: [{ url: "/sessions/session-1/images/image.png", mime_type: "image/png" }],
-    turn_id: "turn-1",
+test("terminal durable state keeps accepted steering visible until its durable item arrives", () => {
+  const steering: DisplayItem = {
+    id: "late-steering",
+    sequence: Number.MAX_SAFE_INTEGER,
+    type: "steering_message",
+    role: "user",
+    content: [{ type: "text", text: "too late" }],
+    turn: { id: "turn-1" },
+    command: { type: "steering", text: "too late", images: undefined, turn_id: "turn-1" },
     created_at: new Date(0).toISOString(),
   };
-  const steering = optimisticSteeringDisplayItem(command, "session-1", "session-1", []);
-  assert.ok(steering);
-  assert.equal(steering.sequence, Number.MAX_SAFE_INTEGER);
-  assert.equal(steering.type, "steering_message");
-  assert.equal(steering.role, "user");
-  assert.equal(steering.content?.[0]?.text, "change direction");
-  assert.equal(steering.content?.[1]?.image?.url, "/sessions/session-1/images/image.png");
-  assert.equal(steering.turn?.id, "turn-1");
-  assert.deepEqual(reconcileOptimisticSteering([steering], [{ ...steering, sequence: 4 }]), []);
-  assert.deepEqual(
-    reconcileOptimisticSteering([steering], [{
-      id: "turn-completed",
-      sequence: 4,
-      type: "turn_completed",
-      turn: { id: "turn-1" },
-      created_at: new Date(1).toISOString(),
-    }]),
-    [steering],
-  );
-  assert.equal(optimisticSteeringDisplayItem(command, "session-1", "session-2", []), null);
-  assert.equal(
-    optimisticSteeringDisplayItem(command, "session-1", "session-1", [{
-      id: "turn-completed",
-      sequence: 4,
-      type: "turn_completed",
-      turn: { id: "turn-1" },
-      created_at: new Date(1).toISOString(),
-    }]),
-    null,
-  );
-});
-
-test("terminal durable state keeps accepted steering visible until its durable item arrives", () => {
-  const steering = optimisticSteeringDisplayItem({
-    id: "late-steering",
-    sequence: 0,
-    type: "steering",
-    text: "too late",
-    turn_id: "turn-1",
-    created_at: new Date(0).toISOString(),
-  }, "session-1", "session-1", []);
-  assert.ok(steering);
   const terminal: DisplayItem = {
     id: "turn-completed",
     sequence: 4,

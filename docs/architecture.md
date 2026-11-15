@@ -161,9 +161,6 @@ do not belong here.
   is called where its first hook was; effects keep their relative order; a
   split effect keeps the full dependency array in both halves; nothing is
   memoised or un-memoised in the same change.
-- `shared/sessionDisplay.ts` `optimisticSteeringDisplayItem` is used only by
-  tests, as a fixture for ordering tests. Either the renderer should use it or
-  the tests should build that item directly.
 - `requestJSON` reports the module-level base URL in its non-JSON error message
   even when a remote host handled the request.
 - `openDaemonFile`, `saveDaemonFile`, `previewDaemonImage` and
