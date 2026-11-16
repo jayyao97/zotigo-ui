@@ -9,6 +9,7 @@ import type { ClientApi, DesktopProject, DesktopWorkspace } from "../shared/clie
 import type { AgentCatalogEntry, ZotigoSession } from "../shared/zotigod";
 import { ChannelsPage } from "../src/channels/ChannelsPage";
 import { ClientContext } from "../src/ClientContext";
+import { ToastProvider } from "../src/Toast";
 
 const project: DesktopProject = { id: "project-1", name: "Project One", created_at: "", updated_at: "" };
 const workspace: DesktopWorkspace = { id: "workspace-1", project_id: project.id, title: "Workspace One", root_path: "/workspace", status: "ready", created_at: "", updated_at: "" };
@@ -605,6 +606,28 @@ test("switching workspaces clears stale profiles until the new catalog loads", a
     await flush();
     assert.match(trigger.textContent ?? "", /Workspace default · second-profile/);
     assert.equal(document.querySelector<HTMLButtonElement>('[data-runtime-section="profile"]')?.disabled, false);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
+test("a session that cannot be opened reports through a toast, not the configuration notice", async () => {
+  const restore = installDom();
+  try {
+    const group = conversation({ id: "group-1", chat_id: "chat-1", chat_name: "Connected group", session_strategy: "shared", session_id: "session-1", workspace_id: workspace.id });
+    const api = {
+      listChannelConnections: async () => [connection("connection-1", "Bot One")],
+      listChannelGroups: async () => [{ chat_id: group.chat_id, name: "Connected group", available: true, conversation_id: group.id, session_strategy: group.session_strategy, session_id: group.session_id, workspace_id: group.workspace_id, enabled: true, sender_policy: group.sender_policy, allowed_sender_ids: group.allowed_sender_ids }],
+      listChannelConversations: async () => [group],
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ToastProvider><ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => { throw new Error("session is gone"); }} /></ClientContext.Provider></ToastProvider>));
+    await flush();
+    const sessionButton = document.querySelector<HTMLButtonElement>(".channels-chat-conversations .sidebar-session > button")!;
+    await act(async () => click(sessionButton));
+    await flush();
+    assert.match(document.querySelector('[role="alert"]')?.textContent ?? "", /session is gone/);
+    assert.equal(document.querySelector('[role="status"]'), null);
+    assert.equal(sessionButton.disabled, false);
     await act(async () => root.unmount());
   } finally { restore(); }
 });
