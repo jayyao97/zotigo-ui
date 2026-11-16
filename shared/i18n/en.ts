@@ -1357,6 +1357,19 @@ export const en = {
   "usage.period.clearSelection": "Clear chart selection",
   "usage.dailyAverage": "Daily average",
   "usage.inputDetail": "Uncached input {input}",
-  "usage.beforeTracking": "Before tracking started, no data"
+  "usage.beforeTracking": "Before tracking started, no data",
+  // Referenced by mobile/.
+  "repositories.chooseBranch": "Choose an existing branch",
+  "repositories.hideBranches": "Hide branch choices",
+  "repositories.loadingBranches": "Loading cached branches…",
+  "repositories.noBranches": "No cached branches available",
+  "repositories.branches.remote": "Remote branches",
+  "repositories.branches.imported": "Local branches saved during migration",
+  "repositories.branches.local": "Local branches",
+  "repositories.importedSnapshotHelp": "Saved when this source was migrated, including unpublished branches. Later commits in the original checkout are not synchronized automatically.",
+  "repositories.useDefault": "Use default branch",
+  "models.conflict": "If the configuration changed elsewhere, reload before saving. Your draft has been kept.",
+  "contextUsageBadge.used": "% used",
+  "conversationTimeline.questionExpired": "Question expired"
 } as const;
 export type MessageKey = keyof typeof en;
