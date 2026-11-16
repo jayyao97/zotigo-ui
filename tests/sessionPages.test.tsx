@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { useSessionPages } from "../src/useSessionPages";
-import { mergeSessionPage } from "../shared/sessionPages";
+import { loadSessionIntoState, mergeSessionPage } from "../shared/sessionPages";
 import type { ClientApi, DesktopState, SessionQuery } from "../shared/clientTypes";
 
 test("loaded pages survive polling beyond 200 rows and viewport changes", async () => {
@@ -54,4 +54,28 @@ test("page updates preserve user-defined workspace ordering",()=>{
   const state:DesktopState={projects:[],repositories:[],folders:[],workspaces:[],conversations:[conversation("a",1),conversation("b",2)],bindings:[],selectedProjectId:null,selectedWorkspaceId:null,selectedConversationId:null};
   const next=mergeSessionPage(state,{conversations:[conversation("b",0)],bindings:[],sessions:[]});
   assert.deepEqual(next.conversations.map(row=>row.id),["b","a"]);
+});
+
+test("a session outside the paged state is fetched by id before it is opened", async () => {
+  const state: DesktopState = {sessionQueryVersion:1,projects:[],repositories:[],folders:[],workspaces:[],conversations:[],bindings:[],selectedProjectId:null,selectedWorkspaceId:null,selectedConversationId:null};
+  const row = {id:"bound",title:"Shared",project_id:"p",workspace_id:"w",created_at:"2026-11-13",updated_at:"2026-11-13"};
+  const binding = {conversation_id:"bound",daemon_session_id:"bound",state:"running" as const,created_at:"2026-11-13"};
+  const calls: SessionQuery[] = [];
+  const querySessions = async (query: SessionQuery) => { calls.push(query); return {conversations:[row],bindings:[binding],sessions:[]}; };
+
+  const loaded = await loadSessionIntoState(state, "bound", querySessions);
+  assert.deepEqual(calls, [{ids:["bound"],limit:1}]);
+  assert.deepEqual(loaded.state.conversations.map(item=>item.id), ["bound"]);
+  assert.deepEqual(loaded.state.bindings.map(item=>item.daemon_session_id), ["bound"]);
+  assert.ok(loaded.page);
+
+  const known = await loadSessionIntoState(loaded.state, "bound", querySessions);
+  assert.equal(known.page, null);
+  assert.equal(known.state, loaded.state);
+  const missing = await loadSessionIntoState(state, "gone", async () => ({conversations:[],bindings:[],sessions:[]}));
+  assert.ok(missing.page, "a missing session is still queried");
+  assert.deepEqual(missing.state.bindings, []);
+  const unpaged = await loadSessionIntoState({...state, sessionQueryVersion: undefined}, "bound", querySessions);
+  assert.equal(unpaged.page, null);
+  assert.equal(calls.length, 1, "known sessions and unpaged daemons need no extra query");
 });

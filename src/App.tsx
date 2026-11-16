@@ -1,7 +1,7 @@
 import { useVisibleWorkspaces } from "./useVisibleWorkspaces";
 import { useSessionPages } from "./useSessionPages";
 import type { ChannelActivityMode } from "./activitySettings";
-import { mergeSessionPage, mergeCatalogStructure } from "../shared/sessionPages";
+import { loadSessionIntoState, mergeSessionPage, mergeCatalogStructure } from "../shared/sessionPages";
 import { observeLongTasks, traceInteraction, traceNextPaint } from "./performanceDiagnostics";
 import { LayoutGrid } from "lucide-react";
 import { WorkspacePanelHome } from "./WorkspacePanelHome";
@@ -127,7 +127,7 @@ import {
   type EphemeralDisplayBlock,
 } from "../shared/sessionDisplay";
 import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
-import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, WorkspaceFileOpenResult } from "../shared/clientTypes";
+import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, SessionPage, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
 import { RecentSessions } from "./RecentSessions";
@@ -816,7 +816,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     onConnection: online => setConnectionState(online ? "online" : "offline"),
     onPage: page => {
       setDesktopState(current => mergeSessionPage(current, page));
-      setSessions(current => { const ids = new Set(page.sessions.map(session => session.id)); return mergeSessionReadStates(current, retainSessionContextUsage(current, [...current.filter(session => !ids.has(session.id)), ...page.sessions])); });
+      mergeLoadedSessions(page.sessions);
     },
   });
   const ungroupedConversations = useMemo(
@@ -1209,6 +1209,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     desktopStateGenerationRef.current += 1;
     lastCatalogRefreshAttemptAtRef.current = Date.now();
     setDesktopState(current => typeof update === "function" ? update(current) : mergeCatalogStructure(current, update));
+  }
+
+  function mergeLoadedSessions(loaded: ZotigoSession[]) {
+    setSessions(current => { const ids = new Set(loaded.map(session => session.id)); return mergeSessionReadStates(current, retainSessionContextUsage(current, [...current.filter(session => !ids.has(session.id)), ...loaded])); });
   }
 
   function cachedSessionHistory(sessionId: string): SessionHistory | null {
@@ -3164,14 +3168,16 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       {channelsOpen && channelsSidebarRoot && <ChannelsPage favorites={savedModelFavorites} hostName={hostName} projects={desktopState.projects} workspaces={desktopState.workspaces} agents={runtimeAgents} sessions={sessions} sessionCatalog={desktopState.conversations} navigationRoot={channelsSidebarRoot} navigationButtonRef={channelsNavigationButton} navigationOpen={webNavigationOpen} sessionVisible={channelsSessionVisible} selectedSessionId={selectedSession?.id} onOpenNavigation={() => setWebNavigationOpen(true)} onShowConfiguration={() => setChannelsSessionVisible(false)} onBack={closeChannels} onOpenSession={async (id, leaveChannels) => {
         const request = ++channelsNavigationRequest.current;
         let state: DesktopState;
+        let page: SessionPage | null;
         try {
-          state = await client.getDesktopState();
+          ({ state, page } = await loadSessionIntoState(await client.getDesktopState(), id, client.querySessions));
         } catch (error) {
           if (request !== channelsNavigationRequest.current) return;
           throw error;
         }
         if (request !== channelsNavigationRequest.current) return;
         applyDesktopState(state);
+        if (page) mergeLoadedSessions(page.sessions);
         const binding = state.bindings.find((value) => value.daemon_session_id === id);
         if (!binding || !state.conversations.some((value) => value.id === binding.conversation_id)) {
           throw new Error(t("app.theBoundSessionIsNotAvailableInThis"));
