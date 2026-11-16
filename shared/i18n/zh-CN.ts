@@ -1276,5 +1276,18 @@ export const zhCN: Record<MessageKey, Message> = {
   "messageFiles.attachmentsCanTotalAtMost20MibPer": "每条消息的附件总大小不得超过 20 MiB。",
   "messageFiles.invalidAttachments": "附件无效。",
   "messageFiles.invalidAttachment": "附件无效。",
-  "messageFiles.invalidAttachmentData": "附件数据无效。"
+  "messageFiles.invalidAttachmentData": "附件数据无效。",
+  // Referenced by mobile/.
+  "repositories.chooseBranch": "选择已有分支",
+  "repositories.hideBranches": "收起分支选项",
+  "repositories.loadingBranches": "正在读取缓存分支…",
+  "repositories.noBranches": "暂无可用的缓存分支",
+  "repositories.branches.remote": "远端分支",
+  "repositories.branches.imported": "迁移时保留的本地分支",
+  "repositories.branches.local": "本地分支",
+  "repositories.importedSnapshotHelp": "这是来源迁移时保留的分支快照，包含未推送分支。原目录中后续产生的提交不会自动同步。",
+  "repositories.useDefault": "使用默认分支",
+  "models.conflict": "若配置已在其他地方修改，请重新加载后再保存。当前草稿已保留。",
+  "contextUsageBadge.used": "% 已使用",
+  "conversationTimeline.questionExpired": "问题已过期"
 };

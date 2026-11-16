@@ -1277,6 +1277,19 @@ export const en = {
   "messageFiles.attachmentsCanTotalAtMost20MibPer": "Attachments can total at most 20 MiB per message.",
   "messageFiles.invalidAttachments": "Invalid attachments.",
   "messageFiles.invalidAttachment": "Invalid attachment.",
-  "messageFiles.invalidAttachmentData": "Invalid attachment data."
+  "messageFiles.invalidAttachmentData": "Invalid attachment data.",
+  // Referenced by mobile/.
+  "repositories.chooseBranch": "Choose an existing branch",
+  "repositories.hideBranches": "Hide branch choices",
+  "repositories.loadingBranches": "Loading cached branches…",
+  "repositories.noBranches": "No cached branches available",
+  "repositories.branches.remote": "Remote branches",
+  "repositories.branches.imported": "Local branches saved during migration",
+  "repositories.branches.local": "Local branches",
+  "repositories.importedSnapshotHelp": "Saved when this source was migrated, including unpublished branches. Later commits in the original checkout are not synchronized automatically.",
+  "repositories.useDefault": "Use default branch",
+  "models.conflict": "If the configuration changed elsewhere, reload before saving. Your draft has been kept.",
+  "contextUsageBadge.used": "% used",
+  "conversationTimeline.questionExpired": "Question expired"
 } as const;
 export type MessageKey = keyof typeof en;
