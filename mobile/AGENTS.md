@@ -10,3 +10,4 @@
 - iOS export on Linux proves bundle construction, not native compilation or device behavior. Record that distinction.
 - For screen or composer changes, run the fixture preview and browser smoke in `tests/preview/README.md`, then inspect populated-page screenshots at a phone viewport. Export or empty-state screenshots alone are insufficient. Store screenshots and per-run reports outside the repository.
 - UI: read the "Interaction" and "UI structure" sections of `../docs/mobile-architecture.md` first. Use `src/theme.ts` tokens and the `components/ui.tsx` primitives (`Action`, `ListGroup`/`ListRow`, `Chip`, `EmptyState`) instead of literal colors or one-off row styles. One primary action per screen; show current values on controls rather than bare icons.
+- i18n keys referenced only by mobile live in the shared catalogs. Before deleting "unused" keys, search `mobile/src` too.

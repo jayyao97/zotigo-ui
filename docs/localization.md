@@ -14,6 +14,7 @@ iPad also shares Desktop’s sidebar width limits (240–480 pt, leaving at leas
 - A component that reads translated text calls `useLocale()` to subscribe to language changes, including memoized components. Keep translated text out of module initialization and memoized results without a locale dependency. Pure formatting helpers can call `t()` at invocation time.
 - Include accessibility labels, button titles, empty states, validation messages and notifications. JSX copy is checked by `tests/i18n.test.tsx`; procedural strings need review too.
 - Keep wire values, IDs, URLs, paths, model names, code, user/assistant messages, and provider output unchanged. A translated select option needs an explicit stable `value`. UI-owned labels for protocol states use `stateLabel`; unknown values remain visible for diagnosis.
+- The catalogs are shared with `mobile/`. Before removing a key as unreferenced, also search `mobile/src`.
 - Date/time formatters use `getLocale()`. UI language must not change API payloads, automatic approval prompts, user drafts or translation target settings.
 
 Errors received from a daemon or provider remain their original diagnostic text. Existing transient notifications retain the language in which they were emitted; subsequent notifications use the selected language. OS-provided Electron menus and native dialogs follow the OS language.
