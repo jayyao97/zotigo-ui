@@ -15,6 +15,7 @@ test("Chinese UI formats shared activity without changing model identity or prov
     setLocale("zh-CN");
     const start = "2026-10-24T00:00:00Z";
     assert.equal(formatElapsed(start, Date.parse(start) + 62000), "1分 2秒");
+    assert.equal(formatElapsed(start, Date.parse(start) + 3900000), "1小时 5分");
     assert.equal(stateLabel("running"), "运行中");
     assert.equal(stateLabel("provider_custom_state"), "provider_custom_state");
     assert.equal(t("mobile.useValue", { p0: "Custom model {name}" }), "使用 Custom model {name}");

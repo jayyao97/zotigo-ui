@@ -1290,6 +1290,8 @@ export const en = {
   "repositories.useDefault": "Use default branch",
   "models.conflict": "If the configuration changed elsewhere, reload before saving. Your draft has been kept.",
   "contextUsageBadge.used": "% used",
-  "conversationTimeline.questionExpired": "Question expired"
+  "conversationTimeline.questionExpired": "Question expired",
+  "time.hoursMinutes": "{hours}h {minutes}m",
+  "time.hours": "{count}h"
 } as const;
 export type MessageKey = keyof typeof en;
