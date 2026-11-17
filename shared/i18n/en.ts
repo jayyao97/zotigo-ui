@@ -1418,6 +1418,7 @@ export const en = {
   "mobileUi.removeDevice": "Remove device",
   "mobileUi.goToPath": "Go to path",
   "mobileUi.unsaved": "Unsaved",
-  "mobileUi.manageWorkspace": "Manage workspace"
+  "mobileUi.manageWorkspace": "Manage workspace",
+  "mobileUi.lastKnownUsage": "last known usage"
 } as const;
 export type MessageKey = keyof typeof en;

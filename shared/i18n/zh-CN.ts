@@ -1417,5 +1417,6 @@ export const zhCN: Record<MessageKey, Message> = {
   "mobileUi.removeDevice": "移除设备",
   "mobileUi.goToPath": "前往路径",
   "mobileUi.unsaved": "未保存",
-  "mobileUi.manageWorkspace": "管理工作区"
+  "mobileUi.manageWorkspace": "管理工作区",
+  "mobileUi.lastKnownUsage": "上次已知用量"
 };
