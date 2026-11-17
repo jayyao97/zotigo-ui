@@ -35,6 +35,15 @@ test("turn elapsed time handles invalid clocks and minute boundaries", () => {
   );
   assert.equal(formatElapsed("invalid", Date.now()), "0s");
 });
+test("turn elapsed time rolls minutes into hours and drops seconds past an hour", () => {
+  const start = "2026-01-01T00:00:00Z";
+  const after = (seconds: number) => formatElapsed(start, Date.parse(start) + seconds * 1000);
+  assert.equal(after(59 * 60 + 59), "59m 59s");
+  assert.equal(after(60 * 60), "1h");
+  assert.equal(after(60 * 60 + 59), "1h");
+  assert.equal(after(2 * 3600 + 5 * 60 + 9), "2h 5m");
+  assert.equal(after(52861 * 60 + 34), "881h 1m");
+});
 test("resolved approvals stay quiet, denied tools and questions have readable labels", () => {
   const item = {
     type: "approval_decision",

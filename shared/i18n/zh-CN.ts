@@ -1369,5 +1369,7 @@ export const zhCN: Record<MessageKey, Message> = {
   "repositories.useDefault": "使用默认分支",
   "models.conflict": "若配置已在其他地方修改，请重新加载后再保存。当前草稿已保留。",
   "contextUsageBadge.used": "% 已使用",
-  "conversationTimeline.questionExpired": "问题已过期"
+  "conversationTimeline.questionExpired": "问题已过期",
+  "time.hoursMinutes": "{hours}小时 {minutes}分",
+  "time.hours": "{count}小时"
 };
