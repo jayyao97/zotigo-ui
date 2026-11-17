@@ -69,14 +69,39 @@ try {
   await call('Page.navigate', { url: address });
   await call('Page.bringToFront');
   await wait(`typeof __ZOTIGO_PREVIEW__ !== 'undefined'`);
-  await bodyIncludes('Home Mac Studio'); await shot('01-home-device-picker');
+  // The fixture remembers Home as the last device, so launch connects directly.
+  await bodyIncludes('Home: Multi-host mobile architecture'); await shot('01-home');
+  checks.push('Last-used device connects on launch and Home renders populated data');
+  await click('Switch device'); await bodyIncludes('Work Linux'); await shot('01b-device-switcher');
   await click('Add device'); await bodyIncludes('Daemon address'); await click('Cancel');
-  await click('Settings'); await click('Devices'); await bodyIncludes('DAEMONS');
-  await back(); await back();
-  checks.push('Home add flow cancels back; device configuration is reachable through Settings');
-  await click('Home Mac Studio'); await bodyIncludes('Home: Multi-host mobile architecture'); await shot('02-home'); checks.push('Fixture host connects and real Home renders populated data');
+  await click('Settings'); await bodyIncludes('Model profiles'); await shot('02-settings');
+  await click('Home Mac Studio'); await bodyIncludes('Choose where you want to work.');
+  await click('Edit Work Linux'); await bodyIncludes('Remove device'); await shot('02a-edit-device');
+  // A half-typed address must leave the form usable and explain itself on save.
+  await input('Daemon address', 'not a url'); await bodyIncludes('Save device');
+  await click('Save device'); await wait(`[...document.querySelectorAll('[role="alert"]')].some(e => e.getClientRects().length && e.textContent.trim())`, 'invalid address is reported');
+  await click('Cancel');
+  await back();
+  // Each Settings row leads to a screen titled with the same words.
+  for (const row of ['Model profiles', 'Favorite models', 'Runtime status']) {
+    await click(row);
+    await wait(`[...document.querySelectorAll('[role="heading"]')].some(e => e.getClientRects().length && e.textContent.trim() === ${JSON.stringify(row)})`, 'screen titled ' + row);
+    await back();
+  }
+  await click('Files'); await click('README.md'); await wait(`document.querySelector('[aria-label="File content"]')?.value.includes('export function connect')`, 'file opens in the editor');
+  await click('Parent directory'); await bodyIncludes('preview.png'); await shot('02a-files'); await back();
+  await back();
+  checks.push('Device switcher offers add/manage; Settings rows match their destination titles; devices and files use list rows');
+  const recent = await evaluate(`(() => { const all = ${visibleButtons}; const from = all.findIndex(e => e.getAttribute('aria-label') === 'Collapse Recent'); const to = all.findIndex(e => e.getAttribute('aria-label') === 'Collapse Projects'); return { from, to, rows: all.slice(from + 1, to).map(e => e.innerText.split(String.fromCharCode(10)).join(' | ')) }; })()`);
+  assert.ok(recent.from >= 0 && recent.to > recent.from, 'Recent comes before Projects');
+  assert.ok(recent.rows[0].startsWith('Review daemon API contracts | Zotigo Mobile · iOS client · feature/mobile'), 'Recent names the project and workspace: ' + recent.rows[0]);
+  assert.ok(recent.rows.some(row => /\| 25m$/.test(row)) && recent.rows.some(row => /\| 3h$/.test(row)), 'Read conversations show a compact age: ' + recent.rows.join(' / '));
+  assert.ok(recent.rows.some(row => row.startsWith('Home: Fix keyboard safe-area handling · 4 | 1d')), 'Conversations outside projects are listed too');
+  assert.ok(recent.rows.at(-1).startsWith('Show '), 'Recent is a short preview with a way to see more');
+  assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'New project')`), true, 'New project is reachable from Home');
+  checks.push('Home lists recent conversations across projects first, with location, age and a bounded preview');
   await click('Collapse Zotigo Mobile');
-  assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'New session in iOS client · feature/mobile')`), false);
+  assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'New conversation in iOS client · feature/mobile')`), false);
   await shot('02b-project-collapsed');
   await click('Expand Zotigo Mobile'); await click('Collapse iOS client · feature/mobile');
   assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'Expand iOS client · feature/mobile')`), true);
@@ -84,7 +109,7 @@ try {
   assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'Expand iOS client · feature/mobile')`), true);
   await click('Expand iOS client · feature/mobile'); await shot('02c-tree-expanded');
   checks.push('Project and workspace branches collapse independently and retain nested state');
-  await click('Manage Zotigo Mobile'); await bodyIncludes('iOS client · feature/mobile'); await shot('03-project');
+  await click('Zotigo Mobile options'); await bodyIncludes('iOS client · feature/mobile'); await shot('03-project');
   await click('iOS client · feature/mobile'); await bodyIncludes('Home: Multi-host mobile architecture'); await shot('04-workspace'); checks.push('Project and workspace navigation retain scoped session list');
   await click('Home: Multi-host mobile architecture');
   await wait(`__ZOTIGO_PREVIEW__.snapshot('home').activeStreams === 1`);
@@ -101,9 +126,9 @@ try {
   await delay(700); assert.ok(await evaluate(`(${distance}) < 100`), 'Late layout retains latest position');
   await shot('05b-jump-latest'); checks.push('Pagination exits follow mode; Jump to latest reaches and retains bottom after delayed layout');
   await click('Ran pnpm test && git diff --stat'); await bodyIncludes('Tests: 28 passed');
-  assert.ok(await evaluate(`(() => { const e = ${visibleButtons}.find(e => e.textContent.trim() === 'exec_command'); const label = [...e.children].find(c => c.textContent === 'exec_command'); const arrow = [...e.querySelectorAll('svg')].at(-1); return arrow.getBoundingClientRect().left - label.getBoundingClientRect().right < 12; })()`), 'Tool disclosure stays beside its title');
-  await call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 190, y: 350, deltaX: 0, deltaY: -250 });
-  await evaluate(`${visibleButtons}.find(e => e.textContent.trim() === 'exec_command').scrollIntoView({block:'center'})`);
+  const toolTitle = `${visibleButtons}.find(e => e.textContent.trim().startsWith('$ pnpm test'))`;
+  assert.ok(await evaluate(`!!${toolTitle}`), 'Expanded tool shows its command');
+  await evaluate(`${toolTitle}.scrollIntoView({block:'center'})`);
   await shot('06-tool-result'); checks.push('Real conversation renders rich history and expandable tool result');
   await click('Wrap');
   await bodyIncludes('const client = new DaemonClient(connection, fetch);');
@@ -113,15 +138,20 @@ try {
   checks.push('Fenced code has a native block with wrap/copy; Mermaid opens its offline diagram viewer');
   assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'Select message text')`), false, 'No per-message source-selection buttons');
   checks.push('Inline native selection replaces source-sheet buttons; iOS menu actions require native verification');
-  await click('Jump to latest');
+  if (await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'Jump to latest')`)) await click('Jump to latest');
   await wait(`!!document.querySelector('img[alt="Conversation attachment"]') || [...document.querySelectorAll('[role="img"]')].some(e => e.getAttribute('aria-label') === 'Conversation attachment')`, 'fixture image rendered'); await shot('07-attachment');
-  await click('Attach photo');
-  await wait(`!!document.querySelector('input[type="file"]')`, 'photo-picker input');
+  // Headless Chrome opens the picker immediately; intercept the hidden input before it is clicked.
+  await call('Page.setInterceptFileChooserDialog', { enabled: true });
+  const chooser = new Promise((resolve) => socket.addEventListener('message', function listener({ data }) {
+    const message = JSON.parse(String(data));
+    if (message.method === 'Page.fileChooserOpened') { socket.removeEventListener('message', listener); resolve(message.params); }
+  }));
+  await click('Attach'); await click('Photo library');
+  const { backendNodeId } = await chooser;
   // A real browser-encoded JPEG intentionally bears a .png filename, reproducing picker metadata mismatch.
   const jpeg = await evaluate(`(() => { const c=document.createElement('canvas');c.width=240;c.height=140;const x=c.getContext('2d');x.fillStyle='#303030';x.fillRect(0,0,240,140);x.fillStyle='#77b7ff';x.fillRect(20,20,200,60);x.fillStyle='white';x.font='16px sans-serif';x.fillText('JPEG bytes / PNG name',20,115);return c.toDataURL('image/jpeg').split(',')[1];})()`);
   const upload = path.join(output, 'jpeg-bytes-named-png.png'); await fs.writeFile(upload, Buffer.from(jpeg, 'base64'));
-  const { root } = await call('DOM.getDocument'); const { nodeId } = await call('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' });
-  await call('DOM.setFileInputFiles', { nodeId, files: [upload] });
+  await call('DOM.setFileInputFiles', { backendNodeId, files: [upload] });
   await wait(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'Remove image 1')`, 'attached image');
   await input('Message', 'Verify the uploaded screenshot and host isolation.');
   await evaluate(`__ZOTIGO_PREVIEW__.fault('home','send-rejected')`); await click('Send'); await bodyIncludes('Fixture: message rejected.');
@@ -134,13 +164,19 @@ try {
   assert.equal(submission.body.images[0].mime_type, 'image/jpeg'); assert.ok(submission.body.client_message_id); assert.equal(submission.body.text, 'Verify the uploaded screenshot and host isolation.');
   await wait(`document.querySelector('[aria-label="Message"]').value === ''`); await delay(1200); await shot('09-send-complete'); checks.push('Actual uploaded JPEG bytes are sent as image/jpeg with a durable client message ID; accepted draft clears');
   await back(); await wait(`__ZOTIGO_PREVIEW__.snapshot('home').activeStreams === 0`); checks.push('Leaving conversation releases its event stream');
-  await back(); await back(); await click('Switch device: Work Linux');
+  await back(); await back(); await click('Switch device'); await click('Switch device: Work Linux');
   await bodyIncludes('Work: Multi-host mobile architecture'); await shot('10-work-host');
   await click('Work: Multi-host mobile architecture'); await wait(`__ZOTIGO_PREVIEW__.snapshot('work').activeStreams === 1`);
   assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.snapshot('work').lastSubmission ?? null`), null);
   assert.equal(await evaluate(`document.querySelector('[aria-label="Message"]').value`), '');
   assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.snapshot('home').activeStreams`), 0);
   await shot('11-work-conversation'); checks.push('Same session ID on Work has no Home submission/draft and Home stream remains closed');
+  const saveDisabled = `${visibleButtons}.find(e => e.textContent.trim() === 'Save')?.getAttribute('aria-disabled')`;
+  await click('Conversation details'); await wait(`${saveDisabled} === 'true'`, 'Save disabled for an unchanged title');
+  await input('Rename conversation', 'Work: renamed in smoke'); await wait(`${saveDisabled} !== 'true'`, 'Save enabled for an edit');
+  await click('Save'); await wait(`${saveDisabled} === 'true'`, 'Save disabled again once saved');
+  await bodyIncludes('Work: renamed in smoke'); await click('Dismiss sheet');
+  checks.push('Rename offers Save only while the title differs from what is saved');
   const streamedMarkdown = '![Streaming image](/sessions/session-shared/images/preview)\n\n```ts\nconst stable = true;\n```\n\nStreaming stability check: ';
   await evaluate('__ZOTIGO_PREVIEW__.appendMarkdown("work", ' + JSON.stringify(streamedMarkdown) + ')');
   await delay(900);

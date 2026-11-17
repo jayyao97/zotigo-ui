@@ -5,6 +5,11 @@ import type {
   CatalogWorkspace,
   CatalogSessionProjection,
 } from "@zotigo/shared/zotigod";
+import { sessionActivity } from "./relativeTime";
+
+/** Sessions shown under a workspace or in Recent before "Show more". */
+export const WORKSPACE_PREVIEW = 5;
+export const RECENT_PREVIEW = 6;
 export function sessionId(item: CatalogSessionProjection): string {
   return item.organization?.session_id ?? item.runtime?.id ?? "";
 }
@@ -43,20 +48,15 @@ export function visibleSessions(
         (a.organization?.workspace_position ?? Number.MAX_SAFE_INTEGER) -
         (b.organization?.workspace_position ?? Number.MAX_SAFE_INTEGER);
       if (position) return position;
-      const date = (item: CatalogSessionProjection) =>
-        [
-          item.runtime?.updated_at,
-          item.organization?.updated_at,
-          item.runtime?.created_at,
-        ]
-          .filter((value): value is string => !!value)
-          .sort()
-          .at(-1) ?? "";
-      return (
-        date(b).localeCompare(date(a)) ||
-        sessionId(a).localeCompare(sessionId(b))
-      );
+      return byRecency(a, b);
     });
+}
+
+function byRecency(a: CatalogSessionProjection, b: CatalogSessionProjection) {
+  return (
+    sessionActivity(b).localeCompare(sessionActivity(a)) ||
+    sessionId(a).localeCompare(sessionId(b))
+  );
 }
 
 /** Compact display only; requests always retain the original daemon path. */
@@ -84,11 +84,14 @@ export type CatalogRow =
       key: string;
       value: CatalogSessionProjection;
       depth: number;
+      /** Where the session lives; only set where the tree does not already show it. */
+      context?: string;
     }
   | {
       kind: "more";
       key: string;
-      workspaceKey: string;
+      /** Key in the `expanded` set: a workspace key or "recent". */
+      group: string;
       expanded: boolean;
       remaining: number;
       depth: number;
@@ -202,7 +205,9 @@ export function catalogRows(
           matchingSessions.has(sessionId(s))),
     );
     const shown =
-      search || expanded.has(workspaceKey) ? children : children.slice(0, 5);
+      search || expanded.has(workspaceKey)
+        ? children
+        : children.slice(0, WORKSPACE_PREVIEW);
     for (const value of shown)
       result.push({
         kind: "session",
@@ -210,22 +215,16 @@ export function catalogRows(
         value,
         depth: depth + 1,
       });
-    if (!search && children.length > 5)
+    if (!search && children.length > WORKSPACE_PREVIEW)
       result.push({
         kind: "more",
         key: workspaceKey + ":more",
-        workspaceKey,
+        group: workspaceKey,
         expanded: expanded.has(workspaceKey),
-        remaining: children.length - 5,
+        remaining: children.length - WORKSPACE_PREVIEW,
         depth: depth + 1,
       });
-    if (!children.length)
-      result.push({
-        kind: "notice",
-        key: `${workspaceKey}:empty`,
-        title: t("mobile.noActiveConversations"),
-        depth: depth + 1,
-      });
+    // Empty workspaces show no placeholder row; the row's compose button is the call to action.
     return result;
   };
   const pinnedWorkspaceIds = new Set(
@@ -309,35 +308,77 @@ export function catalogRows(
       )
         rows.push(...workspaceRows(workspace, false, 0));
     }
-  const projectRows = projects.filter(project => !pins.some(pin => pin.kind === "project" && pin.id === project.id)).flatMap(projectBranch);
-  if (projectRows.length) {
+  const assigned = new Set(
+    activeWorkspaces
+      .filter((w) => projects.some((p) => p.id === w.project_id))
+      .map((w) => w.id),
+  );
+  // Recent comes before the tree: continuing a conversation should not need
+  // the user to remember which project and workspace it lives in. While
+  // searching, the tree already reveals matches, so only list what it cannot.
+  const recent = sessions
+    .filter(
+      (s) =>
+        !pinnedSessionIds.has(sessionId(s)) &&
+        matchingSessions.has(sessionId(s)) &&
+        (!search || !assigned.has(s.organization?.workspace_id ?? "")),
+    )
+    .sort(byRecency);
+  if (recent.length) {
+    rows.push({
+      kind: "heading",
+      key: "recent",
+      title: t("mobileUi.recent"),
+      open: open("recent"),
+    });
+    if (open("recent")) {
+      const all = !!search || expanded.has("recent");
+      for (const value of all ? recent : recent.slice(0, RECENT_PREVIEW)) {
+        const workspace = activeWorkspaces.find(
+          (w) => w.id === value.organization?.workspace_id,
+        );
+        const project = projects.find((p) => p.id === workspace?.project_id);
+        rows.push({
+          kind: "session",
+          key: `recent:${sessionId(value)}`,
+          value,
+          depth: 0,
+          context: project && workspace ? `${project.name} · ${workspace.title}` : undefined,
+        });
+      }
+      if (!search && recent.length > RECENT_PREVIEW)
+        rows.push({
+          kind: "more",
+          key: "recent:more",
+          group: "recent",
+          expanded: expanded.has("recent"),
+          remaining: recent.length - RECENT_PREVIEW,
+          depth: 0,
+        });
+    }
+  }
+  const projectRows = projects
+    .filter((project) => !pins.some((pin) => pin.kind === "project" && pin.id === project.id))
+    .flatMap(projectBranch);
+  // The heading carries "New project", so it stays even with nothing under it.
+  // Nothing at all returns no rows so Home can show its empty state instead.
+  if (projectRows.length || (!search && rows.length)) {
     rows.push({
       kind: "heading",
       key: "projects",
       title: t("app.projects"),
       open: open("projects"),
     });
-    if (open("projects")) rows.push(...projectRows);
-  }
-  const assigned = new Set(
-    activeWorkspaces
-      .filter((w) => projects.some((p) => p.id === w.project_id))
-      .map((w) => w.id),
-  );
-  const recent = sessions.filter(
-    (s) =>
-      !pinnedSessionIds.has(sessionId(s)) &&
-      !assigned.has(s.organization?.workspace_id ?? "") &&
-      matchingSessions.has(sessionId(s)),
-  );
-  if (recent.length) {
-    rows.push({
-      kind: "heading",
-      key: "recent",
-      title: t("searchPalette.recentSessions"),
-      open: open("recent"),
-    });
-    if (open("recent")) addSessions(recent, "recent", false);
+    if (open("projects")) {
+      rows.push(...projectRows);
+      if (!projectRows.length)
+        rows.push({
+          kind: "notice",
+          key: "projects:empty",
+          title: projects.length ? t("mobileUi.allProjectsPinned") : t("app.noProjectsYet"),
+          depth: 0,
+        });
+    }
   }
   return rows;
 }

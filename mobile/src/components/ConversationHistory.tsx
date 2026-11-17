@@ -13,7 +13,7 @@ import {
 import type { SelectionAction } from "../core/selectionRuns";
 import { BottomSheet } from "./BottomSheet";
 import { MessageCard } from "./MessageCard";
-import { Action, Notice, Row, TextField, errorText, styles } from "./ui";
+import { Action, ListRow, Notice, TextField, errorText, styles } from "./ui";
 
 // Historical windows remain separate from the live timeline and its SSE cursor.
 export function ConversationHistory({
@@ -141,7 +141,7 @@ export function ConversationHistory({
             ) : null
           }
           renderItem={({ item: hit }) => (
-            <Row
+            <ListRow
               title={t("mobile.messageValue", {p0: hit.sequence})}
               subtitle={
                 messageText(items.find((item) => item.id === hit.id)).slice(

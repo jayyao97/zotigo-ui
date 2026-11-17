@@ -1,14 +1,14 @@
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
 import { useState } from "react";
-import { FlatList, Image, Text, View } from "react-native";
+import { FlatList, Image, Text } from "react-native";
 import FileIcon from "lucide-react-native/icons/file";
 import X from "lucide-react-native/icons/x";
 import type { DraftFile } from "../core/attachments";
 import { decodedBase64Size } from "@zotigo/shared/messageImages";
 import { BottomSheet } from "./BottomSheet";
 import { VideoPreview } from "./VideoPreview";
-import { IconButton, Row, Notice, styles } from "./ui";
+import { IconButton, ListRow, Notice, colors, styles } from "./ui";
 export function AttachmentFiles({
   files,
   disabled,
@@ -46,22 +46,22 @@ export function AttachmentFiles({
         keyExtractor={(_, index) => String(index)}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item, index }) => (
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <FileIcon size={18} color="#aaa" />
-            <View style={{ flex: 1 }}>
-              <Row
-                title={item.name}
-                subtitle={`${Math.ceil(decodedBase64Size(item.data_base64) / 1024)} KiB · ${item.path ? t("mobile.uploaded") : t("mobile.readyToUpload")}`}
-                onPress={() => setPreview(item)}
+          <ListRow
+            icon={FileIcon}
+            title={item.name}
+            subtitle={`${Math.ceil(decodedBase64Size(item.data_base64) / 1024)} KiB · ${item.path ? t("mobile.uploaded") : t("mobile.readyToUpload")}`}
+            chevron={false}
+            onPress={() => setPreview(item)}
+            accessory={
+              <IconButton
+                icon={X}
+                color={colors.muted}
+                label={t("app.remove", {p0: item.name})}
+                disabled={disabled}
+                onPress={() => onRemove(index)}
               />
-            </View>
-            <IconButton
-              icon={X}
-              label={t("app.remove", {p0: item.name})}
-              disabled={disabled}
-              onPress={() => onRemove(index)}
-            />
-          </View>
+            }
+          />
         )}
       />
       <BottomSheet

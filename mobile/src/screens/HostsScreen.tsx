@@ -2,31 +2,45 @@ import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Modal, Text, View } from "react-native";
+import Check from "lucide-react-native/icons/check";
+import Monitor from "lucide-react-native/icons/monitor";
+import Pencil from "lucide-react-native/icons/pencil";
+import Plus from "lucide-react-native/icons/plus";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
 import type { DaemonClient, Host } from "../core/client";
-import { normalizeAddress } from "../core/client";
+import { addressOrigin, normalizeAddress } from "../core/client";
 import { hosts, storage } from "../platform/storage";
 import { createDaemon } from "../platform/client";
 import {
   Action,
+  colors,
   errorText,
+  IconButton,
+  ListGroup,
+  ListRow,
   Loading,
   Notice,
-  Row,
   Screen,
   Section,
+  space,
   styles,
   TextField,
 } from "../components/ui";
 
+/**
+ * Devices: tap a device to switch to it (same as the Home switcher); the
+ * pencil opens its form, which is also where a device is removed.
+ */
 export function HostsScreen({
   onConnect,
+  currentId,
   addOnly = false,
   onClose,
   onChanged,
 }: {
   onConnect: (client: DaemonClient) => void;
+  currentId?: string;
   addOnly?: boolean;
   onClose?: () => void;
   onChanged?: (id: string) => void;
@@ -44,6 +58,8 @@ export function HostsScreen({
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [token, setToken] = useState("");
+  const [tested, setTested] = useState(false);
+  const [connecting, setConnecting] = useState<string>();
   const pending = useRef<DaemonClient | null>(null);
   useEffect(() => {
     let alive = true;
@@ -87,10 +103,20 @@ export function HostsScreen({
       setName(host?.name ?? "");
       setAddress(host?.baseUrl ?? "");
       setToken(host ? ((await hosts.savedToken(host.id)) ?? "") : "");
+      setTested(false);
       setEditing(host);
     });
   }
+  function close() {
+    setEditing(undefined);
+    setToken("");
+    setTested(false);
+    setError("");
+    if (addOnly) onClose?.();
+  }
   function connect(host: Host) {
+    if (host.id === currentId) return;
+    setConnecting(host.id);
     void run(async () => {
       const connection = await hosts.connection(host);
       if (!mounted.current) return;
@@ -114,71 +140,56 @@ export function HostsScreen({
         pending.current = null;
         throw e;
       }
+    }).finally(() => {
+      if (mounted.current) setConnecting(undefined);
     });
   }
+  // Half-typed addresses are normal here, so rendering must not validate by throwing.
+  const origin = addressOrigin(address);
+  const movesDevice = !!editing && origin !== undefined && origin !== editing.baseUrl;
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <Screen>
         {!addOnly && (
           <>
-            <Text style={styles.title}>{t("mobile.devices")}</Text>
-            <Notice text={t("mobile.chooseWhereYouWantToWork")} />
             {!ready && <Loading />}
-            <Notice text={error} error />
-            <Section title={t("mobile.dAEMONS")}>
-              {list.map((host) => (
-                <View key={host.id} style={{ gap: 4 }}>
-                  <Row
-                    title={host.name}
-                    subtitle={host.baseUrl}
-                    onPress={() => {
-                      if (!busy) connect(host);
-                    }}
-                  />
-                  <View style={{ flexDirection: "row" }}>
-                    <Action
-                      label={t("mobile.edit")}
-                      secondary
-                      disabled={busy}
-                      onPress={() => edit(host)}
-                    />
-                    <Action
-                      label={t("favoriteModelSettings.remove")}
-                      secondary
-                      danger
-                      disabled={busy}
-                      onPress={() =>
-                        Alert.alert(
-                          t("mobile.removeDevice"),
-                          t("mobile.projectsAndSessionsOnTheDaemonAreKept"),
-                          [
-                            { text: t("app.cancel"), style: "cancel" },
-                            {
-                              text: t("favoriteModelSettings.remove"),
-                              style: "destructive",
-                              onPress: () =>
-                                void run(async () => {
-                                  await hosts.remove(host.id);
-                                  setList(await hosts.list());
-                                  onChanged?.(host.id);
-                                }),
-                            },
-                          ],
-                        )
-                      }
-                    />
-                  </View>
-                </View>
-              ))}
-            </Section>
+            {editing === undefined && <Notice text={error} error />}
             {ready && !list.length && (
               <Notice text={t("mobile.addYourFirstDeviceUsingItsDaemonAddressAndToken")} />
             )}
-            <Action
-              label={busy ? t("webApp.connecting") : t("mobile.addDevice")}
-              disabled={busy}
-              onPress={() => edit(null)}
-            />
+            <Section footer={list.length ? t("mobile.chooseWhereYouWantToWork") : undefined}>
+              <ListGroup>
+                {list.map((host) => (
+                  <ListRow
+                    key={host.id}
+                    icon={Monitor}
+                    title={host.name}
+                    subtitle={connecting === host.id ? t("webApp.connecting") : host.baseUrl}
+                    accessibilityLabel={t("mobile.switchDeviceValue", { p0: host.name })}
+                    chevron={false}
+                    disabled={busy}
+                    onPress={() => connect(host)}
+                    right={host.id === currentId ? <Check size={18} color={colors.accent} /> : undefined}
+                    accessory={
+                      <IconButton
+                        icon={Pencil}
+                        color={colors.muted}
+                        label={t("mobileUi.editNamed", { name: host.name })}
+                        disabled={busy}
+                        onPress={() => edit(host)}
+                      />
+                    }
+                  />
+                ))}
+                <ListRow
+                  icon={Plus}
+                  title={t("mobile.addDevice")}
+                  chevron={false}
+                  disabled={busy}
+                  onPress={() => edit(null)}
+                />
+              </ListGroup>
+            </Section>
           </>
         )}
         <Modal
@@ -186,17 +197,17 @@ export function HostsScreen({
           animationType="slide"
           presentationStyle="pageSheet"
           onRequestClose={() => {
-            if (!busy) {
-              setEditing(undefined);
-              if (addOnly) onClose?.();
-            }
+            if (!busy) close();
           }}
         >
           <SafeAreaView style={styles.screen}>
             <Screen>
-              <Text style={styles.title}>
-                {editing ? t("mobile.editDevice") : t("mobile.addDevice")}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text accessibilityRole="header" style={styles.title}>
+                  {editing ? t("mobile.editDevice") : t("mobile.addDevice")}
+                </Text>
+                <Action label={t("app.cancel")} secondary disabled={busy} onPress={close} />
+              </View>
               <TextField
                 label={t("hostShell.name")}
                 value={name}
@@ -206,75 +217,107 @@ export function HostsScreen({
               <TextField
                 label={t("hostShell.daemonAddress")}
                 value={address}
-                onChangeText={setAddress}
+                onChangeText={(value) => {
+                  setAddress(value);
+                  setTested(false);
+                }}
                 placeholder="http://100.64.0.1:8766"
                 keyboardType="url"
+                help={
+                  movesDevice
+                    ? t("mobile.changingTheAddressAddsASeparateDeviceTheOldDeviceAndItsDraftsAreKept")
+                    : undefined
+                }
               />
               <TextField
                 label={t("hostShell.daemonToken")}
                 value={token}
-                onChangeText={setToken}
+                onChangeText={(value) => {
+                  setToken(value);
+                  setTested(false);
+                }}
                 secureTextEntry
               />
               <Notice text={error} error />
-              {editing && editing.baseUrl !== address && (
-                <Notice text={t("mobile.changingTheAddressAddsASeparateDeviceTheOldDeviceAndItsDraftsAreKept")} />
-              )}
-              <Action
-                label={t("mobile.testConnection")}
-                disabled={busy || !address.trim()}
-                onPress={() =>
-                  void run(async () => {
-                    const client = createDaemon({
-                      id: "test",
-                      name,
-                      baseUrl: normalizeAddress(address),
-                      token: token.trim(),
-                    });
-                    pending.current = client;
-                    try {
-                      await client.health();
-                      Alert.alert("Connected", name || address);
-                    } finally {
-                      client.dispose();
-                      pending.current = null;
-                    }
-                  })
-                }
-              />
-              <Action
-                label={t("mobile.saveDevice")}
-                disabled={busy || !name.trim() || !address.trim()}
-                onPress={() =>
-                  void run(async () => {
-                    const sameDevice =
-                      editing && editing.baseUrl === normalizeAddress(address);
-                    await hosts.save(
-                      {
-                        id: sameDevice ? editing.id : randomUUID(),
+              <Notice text={tested ? t("models.success") : ""} />
+              <View style={{ gap: space.sm, marginTop: space.sm }}>
+                <Action
+                  primary
+                  block
+                  label={t("mobile.saveDevice")}
+                  disabled={busy || !name.trim() || !address.trim()}
+                  onPress={() =>
+                    void run(async () => {
+                      // Throws for an invalid address; `run` shows the message.
+                      const sameDevice = !!editing && editing.baseUrl === normalizeAddress(address);
+                      await hosts.save(
+                        {
+                          id: sameDevice ? editing.id : randomUUID(),
+                          name,
+                          baseUrl: address,
+                        },
+                        token,
+                      );
+                      setList(await hosts.list());
+                      if (sameDevice) onChanged?.(editing.id);
+                      close();
+                    })
+                  }
+                />
+                <Action
+                  block
+                  label={t("mobile.testConnection")}
+                  disabled={busy || !address.trim()}
+                  onPress={() => {
+                    setTested(false);
+                    void run(async () => {
+                      const client = createDaemon({
+                        id: "test",
                         name,
-                        baseUrl: address,
-                      },
-                      token,
-                    );
-                    setList(await hosts.list());
-                    setEditing(undefined);
-                    setToken("");
-                    if (sameDevice) onChanged?.(editing.id);
-                    if (addOnly) onClose?.();
-                  })
-                }
-              />
-              <Action
-                label={t("app.cancel")}
-                secondary
-                disabled={busy}
-                onPress={() => {
-                  setEditing(undefined);
-                  setToken("");
-                  if (addOnly) onClose?.();
-                }}
-              />
+                        baseUrl: normalizeAddress(address),
+                        token: token.trim(),
+                      });
+                      pending.current = client;
+                      try {
+                        await client.health();
+                        if (mounted.current) setTested(true);
+                      } finally {
+                        client.dispose();
+                        pending.current = null;
+                      }
+                    });
+                  }}
+                />
+              </View>
+              {editing && (
+                <ListGroup style={{ marginTop: space.lg }}>
+                  <ListRow
+                    danger
+                    title={t("mobileUi.removeDevice")}
+                    disabled={busy}
+                    onPress={() =>
+                      Alert.alert(
+                        t("mobile.removeDevice"),
+                        t("mobile.projectsAndSessionsOnTheDaemonAreKept"),
+                        [
+                          { text: t("app.cancel"), style: "cancel" },
+                          {
+                            text: t("favoriteModelSettings.remove"),
+                            style: "destructive",
+                            onPress: () =>
+                              void run(async () => {
+                                await hosts.remove(editing.id);
+                                setList(await hosts.list());
+                                onChanged?.(editing.id);
+                                close();
+                              }),
+                          },
+                        ],
+                      )
+                    }
+                  />
+                </ListGroup>
+              )}
             </Screen>
           </SafeAreaView>
         </Modal>

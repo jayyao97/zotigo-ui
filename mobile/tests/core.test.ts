@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DaemonClient, ApiError, normalizeAddress } from "../src/core/client";
+import { DaemonClient, ApiError, addressOrigin, normalizeAddress } from "../src/core/client";
 import { HostStore, type Storage } from "../src/core/hosts";
 import { EventDecoder } from "../src/core/events";
 import { Timeline } from "../src/core/timeline";
@@ -43,6 +43,15 @@ test("host origin validation rejects credentials, paths, and non-HTTP schemes", 
     normalizeAddress(" http://100.64.0.1:8766/ "),
     "http://100.64.0.1:8766",
   );
+});
+test("text that is not a URL gets the same explanation as a URL of the wrong shape", () => {
+  for (const typed of ["not a url", "https://home.test/api"])
+    assert.throws(() => normalizeAddress(typed), /Enter an HTTP\(S\) daemon origin/);
+});
+test("a half-typed address has no origin instead of throwing while the form renders", () => {
+  for (const typed of ["", "h", "not a url", "http://", "ftp://home.test", "https://home.test/api"])
+    assert.equal(addressOrigin(typed), undefined);
+  assert.equal(addressOrigin(" https://home.test/ "), "https://home.test");
 });
 test("requests bind endpoint and bearer to a copied connection, unwrap envelope and retain errors", async () => {
   const input = { ...connection };

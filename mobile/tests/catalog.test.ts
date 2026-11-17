@@ -6,7 +6,16 @@ import type {
   CatalogProject,
   CatalogWorkspace,
 } from "@zotigo/shared/zotigod";
-import { visibleSessions, sessionId, catalogRows } from "../src/core/catalog";
+import {
+  visibleSessions,
+  sessionId,
+  catalogRows,
+  RECENT_PREVIEW,
+  type CatalogRow,
+} from "../src/core/catalog";
+/** Session rows of the project tree only; Recent lists the same sessions again. */
+const inTree = (row: CatalogRow): row is Extract<CatalogRow, { kind: "session" }> =>
+  row.kind === "session" && !row.key.startsWith("recent:");
 const item = (
   id: string,
   overrides: Partial<
@@ -100,7 +109,7 @@ test("tree collapse hides descendants, keeps pinned shortcuts and restores neste
     rows([])
       .filter((row) => row.key.startsWith("recent:"))
       .map((row) => row.key),
-    ["recent:loose"],
+    ["recent:loose", "recent:one"],
   );
   assert.equal(new Set(rows([]).map((row) => row.key)).size, rows([]).length);
 });
@@ -162,12 +171,11 @@ test("workspace starts with five sessions; more and search reveal the rest", () 
       {},
       expanded,
     );
-  assert.equal(rows().filter((r) => r.kind === "session").length, 5);
-  assert.ok(rows().some((r) => r.kind === "more" && r.remaining === 4));
-  assert.equal(
-    rows(new Set(["workspace:w"])).filter((r) => r.kind === "session").length,
-    9,
+  assert.equal(rows().filter(inTree).length, 5);
+  assert.ok(
+    rows().some((r) => r.kind === "more" && r.group === "workspace:w" && r.remaining === 4),
   );
+  assert.equal(rows(new Set(["workspace:w"])).filter(inTree).length, 9);
   assert.equal(
     rows(new Set(), "session").filter((r) => r.kind === "session").length,
     9,
@@ -221,7 +229,7 @@ test("pinned workspace starts at root depth and its children have one indent", (
     new Set(),
   );
   assert.equal(normal.find((r) => r.kind === "workspace")?.depth, 1);
-  assert.equal(normal.find((r) => r.kind === "session")?.depth, 2);
+  assert.equal(normal.find(inTree)?.depth, 2);
 });
 
 test("section, project and workspace stick in three rows, including pinned trees", () => {
@@ -335,20 +343,24 @@ test("workspace sessions follow daemon position before recency", () => {
     new Set(),
   );
   assert.deepEqual(
-    rows
-      .filter((row) => row.kind === "session")
-      .map((row) => sessionId(row.value)),
+    rows.filter(inTree).map((row) => sessionId(row.value)),
     ["first", "second", "new"],
+  );
+  // Recent ignores the manual order: it answers "what did I touch last".
+  assert.deepEqual(
+    rows.filter((row) => row.key.startsWith("recent:")).map((row) => row.key),
+    ["recent:new", "recent:second", "recent:first"],
   );
 });
 
  test("pinned projects follow mixed server order, omit their normal copy and keep nested pins unique", () => {
    const pins = [{ kind: "session", id: "top" }, { kind: "project", id: "p" }, { kind: "workspace", id: "w2" }];
    const rows = catalogRows([project], [workspace, { ...workspace, id: "w2" }], [item("one"), item("top", { pinned_at: "2026-01-01" })], "", new Set(), {}, new Set(), pins);
-   assert.deepEqual(rows.filter(row => ["project", "workspace", "session"].includes(row.kind)).map(row => row.key), ["pinned:top", "project:p", "workspace:w", "workspace:w:one", "workspace:w2"]);
+   assert.deepEqual(rows.filter(row => ["project", "workspace", "session"].includes(row.kind)).map(row => row.key), ["pinned:top", "project:p", "workspace:w", "workspace:w:one", "workspace:w2", "recent:one"]);
    assert.equal(new Set(rows.map(row => row.key)).size, rows.length);
    const collapsed = catalogRows([project], [workspace], [item("one")], "", new Set(["pinned"]), {}, new Set(), [{ kind: "project", id: "p" }]);
-   assert.deepEqual(collapsed.map(row => row.key), ["pinned"]);
+   // Collapsing Pinned hides the pinned project; Recent and the "New project" heading remain.
+   assert.deepEqual(collapsed.map(row => row.key), ["pinned", "recent", "recent:one", "projects", "projects:empty"]);
  });
 
  test("sticky pinned workspace ends before the next standalone pinned session", () => {
@@ -360,3 +372,88 @@ test("workspace sessions follow daemon position before recency", () => {
    assert.equal(before.at(-1)?.row.key, "workspace:w");
    assert.equal(before.at(-1)?.top, 20);
  });
+
+test("empty workspaces render no placeholder row; the workspace row itself is the action", () => {
+  const rows = catalogRows([project], [workspace], [], "", new Set());
+  assert.ok(rows.some((row) => row.kind === "workspace"));
+  assert.ok(!rows.some((row) => row.key.startsWith("workspace:") && row.kind === "notice"));
+});
+
+test("recent lists conversations from every project first, newest first, naming where each lives", () => {
+  const rows = catalogRows(
+    [project],
+    [workspace],
+    [
+      item("old", { updated_at: "2026-01-01" }),
+      item("new", { updated_at: "2026-03-01" }),
+      item("loose", { workspace_id: null, updated_at: "2026-02-01" }),
+      item("pin", { pinned_at: "2026-01-01", updated_at: "2026-04-01" }),
+    ],
+    "",
+    new Set(),
+  );
+  assert.deepEqual(
+    rows.filter((row) => row.kind === "heading").map((row) => row.key),
+    ["pinned", "recent", "projects"],
+  );
+  const recent = rows.filter((row) => row.key.startsWith("recent:"));
+  assert.deepEqual(
+    recent.map((row) => [row.key, row.kind === "session" && row.context]),
+    [
+      ["recent:new", "Mobile · iOS"],
+      ["recent:loose", undefined],
+      ["recent:old", "Mobile · iOS"],
+    ],
+  );
+});
+
+test("recent shows a short preview until expanded and collapses with its heading", () => {
+  const sessions = Array.from({ length: RECENT_PREVIEW + 3 }, (_, i) =>
+    item("s" + i, { updated_at: `2026-01-${10 + i}` }),
+  );
+  const rows = (expanded = new Set<string>(), collapsed = new Set<string>()) =>
+    catalogRows([project], [workspace], sessions, "", collapsed, {}, expanded);
+  const recent = (list: CatalogRow[]) =>
+    list.filter((row) => row.kind === "session" && row.key.startsWith("recent:"));
+  assert.equal(recent(rows()).length, RECENT_PREVIEW);
+  assert.ok(rows().some((row) => row.kind === "more" && row.group === "recent" && row.remaining === 3));
+  assert.equal(recent(rows(new Set(["recent"]))).length, RECENT_PREVIEW + 3);
+  assert.equal(recent(rows(new Set(), new Set(["recent"]))).length, 0);
+  assert.equal(new Set(rows().map((row) => row.key)).size, rows().length);
+});
+
+test("search shows each project conversation once, in its tree", () => {
+  const rows = catalogRows(
+    [project],
+    [workspace],
+    [item("needle"), item("needle-loose", { workspace_id: null })],
+    "needle",
+    new Set(),
+  );
+  assert.deepEqual(
+    rows.filter((row) => row.kind === "session").map((row) => row.key),
+    ["recent:needle-loose", "workspace:w:needle"],
+  );
+});
+
+test("the projects heading stays reachable so a project can always be created", () => {
+  const key = (rows: CatalogRow[]) => rows.map((row) => row.key);
+  // Conversations but no project yet.
+  assert.deepEqual(
+    key(catalogRows([], [], [item("loose", { workspace_id: null })], "", new Set())),
+    ["recent", "recent:loose", "projects", "projects:empty"],
+  );
+  // Every project pinned.
+  const allPinned = catalogRows([project], [workspace], [], "", new Set(), {}, new Set(), [
+    { kind: "project", id: "p" },
+  ]);
+  assert.deepEqual(key(allPinned).slice(-2), ["projects", "projects:empty"]);
+  // Nothing at all: Home shows its empty state, which offers both actions.
+  assert.deepEqual(catalogRows([], [], [], "", new Set()), []);
+  // A search with no project match does not grow a heading of its own.
+  assert.ok(
+    !key(catalogRows([], [], [item("loose", { workspace_id: null })], "loose", new Set())).includes(
+      "projects",
+    ),
+  );
+});

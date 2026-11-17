@@ -12,7 +12,7 @@ python3 -m http.server 8091 --bind 127.0.0.1 --directory dist
 
 Open `http://127.0.0.1:8091` in a browser at a phone viewport such as 393×852. Static export avoids Linux filesystem-watch limits. Re-export and reload to see source changes. `expo start --web --port 8091` is optional on hosts with adequate watch limits.
 
-The two preset devices intentionally share session IDs while their titles/data differ. Click Home Mac Studio or Work Linux, then exercise real UI navigation. Fixtures provide projects, ready/error workspaces, long Markdown/tool/reasoning/subagent conversation history, a pending approval, an image attachment, streaming reply, directory/text/image browsing, conflict save responses, settings and Channels. Reloading resets memory-only data and drafts.
+The two preset devices intentionally share session IDs while their titles/data differ. Click Home Mac Studio or Work Linux, then exercise real UI navigation. Fixtures provide projects, ready/error workspaces, conversations spread over two workspaces and no project with running/unread/read states and ages from minutes to weeks (relative to the real clock), long Markdown/tool/reasoning/subagent conversation history, a pending approval, an image attachment, streaming reply, directory/text/image browsing, conflict save responses, settings and Channels. Reloading resets memory-only data and drafts.
 
 Browser console/CDP controls:
 

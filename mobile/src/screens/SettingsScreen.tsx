@@ -1,4 +1,4 @@
-import { SettingsPage, SettingsGroup, SettingRow } from "../components/SettingsLayout";
+import { SettingsPage } from "../components/SettingsLayout";
 import { stateLabel } from "@zotigo/shared/i18n/display";
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale, changeLanguage } from "../platform/i18n";
@@ -15,12 +15,18 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { Routes } from "../navigation";
 import { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
-import ChevronRight from "lucide-react-native/icons/chevron-right";
+import Plus from "lucide-react-native/icons/plus";
 import Star from "lucide-react-native/icons/star";
 import MessageCircle from "lucide-react-native/icons/message-circle";
 import Terminal from "lucide-react-native/icons/terminal";
-import { colors, IconButton } from "../components/ui";
+import Monitor from "lucide-react-native/icons/monitor";
+import Cpu from "lucide-react-native/icons/cpu";
+import Send from "lucide-react-native/icons/send";
+import Languages from "lucide-react-native/icons/languages";
+import Globe from "lucide-react-native/icons/globe";
+import RefreshCw from "lucide-react-native/icons/refresh-cw";
+import FolderOpen from "lucide-react-native/icons/folder-open";
+import Radio from "lucide-react-native/icons/radio";
 import type {
   AgentCatalogResponse,
   HealthResponse,
@@ -29,59 +35,58 @@ import type {
 import { useDaemon } from "../platform/context";
 import {
   Action,
+  IconButton,
+  ListGroup,
+  ListRow,
   Loading,
   Notice,
-  Row as BaseRow,
   Section,
   errorText,
 } from "../components/ui";
 
-function Row(props: React.ComponentProps<typeof BaseRow>) {
-  return <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}><BaseRow {...props} /></View>;
-}
-const arrow = <ChevronRight size={18} color={colors.muted} />;
+/**
+ * Settings root: one grouped list, ordered by how often each item is used.
+ * Device → Models → Conversation → General. Every row leads to one place.
+ */
 export function SettingsScreen({ connected = true }: { connected?: boolean }) {
   useLocale();
+  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
   return <SettingsPage>
-    {connected && <ModelConfigurationRow />}
-    <LanguageSettings />
-    <Section title={t("app.conversation")}>
-      <SettingsGroup>{connected ? <ConnectedPreferenceRows /> : <ConversationSettingsRow />}</SettingsGroup>
+    <Section title={t("mobileUi.deviceGroup")}>
+      <ListGroup>
+        {connected ? <ConnectedDeviceRow /> : <ListRow icon={Monitor} title={t("mobile.devices")} onPress={() => nav.navigate("Devices")} />}
+        {connected && <ListRow icon={FolderOpen} title={t("mobile.files")} onPress={() => nav.navigate("Files", {})} />}
+        {connected && <ListRow icon={Radio} title={t("app.channels")} onPress={() => nav.navigate("Channels")} />}
+        {connected && <SessionSync />}
+      </ListGroup>
     </Section>
-    {connected && <><FavoriteSettingsRow /><DeviceActions /></>}
-    <Section title={t("settingsPage.connections")}><SettingsGroup><DeviceSettingsRow connected={connected} /></SettingsGroup></Section>
+    {connected && <ModelRows />}
+    <Section title={t("app.conversation")} footer={connected ? t("mobileUi.perDeviceFooter") : undefined}>
+      <ListGroup>
+        {connected ? <ConnectedPreferenceRows /> : <ListRow icon={MessageCircle} title={t("app.conversation")} onPress={() => nav.navigate("ConversationPreferences")} />}
+      </ListGroup>
+    </Section>
+    <LanguageSettings />
   </SettingsPage>;
-}
-function ModelConfigurationRow() {
-  const client = useDaemon();
-  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  return <SettingsGroup><SettingRow title={t("models.title")} subtitle={t("models.host", { host: client.connection.name })} onPress={() => nav.navigate("Profiles")} last /></SettingsGroup>;
-}
-
-function DeviceSettingsRow({ connected }: { connected: boolean }) {
-  useLocale();
-  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  return connected ? <ConnectedDeviceRow /> : <SettingRow title={t("mobile.devices")} subtitle={t("mobile.addEditAndTestConnections")} onPress={() => nav.navigate("Devices")} last />;
-
 }
 function ConnectedDeviceRow() {
   useLocale();
   const client = useDaemon();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  return <SettingRow title={client.connection.name} subtitle={t("mobile.currentDeviceManageConnections")} onPress={() => nav.navigate("Devices")} last />;
-
+  return <ListRow icon={Monitor} title={client.connection.name} subtitle={client.connection.baseUrl} onPress={() => nav.navigate("Devices")} />;
 }
-function ConversationSettingsRow() {
+function ModelRows() {
   useLocale();
+  const client = useDaemon();
   const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  return (
-    <Row
-      title={t("app.conversation")}
-      leading={<MessageCircle size={20} color={colors.muted} />}
-      right={arrow}
-      onPress={() => nav.navigate("ConversationPreferences")}
-    />
-  );
+  const favorites = useModelFavorites(client.connection.id);
+  return <Section title={t("mobileUi.modelsGroup")}>
+    <ListGroup>
+      <ListRow icon={Cpu} title={t("mobileUi.modelProfiles")} onPress={() => nav.navigate("Profiles")} />
+      <ListRow icon={Star} title={t("favoriteModelSettings.favoriteModels")} value={String(favorites.items.length)} onPress={() => nav.navigate("Models")} />
+      <ListRow icon={Terminal} title={t("mobileUi.runtimeStatus")} onPress={() => nav.navigate("RuntimeSettings")} />
+    </ListGroup>
+  </Section>;
 }
 function ConnectedPreferenceRows() {
   useLocale();
@@ -90,35 +95,17 @@ function ConnectedPreferenceRows() {
   const translation = useTranslationSettings(client.connection.id);
   const send = useSendMode(client.connection.id);
   return <>
-    <SettingRow title={t("settingsPage.defaultSendMode")} value={send.mode === "queue" ? t("mobile.queue") : t("mobile.steer")} onPress={() => nav.navigate("ConversationPreferences")} />
-    <SettingRow title={t("mobile.translation")} value={translation.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")} onPress={() => nav.navigate("TranslationPreferences")} last />
+    <ListRow icon={Send} title={t("settingsPage.defaultSendMode")} value={send.mode === "queue" ? t("mobile.queue") : t("mobile.steer")} onPress={() => nav.navigate("ConversationPreferences")} />
+    <ListRow icon={Languages} title={t("mobile.translation")} value={translation.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")} onPress={() => nav.navigate("TranslationPreferences")} />
   </>;
 }
-function FavoriteSettingsRow() {
-  const client = useDaemon();
-  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  const favorites = useModelFavorites(client.connection.id);
-  return <Section title={t("conversationComposer.favorites")}><SettingsGroup><SettingRow title={t("mobile.modelsAndFavorites")} value={t("mobile.favoriteCount", { count: favorites.items.length })} onPress={() => nav.navigate("Models")} last /></SettingsGroup></Section>;
-}
+const thinkingLabel = (mode: "expanded" | "collapsed" | "latest") =>
+  ({
+    expanded: t("settingsPage.alwaysExpanded"),
+    collapsed: t("settingsPage.alwaysCollapsed"),
+    latest: t("settingsPage.collapseOnNextThinking"),
+  })[mode];
 
-function DeviceActions() {
-  useLocale();
-  const nav = useNavigation<NativeStackNavigationProp<Routes>>();
-  return (
-    <Section title={t("mobile.currentDevice")}>
-      <SettingsGroup>
-        <SessionSync />
-        <Row
-          title={t("mobile.runtimesAndConnection")}
-          leading={<Terminal size={20} color={colors.muted} />}
-          right={arrow}
-          onPress={() => nav.navigate("RuntimeSettings")}
-        />
-      </SettingsGroup>
-      <Notice text={t("mobile.modelFavoritesTranslationAndSendingPreferencesAreSavedPerDevice")} />
-    </Section>
-  );
-}
 export function ConversationPreferencesScreen({
   connected = true,
 }: {
@@ -129,28 +116,17 @@ export function ConversationPreferencesScreen({
   const [showThinking, setShowThinking] = useState(false);
   return (
     <SettingsPage>
-      <SettingsGroup form>
-        <Section title={t("app.conversation")}>
-          <Row
+      <Section footer={t("settingsPage.controlsGeminiAndCustomApiSessionsCodexReasoning")}>
+        <ListGroup>
+          <ListRow
             title={t("settingsPage.thinkingDisplay")}
-            subtitle={
-              {
-                expanded: t("settingsPage.alwaysExpanded"),
-                collapsed: t("settingsPage.alwaysCollapsed"),
-                latest: t("settingsPage.collapseOnNextThinking"),
-              }[thinking.mode]
-            }
+            value={thinkingLabel(thinking.mode)}
             onPress={() => setShowThinking(true)}
           />
-          <Notice text={t("settingsPage.controlsGeminiAndCustomApiSessionsCodexReasoning")} />
-          <Notice text={thinking.error} error />
-        </Section>
-      </SettingsGroup>
-      {connected && (
-        <SettingsGroup form>
-          <SendModeSettings />
-        </SettingsGroup>
-      )}
+        </ListGroup>
+        <Notice text={thinking.error} error />
+      </Section>
+      {connected && <SendModeSettings />}
       <BottomSheet
         visible={showThinking}
         title={t("settingsPage.thinkingDisplay")}
@@ -159,13 +135,7 @@ export function ConversationPreferencesScreen({
         {(["expanded", "collapsed", "latest"] as const).map((mode) => (
           <ChoiceRow
             key={mode}
-            title={
-              {
-                expanded: t("settingsPage.alwaysExpanded"),
-                collapsed: t("settingsPage.alwaysCollapsed"),
-                latest: t("settingsPage.collapseOnNextThinking"),
-              }[mode]
-            }
+            title={thinkingLabel(mode)}
             selected={thinking.mode === mode}
             disabled={!thinking.ready}
             onPress={() => {
@@ -182,9 +152,7 @@ export function TranslationPreferencesScreen() {
   useLocale();
   return (
     <SettingsPage>
-      <SettingsGroup form>
-        <TranslationSettings />
-      </SettingsGroup>
+      <TranslationSettings />
     </SettingsPage>
   );
 }
@@ -251,147 +219,150 @@ export function ModelsScreen() {
   function prepare() {
     void run(true);
   }
+  const codexModels = agents?.agents.find((a) => a.id === "codex")?.models ?? [];
   return (
     <SettingsPage>
-      <View style={{ gap: 16 }}>
-        {section === "RuntimeSettings" && (
-          <Section title={t("mobile.connectedDevice")}>
-            <Row
-              title={client.connection.name}
-              subtitle={client.connection.baseUrl}
-            />
-            {health && (
-              <Notice
-                text={t("mobile.valueProtocolValue", {p0: stateLabel(health.status), p1: health.protocol_version})}
-              />
-            )}
-            <Action
-              label={t("mobile.refresh")}
-              disabled={busy}
-              onPress={() => void run()}
-            />
-          </Section>
-        )}
-        {busy && <Loading />}
-        {errors.map((error) => (
-          <Notice key={error} text={error} error />
-        ))}
-        {section === "Models" && (
-          <>
-            <Notice text={client.connection.name} />
-            <Section title={t("conversationComposer.favorites")}>
-              <SettingsGroup>
-                <Notice
-                  text={t("mobile.shownFirstInTheModelPickerSavedLocallyForValue", {p0: client.connection.name})}
-                />
-                <Notice text={favorites.error} error />
-                {!favorites.items.length && (
-                  <Notice text={t("favoriteModelSettings.noFavoriteModelsYet")} />
-                )}
-                {favorites.items.map((f) => (
-                  <Row
-                    key={favoriteKey(f)}
-                    title={f.agent === "codex" ? f.model : f.profile}
-                    subtitle={
-                      f.agent === "codex"
-                        ? `Codex · ${f.reasoningEffort}`
-                        : `Zotigo · ${profiles?.profiles.find((p) => p.name === f.profile)?.model ?? t("directoryBrowser.unavailable")}`
-                    }
-                    right={
-                      <IconButton
-                        icon={Star}
-                        label={t("favoriteModelSettings.removeFavorite", {p0: f.agent === "codex" ? f.model : f.profile})}
-                        disabled={!favorites.ready}
-                        onPress={() => void favorites.toggle(f)}
-                      />
-                    }
-                  />
-                ))}
-                <Action
-                  label={t("favoriteModelSettings.addFavorite")}
-                  disabled={busy || !agents || !favorites.ready}
-                  onPress={() => setAdding(true)}
-                />
-              </SettingsGroup>
-            </Section>
-            <Section title={t("mobile.modelCatalog")}>
-              <SettingsGroup>
-                <Row
-                  title={t("favoriteModelSettings.codexModels")}
-                  subtitle={t("mobile.loadsAutomatically")}
-                  right={arrow}
-                  onPress={() => nav.navigate("ModelCatalog")}
-                />
-                <Row
-                  title={t("mobile.zotigoProfiles")}
-                  right={arrow}
-                  onPress={() => nav.navigate("Profiles")}
-                />
-              </SettingsGroup>
-            </Section>
-          </>
-        )}
-        {section === "ModelCatalog" && (
-          <Section title={t("favoriteModelSettings.codexModels")}>
-            {agents?.unavailable_agents?.map(agent => <Notice key={agent.id} text={`${agent.label}: ${agent.reason ?? t("favoriteModelSettings.codexUnavailable")}`} error />)}
-            <Action label={t("mobile.refresh")} disabled={busy} onPress={prepare} />
-            <SettingsGroup>
-              {agents?.agents
-                .find((a) => a.id === "codex")
-                ?.models?.map((m) => (
-                  <Row
-                    key={m.id}
-                    title={m.display_name}
-                    subtitle={m.supported_reasoning_efforts.join(" · ")}
-                  />
-                ))}
-            </SettingsGroup>
-          </Section>
-        )}
-        <BottomSheet
-          visible={adding}
-          title={t("favoriteModelSettings.addFavorite")}
-          scroll={false}
-          onClose={() => setAdding(false)}
-        >
-          {adding && (
-            <RuntimePicker
-                unavailableAgents={agents?.unavailable_agents}
-              agents={agents?.agents ?? []}
-              profiles={profiles}
-              value={{ agent: "codex", model: "", reasoningEffort: "medium" }}
-              disabled={!favorites.ready || busy}
-              confirmLabel="Add favorite"
-              onConfirm={(favorite) => {
-                if (
-                  !favorites.items.some(
-                    (f) => favoriteKey(f) === favoriteKey(favorite),
-                  )
-                )
-                  void favorites.toggle(favorite);
-                setAdding(false);
-              }}
-            />
-          )}
-        </BottomSheet>
-        {section === "RuntimeSettings" && (
-          <>
-            <Section title={t("mobile.agents")}>
-              {agents?.agents.map((agent) => (
-                <Row
-                  key={agent.id}
-                  title={agent.label}
-                  subtitle={`${stateLabel(agent.availability)}${agent.version ? ` · ${agent.version}` : ""}${agent.id === agents.default_agent ? " · " + t("mobile.default") : ""}`}
+      {errors.map((error) => (
+        <Notice key={error} text={error} error />
+      ))}
+      {busy && !agents && <Loading />}
+      {section === "Models" && (
+        <>
+          <Section
+            title={t("conversationComposer.favorites")}
+            footer={t("mobile.shownFirstInTheModelPickerSavedLocallyForValue", {
+              p0: client.connection.name,
+            })}
+          >
+            <ListGroup>
+              {favorites.items.map((f) => (
+                <ListRow
+                  key={favoriteKey(f)}
+                  title={f.agent === "codex" ? f.model : f.profile}
+                  subtitle={
+                    f.agent === "codex"
+                      ? `Codex · ${f.reasoningEffort}`
+                      : `Zotigo · ${profiles?.profiles.find((p) => p.name === f.profile)?.model ?? t("directoryBrowser.unavailable")}`
+                  }
+                  accessory={
+                    <IconButton
+                      icon={Star}
+                      label={t("favoriteModelSettings.removeFavorite", {
+                        p0: f.agent === "codex" ? f.model : f.profile,
+                      })}
+                      disabled={!favorites.ready}
+                      onPress={() => void favorites.toggle(f)}
+                    />
+                  }
                 />
               ))}
-              {agents && agents.agents.length === 0 && (
-                <Notice text={t("mobile.noAgentsAvailable")} />
-              )}
-            </Section>
-          </>
+              <ListRow
+                icon={Plus}
+                title={t("favoriteModelSettings.addFavorite")}
+                chevron={false}
+                disabled={busy || !agents || !favorites.ready}
+                onPress={() => setAdding(true)}
+              />
+            </ListGroup>
+            <Notice text={favorites.error} error />
+          </Section>
+          <Section title={t("mobile.modelCatalog")}>
+            <ListGroup>
+              <ListRow
+                title={t("favoriteModelSettings.codexModels")}
+                subtitle={t("mobile.loadsAutomatically")}
+                onPress={() => nav.navigate("ModelCatalog")}
+              />
+              <ListRow
+                title={t("mobileUi.modelProfiles")}
+                onPress={() => nav.navigate("Profiles")}
+              />
+            </ListGroup>
+          </Section>
+        </>
+      )}
+      {section === "ModelCatalog" && (
+        <>
+          {agents?.unavailable_agents?.map((agent) => (
+            <Notice
+              key={agent.id}
+              text={`${agent.label}: ${agent.reason ?? t("favoriteModelSettings.codexUnavailable")}`}
+              error
+            />
+          ))}
+          {!!codexModels.length && (
+            <ListGroup>
+              {codexModels.map((m) => (
+                <ListRow
+                  key={m.id}
+                  title={m.display_name}
+                  subtitle={m.supported_reasoning_efforts.join(" · ")}
+                />
+              ))}
+            </ListGroup>
+          )}
+          <Action label={t("mobile.refresh")} disabled={busy} onPress={prepare} />
+        </>
+      )}
+      {section === "RuntimeSettings" && (
+        <>
+          <Section
+            title={t("mobile.connectedDevice")}
+            footer={
+              health
+                ? t("mobile.valueProtocolValue", {
+                    p0: stateLabel(health.status),
+                    p1: health.protocol_version,
+                  })
+                : undefined
+            }
+          >
+            <ListGroup>
+              <ListRow title={client.connection.name} subtitle={client.connection.baseUrl} />
+            </ListGroup>
+          </Section>
+          <Section title={t("mobile.agents")}>
+            {!!agents?.agents.length && (
+              <ListGroup>
+                {agents.agents.map((agent) => (
+                  <ListRow
+                    key={agent.id}
+                    title={agent.label}
+                    subtitle={`${stateLabel(agent.availability)}${agent.version ? ` · ${agent.version}` : ""}`}
+                    value={agent.id === agents.default_agent ? t("mobile.default") : undefined}
+                  />
+                ))}
+              </ListGroup>
+            )}
+            {agents && agents.agents.length === 0 && (
+              <Notice text={t("mobile.noAgentsAvailable")} />
+            )}
+          </Section>
+          <Action label={t("mobile.refresh")} disabled={busy} onPress={() => void run()} />
+        </>
+      )}
+      <BottomSheet
+        visible={adding}
+        title={t("favoriteModelSettings.addFavorite")}
+        scroll={false}
+        onClose={() => setAdding(false)}
+      >
+        {adding && (
+          <RuntimePicker
+            unavailableAgents={agents?.unavailable_agents}
+            agents={agents?.agents ?? []}
+            profiles={profiles}
+            value={{ agent: "codex", model: "", reasoningEffort: "medium" }}
+            disabled={!favorites.ready || busy}
+            confirmLabel={t("favoriteModelSettings.addFavorite")}
+            onConfirm={(favorite) => {
+              if (!favorites.items.some((f) => favoriteKey(f) === favoriteKey(favorite)))
+                void favorites.toggle(favorite);
+              setAdding(false);
+            }}
+          />
         )}
-
-      </View>
+      </BottomSheet>
     </SettingsPage>
   );
 }
@@ -403,24 +374,23 @@ function SessionSync() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   return (
-    <View>
-      <Action
-        label={busy ? t("settingsPage.syncing") : t("mobile.syncCodexSessions")}
-        disabled={busy}
-        onPress={() => {
-          setBusy(true);
-          setError("");
-          setStatus("");
-          void client
-            .catalog(true)
-            .then(() => setStatus(t("hostShell.sessionsSynced")))
-            .catch((e) => setError(errorText(e)))
-            .finally(() => setBusy(false));
-        }}
-      />
-      <Notice text={status} />
-      <Notice text={error} error />
-    </View>
+    <ListRow
+      icon={RefreshCw}
+      title={busy ? t("settingsPage.syncing") : t("mobile.syncCodexSessions")}
+      subtitle={error || status || t("mobileUi.syncCodexHelp")}
+      disabled={busy}
+      chevron={false}
+      onPress={() => {
+        setBusy(true);
+        setError("");
+        setStatus("");
+        void client
+          .catalog(true)
+          .then(() => setStatus(t("hostShell.sessionsSynced")))
+          .catch((e) => setError(errorText(e)))
+          .finally(() => setBusy(false));
+      }}
+    />
   );
 }
 
@@ -449,18 +419,19 @@ function TranslationSettings() {
     };
   }, [client, retry]);
   return (
-    <Section title={t("mobile.translation")}>
-      <Row
-        title={t("settingsPage.translationLanguage")}
-        subtitle={settings.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")}
-        onPress={() => setPane("language")}
-      />
-      <Row
-        title={t("translationProfileSettings.translationProfile")}
-        subtitle={settings.profile || t("translationProfileSettings.useSessionProfile")}
-        onPress={() => setPane("profile")}
-      />
-      <Notice text={t("translationProfileSettings.useACustomApiProfileForTranslationA")} />
+    <Section footer={t("translationProfileSettings.useACustomApiProfileForTranslationA")}>
+      <ListGroup>
+        <ListRow
+          title={t("settingsPage.translationLanguage")}
+          value={settings.language === "zh-CN" ? t("settingsPage.chinese") : t("settingsPage.english")}
+          onPress={() => setPane("language")}
+        />
+        <ListRow
+          title={t("translationProfileSettings.translationProfile")}
+          value={settings.profile || t("translationProfileSettings.useSessionProfile")}
+          onPress={() => setPane("profile")}
+        />
+      </ListGroup>
       <Notice text={settings.error} error />
       <BottomSheet
         visible={!!pane}
@@ -532,16 +503,19 @@ function SendModeSettings() {
   const pref = useSendMode(client.connection.id);
   const [open, setOpen] = useState(false);
   return (
-    <Section title={t("mobile.sending")}>
-      <Row
-        title={t("settingsPage.defaultSendMode")}
-        subtitle={
-          pref.mode === "queue"
-            ? t("app.queueForNextTurn")
-            : t("mobile.steerTheCurrentTurn")
-        }
-        onPress={() => setOpen(true)}
-      />
+    <Section>
+      <ListGroup>
+        <ListRow
+          title={t("settingsPage.defaultSendMode")}
+          subtitle={
+            pref.mode === "queue"
+              ? t("mobile.waitUntilTheCurrentTurnFinishes")
+              : t("mobile.sendGuidanceDuringTheCurrentTurn")
+          }
+          value={pref.mode === "queue" ? t("mobile.queue") : t("settingsPage.steering")}
+          onPress={() => setOpen(true)}
+        />
+      </ListGroup>
       <Notice text={pref.error} error />
       <BottomSheet
         visible={open}
@@ -575,8 +549,8 @@ function LanguageSettings() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  return <Section title={t("settings.language")}>
-    <SettingsGroup><SettingRow title={t("settings.language")} value={locale === "en" ? t("language.english") : t("language.chinese")} onPress={() => setOpen(true)} last /></SettingsGroup>
+  return <Section title={t("settingsPage.general")}>
+    <ListGroup><ListRow icon={Globe} title={t("mobileUi.appLanguage")} value={locale === "en" ? t("language.english") : t("language.chinese")} onPress={() => setOpen(true)} /></ListGroup>
     <Notice text={error} error />
     <BottomSheet visible={open} title={t("settings.language")} onClose={() => setOpen(false)}>
       {(["en", "zh-CN"] as const).map(value => <ChoiceRow key={value} title={value === "en" ? t("language.english") : t("language.chinese")} selected={locale === value} disabled={saving} onPress={() => {

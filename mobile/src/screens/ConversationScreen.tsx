@@ -15,8 +15,9 @@ import { ReferenceEditor } from "../components/ReferenceEditor";
 import { useConversationTitle } from "../platform/useConversationTitle";
 import { InputQueue } from "../components/InputQueue";
 import { useSendMode } from "../platform/preferences";
-import Gauge from "lucide-react-native/icons/gauge";
 import { ComposerSkills } from "../components/ComposerSkills";
+import { ComposerFrame, PolicyChoices } from "../components/ComposerFrame";
+import { ConversationActions } from "../components/ConversationActions";
 import { SelectionSheet } from "../components/SelectionSheet";
 import { DiagramProvider } from "../components/DiagramProvider";
 import { ImagePreviewProvider } from "../components/ImagePreviewProvider";
@@ -27,10 +28,6 @@ import {
   defaultThinkingDisclosureOpen,
   latestReasoningItemId,
 } from "@zotigo/shared/thinkingDisplay";
-import {
-  approvalPolicyLabel,
-  approvalPolicyDescription,
-} from "@zotigo/shared/approvalPolicy";
 import { RuntimePicker } from "../components/RuntimePicker";
 import { Keyboard } from "react-native";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
@@ -38,8 +35,6 @@ import { useLayoutTransition } from "../components/useLayoutTransition";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Terminal from "lucide-react-native/icons/terminal";
-import ShieldCheck from "lucide-react-native/icons/shield-check";
-import ShieldAlert from "lucide-react-native/icons/shield-alert";
 import {
   groupTimelineItems,
   orderLateTurnItems,
@@ -50,7 +45,6 @@ import {
 import { sessionTurnActions } from "@zotigo/shared/sessionFork";
 import ArrowUp from "lucide-react-native/icons/arrow-up";
 import ArrowDown from "lucide-react-native/icons/arrow-down";
-import Plus from "lucide-react-native/icons/plus";
 import Square from "lucide-react-native/icons/square";
 import X from "lucide-react-native/icons/x";
 import Ellipsis from "lucide-react-native/icons/ellipsis";
@@ -122,9 +116,7 @@ import {
   errorText,
   Notice,
   Loading,
-  Section,
   styles,
-  TextField,
 } from "../components/ui";
 import { MessageCard } from "../components/MessageCard";
 import { HumanRequest } from "../components/HumanRequests";
@@ -209,8 +201,11 @@ function ConversationContent() {
   const [profiles, setProfiles] = useState<ProfilesResponse>();
   const [modelRevision, setModelRevision] = useState(0);
   const [title, setTitle] = useState(route.params.title);
+  // What the daemon has, so Save is offered only for an unsaved edit.
+  const [savedTitle, setSavedTitle] = useState(route.params.title);
   useConversationTitle(id, state.items, (value) => {
     setTitle(value);
+    setSavedTitle(value);
     nav.setOptions({ title: value });
   });
   const defaultSendMode = useSendMode(client.connection.id);
@@ -794,10 +789,46 @@ function ConversationContent() {
     state.session?.agent,
     state.session?.working_directory,
   ]);
-  const AccessIcon =
-    state.session?.approval_policy === "bypass_permissions"
-      ? ShieldAlert
-      : ShieldCheck;
+  useEffect(() => {
+    nav.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: "row" }}>
+          <IconButton
+            icon={Search}
+            label={t("conversationFind.searchConversation")}
+            onPress={() => setHistory({})}
+          />
+          <IconButton
+            icon={Ellipsis}
+            label={t("mobile.conversationDetails")}
+            onPress={() => {
+              Keyboard.dismiss();
+              setOptionPane("session");
+              setOptions(true);
+            }}
+          />
+        </View>
+      ),
+    });
+  }, [nav]);
+  const renameSession = () => {
+    const next = title.trim();
+    if (!next || busy) return;
+    void run(async () => {
+      await client.renameSession(id, next);
+      if (!alive.current) return;
+      setSavedTitle(next);
+      nav.setOptions({ title: next });
+    });
+  };
+  const modelLabel =
+    [state.session?.model || state.session?.profile, state.session?.reasoning_effort]
+      .filter(Boolean)
+      .join(" · ") || t("mobile.modelAndReasoning");
+  // Context only competes for composer space once it is worth acting on.
+  const contextRatio = state.session?.context_usage?.window
+    ? state.session.context_usage.tokens / state.session.context_usage.window
+    : 0;
   const canSend =
     loaded && defaultSendMode.ready && !busy && !client.signal.aborted;
   function scheduleFollowCorrection() {
@@ -858,36 +889,19 @@ function ConversationContent() {
       ]}
       keyboardVerticalOffset={header}
     >
-      <View
-        style={{
-          paddingHorizontal: 16,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
-          {client.connection.name} · {state.status}
-          {state.session?.model ? " · " + state.session.model : ""}
-        </Text>
-        <IconButton
-          icon={Search}
-          label={t("conversationFind.searchConversation")}
-          onPress={() => setHistory({})}
-        />
-        <IconButton
-          icon={Ellipsis}
-          label={t("mobile.conversationDetails")}
-          onPress={() => {
-            setOptionPane("session");
-            setOptions(true);
-          }}
-        />
-      </View>
-      {!!(state.error || error) && (
-        <View style={{ paddingHorizontal: 16 }}>
-          <Notice text={error} error />
-          <Notice text={state.error} error />
+      {(state.status !== "connected" || !!state.error || !!error) && (
+        <View style={{ paddingHorizontal: 16, paddingVertical: 6, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {/* The dot marks transport state only; action errors are plain text. */}
+          {(state.status !== "connected" || !!state.error) && (
+            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: state.error ? colors.danger : colors.warning }} />
+          )}
+          <View style={{ flex: 1 }}>
+            {state.status !== "connected" && !state.error && (
+              <Text style={styles.muted}>{t("webApp.connecting")}</Text>
+            )}
+            <Notice text={state.error} error />
+            <Notice text={error} error />
+          </View>
           {!!state.error && (
             <Action
               label={t("mobile.reconnect")}
@@ -1044,13 +1058,25 @@ function ConversationContent() {
         }}
       >
         {pending.interactions.size > 0 && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.muted}>{requests.some(item => item.interaction?.is_blocking) ? t("interaction.waitingForAnswer") : t("interaction.answerWhileWorking")}</Text>
-              <Text style={styles.muted}>{t("interaction.pendingCount", { count: pending.interactions.size })}</Text>
-            </View>
-            <Action label={t("interaction.viewQuestions")} onPress={scrollToBottom} />
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={scrollToBottom}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              minHeight: 40,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              backgroundColor: pressed ? colors.selected : colors.surface,
+            })}
+          >
+            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors.accent }} />
+            <Text style={[styles.text, { flex: 1, fontSize: 14 }]} numberOfLines={1}>
+              {requests.some(item => item.interaction?.is_blocking) ? t("interaction.waitingForAnswer") : t("interaction.pendingCount", { count: pending.interactions.size })}
+            </Text>
+            <Text style={{ color: colors.accent, fontSize: 14, fontWeight: "600" }}>{t("interaction.viewQuestions")}</Text>
+          </Pressable>
         )}
         <InputQueue sessionId={id} refresh={queueRevision}
           pending={promptPreviews.filter(item => item.queuedPreview)}
@@ -1134,18 +1160,9 @@ function ConversationContent() {
             update({ text, skills });
           }}
         />
-        <View
-          ref={composerAnchor}
-          collapsable={false}
-          style={{
-            backgroundColor: colors.surface,
-            borderRadius: 24,
-            borderWidth: 1,
-            borderColor: colors.border,
-            padding: 4,
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <ComposerFrame
+          anchorRef={composerAnchor}
+          input={
             <SkillInput
               value={draft.text}
               skills={draft.skills}
@@ -1154,93 +1171,64 @@ function ConversationContent() {
               onCaret={setCaret}
               onChange={(text) => update({ text })}
             />
-          </View>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 4,
-            }}
-          >
-            <IconButton
-              icon={Plus}
-              label={t("attachmentMenu.moreComposerActions")}
-              disabled={!canSend || !!saved.attempt}
-              onPress={() => setAttachmentMenu(true)}
-            />
-            <IconButton
-              icon={AccessIcon}
-              label={t("channelsPage.permissions")}
-              outlined
-              hint={
-                state.session?.approval_policy === "bypass_permissions"
-                  ? t("channelsPage.fullAccess")
-                  : t("channelsPage.auto")
-              }
-              color={
-                state.session?.approval_policy === "bypass_permissions"
-                  ? "#ff8549"
-                  : colors.text
-              }
-              onPress={() => {
-                setOptionPane("policy");
-                setOptions(true);
-              }}
-            />
-            <View style={{ flex: 1 }} />
-            <IconButton
-              icon={Gauge}
-              outlined
-              label={t("mobile.modelAndReasoning")}
-              onPress={() => {
-                Keyboard.dismiss();
-                setOptionPane("model");
-                setOptions(true);
-              }}
-            />
-            {state.session?.context_usage && (
-              <ContextUsage
-                tokens={state.session.context_usage.tokens}
-                window={state.session.context_usage.window}
-                onPress={() => {
-                  setOptionPane("context");
-                  setOptions(true);
-                }}
-              />
-            )}
-
-            {turn &&
-            !draft.text.trim() &&
-            !draft.images.length &&
-            !draft.files?.length &&
-            !draft.references?.length &&
-            !saved.attempt ? (
-              <IconButton
-                filled
-                icon={Square}
-                label={t("mobile.stopResponse")}
-                disabled={busy || !state.session?.live}
-                onPress={() => void run(() => client.pause(id, turn))}
-              />
-            ) : (
-              <IconButton
-                icon={ArrowUp}
-                filled
-                label={busy ? t("confirmActionDialog.working") : saved.attempt ? t("app.retry2") : t("mobile.send")}
-                disabled={
-                  !canSend ||
-                  (!draft.text.trim() &&
-                    !draft.images.length &&
-                    !draft.files?.length &&
-                    !draft.references?.length)
-                }
-                onPress={() => void run(send)}
-              />
-            )}
-          </View>
-        </View>
-
+          }
+          policy={state.session?.approval_policy}
+          modelLabel={modelLabel}
+          disabled={{ attach: !canSend || !!saved.attempt }}
+          onAttach={() => setAttachmentMenu(true)}
+          onPolicy={() => {
+            Keyboard.dismiss();
+            setOptionPane("policy");
+            setOptions(true);
+          }}
+          onModel={() => {
+            Keyboard.dismiss();
+            setOptionPane("model");
+            setOptions(true);
+          }}
+          trailing={
+            <>
+              {contextRatio >= 0.75 && state.session?.context_usage && (
+                <ContextUsage
+                  tokens={state.session.context_usage.tokens}
+                  window={state.session.context_usage.window}
+                  onPress={() => {
+                    setOptionPane("context");
+                    setOptions(true);
+                  }}
+                />
+              )}
+              {turn &&
+              !draft.text.trim() &&
+              !draft.images.length &&
+              !draft.files?.length &&
+              !draft.references?.length &&
+              !saved.attempt ? (
+                <IconButton
+                  filled
+                  icon={Square}
+                  label={t("mobile.stopResponse")}
+                  disabled={busy || !state.session?.live}
+                  onPress={() => void run(() => client.pause(id, turn))}
+                />
+              ) : (
+                <IconButton
+                  icon={ArrowUp}
+                  filled
+                  label={busy ? t("confirmActionDialog.working") : saved.attempt ? t("app.retry2") : t("mobile.send")}
+                  disabled={
+                    !canSend ||
+                    (!draft.text.trim() &&
+                      !draft.images.length &&
+                      !draft.files?.length &&
+                      !draft.references?.length)
+                  }
+                  onPress={() => void run(send)}
+                />
+              )}
+            </>
+          }
+        />
       </View>
       <BottomSheet
         anchorRef={composerAnchor}
@@ -1254,7 +1242,7 @@ function ConversationContent() {
               ? t("channelsPage.permissions")
               : optionPane === "context"
                 ? t("mobile.contextUsage")
-                : t("app.conversation")
+                : t("mobileUi.conversationActions")
         }
         onClose={() => {
           setOptions(false);
@@ -1286,91 +1274,53 @@ function ConversationContent() {
             </View>
           )}
           {optionPane === "session" && (
-            <Section title={t("app.session")}>
-              <Action label={t("completionTriggers.title")} secondary onPress={() => setOptionPane("notifications")} />
-              <Text selectable style={styles.muted}>
-                {id}
-                {"\n"}
-                {state.session?.working_directory}
-                {"\n"}
-                {state.session?.state} ·{" "}
-                {state.session?.context_usage
-                  ? t("mobile.valueValueTokens", {p0: state.session.context_usage.tokens, p1: state.session.context_usage.window})
-                  : ""}
-              </Text>
-              <TextField label={t("mobile.title")} value={title} onChangeText={setTitle} />
-              <Action
-                label={t("app.rename")}
-                disabled={busy || !title.trim()}
-                onPress={() =>
-                  void run(async () => {
-                    await client.renameSession(id, title.trim());
-                    if (alive.current) nav.setOptions({ title: title.trim() });
-                  })
-                }
-              />
-              <Action
-                label={pinned ? t("app.unpinSession") : t("app.pinSession")}
-                disabled={busy || pinned === null}
-                onPress={() =>
-                  void run(async () => {
-                    await client.pinSession(id, !pinned);
-                    if (alive.current) setPinned(!pinned);
-                  })
-                }
-              />
-              <Action
-                label={t("mobile.files")}
-                disabled={busy}
-                onPress={() => {
-                  setOptions(false);
-                  nav.navigate("Files", {
-                    path: state.session?.working_directory,
-                    sessionId: id,
-                  });
-                }}
-              />
-              {state.session?.read_state && (
-                <Action
-                  label={
-                    state.session.read_state.unread
-                      ? t("app.markAsRead")
-                      : t("app.markAsUnread")
+            <ConversationActions
+              id={id}
+              session={state.session ?? undefined}
+              title={title}
+              savedTitle={savedTitle}
+              onTitle={setTitle}
+              pinned={pinned}
+              busy={busy}
+              forkDisabled={!!turn}
+              contextPercent={Math.round(contextRatio * 100)}
+              onRename={renameSession}
+              onTogglePin={() =>
+                void run(async () => {
+                  await client.pinSession(id, !pinned);
+                  if (alive.current) setPinned(!pinned);
+                })
+              }
+              onFiles={() => {
+                setOptions(false);
+                nav.navigate("Files", { path: state.session?.working_directory, sessionId: id });
+              }}
+              onNotifications={() => setOptionPane("notifications")}
+              onContext={() => setOptionPane("context")}
+              onFork={() =>
+                void run(async () => {
+                  const session = await client.fork(id, randomUUID());
+                  if (focused.current && !client.signal.aborted) {
+                    setOptions(false);
+                    nav.push("Conversation", { id: session.id, title: "Fork · " + title });
                   }
-                  disabled={busy}
-                  onPress={() =>
-                    void run(() =>
-                      setReadState(
-                        state.session!.read_state!.unread
-                          ? state.session!.read_state!.version
-                          : null,
-                      ),
-                    )
-                  }
-                />
-              )}
-              <Action
-                label={t("mobile.resumeRuntime")}
-                disabled={busy || state.session?.live}
-                onPress={() => void run(() => client.start(id))}
-              />
-              <Action
-                label={t("app.forkSession")}
-                disabled={busy || !!turn}
-                onPress={() =>
-                  void run(async () => {
-                    const session = await client.fork(id, randomUUID());
-                    if (focused.current && !client.signal.aborted) {
-                      setOptions(false);
-                      nav.push("Conversation", {
-                        id: session.id,
-                        title: "Fork · " + title,
-                      });
-                    }
-                  })
-                }
-              />
-            </Section>
+                })
+              }
+              onReadState={() => {
+                const read = state.session?.read_state;
+                if (read) void run(() => setReadState(read.unread ? read.version : null));
+              }}
+              onResume={() => void run(() => client.start(id))}
+              onArchive={() =>
+                void run(
+                  () => client.archiveSession(id),
+                  () => {
+                    setOptions(false);
+                    nav.goBack();
+                  },
+                )
+              }
+            />
           )}
           {optionPane === "model" && state.session && (
             <>
@@ -1433,72 +1383,13 @@ function ConversationContent() {
             </>
           )}
           {optionPane === "policy" && (
-            <View style={{ gap: 8 }}>
-              <ChoiceRow
-                title={approvalPolicyLabel("auto")}
-                subtitle={approvalPolicyDescription("auto")}
-                selected={state.session?.approval_policy === "auto"}
-                disabled={busy}
-                onPress={() =>
-                  void run(
-                    () => client.changePolicy(id, "auto"),
-                    () => setOptions(false),
-                  )
-                }
-              />
-              <ChoiceRow
-                title={approvalPolicyLabel("bypass_permissions")}
-                subtitle={approvalPolicyDescription("bypass_permissions")}
-                selected={
-                  state.session?.approval_policy === "bypass_permissions"
-                }
-                disabled={busy}
-                onPress={() =>
-                  Alert.alert(
-                    t("mobile.bypassApprovals"),
-                    t("mobile.toolsMayRunWithoutAskingYou"),
-                    [
-                      { text: t("app.cancel"), style: "cancel" },
-                      {
-                        text: t("mobile.enable"),
-                        style: "destructive",
-                        onPress: () =>
-                          void run(
-                            () => client.changePolicy(id, "bypass_permissions"),
-                            () => setOptions(false),
-                          ),
-                      },
-                    ],
-                  )
-                }
-              />
-            </View>
-          )}
-          {optionPane === "session" && (
-            <Action
-              label={t("mobile.archiveSession")}
-              danger
+            <PolicyChoices
+              value={state.session?.approval_policy}
               disabled={busy}
-              onPress={() =>
-                Alert.alert(
-                  t("mobile.archiveSession"),
-                  t("mobile.thisHidesTheSessionFromActiveListsHistoryIsRetained"),
-                  [
-                    { text: t("app.cancel"), style: "cancel" },
-                    {
-                      text: t("app.archive"),
-                      style: "destructive",
-                      onPress: () =>
-                        void run(
-                          () => client.archiveSession(id),
-                          () => {
-                            setOptions(false);
-                            nav.goBack();
-                          },
-                        ),
-                    },
-                  ],
-                )
+              onChange={(policy) =>
+                policy === state.session?.approval_policy
+                  ? setOptions(false)
+                  : void run(() => client.changePolicy(id, policy), () => setOptions(false))
               }
             />
           )}

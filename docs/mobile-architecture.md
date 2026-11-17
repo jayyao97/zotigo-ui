@@ -8,16 +8,37 @@ Mobile uses Zotigo charcoal colors, system fonts, and controls with a minimum 44
 
 ## Interaction
 
-Device list is the root. Each saved device has a name, daemon origin and separately stored token, plus test/edit/remove. Entering a device tests it before opening a host-scoped native navigation stack. The stack displays the device name and has an explicit devices action. Device switch unmounts that stack and aborts its network lifetime, so IDs from unrelated daemons never share state. Name/token edits retain the logical host ID; the connection instance is always recreated. Changing the origin adds a separate device and preserves the old device and drafts.
+The guiding rule is "don't make the user think": every screen has one obvious primary action, controls show their current value instead of an unlabeled icon, and rarely used actions live one level deeper rather than beside the common ones.
 
-Within a device, Home offers projects, pinned/recent conversations, search, sync and settings. Project loads only its own workspaces and sources. Workspace shows sessions, file access and source/worktree state. New conversation makes workspace, runtime, model/profile and approval policy explicit before creating it. Conversation contains a virtualized timeline, collapsed reasoning/tool details, approvals/questions, and a keyboard-aware composer. File inspection is a separate native screen. Destructive archive actions show daemon previews and confirmation.
+- **Launch.** The last-used device connects automatically. With no devices, Home shows a single "Connect a device" empty state; with several and none remembered, it shows a device list.
+- **Home.** Header: Settings (left), New conversation (right). Below it, the current device appears as a small status pill (green dot + name). Tapping it opens a switcher sheet listing devices plus Add/Manage. Then come search and one virtualized list: Pinned, Recent, Projects. Recent comes before the tree because continuing a conversation should not require remembering which project and workspace it lives in: it lists conversations from every project plus those in none, newest activity first, each naming its project and workspace, six at a time with "Show more". The Projects heading carries the "+ folder" create action and therefore stays visible even when there are no projects or all of them are pinned. While searching, Recent only lists conversations outside projects, so a match appears once, in its tree. Session rows show the title and one status: a spinner while running, a blue dot when unread, otherwise a compact age ("5m", "3h"). Empty workspaces render no placeholder row; the compose button on the workspace row is the call to action. Project `…` opens the project page; long-press on a project or workspace opens its page. With no conversations and no projects, the empty state offers both "New conversation" and "New project".
+- **New conversation.** A centered prompt with a workspace pill ("No project" or the workspace name) that opens the picker. The last workspace used on this device is preselected, and an explicit workspace from Home always wins. The composer is shared with conversations (see below).
+- **Conversation.** The native header holds the title, Search and `…`. A connection banner appears only when not connected. The composer is `ComposerFrame`: input; then attach · access chip ("Auto" / "Full access", orange when full) · model chip ("gpt-5.3-codex · high") · send/stop. The context ring appears only at ≥75% usage; otherwise usage lives in the `…` sheet. Pending questions show one tappable strip above the composer.
+- **Conversation `…` sheet** (`ConversationActions`): rename field with Save; a grouped list of Pin, Browse files, Notifications, Fork, Mark read/unread, and Resume (only when not live); a read-only Details group (state, context, directory, session ID); Archive last and separated, behind a confirmation.
+- **Project / Workspace.** Grouped lists. A project lists its workspaces plus "New workspace", then Pin / Rename / Manage sources. A workspace lists Pin / Browse files / Manage, then its conversations, with a full-width primary "New conversation" button pinned at the bottom.
+- **Settings.** Four groups in order of use: Device (current device → Devices, Files, Channels, Sync Codex), Models (profiles, favorites, runtime status), Conversation (send mode, translation; saved per device), General (language). A row and the screen it opens use the same words.
+- **Devices.** One list: tap a device to switch to it (the current one has a check), the pencil opens its form, and "Add device" is the last row. The form has one primary action (Save), a neutral Test connection whose result shows inline, and, for an existing device, Remove at the bottom behind a confirmation.
+- **Files.** A path bar (up button + current path) over a plain list of folders and files. Tapping the path opens "Go to path" for typing one; an empty path lists the registered roots. An opened file replaces the list; up returns to its folder.
+- **Forms.** Page-sheet forms (device, new workspace, manage workspace, add workspace source) put the title and the single dismiss action on one row, the primary action full-width below the fields, and destructive actions last in their own group.
+- **iPad (≥768pt).** A persistent sidebar shows the Home content, and the detail stack sits on the right. Opening the device switcher from a detail screen first returns to Home so unsaved-edit guards run.
+
+Device switching unmounts the host-scoped navigation stack and aborts its network lifetime, so IDs from different daemons never share state. Name and token edits keep the logical host ID, while the connection instance is always recreated. Changing the origin adds a separate device.
+
+## UI structure
+
+- `theme.ts`: the only place for color, spacing, radius, and type tokens. Screens do not use literal hex values; message rendering keeps a few syntax colors.
+- `components/ui.tsx`: primitives. `Action` (primary / default / secondary / danger, optional `block` and `icon`), `ListGroup` + `ListRow` (inset grouped list with automatic separators; a second control on a row, such as edit or remove, goes in `accessory` so it stays a separate touch target), `Chip` (labeled compact control), `EmptyState`, `Section` (title/footer), `TextField` (label/help), `IconButton`, `Notice`, `Loading`. New UI should be composed from these rather than from ad-hoc `View`/`Text` styling.
+- `components/BottomSheet.tsx`: the one transient surface for pickers and short forms. Longer creation flows (new workspace, add device) use `Modal presentationStyle="pageSheet"`.
+- `components/ComposerFrame.tsx`: shared composer frame and `PolicyChoices` for new and existing conversations.
+- `features/catalog/`: one file per screen (`HomeScreen`, `ProjectScreen`, `WorkspaceScreen`, `SourcesScreens`), the shared `SourceOptions`, and the focus-bound load/mutation hooks.
+- `screens/`: the remaining screens (conversation, new conversation, files, settings, devices, channels).
 
 ## Ownership and invariants
 
 - `core/client.ts`: immutable connection, public endpoint methods, credential-bound origin, structured errors, cancellation and request timeout. No implicit mutation retry; bearer never goes into routes, URLs or external image/link requests.
 - `core/hosts.ts`: serialized registry updates; metadata in AsyncStorage, credentials in device-only Keychain via SecureStore. Missing secret is an error, never an anonymous fallback.
 - `core/timeline.ts`: durable items authoritative; cursor advances only for durable SSE items. Initial recent history then stream after max sequence. Backfill through current turn boundary recovers approvals outside recent page. Reconnect drops volatile previews, replays durable sequence, dedupes. Focus/AppState own stream lifetime.
-- `platform/`: Expo streaming fetch and storage adapters. `screens/`: navigation and user interaction; no Node or filesystem assumptions.
+- `platform/`: Expo streaming fetch and storage adapters. `screens/` and `features/`: navigation and user interaction; no Node or filesystem assumptions.
 - Existing shared business rules reused without importing desktop renderer. Don't promote speculative shared application frameworks before there are real cross-platform callers.
 
 ## Performance
@@ -26,7 +47,7 @@ Native FlatList for catalog/transcript, stable item identities and memoized mess
 
 ## Catalog loading
 
-Home uses one virtualized list grouped into pinned sessions, projects, and recent sessions. Project details, workspaces, and source management load on navigation rather than through an all-project fan-out. Reads reload on focus or explicit refresh; generation guards reject stale responses. Mutations use single-flight locks and do not retry automatically. Delayed mutation callbacks check route validity before navigating.
+Home uses one virtualized list grouped into pinned items, recent sessions, and projects. Recent is derived from the catalog response already loaded for the tree, so it adds no request. Project details, workspaces, and source management load on navigation rather than through an all-project fan-out. Reads reload on focus or explicit refresh; generation guards reject stale responses. Mutations use single-flight locks and do not retry automatically. Delayed mutation callbacks check route validity before navigating.
 
 ## Draft persistence
 
