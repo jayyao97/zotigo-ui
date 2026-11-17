@@ -15,7 +15,7 @@ export function ContextUsage({
   useLocale();
   const ratio = window > 0 ? Math.max(0, tokens / window) : 0;
   const color =
-    ratio >= 0.9 ? colors.danger : ratio >= 0.75 ? "#ffb454" : colors.accent;
+    ratio >= 0.9 ? colors.danger : ratio >= 0.75 ? colors.warning : colors.accent;
   const circumference = 2 * Math.PI * 15;
   return (
     <Pressable

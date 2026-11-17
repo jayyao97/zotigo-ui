@@ -3,15 +3,14 @@ import { useLocale } from "../platform/i18n";
 import { KeyboardFrameView } from "../components/KeyboardFrameView";
 import { DraftImages } from "../components/DraftImages";
 import { SkillInput } from "../components/SkillInput";
-import Plus from "lucide-react-native/icons/plus";
 import { AttachmentFiles } from "../components/AttachmentFiles";
 import { pickAttachments } from "../platform/pickAttachments";
 import type { DraftFile } from "../core/attachments";
 import type { MessageImageInput } from "@zotigo/shared/zotigod";
-import Gauge from "lucide-react-native/icons/gauge";
 import { ComposerSkills } from "../components/ComposerSkills";
+import { ComposerFrame, PolicyChoices } from "../components/ComposerFrame";
 import ArrowUp from "lucide-react-native/icons/arrow-up";
-import Shield from "lucide-react-native/icons/shield";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Keyboard, Pressable } from "react-native";
@@ -23,10 +22,6 @@ import {
   prepareAttachments,
 } from "../core/composer";
 import { storage } from "../platform/storage";
-import {
-  approvalPolicyLabel,
-  approvalPolicyDescription,
-} from "@zotigo/shared/approvalPolicy";
 import { compatibleReasoningEffort } from "@zotigo/shared/modelSelection";
 import { useEffect, useRef, useState } from "react";
 import Folder from "lucide-react-native/icons/folder";
@@ -59,7 +54,6 @@ import {
   Notice,
   colors,
   IconButton,
-  Section,
   styles,
   TextField,
 } from "../components/ui";
@@ -70,11 +64,9 @@ export function NewSessionScreen() {
     nav = useNavigation<NativeStackNavigationProp<Routes>>(),
     route = useRoute<RouteProp<Routes, "NewSession">>();
   const [workspace, setWorkspace] = useState<CatalogWorkspace>();
-  const [scratch, setScratch] = useState(!route.params.workspaceId);
+  const [scratch, setScratch] = useState(true);
   const [profileRevision, setProfileRevision] = useState(0);
-  const [workspaceLoading, setWorkspaceLoading] = useState(
-    !!route.params.workspaceId,
-  );
+  const [workspaceLoading, setWorkspaceLoading] = useState(true);
   const [panel, setPanelValue] = useState<"workspace" | "model" | "policy" | null>(
     null,
   );
@@ -156,19 +148,28 @@ export function NewSessionScreen() {
       mounted.current = false;
     };
   }, [client]);
+  const lastWorkspaceKey = `zotigo.mobile.lastWorkspace:${client.connection.id}`;
   useEffect(() => {
-    if (!route.params.workspaceId) return;
     let active = true;
+    const explicit = route.params.workspaceId;
     setWorkspaceLoading(true);
-    client
-      .workspace(route.params.workspaceId)
-      .then((value) => {
-        if (!active) return;
-        if (value.status !== "ready")
-          throw new Error(
-            t("mobile.thisWorkspaceIsNotReadyChooseAnotherWorkspace"),
-          );
-        setWorkspace(value);
+    // An explicit workspace wins; otherwise reuse the last one quietly, and
+    // fall back to no project if it was archived or is not ready.
+    void (explicit ? Promise.resolve(explicit) : storage.get(lastWorkspaceKey))
+      .then(async (workspaceId) => {
+        if (!workspaceId || !active) return;
+        const value = await client.workspace(workspaceId).catch((e) => {
+          if (explicit) throw e;
+          return undefined;
+        });
+        if (!active || !value) return;
+        if (value.status !== "ready") {
+          if (explicit)
+            throw new Error(t("mobile.thisWorkspaceIsNotReadyChooseAnotherWorkspace"));
+          return;
+        }
+        setWorkspace((current) => current ?? value);
+        setScratch(false);
       })
       .catch((e) => {
         if (active) setError(errorText(e));
@@ -244,6 +245,11 @@ export function NewSessionScreen() {
     };
   }, [client, workspace, profileRevision, screenFocused]);
   const selected = catalog?.agents.find((a) => a.id === agent);
+  const modelLabel = !catalog
+    ? t("favoriteModelSettings.loadingModels")
+    : agent === "codex"
+      ? [model, effort].filter(Boolean).join(" · ") || (selected?.label ?? "")
+      : profile || selected?.label || t("mobile.modelAndReasoning");
   const codex = catalog?.agents.find((a) => a.id === "codex");
   useEffect(() => {
     const m =
@@ -284,6 +290,7 @@ export function NewSessionScreen() {
             approvalPolicy: policy,
           });
       setCreatedSession(session.id);
+      void storage.set(lastWorkspaceKey, workspace?.id ?? "").catch(() => {});
       if (!mounted.current || client.signal.aborted) return;
       const composer = new ComposerStore(
         storage,
@@ -367,8 +374,35 @@ export function NewSessionScreen() {
           gap: 8,
         }}
       >
-        <Text style={styles.title}>{t("mobile.whatAreWeWorkingOn")}</Text>
-        <Text style={styles.muted}>{client.connection.name}</Text>
+        <Text style={[styles.title, { fontSize: 22, lineHeight: 28 }]}>{t("mobileUi.welcomeTitle")}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("mobileUi.chooseWorkspace")}
+          accessibilityValue={{ text: workspace?.title ?? t("mobileUi.scratch") }}
+          disabled={contextLocked || workspaceLoading}
+          onPress={() => {
+            setProjectId(undefined);
+            setSearch("");
+            setPanel("workspace");
+          }}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            minHeight: 40,
+            paddingHorizontal: 14,
+            borderRadius: 20,
+            backgroundColor: pressed ? colors.selected : colors.surface,
+            opacity: contextLocked ? 0.5 : 1,
+            maxWidth: "100%",
+          })}
+        >
+          <Folder size={16} color={colors.muted} />
+          <Text numberOfLines={1} style={{ color: colors.text, fontSize: 15, fontWeight: "500", flexShrink: 1 }}>
+            {workspaceLoading ? t("markdownImage.loading") : workspace?.title ?? t("mobileUi.scratch")}
+          </Text>
+          <ChevronDown size={15} color={colors.muted} />
+        </Pressable>
       </View>
       <View
         style={{
@@ -406,30 +440,6 @@ export function NewSessionScreen() {
             setSkillNames(skills);
           }}
         />
-        <ChoiceRow
-          icon={Folder}
-          title={workspace?.title ?? (scratch ? t("app.scratch") : t("mobile.chooseWorkspace"))}
-          subtitle={workspace?.root_path ?? t("mobile.noProjectOrWorkspace")}
-          disabled={contextLocked || workspaceLoading}
-          onPress={() => {
-            setProjectId(undefined);
-            setSearch("");
-            setPanel("workspace");
-          }}
-        />
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => { Keyboard.dismiss(); setPanel("model"); }}
-          disabled={contextLocked || !catalog}
-          style={{
-            minHeight: 44,
-            justifyContent: "center",
-            paddingHorizontal: 12,
-          }}
-        >
-          <Text style={styles.muted}>
-            {selected?.label ?? t("favoriteModelSettings.loadingModels")} {t("mobile.undefinedRuntime")}</Text>
-        </Pressable>
         {!catalog && error && (
           <Action
             label={t("mobile.retryLoadingModels")}
@@ -445,18 +455,9 @@ export function NewSessionScreen() {
             }}
           />
         )}
-        <View
-          ref={composerAnchor}
-          collapsable={false}
-          style={{
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 24,
-            padding: 8,
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <ComposerFrame
+          anchorRef={composerAnchor}
+          input={
             <SkillInput
               value={message}
               skills={skillNames}
@@ -465,13 +466,15 @@ export function NewSessionScreen() {
               onCaret={setCaret}
               onChange={setMessage}
             />
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-            <IconButton
-              icon={Plus}
-              label={t("attachmentMenu.addAttachment")}
-              disabled={busy || files.length + images.length >= 5}
-              onPress={() => {
+          }
+          policy={policy}
+          modelLabel={modelLabel}
+          disabled={{
+            attach: busy || files.length + images.length >= 5,
+            policy: contextLocked,
+            model: contextLocked || !catalog,
+          }}
+          onAttach={() => {
                 if (lock.current) return;
                 lock.current = true;
                 setBusy(true);
@@ -490,24 +493,11 @@ export function NewSessionScreen() {
                     if (mounted.current) setBusy(false);
                   });
               }}
-            />
+          onPolicy={() => { Keyboard.dismiss(); setPanel("policy"); }}
+          onModel={() => { Keyboard.dismiss(); setPanel("model"); }}
+          trailing={
             <IconButton
-              icon={Shield}
-              outlined
-              color={policy === "bypass_permissions" ? "#ff8549" : colors.text}
-              label={approvalPolicyLabel(policy)}
-              disabled={contextLocked}
-              onPress={() => setPanel("policy")}
-            />
-            <View style={{ flex: 1 }} />
-            <IconButton
-              icon={Gauge}
-              outlined
-              label={t("mobile.modelAndReasoning")}
-              disabled={contextLocked}
-              onPress={() => { Keyboard.dismiss(); setPanel("model"); }}
-            />
-            <IconButton
+              filled
               icon={ArrowUp}
               label={busy ? t("app.creating") : t("mobile.createSessionAndSend")}
               disabled={
@@ -530,8 +520,8 @@ export function NewSessionScreen() {
               }
               onPress={() => void create()}
             />
-          </View>
-        </View>
+          }
+        />
       </View>
       <BottomSheet
         anchorRef={composerAnchor}
@@ -667,46 +657,15 @@ export function NewSessionScreen() {
           </>
         )}
         {panel === "policy" && (
-          <>
-            <Section title={t("channelsPage.permissions")}>
-              {selected?.capabilities.approvals === false && (
-                <Notice text={t("mobile.thisRuntimeDoesNotSupportApprovalRequestsExplicitlyEnableBypassApprovalsToCreateASession")} />
-              )}
-              <ChoiceRow
-                title={approvalPolicyLabel("auto")}
-                subtitle={approvalPolicyDescription("auto")}
-                selected={policy === "auto"}
-                disabled={busy || selected?.capabilities.approvals === false}
-                onPress={() => {
-                  setPolicy("auto");
-                  setPanel(null);
-                }}
-              />
-              <ChoiceRow
-                title={approvalPolicyLabel("bypass_permissions")}
-                subtitle={approvalPolicyDescription("bypass_permissions")}
-                selected={policy === "bypass_permissions"}
-                disabled={busy}
-                onPress={() =>
-                  Alert.alert(
-                    t("mobile.bypassApprovals"),
-                    t("mobile.toolsCanRunWithoutAskingYouForApproval"),
-                    [
-                      { text: t("app.cancel"), style: "cancel" },
-                      {
-                        text: t("mobile.enable"),
-                        style: "destructive",
-                        onPress: () => {
-                          setPolicy("bypass_permissions");
-                          setPanel(null);
-                        },
-                      },
-                    ],
-                  )
-                }
-              />
-            </Section>
-          </>
+          <PolicyChoices
+            value={policy}
+            disabled={busy}
+            approvalsUnsupported={selected?.capabilities.approvals === false}
+            onChange={(next) => {
+              setPolicy(next);
+              setPanel(null);
+            }}
+          />
         )}
       </BottomSheet>
     </KeyboardFrameView>

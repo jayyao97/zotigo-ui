@@ -35,6 +35,8 @@ type HostState = {
       runtime: ZotigoSession;
       title: string;
       workspaceId?: string;
+      /** Last activity; relative to the real clock so Home shows a spread of ages. */
+      activityAt: string;
       items: DisplayItem[];
       pinned: boolean;
       archived: boolean;
@@ -279,15 +281,20 @@ function makeHost(work: boolean): HostState {
     },
   ];
   const sessions: HostState["sessions"] = new Map();
+  // Minutes since last activity: one running, one unread, then read conversations
+  // from minutes to weeks old, spread over two workspaces and no project.
+  const ages = [0, 5, 25, 3 * 60, 26 * 60, 3 * 24 * 60];
+  const homes = ["workspace-main", "workspace-main", "workspace-review", "workspace-main", undefined, "workspace-review"];
   for (let i = 0; i < 14; i++) {
     const id = i ? `session-${i}` : "session-shared";
+    const activityAt = new Date(Date.now() - (ages[i] ?? (i + 3) * 24 * 60) * 60_000).toISOString();
     sessions.set(id, {
       runtime: {
         read_state: {
           version: 1,
-          read_version: 0,
+          read_version: i < 2 ? 0 : 1,
           completed_sequence: 1,
-          unread: true,
+          unread: i < 2,
         },
         id,
         state: i ? "paused" : "running",
@@ -298,10 +305,11 @@ function makeHost(work: boolean): HostState {
         model: "gpt-5.3-codex",
         reasoning_effort: "high",
         approval_policy: "auto",
-        created_at: now,
+        created_at: activityAt,
         context_usage: { tokens: 18340, window: 200000 },
       },
-      workspaceId: "workspace-main",
+      workspaceId: i < homes.length ? homes[i] : "workspace-main",
+      activityAt,
       title: i
         ? [
             `${label}: Fix keyboard safe-area handling`,
@@ -432,8 +440,8 @@ function projection(host: HostState, id: string): CatalogSessionProjection {
       self_archived_at: session.archived ? now : null,
       workspace_archived_at: workspace?.status === "archived" ? now : null,
       revision: 1,
-      created_at: now,
-      updated_at: now,
+      created_at: session.activityAt,
+      updated_at: session.activityAt,
     },
   };
 }
@@ -902,6 +910,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     host.sessions.set(id, {
       runtime,
       workspaceId: workspace?.id,
+      activityAt: new Date().toISOString(),
       title: "New session",
       items: [],
       pinned: false,

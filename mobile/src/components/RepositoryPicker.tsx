@@ -6,7 +6,8 @@ import { t } from "@zotigo/shared/i18n/index";
 import { workspaceSourceMatches } from "@zotigo/shared/workspaceSourceSelection";
 import { useDaemon } from "../platform/context";
 import { useLocale } from "../platform/i18n";
-import { Action, Notice, Row, TextField, errorText } from "./ui";
+import GitFork from "lucide-react-native/icons/git-fork";
+import { Action, ListGroup, ListRow, Notice, TextField, errorText, space } from "./ui";
 
 export function repositoryStatus(repository: Pick<ManagedRepository, "last_synced_at" | "last_sync_error">): string {
   const time = repository.last_synced_at ? new Date(repository.last_synced_at).toLocaleString() : "";
@@ -57,14 +58,16 @@ export function RepositoryPicker({ projectId, onLinked }: { projectId: string; o
     finally { lock.current = false; if (current.current) { setBusy(false); setRevision(value => value + 1); } }
   }, []);
   const matches = repositories?.filter(item => workspaceSourceMatches({ name: item.name, source_path: item.canonical_path, remote_url: item.remote_url }, query));
-  return <View style={{ gap: 8 }}>
+  return <View style={{ gap: space.sm }}>
     <TextField label={t("repositories.search")} value={query} onChangeText={setQuery} />
     <Notice text={error || readError} error />
     {!repositories && !error && !readError && <Notice text={t("repositories.loading")} />}
-    {matches?.map(item => <Row key={item.id} title={item.name} subtitle={`${item.remote_url}\n${linked.includes(item.id) ? t("repositories.linked") : repositoryStatus(item)}`} onPress={busy || linked.includes(item.id) || !item.last_synced_at ? undefined : () => void mutate(async () => {
-      await client.linkRepository(projectId, item.id);
-      if (current.current && !client.signal.aborted) onLinked();
-    })} />)}
+    {!!matches?.length && <ListGroup>
+      {matches.map(item => <ListRow key={item.id} icon={GitFork} title={item.name} subtitle={`${item.remote_url}\n${linked.includes(item.id) ? t("repositories.linked") : repositoryStatus(item)}`} chevron={false} disabled={busy || linked.includes(item.id) || !item.last_synced_at} onPress={() => void mutate(async () => {
+        await client.linkRepository(projectId, item.id);
+        if (current.current && !client.signal.aborted) onLinked();
+      })} />)}
+    </ListGroup>}
     {matches?.length === 0 && <Notice text={t(repositories?.length ? "repositories.noMatches" : "repositories.empty")} />}
     <TextField label={t("repositories.remote")} value={remote} onChangeText={setRemote} placeholder={t("repositories.remotePlaceholder")} />
     <Action label={t(busy ? "repositories.adding" : "repositories.add")} disabled={busy || !remote.trim()} onPress={() => void mutate(async () => { await client.createRepository(remote.trim()); if (current.current) setRemote(""); })} />

@@ -226,7 +226,7 @@ function Detail({
                       key={i}
                       style={
                         part.matched
-                          ? { backgroundColor: "#865719" }
+                          ? { backgroundColor: colors.searchMatch }
                           : undefined
                       }
                     >
@@ -403,7 +403,7 @@ export const MessageCard = memo(function MessageCard({
             <View
               style={{
                 maxWidth: "88%",
-                backgroundColor: "#173e76",
+                backgroundColor: colors.userBubble,
                 borderRadius: 22,
                 paddingHorizontal: 16,
                 paddingVertical: 10,

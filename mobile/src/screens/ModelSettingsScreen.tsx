@@ -1,6 +1,7 @@
 import { hosts } from "../platform/storage";
 import { createDaemon } from "../platform/client";
-import { SettingsPage, SettingsGroup, SettingRow } from "../components/SettingsLayout";
+import { SettingsPage } from "../components/SettingsLayout";
+import Plus from "lucide-react-native/icons/plus";
 import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { t } from "@zotigo/shared/i18n/index";
@@ -9,7 +10,7 @@ import { DaemonContext, useDaemon } from "../platform/context";
 import { useLocale } from "../platform/i18n";
 import { ApiError, type Host } from "../core/client";
 import { modelDraftError } from "../core/modelSettings";
-import { Action, Loading, Notice, TextField, styles } from "../components/ui";
+import { Action, ListGroup, ListRow, Loading, Notice, Section, TextField, colors, radius, space, styles } from "../components/ui";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
 
 const blank = (): ModelProfile => ({ name: "", provider: "openai", model: "", base_url: "", thinking_level: "", context_window: 0, max_output_tokens: null, mode: "", has_api_key: false });
@@ -110,65 +111,60 @@ function ModelSettingsContent({ hostList, selecting, hostError, onSelect }: { ho
   const tokens = (value?: number) => value === undefined ? t("models.defaultUnknown") : value.toLocaleString(locale);
   const original = settings?.profiles.find(profile => profile.name === draft?.name);
   const saved = settings?.profiles.find(profile => profile.name === draft?.name && profile.provider === draft?.provider);
+  const closeDraft = () => { setDraft(undefined); setApiKey(""); setClearKey(false); setError(""); setStatus(""); };
+  const defaultLocked = draft?.name === settings?.default_profile && (settings?.profiles.length ?? 0) > 1;
   return <SettingsPage>
-    <SettingsGroup><SettingRow title={t("settings.targetHost")} value={client.connection.name} onPress={draft || busy || selecting ? undefined : () => setChoosingHost(true)} last /></SettingsGroup>
-    <Notice text={hostError} error />
+    {!draft && <Section footer={t("models.codex")}>
+      <ListGroup><ListRow title={t("settings.targetHost")} value={client.connection.name} disabled={busy || selecting} onPress={() => setChoosingHost(true)} /></ListGroup>
+      <Notice text={hostError} error />
+    </Section>}
     <BottomSheet visible={choosingHost} title={t("settings.targetHost")} onClose={() => setChoosingHost(false)}>
       {hostList.map(host => <ChoiceRow key={host.id} title={host.name} selected={client.connection.id === host.id} disabled={selecting} onPress={() => { setChoosingHost(false); onSelect(host); }} />)}
     </BottomSheet>
-    <View style={{ gap: 4 }}>
-      <Text style={[styles.text, { fontWeight: "600" }]}>{draft ? editing ? draft.name : t("models.add") : t("models.host", { host: client.connection.name })}</Text>
-      {!draft && <Text style={styles.muted}>{t("models.codex")}</Text>}
-    </View>
+    {draft && <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+      <Text accessibilityRole="header" style={styles.title}>{editing ? draft.name : t("models.add")}</Text>
+      <Action secondary label={t("models.cancel")} disabled={busy} onPress={closeDraft} />
+    </View>}
     {loading && <Loading />}
     {!!error && <View><Notice text={error} error /><Action label={t("models.reload")} disabled={busy || loading} onPress={() => setReload(value => value + 1)} /></View>}
     {!!status && <Notice text={status} />}
     {settings && !loading && <>
-      {!draft && <>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <Text style={styles.muted}>{t("mobile.zotigoProfiles")}</Text>
-          <Action label={t("models.add")} disabled={busy} onPress={() => open()} />
-        </View>
-        {settings.profiles.length > 0 ? <SettingsGroup>
-          {settings.profiles.map((profile, index) => <SettingRow key={profile.name} title={profile.name} subtitle={`${profile.provider} · ${profile.model}`} value={profile.name === settings.default_profile ? t("models.default") : undefined} onPress={busy ? undefined : () => open(profile)} last={index === settings.profiles.length - 1} />)}
-        </SettingsGroup> : <Notice text={t("models.empty")} />}
-        <Text style={styles.muted}>{t("models.help")}</Text>
-      </>}
+      {!draft && <Section title={t("mobileUi.modelProfiles")} footer={t("models.help")}>
+        <ListGroup>
+          {settings.profiles.map(profile => <ListRow key={profile.name} title={profile.name} subtitle={`${profile.provider} · ${profile.model}`} value={profile.name === settings.default_profile ? t("models.default") : undefined} disabled={busy} onPress={() => open(profile)} />)}
+          <ListRow icon={Plus} title={t("models.add")} chevron={false} disabled={busy} onPress={() => open()} />
+        </ListGroup>
+        {!settings.profiles.length && <Notice text={t("models.empty")} />}
+      </Section>}
       {draft && <>
-        <SettingsGroup form>
-          <TextField label={t("models.name")} value={draft.name} editable={!busy && !editing} maxLength={64} onChangeText={name => patch({ name })} />
-          {!editing && <Text style={styles.muted}>{t("models.nameHelp")}</Text>}
-          <SettingRow title={t("models.provider")} value={draft.provider} onPress={busy ? undefined : () => setChoice("provider")} last />
+        <View style={form}>
+          <TextField label={t("models.name")} value={draft.name} editable={!busy && !editing} maxLength={64} onChangeText={name => patch({ name })} help={editing ? undefined : t("models.nameHelp")} />
+          <View style={inset}><ListRow title={t("models.provider")} value={draft.provider} disabled={busy} onPress={() => setChoice("provider")} /></View>
           <TextField label={t("models.model")} value={draft.model} editable={!busy} maxLength={256} onChangeText={model => patch({ model })} />
           <TextField label={t("models.url")} value={draft.base_url} editable={!busy} keyboardType="url" onChangeText={base_url => patch({ base_url })} />
           <TextField label={t("models.key")} secureTextEntry value={apiKey} editable={!busy && !clearKey} placeholder={t(draft.has_api_key ? "models.keySet" : "models.keyEmpty")} onChangeText={value => { setApiKey(value); setStatus(""); }} />
           {draft.has_api_key && <ChoiceRow title={t("models.clearKey")} selected={clearKey} disabled={busy} onPress={() => { setClearKey(!clearKey); setApiKey(""); }} />}
-        </SettingsGroup>
-        <SettingsGroup>
-          <SettingRow title={t("models.advanced")} expanded={advanced} onPress={() => setAdvanced(!advanced)} last={!advanced} />
-          {advanced && <View style={{ padding: 16, gap: 16 }}>
-            <SettingRow title={t("models.thinking")} value={draft.thinking_level || t("models.auto")} onPress={busy ? undefined : () => setChoice("thinking_level")} last />
-            <TextField label={t("models.window")} keyboardType="number-pad" value={draft.context_window ? String(draft.context_window) : ""} editable={!busy} placeholder={tokens(settings.defaults?.context_window)} onChangeText={value => patch({ context_window: value === "" ? 0 : Number(value) })} />
-            <Text style={styles.muted}>{t("models.windowHelp", { tokens: tokens(settings.defaults?.context_window) })}</Text>
-            <TextField label={t("models.output")} keyboardType="number-pad" value={draft.max_output_tokens === null ? "" : String(draft.max_output_tokens)} editable={!busy} placeholder={tokens(saved?.default_max_output_tokens ?? settings.defaults?.max_output_tokens)} onChangeText={value => patch({ max_output_tokens: value === "" ? null : Number(value) })} />
-            <Text style={styles.muted}>{t("models.outputHelp", { tokens: tokens(saved?.default_max_output_tokens ?? settings.defaults?.max_output_tokens) })}</Text>
-            {draft.provider === "openai" && <><Text style={styles.muted}>{t("models.openaiOutputHelp")}</Text><SettingRow title={t("models.mode")} value={draft.mode || t("models.auto")} onPress={busy ? undefined : () => setChoice("mode")} last /></>}
-          </View>}
-        </SettingsGroup>
-        <View style={{ gap: 12 }}>
-          <Text style={styles.muted}>{t("models.testHelp")}</Text>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
-            <Action label={t("models.test")} disabled={busy} onPress={() => void submit("save", draft, true)} />
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <Action secondary label={t("models.cancel")} disabled={busy} onPress={() => { setDraft(undefined); setApiKey(""); setClearKey(false); setError(""); setStatus(""); }} />
-              <Action label={busy ? t("app.saving") : t("models.save")} disabled={busy} onPress={() => void submit("save", draft)} />
-            </View>
-          </View>
         </View>
-        {editing && <SettingsGroup>
-          <SettingRow title={draft.name === settings.default_profile ? t("models.default") : t("models.makeDefault")} onPress={busy || draft.name === settings.default_profile ? undefined : () => { if (original) void submit("default", original); }} />
-          <SettingRow title={t("models.remove")} subtitle={draft.name === settings.default_profile && settings.profiles.length > 1 ? t("models.deleteNotice") : undefined} onPress={busy || (draft.name === settings.default_profile && settings.profiles.length > 1) ? undefined : () => setDeleting(original)} last />
-        </SettingsGroup>}
+        <ListGroup>
+          <ListRow title={t("models.advanced")} expanded={advanced} onPress={() => setAdvanced(!advanced)} />
+          {advanced && <View style={{ padding: space.lg, gap: space.lg }}>
+            <View style={inset}><ListRow title={t("models.thinking")} value={draft.thinking_level || t("models.auto")} disabled={busy} onPress={() => setChoice("thinking_level")} /></View>
+            <TextField label={t("models.window")} keyboardType="number-pad" value={draft.context_window ? String(draft.context_window) : ""} editable={!busy} placeholder={tokens(settings.defaults?.context_window)} onChangeText={value => patch({ context_window: value === "" ? 0 : Number(value) })} help={t("models.windowHelp", { tokens: tokens(settings.defaults?.context_window) })} />
+            <TextField label={t("models.output")} keyboardType="number-pad" value={draft.max_output_tokens === null ? "" : String(draft.max_output_tokens)} editable={!busy} placeholder={tokens(saved?.default_max_output_tokens ?? settings.defaults?.max_output_tokens)} onChangeText={value => patch({ max_output_tokens: value === "" ? null : Number(value) })} help={t("models.outputHelp", { tokens: tokens(saved?.default_max_output_tokens ?? settings.defaults?.max_output_tokens) })} />
+            {draft.provider === "openai" && <><Text style={styles.muted}>{t("models.openaiOutputHelp")}</Text><View style={inset}><ListRow title={t("models.mode")} value={draft.mode || t("models.auto")} disabled={busy} onPress={() => setChoice("mode")} /></View></>}
+          </View>}
+        </ListGroup>
+        <View style={{ gap: space.sm }}>
+          <Action primary block label={busy ? t("app.saving") : t("models.save")} disabled={busy} onPress={() => void submit("save", draft)} />
+          <Action block label={t("models.test")} disabled={busy} onPress={() => void submit("save", draft, true)} />
+          <Text style={styles.muted}>{t("models.testHelp")}</Text>
+        </View>
+        {editing && <Section footer={defaultLocked ? t("models.deleteNotice") : undefined}>
+          <ListGroup>
+            <ListRow title={draft.name === settings.default_profile ? t("models.default") : t("models.makeDefault")} chevron={false} disabled={busy || draft.name === settings.default_profile} onPress={() => { if (original) void submit("default", original); }} />
+            <ListRow danger title={t("models.remove")} disabled={busy || defaultLocked} onPress={() => setDeleting(original)} />
+          </ListGroup>
+        </Section>}
       </>}
     </>}
     <BottomSheet visible={!!choice} title={t(choice === "provider" ? "models.provider" : choice === "mode" ? "models.mode" : "models.thinking")} onClose={() => setChoice(undefined)}>
@@ -181,3 +177,7 @@ function ModelSettingsContent({ hostList, selecting, hostError, onSelect }: { ho
     </BottomSheet>
   </SettingsPage>;
 }
+
+const form = { backgroundColor: colors.surface, borderRadius: radius.lg, padding: space.lg, gap: space.lg };
+// A picker row inside a padded form card lines up with the fields around it.
+const inset = { marginHorizontal: -space.lg };

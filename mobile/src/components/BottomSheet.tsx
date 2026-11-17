@@ -100,7 +100,7 @@ export function BottomSheet({
           style={{
             position: "absolute",
             inset: 0,
-            backgroundColor: "rgba(0,0,0,0.35)",
+            backgroundColor: colors.scrim,
           }}
         />
         <View

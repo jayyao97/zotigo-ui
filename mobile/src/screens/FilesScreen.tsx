@@ -10,11 +10,16 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import ArrowUp from "lucide-react-native/icons/arrow-up";
+import Ban from "lucide-react-native/icons/ban";
+import FileText from "lucide-react-native/icons/file-text";
+import Folder from "lucide-react-native/icons/folder";
 import { usePreventRemove } from "@react-navigation/native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -26,7 +31,18 @@ import { ApiError } from "../core/client";
 import { daemonPath, fileSaveInput, imagePreviewUri } from "../core/fileEditor";
 import { useDaemon } from "../platform/context";
 import type { Routes } from "../navigation";
-import { Action, Notice, Row, TextField, colors } from "../components/ui";
+import { BottomSheet } from "../components/BottomSheet";
+import {
+  Action,
+  IconButton,
+  ListRow,
+  Notice,
+  TextField,
+  colors,
+  radius,
+  space,
+  type,
+} from "../components/ui";
 
 type Props = NativeStackScreenProps<Routes, "Files">;
 type Capabilities = {
@@ -47,6 +63,8 @@ export function FilesScreen({ route, navigation }: Props) {
   const [image, setImage] = useState<string>();
   const [video, setVideo] = useState<VideoFileSnapshot>();
   const [draft, setDraft] = useState("");
+  // Typing a path is the rare case, so it lives one tap away from the list.
+  const [goTo, setGoTo] = useState<string>();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [conflict, setConflict] = useState(false);
@@ -218,6 +236,11 @@ export function FilesScreen({ route, navigation }: Props) {
     capabilities?.write &&
     !file.readOnly &&
     file.sizeBytes <= 256 * 1024;
+  const viewing = !!file || !!image || !!video;
+  // Up: file → its directory, directory → parent, top directory → registered roots.
+  const up = viewing
+    ? path.replace(/[\\/][^\\/]*$/, "")
+    : directory?.parentPath ?? (path ? "" : undefined);
   return (
     <KeyboardAvoidingView
       style={s.page}
@@ -225,34 +248,31 @@ export function FilesScreen({ route, navigation }: Props) {
       keyboardVerticalOffset={headerHeight}
     >
       <View style={s.controls}>
-        <TextField
-          label={t("mobile.daemonPath")}
-          value={path}
-          onChangeText={setPath}
-          placeholder={t("mobile.emptyPathListsRegisteredRoots")}
-        />
-        <View style={s.actions}>
-          <Action
-            label={t("mobile.browse")}
-            disabled={busy || !capabilities?.list}
-            onPress={() => discardThen(() => void run(() => list(path)))}
+        <View style={s.pathBar}>
+          <IconButton
+            icon={ArrowUp}
+            color={colors.muted}
+            label={t("directoryBrowser.parentDirectory")}
+            disabled={busy || up === undefined || !capabilities?.list}
+            onPress={() => discardThen(() => void run(() => list(up ?? "")))}
           />
-          <Action
-            label={t("mobile.openFile")}
-            disabled={busy || !capabilities?.read || !path.trim()}
-            onPress={() => discardThen(() => void run(() => open(path)))}
-          />
-          <Action
-            label={t("mobile.roots")}
-            secondary
-            disabled={busy || !capabilities?.list}
-            onPress={() => discardThen(() => void run(() => list("")))}
-          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("mobileUi.goToPath")}
+            accessibilityValue={{ text: path }}
+            disabled={busy || !capabilities}
+            onPress={() => setGoTo(path)}
+            style={({ pressed }) => [s.path, { opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Text numberOfLines={1} ellipsizeMode="head" style={s.pathText}>
+              {path || t("directoryBrowser.registeredSourcesAndWorkspaces")}
+            </Text>
+          </Pressable>
         </View>
         {!!error && <Notice text={error} error />}
         {!!notice && <Notice text={notice} />}
         {!capabilities && !busy && (
-          <Action label={t("mobile.retryCapabilities")} onPress={initialize} />
+          <Action label={t("app.retry2")} onPress={initialize} />
         )}
         {busy && <Notice text={t("markdownImage.loading")} />}
         {capabilities && !capabilities.read && !capabilities.list && (
@@ -261,10 +281,7 @@ export function FilesScreen({ route, navigation }: Props) {
       </View>
       {file ? (
         <View style={s.editor}>
-          <Text style={s.label}>
-            {file.name}
-            {dirty ? " · Unsaved" : ""}
-          </Text>
+          {dirty && <Text style={s.label}>{t("mobileUi.unsaved")}</Text>}
           {!editable && (
             <Notice
               text={
@@ -290,11 +307,14 @@ export function FilesScreen({ route, navigation }: Props) {
             scrollEnabled
           />
           <View style={s.actions}>
-            <Action
-              label={t("app.save")}
-              disabled={!editable || !dirty || busy || conflict}
-              onPress={save}
-            />
+            {editable && (
+              <Action
+                primary
+                label={t("app.save")}
+                disabled={!dirty || busy || conflict}
+                onPress={save}
+              />
+            )}
             <Action
               label={t("mobile.reloadRemote")}
               secondary
@@ -323,16 +343,7 @@ export function FilesScreen({ route, navigation }: Props) {
           windowSize={7}
           contentContainerStyle={s.list}
           keyboardShouldPersistTaps="handled"
-          ListHeaderComponent={
-            directory?.parentPath ? (
-              <Action
-                label={t("directoryBrowser.parentDirectory")}
-                secondary
-                disabled={busy}
-                onPress={() => void run(() => list(directory.parentPath!))}
-              />
-            ) : null
-          }
+          ItemSeparatorComponent={Separator}
           ListEmptyComponent={
             !busy && capabilities?.list ? (
               <Notice text={t("mobile.noFilesInThisDirectory")} />
@@ -344,41 +355,83 @@ export function FilesScreen({ route, navigation }: Props) {
             ) : null
           }
           renderItem={({ item }) => (
-            <Row
+            <ListRow
+              icon={item.kind === "directory" ? Folder : item.kind === "file" ? FileText : Ban}
               title={item.name}
-              subtitle={item.kind}
-              onPress={
-                item.kind === "unavailable" || busy
-                  ? undefined
-                  : () =>
-                      void run(() =>
-                        item.kind === "directory"
-                          ? list(item.path)
-                          : open(item.path, false),
-                      )
+              subtitle={item.kind === "unavailable" ? t("directoryBrowser.unavailable") : undefined}
+              chevron={item.kind === "directory"}
+              disabled={item.kind === "unavailable" || busy}
+              onPress={() =>
+                void run(() =>
+                  item.kind === "directory" ? list(item.path) : open(item.path, false),
+                )
               }
             />
           )}
         />
       )}
+      <BottomSheet
+        visible={goTo !== undefined}
+        title={t("mobileUi.goToPath")}
+        onClose={() => setGoTo(undefined)}
+      >
+        <TextField
+          label={t("mobile.daemonPath")}
+          value={goTo ?? ""}
+          onChangeText={setGoTo}
+          autoFocus
+          returnKeyType="go"
+          help={t("mobile.emptyPathListsRegisteredRoots")}
+        />
+        <Action
+          primary
+          block
+          label={t("directoryBrowser.go")}
+          onPress={() => {
+            const target = (goTo ?? "").trim();
+            setGoTo(undefined);
+            // Opening resolves files and directories alike; an empty path lists the roots.
+            discardThen(
+              () =>
+                void run(() => (target && capabilities?.read ? open(target) : list(target))),
+            );
+          }}
+        />
+      </BottomSheet>
     </KeyboardAvoidingView>
   );
 }
+function Separator() {
+  return <View style={s.separator} />;
+}
 const s = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
-  controls: { padding: 16, gap: 8 },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  editor: { flex: 1, padding: 16, paddingTop: 0, gap: 12 },
-  label: { color: colors.text, fontSize: 16 },
+  controls: { paddingHorizontal: space.md, paddingTop: space.xs, gap: space.xs },
+  pathBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  path: { flex: 1, minHeight: 44, justifyContent: "center", paddingRight: space.md },
+  pathText: { color: colors.text, ...type.callout },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  editor: { flex: 1, padding: space.lg, paddingTop: space.sm, gap: space.md },
+  label: { color: colors.warning, ...type.footnote },
   input: {
     flex: 1,
     color: colors.text,
     backgroundColor: colors.surface,
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: radius.md,
+    padding: space.md,
     fontFamily: "Menlo",
     fontSize: 13,
   },
   image: { flex: 1 },
-  list: { paddingHorizontal: 16, paddingBottom: 24 },
+  list: { paddingBottom: space.xl },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: space.lg,
+    backgroundColor: colors.separator,
+  },
 });

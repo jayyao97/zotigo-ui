@@ -43,9 +43,23 @@ export class ApiError extends Error {
     super(message);
   }
 }
+/** The origin of a typed address, or undefined while it is not a valid one yet. Never throws. */
+export function addressOrigin(input: string): string | undefined {
+  try {
+    return normalizeAddress(input);
+  } catch {
+    return undefined;
+  }
+}
 export function normalizeAddress(input: string): string {
-  const url = new URL(input.trim());
+  let url: URL | undefined;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    url = undefined;
+  }
   if (
+    !url ||
     !["http:", "https:"].includes(url.protocol) ||
     url.username ||
     url.password ||
