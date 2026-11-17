@@ -31,7 +31,8 @@ Device switching unmounts the host-scoped navigation stack and aborts its networ
 - `components/BottomSheet.tsx`: the one transient surface for pickers and short forms. Longer creation flows (new workspace, add device) use `Modal presentationStyle="pageSheet"`.
 - `components/ComposerFrame.tsx`: shared composer frame and `PolicyChoices` for new and existing conversations.
 - `features/catalog/`: one file per screen (`HomeScreen`, `ProjectScreen`, `WorkspaceScreen`, `SourcesScreens`), the shared `SourceOptions`, and the focus-bound load/mutation hooks.
-- `screens/`: the remaining screens (conversation, new conversation, files, settings, devices, channels).
+- `features/conversation/`: the parts of the conversation screen that own state. `useComposerDraft` owns the draft, its persistence, attachments and the send attempt; `useTimelineScroll` wires follow/jump/history-paging decisions to the list; `ConversationOptions` is the `…`/model/access sheet and loads what each pane needs. The row model (`core/timelineRows.ts`) and the scroll decisions (`core/timelineFollow.ts`, `core/timelineScroll.ts`) are pure and unit-tested.
+- `screens/`: the remaining screens (conversation, new conversation, files, settings, devices, channels). `ConversationScreen` composes the pieces above and keeps the single-flight `run` lock that every mutation shares.
 
 ## Ownership and invariants
 
