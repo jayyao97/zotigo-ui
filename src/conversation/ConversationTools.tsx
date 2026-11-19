@@ -30,7 +30,18 @@ type Props = {
 };
 type SelectionText = { text: string; messageId?: string; startOffset: number; rect: DOMRect; range: Range; visible: boolean };
 
+export type TranslationOptions = Pick<Props, "translate" | "language" | "translationProfile">;
+
 export function ConversationTools({ root, onReference, translate, translationProfile, items, search, showHit, onCloseSearch, onSearch, language, references, editingId, onEdit, onReferencesChange }: Props) {
+  const [selectionKey, setSelectionKey] = useState(0);
+  return <>
+    <ConversationAnnotations root={root} references={references} editingId={editingId} onEdit={onEdit} onChange={onReferencesChange} />
+    <ConversationFind root={root} items={items} search={search} showHit={showHit} onClose={onCloseSearch} onOpen={() => { setSelectionKey(key => key + 1); onSearch(); }} />
+    <SelectionTools key={selectionKey} root={root} onReference={onReference} translate={translate} translationProfile={translationProfile} language={language} />
+  </>;
+}
+
+export function SelectionTools({ root, onReference, translate, translationProfile, language }: TranslationOptions & Pick<Props, "root"> & Partial<Pick<Props, "onReference">>) {
   useLocale();
   const [selection, setSelection] = useState<SelectionText | null>(null);
   const [translation, setTranslation] = useState<(TranslationResult & { pending: boolean; error?: boolean; language: "zh-CN" | "en" }) | null>(null);
@@ -44,12 +55,17 @@ export function ConversationTools({ root, onReference, translate, translationPro
     const changed = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        if (popup.current?.contains(document.activeElement)) return;
         const selected = window.getSelection();
         if (!selected || selected.isCollapsed || !selected.rangeCount) { if (!translationOpen) setSelection(null); return; }
         if (popup.current?.contains(selected.getRangeAt(0).startContainer)) return;
         const match = root.current && conversationSelection(selected.getRangeAt(0), root.current);
-        if (!match) { if (!translationOpen) setSelection(null); return; }
+        if (!match) {
+          request.current++;
+          setTranslation(null);
+          setSelection(null);
+          return;
+        }
+        if (popup.current?.contains(document.activeElement)) return;
         const { text, range, reference } = match;
         const rect = range.getBoundingClientRect();
         request.current++; setTranslation(null);
@@ -103,11 +119,9 @@ export function ConversationTools({ root, onReference, translate, translationPro
     }
   }
   return <>
-    <ConversationAnnotations root={root} references={references} editingId={editingId} onEdit={onEdit} onChange={onReferencesChange} />
-    <ConversationFind root={root} items={items} search={search} showHit={showHit} onClose={onCloseSearch} onOpen={() => { request.current++; setSelection(null); setTranslation(null); onSearch(); }} />
     {selection && createPortal(<div ref={popup} className={`selection-tools ${translation ? "has-translation" : ""}`} style={{ ...position, visibility: !translation && !selection.visible ? "hidden" : undefined }} onPointerDown={event => event.stopPropagation()}>
       <div className="selection-actions">
-        {selection.messageId && <button type="button" disabled={[...selection.text].length > 8000} onClick={() => {
+        {onReference && selection.messageId && <button type="button" disabled={[...selection.text].length > 8000} onClick={() => {
           if (!selection.messageId) return;
           window.getSelection()?.removeAllRanges();
           onReference({ id: crypto.randomUUID(), messageId: selection.messageId, startOffset: selection.startOffset, text: selection.text, comment: "" });

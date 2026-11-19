@@ -34,6 +34,9 @@ export function createWebSecurity(token: string, origin: string) {
     clearCookie(): string {
       return `${cookieName}=; ${attributes}; Max-Age=0`;
     },
+    sameSession(a: IncomingMessage, b: IncomingMessage): boolean {
+      return sessionId(a) === sessionId(b);
+    },
     expiresAt(request: IncomingMessage): number {
       return sessions.get(sessionId(request)) ?? 0;
     },

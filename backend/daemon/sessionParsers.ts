@@ -38,6 +38,7 @@ export function parseSession(value: unknown, context: string): ZotigoSession {
 
   return {
     id: expectString(record.id, `${context} id`),
+    latest_item_sequence: expectOptionalNumber(record.latest_item_sequence, `${context} latest_item_sequence`),
     read_state: record.read_state == null ? undefined : parseSessionReadState(record.read_state, `${context} read_state`),
     state,
     forked_from: fork ? {

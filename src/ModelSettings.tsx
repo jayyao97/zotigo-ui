@@ -6,7 +6,7 @@ import type { ModelProfile, ModelSettings as Settings, ModelSettingsChange } fro
 
 const blankProfile = (): ModelProfile => ({name:"",provider:"openai",model:"",base_url:"",thinking_level:"",context_window:0,max_output_tokens:null,mode:"",has_api_key:false});
 
-export function ModelSettings({hostName, hostId, onEditingChange}: {hostName:string; hostId?: string; onEditingChange?: (editing: boolean) => void}) {
+export function ModelSettings({hostName, hostId, onEditingChange, onSaved}: {hostName:string; hostId?: string; onEditingChange?: (editing: boolean) => void; onSaved?: () => void}) {
   const locale = useLocale();
   const {api}=useClient();
   const [settings,setSettings]=useState<Settings>();
@@ -51,6 +51,7 @@ export function ModelSettings({hostName, hostId, onEditingChange}: {hostName:str
       } else {
         const result=await api.updateModelSettings(input, hostId);
         if(!alive.current)return;
+        onSaved?.();
         setSettings(result);setDraft(undefined);setKey("");setClearKey(false);setDeleting(undefined);setStatus(t("models.saved"));
       }
     } catch(cause) {if(alive.current)setError(cause instanceof Error ? cause.message : t("models.connection"));}

@@ -1,3 +1,4 @@
+import { createWebSessionEvents } from "./sessionEvents";
 import { t } from "../../shared/i18n/index";
 import { readFileEventStream, type FileEventEnvelope } from "../../shared/fileEvents";
 import { createClientApi } from "../../shared/clientApi";
@@ -30,12 +31,15 @@ export function createWebClient() {
     setItem: (key, value) => sessionStorage.setItem(host === "local" ? key : `${host}:${key}`, value),
   });
   let selection = makeSelection(activeHost);
-  let source: EventSource | null = null;
   let fileSource: AbortController | null = null;
   const fileListeners = new Set<(event: FileEventEnvelope) => void>();
   const closeFiles = () => { fileSource?.abort(); fileSource = null; };
   const listeners = new Set<(event: SessionEventEnvelope) => void>();
-  const close = () => { source?.close(); source = null; };
+  const events = createWebSessionEvents(
+    targets => new EventSource(`/api/events?${new URLSearchParams({targets, zotigoHost: activeHost})}`),
+    event => { for (const listener of listeners) listener(event); },
+    () => { void webRequest("/api/session").catch(() => {}); },
+  );
   const api = createClientApi({
     invoke: async <T>(channel: string, ...args: unknown[]): Promise<T> => {
       const request = selection.begin(channel);
@@ -53,23 +57,8 @@ export function createWebClient() {
     onSessionEvent: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
   });
   const activate = api.setActiveHost;
-  api.setActiveHost = async (id) => { await activate(id); close(); closeFiles(); activeHost = id; selection = makeSelection(id); };
-  api.subscribeSessionEvents = async (id, after) => {
-    close();
-    const query = new URLSearchParams({ session: id, zotigoHost: activeHost });
-    if (after !== undefined) query.set("after", String(after));
-    source = new EventSource(`/api/events?${query}`);
-    source.onmessage = (message) => {
-      const event = JSON.parse(message.data) as SessionEventEnvelope;
-      for (const listener of listeners) listener(event);
-    };
-    source.onerror = () => {
-      for (const listener of listeners) listener({ session_id: id, status: "reconnecting" });
-      // EventSource hides HTTP status. Check the session so an expired/revoked
-      // cookie returns to login rather than retrying an unauthorized stream forever.
-      void webRequest("/api/session").catch(() => {});
-    };
-  };
+  api.setActiveHost = async (id) => { await activate(id); events.stop(); closeFiles(); activeHost = id; selection = makeSelection(id); };
+  api.subscribeSessionEvents = async (id, after) => { events.start(id, after); };
   api.subscribeFileEvents = async (subscriptionId, files) => {
     closeFiles();
     const controller = new AbortController(); fileSource = controller;
@@ -112,7 +101,7 @@ export function createWebClient() {
     })();
   };
   api.unsubscribeFileEvents = async () => { closeFiles(); };
-  api.unsubscribeSessionEvents = async () => { close(); };
+  api.unsubscribeSessionEvents = async (id) => { events.stop(id); };
   api.revealPath = async () => { throw new Error(t("api.openingAServerFolderInFinderRequiresDesktop")); };
   const openLink = api.openMarkdownLink;
   api.openMarkdownLink = async (input) => {
@@ -133,5 +122,5 @@ export function createWebClient() {
     anchor.href = url.toString(); anchor.download = "";
     anchor.click();
   };
-  return { api, dispose: () => { close(); closeFiles(); } };
+  return { api, dispose: () => { events.stop(); closeFiles(); } };
 }

@@ -1,3 +1,5 @@
+import { SessionStreamPool } from "./sessionStreamPool";
+import { readSessionHistoryTail } from "./sessionHistoryTail";
 import { useVisibleWorkspaces } from "./useVisibleWorkspaces";
 import { useSessionPages } from "./useSessionPages";
 import type { ChannelActivityMode } from "./activitySettings";
@@ -110,7 +112,6 @@ import {
   acknowledgeOptimisticPrompt,
   authoritativeSessionItems,
   ephemeralDisplayItems,
-  historyBackfillCursor,
   hasUnresolvedTurnItems,
   mergeDisplayItems,
   optimisticPromptDisplayItem,
@@ -126,7 +127,7 @@ import {
   workingConversationIds as workingConversationIdsForSessions,
   type EphemeralDisplayBlock,
 } from "../shared/sessionDisplay";
-import type { AgentCatalogEntry, AgentKind, ApprovalDecisionInput, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
+import type { ActiveSessionState, AgentCatalogEntry, AgentKind, ApprovalDecisionInput, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, SessionPage, WorkspaceFileOpenResult } from "../shared/clientTypes";
 import { workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
 import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
@@ -499,7 +500,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const stickToBottomRef = useRef(true);
   const sessionItemsRef = useRef<DisplayItem[]>([]);
   const selectedSessionIdRef = useRef<string | null>(null);
-  const sessionEventsConnectedRef = useRef(false);
+  const streamPool = useRef<SessionStreamPool | null>(null);
+  const [hostActivity, setHostActivity] = useState<ReadonlyMap<string, ActiveSessionState> | null>(null);
   const sidebarActionMenuRef = useRef<HTMLDivElement | null>(null);
   const navigationScrollRef = useRef<HTMLDivElement | null>(null);
   const lastCodexCatalogSyncAttemptAtRef = useRef(0);
@@ -750,8 +752,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     ],
   );
   const workingConversationIds = useMemo(
-    () => workingConversationIdsForSessions(desktopState.bindings, sessions, selectedActivity),
-    [desktopState.bindings, selectedActivity, sessions],
+    () => workingConversationIdsForSessions(desktopState.bindings, sessions, selectedActivity, hostActivity),
+    [desktopState.bindings, selectedActivity, sessions, hostActivity],
   );
   const composerDraftKey = draftKeyForSelection({
     conversationId: selectedConversation?.id ?? null,
@@ -810,6 +812,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }
   const visibleWorkspaces = useVisibleWorkspaces(navigationScrollRef, `${recentSessionsOpen}:${desktopState.workspaces.map(item => item.id).join(",")}:${[...collapsedProjectIds].join(",")}:${[...collapsedWorkspaceIds].join(",")}`);
   const pagedNavigation = useSessionPages({ client, enabled: desktopState.sessionQueryVersion === 1,
+    workingSessionIds: hostActivity?.keys() ?? sessions.filter(session => session.working && sessionAllowsActiveTurn(session.state)).map(session => session.id),
     activity: recentSessionsOpen && !channelsOpen && !repositoriesOpen, channel: activityChannelMode,
     workspaces: desktopState.workspaces.filter(workspace => visibleWorkspaces.has(workspace.id) && !collapsedWorkspaceIds.has(workspace.id) && (!collapsedProjectIds.has(workspace.project_id) || isNavigationPinned("workspace", workspace.id))).map(workspace => workspace.id),
     active: surfaceActive && !channelsOpen && !repositoriesOpen,
@@ -974,9 +977,37 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }, [selectedBinding?.daemon_session_id]);
 
   useEffect(() => {
+    let live = true;
+    const pool = new SessionStreamPool({
+      subscribe(id) {
+        const items = id ? cachedSessionHistory(id)?.items : undefined;
+        const after = items?.at(-1)?.sequence;
+        void client.subscribeSessionEvents(id, after).catch(() => {
+          if (live) pool.receive({session_id: id, status: "unsupported"});
+        });
+      },
+      unsubscribe(id) { void client.unsubscribeSessionEvents(id).catch(() => {}); },
+      activity: setHostActivity,
+      async catchUp(id, signal) {
+        if (!cachedSessionHistory(id) && selectedSessionIdRef.current !== id) return;
+        await loadHistoryTail(id, () => live && !signal.aborted && (selectedSessionIdRef.current === id || Boolean(cachedSessionHistory(id))));
+      },
+    });
+    streamPool.current = pool;
+    const remove = client.onSessionEvent(envelope => {
+      pool.receive(envelope);
+      const id = envelope.session_id;
+      if (id && id !== selectedSessionIdRef.current && pool.tracks(id) && envelope.event?.type === "item" && cachedSessionHistory(id)) {
+        mergeCachedSessionHistory(id, [envelope.event.item]);
+      }
+    });
+    pool.start();
+    return () => { live = false; remove(); pool.dispose(); streamPool.current = null; };
+  }, [client]);
+
+  useEffect(() => {
     const historyRequestId = ++sessionHistoryLoadRequestRef.current;
     clearPendingSessionDeltas();
-    sessionEventsConnectedRef.current = false;
     sessionHistoryBackfillNeededRef.current = null;
     setSessionItemsLoadedForSessionId(null);
     olderSessionItemsLoadingRef.current = false;
@@ -993,7 +1024,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       sessionItemsRef.current = [];
       setSessionItems([]);
       setSessionItemsLoading(false);
-      void client.unsubscribeSessionEvents();
+      streamPool.current?.select(null);
       return;
     }
 
@@ -1005,54 +1036,28 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     sessionItemsRef.current = cachedHistory?.items ?? [];
     setSessionItems(cachedHistory?.items ?? []);
     setSessionItemsLoading(!cachedHistory);
+    let readyForDeltas = false;
     const removeListener = client.onSessionEvent((envelope) => {
       if (!active || envelope.session_id !== sessionId) {
         return;
       }
-      if (envelope.status === "connected") {
-        sessionEventsConnectedRef.current = true;
-      } else if (envelope.status === "reconnecting") {
-        sessionEventsConnectedRef.current = false;
-        clearPendingSessionDeltas();
-        setEphemeralBlocks([]);
-      } else if (envelope.status === "unsupported") {
-        sessionEventsConnectedRef.current = false;
+      if (envelope.status === "reconnecting" || envelope.status === "unsupported") {
         clearPendingSessionDeltas();
         setEphemeralBlocks([]);
       }
       const sessionEvent = envelope.event;
-      if (sessionEvent?.type === "delta") {
+      if (readyForDeltas && sessionEvent?.type === "delta") {
         queueSessionDelta(sessionEvent.delta);
       }
-      if (sessionEvent?.type === "item") {
-        flushPendingSessionDeltas();
-        const item = sessionEvent.item;
-        if (item.type === "model_usage_updated" && item.context_usage) {
-          setSessions(current => current.map(session => session.id === sessionId ? { ...session, context_usage: item.context_usage } : session));
-        }
-        promptAnchors.current.delete(item.id);
-        mergeCachedSessionHistory(sessionId, [item]);
-        setEphemeralBlocks(current => reconcileDisplayPreviews(current, item));
-        promptRetries.current.delete(item.id);
-        promptRecovery.current.get(item.id)?.release();
-        promptRecovery.current.delete(item.id);
-        setOptimisticPromptItems((current) => reconcileOptimisticSteering(current, [item]));
-        applyDurableItemEffects(selectedBinding, [item]);
+      if (readyForDeltas && sessionEvent?.type === "item") {
+        acceptDurableItems(sessionId, [sessionEvent.item]);
       }
     });
 
-    let subscribed = false;
-    const subscribe = (items: DisplayItem[]) => {
-      if (!active || subscribed) return;
-      subscribed = true;
-      const lastSequence = items.reduce<number | undefined>(
-        (maximum, item) => Math.max(maximum ?? 0, item.sequence),
-        undefined,
-      );
-      void client.subscribeSessionEvents(sessionId, lastSequence);
-    };
-    void refreshSessionItems(selectedBinding, { historyRequestId, quiet: Boolean(cachedHistory) }).then((items) => {
-      subscribe(items);
+    void refreshSessionItems(selectedBinding, { historyRequestId, quiet: Boolean(cachedHistory) }).then(() => {
+      if (!active) return;
+      readyForDeltas = true;
+      streamPool.current?.select(sessionId);
     });
 
     return () => {
@@ -1062,7 +1067,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       }
       clearPendingSessionDeltas();
       removeListener();
-      void client.unsubscribeSessionEvents();
+      streamPool.current?.select(null);
     };
   }, [selectedBinding?.daemon_session_id]);
 
@@ -1308,7 +1313,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       if (selectedBinding && selectedSessionItemsNeedRefresh(
         selectedBinding.daemon_session_id,
         sessionItemsLoadedForSessionId,
-        sessionEventsConnectedRef.current,
+        (streamPool.current?.upToDate(selectedBinding.daemon_session_id) ?? false)
+          && (selectedSessionDetail?.latest_item_sequence ?? selectedSessionDetail?.read_state?.completed_sequence ?? 0) <= (sessionItemsRef.current.at(-1)?.sequence ?? 0),
         sessionHistoryBackfillNeededRef.current === selectedBinding.daemon_session_id,
       )) {
         await refreshSessionItems(selectedBinding, { quiet: true });
@@ -1358,6 +1364,44 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     pendingSessionDeltasRef.current = [];
   }
 
+  async function loadHistoryTail(sessionId: string, current: () => boolean): Promise<number> {
+    let count = 0;
+    const cached = cachedSessionHistory(sessionId);
+    await readSessionHistoryTail(cached ? cached.items.at(-1)?.sequence ?? 0 : undefined,
+      query => client.listSessionItems(sessionId, query), current, (page, initial) => {
+        count += page.items.length;
+        if (page.items.length || initial) {
+          acceptDurableItems(sessionId, page.items, initial ? page.prev_cursor || null : undefined);
+        }
+      });
+    return count;
+  }
+
+  // SSE and recovery pages acknowledge the same durable log items. Apply the
+  // same preview retirement and optimistic delivery effects on either path.
+  function acceptDurableItems(sessionId: string, items: DisplayItem[], prevCursor?: string | null) {
+    const selected = selectedSessionIdRef.current === sessionId;
+    if (selected) flushPendingSessionDeltas();
+    const merged = mergeCachedSessionHistory(sessionId, items, prevCursor);
+    if (!selected) return;
+    if (prevCursor !== undefined) sessionItemsPrevCursorRef.current = prevCursor;
+    if (items.some(item => item.type === "model_usage_updated" && item.context_usage)) {
+      let usage: DisplayItem["context_usage"];
+      for (let index = merged.length - 1; index >= 0 && !usage; index--) {
+        if (merged[index].type === "model_usage_updated") usage = merged[index].context_usage;
+      }
+      if (usage) setSessions(current => current.map(session => session.id === sessionId ? { ...session, context_usage: usage } : session));
+    }
+    setEphemeralBlocks(current => items.reduce(reconcileDisplayPreviews, current));
+    for (const item of items) {
+      promptRetries.current.delete(item.id);
+      promptRecovery.current.get(item.id)?.release();
+      promptRecovery.current.delete(item.id);
+    }
+    setOptimisticPromptItems(current => reconcileOptimisticSteering(current, items));
+    applyDurableItemEffects(sessionId, items);
+  }
+
   async function refreshSessionItems(
     binding: DaemonSessionBinding,
     options: { quiet?: boolean; historyRequestId?: number } = {},
@@ -1375,30 +1419,17 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     try {
       const trace = options.historyRequestId !== undefined ? switchTraceRef.current : null;
       trace?.("history-request");
-      const response = await client.listSessionItems(binding.daemon_session_id, { limit: 200 });
-      trace?.("history-response", { count: response.items.length });
-      if (!isCurrentRequest()) {
-        return [];
-      }
-
-      const cached = sessionHistoryCacheRef.current.get(binding.daemon_session_id);
-      const prevCursor = historyBackfillCursor(
-        cached?.items ?? [],
-        cached?.prevCursor ?? null,
-        response.items,
-        response.prev_cursor || null,
-      );
-      const mergedItems = mergeCachedSessionHistory(binding.daemon_session_id, response.items, prevCursor);
+      const count = await loadHistoryTail(binding.daemon_session_id, isCurrentRequest);
+      trace?.("history-response", { count });
+      if (!isCurrentRequest()) return [];
+      const cached = cachedSessionHistory(binding.daemon_session_id);
+      const mergedItems = cached?.items ?? [];
+      const prevCursor = cached?.prevCursor ?? null;
       sessionHistoryBackfillNeededRef.current = prevCursor && hasUnresolvedTurnItems(mergedItems)
         ? binding.daemon_session_id
         : null;
       sessionItemsPrevCursorRef.current = prevCursor;
       setSessionItemsLoadedForSessionId(binding.daemon_session_id);
-      setEphemeralBlocks((current) =>
-        current.filter((block) => !response.items.some((item) => item.id === block.id)),
-      );
-      setOptimisticPromptItems((current) => reconcileOptimisticSteering(current, response.items));
-      applyDurableItemEffects(binding, response.items);
       if (!sessionHistoryBackfillNeededRef.current) setSessionItemsError(null);
       scheduleCurrentTurnHistoryBackfill(binding, historyRequestId, mergedItems, prevCursor);
       if (trace) traceNextPaint(trace, "history-paint-opportunity");
@@ -1495,15 +1526,15 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     })),
   );
 
-  function applyDurableItemEffects(binding: DaemonSessionBinding, items: DisplayItem[]) {
+  function applyDurableItemEffects(sessionId: string, items: DisplayItem[]) {
     const profileResult = latestProfileResult(items);
     if (profileResult?.profile?.to) {
       setProfileOverrides((current) => {
-        if (current[binding.daemon_session_id] !== profileResult.profile?.to) {
+        if (current[sessionId] !== profileResult.profile?.to) {
           return current;
         }
         const next = { ...current };
-        delete next[binding.daemon_session_id];
+        delete next[sessionId];
         return next;
       });
     }
@@ -3037,7 +3068,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
 
         <div className="sidebar-lower-stack">
         <div ref={navigationScrollRef} className={`sidebar-default-navigation ${channelsSidebarActive ? "is-hidden" : ""}`} inert={channelsOpen}>
-        {recentSessionsOpen ? <RecentSessions state={desktopState.sessionQueryVersion === 1 ? { ...desktopState, conversations: desktopState.conversations.filter(item => pagedNavigation.activityIDs.has(item.id)) } : desktopState} sessions={sessions} more={pagedNavigation.activityMore} onMore={pagedNavigation.loadActivityMore} error={pagedNavigation.error} onSearch={() => setSearchOpen(true)} renderItem={({ conversation, context, unread }) => <ConversationNavItem
+        {recentSessionsOpen ? <RecentSessions workingIds={workingConversationIds} state={desktopState.sessionQueryVersion === 1 ? { ...desktopState, conversations: desktopState.conversations.filter(item => pagedNavigation.activityIDs.has(item.id)) } : desktopState} sessions={sessions} more={pagedNavigation.activityMore} onMore={pagedNavigation.loadActivityMore} error={pagedNavigation.error} onSearch={() => setSearchOpen(true)} renderItem={({ conversation, context, unread }) => <ConversationNavItem
           key={conversation.id} conversation={conversation} detail={context || t("app.ungroupedSessions")}
           selected={conversation.id === selectedConversation?.id} working={workingConversationIds.has(conversation.id)} unread={unread}
           onSelect={() => void selectConversation(conversation.id)} onContextMenu={event => openConversationContextMenu(event, conversation.id)}
@@ -3652,6 +3683,12 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
             <SubagentTranscript
+              key={JSON.stringify([clientScope, selectedBinding?.daemon_session_id, activeSidePanelTab.runId])}
+              translation={selectedBinding && sidePanelOpen && surfaceActive && !channelsOpen && !repositoriesOpen ? {
+                language: translationLanguage,
+                translationProfile,
+                translate: (text, language) => client.translateSelection(selectedBinding.daemon_session_id, text, language, translationProfile || undefined),
+              } : undefined}
               thinkingDisplay={selectedSession?.agent === "codex" ? undefined : thinkingDisplay}
               run={subagentRuns.find((candidate) => candidate.id === activeSidePanelTab.runId)}
               workspaceRoot={selectedSession?.working_directory}

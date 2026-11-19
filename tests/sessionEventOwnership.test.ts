@@ -48,7 +48,7 @@ test("a replaced subscription cannot deliver stale events when its transport ign
   }> = [];
   const never = new Promise<void>(() => undefined);
   const stream = async (
-    _id: string,
+    _id: string | null,
     _after: number | undefined,
     onEvent: (event: SessionDisplayEvent) => void | Promise<void>,
     onConnected: () => void | Promise<void>,

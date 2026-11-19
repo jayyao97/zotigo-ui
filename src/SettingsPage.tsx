@@ -1,7 +1,7 @@
 import type { ChannelActivityMode } from "./activitySettings";
 import { DiagnosticSettings } from "./DiagnosticSettings";
 import { changeLanguage, useLocale } from "./i18n";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useClient } from "./ClientContext";
 import type { ClientApi } from "../shared/clientTypes";
 import type { HostProfile } from "../shared/hosts";
@@ -12,6 +12,7 @@ import type { TranslationLanguage } from "./translationLanguage";
 import type { SendMode } from "./sendMode";
 import { TranslationProfileSettings } from "./TranslationProfileSettings";
 import type { AgentCatalogEntry } from "../shared/zotigod";
+import { ModelFavoritesProvider } from "./modelFavorites";
 import { FavoriteModelSettings } from "./FavoriteModelSettings";
 import { ArrowLeft, Settings, Server, RefreshCw } from "lucide-react";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
@@ -21,6 +22,7 @@ export function SettingsPage({
   activityChannelMode = "pinned",
   onActivityChannelModeChange,
   initialPage = "general",
+  activeHost = "local",
   hostName,
   hosts,
   updateApi,
@@ -43,6 +45,7 @@ export function SettingsPage({
   activityFilterSupported?: boolean;
   activityChannelMode?: ChannelActivityMode;
   onActivityChannelModeChange?: (mode: ChannelActivityMode) => void;
+  activeHost?: string;
   initialPage?: "general" | "models";
   hostName: string;
   hosts: HostProfile[];
@@ -63,13 +66,25 @@ export function SettingsPage({
   onManageHosts: () => void;
   onBack: () => void;
 }) {
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || document.querySelector("dialog[open]")) return;
+      event.preventDefault();
+      onBack();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onBack]);
   const locale = useLocale();
   const { kind } = useClient();
   const [requestedModelHost, setModelHost] = useState("local");
   const modelHost = hosts.some(host => host.id === requestedModelHost) ? requestedModelHost : "local";
   const [modelEditing, setModelEditing] = useState(false);
+  const [profileRevision, setProfileRevision] = useState(0);
   useEffect(() => { if (modelHost !== requestedModelHost) setModelHost(modelHost); }, [modelHost, requestedModelHost]);
   const [page, setPage] = useState<"general" | "models" | "updates">(initialPage);
+  const targetHostName = modelHost === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : hosts.find(host => host.id === modelHost)?.name ?? modelHost;
   return (
     <main className="settings-page">
       <aside className="settings-sidebar">
@@ -96,7 +111,14 @@ export function SettingsPage({
                 {hosts.map(host => <option key={host.id} value={host.id}>{host.id === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : host.name}</option>)}
               </select>
             </label>
-            {hosts.some(host => host.id === modelHost) && <ModelSettings key={modelHost} hostId={modelHost} hostName={modelHost === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : hosts.find(host => host.id === modelHost)!.name} onEditingChange={setModelEditing}/>}
+            {hosts.some(host => host.id === modelHost) && <Fragment key={modelHost}>
+              <ModelSettings hostId={modelHost} hostName={targetHostName} onEditingChange={setModelEditing} onSaved={() => setProfileRevision(revision => revision + 1)} />
+              {modelHost === activeHost
+                ? <FavoriteModelSettings profileRevision={profileRevision} hostName={targetHostName} onCodexRefresh={onCodexRefresh} />
+                : <ModelFavoritesProvider host={modelHost}>
+                    <FavoriteModelSettings profileRevision={profileRevision} targetHost={modelHost} hostName={targetHostName} />
+                  </ModelFavoritesProvider>}
+            </Fragment>}
           </> : <>
           <h1>{t("settingsPage.general")}</h1>
           <section className="settings-section">
@@ -110,7 +132,6 @@ export function SettingsPage({
             </label></div>
             {activityFilterSupported === false && <p className="settings-help">{t("activity.upgradeRequired")}</p>}
           </section>
-          <section className="settings-section"><div className="settings-card"><div className="settings-row"><span><strong>{t("models.title")}</strong><small>{t("settings.modelsHostHelp")}</small></span><button className="settings-secondary-button" onClick={() => setPage("models")}>{t("models.open")}</button></div></div></section>
 
           <section className="settings-section" aria-labelledby="language-settings-heading">
             <h2 id="language-settings-heading">{t("settings.language")}</h2>
@@ -172,7 +193,6 @@ export function SettingsPage({
             {syncError && <p role="alert">{syncError}</p>}
           </section>
 
-          <FavoriteModelSettings hostName={hostName} onCodexRefresh={onCodexRefresh} />
 
           <section className="settings-section" aria-labelledby="connection-settings-heading">
             <h2 id="connection-settings-heading">{t("settingsPage.connections")}</h2>

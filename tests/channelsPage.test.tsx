@@ -56,6 +56,42 @@ function button(container: ParentNode, label: string) {
   return result;
 }
 
+test("an open Channel page refreshes a recovered connection", async () => {
+  const restore = installDom();
+  const root = createRoot(document.querySelector("#root")!);
+  try {
+    let status = "error";
+    let tick: (() => void) | undefined;
+    const browser: Window = window;
+    const schedule = browser.setTimeout.bind(browser);
+    browser.setTimeout = (callback, delay, ...args) => {
+      if (typeof callback === "function" && delay === 10000) {
+        tick = () => callback();
+        return 1;
+      }
+      return schedule(callback, delay, ...args);
+    };
+    const api = {
+      listChannelConnections: async () => [{ ...connection("connection-1", status === "running" ? "Renamed remotely" : "Bot One"), status }],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+    } as unknown as ClientApi;
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    assert.ok(document.querySelector(".channel-status.error"));
+    assert.ok(tick);
+    const enabled = document.querySelector<HTMLInputElement>("input[role=switch]")!;
+    await act(async () => enabled.click());
+    assert.equal(enabled.checked, false);
+    status = "running";
+    await act(async () => tick!());
+    assert.ok(document.querySelector(".channel-status.running"));
+    assert.equal(enabled.checked, false, "runtime refresh must preserve unsaved changes");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
 test("connection deletion requires confirmation and preserves a binding conflict", async () => {
   const restore = installDom();
   try {

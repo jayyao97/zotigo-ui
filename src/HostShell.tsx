@@ -191,6 +191,7 @@ export function HostShell() {
           activityFilterSupported={querySupport?.host === selected ? querySupport.supported : undefined} activityChannelMode={activityChannelMode} onActivityChannelModeChange={setActivityChannelMode}
           hosts={profiles}
           updateApi={api}
+          activeHost={selected}
           initialPage={modelSetup ? "models" : "general"}
           key={selected}
           onSync={() => void syncCatalog()}

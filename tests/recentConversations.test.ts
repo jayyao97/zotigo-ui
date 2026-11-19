@@ -12,7 +12,7 @@ const runtime = (id: string, unread: boolean): ZotigoSession => ({ id, created_a
 
 test("recent navigation prioritizes all unread, dates the rest and excludes older read sessions", () => {
   const catalog = state([conversation("old-read", at(1)), conversation("yesterday", at(12)), conversation("today", at(13)), conversation("old-unread", at(1)), conversation("new-unread", at(13, 14))]);
-  const groups = recentConversationGroups(catalog, [runtime("old-unread", true), runtime("new-unread", true)], now);
+  const groups = recentConversationGroups(catalog, [runtime("old-unread", true), runtime("new-unread", true)], now, new Set());
   assert.deepEqual(groups.map(group => group.entries.map(entry => entry.conversation.id)), [["new-unread", "old-unread"], ["today"], ["yesterday"]]);
   assert.equal(groups[0].key, "unread");
   assert.equal(groups[1].key, localDateKey(now));
@@ -22,15 +22,15 @@ test("recent navigation prioritizes all unread, dates the rest and excludes olde
 test("seven-day cutoff uses local midnight and runtime activity can revive an old catalog entry", () => {
   const cutoff = new Date(now); cutoff.setHours(0, 0, 0, 0); cutoff.setDate(cutoff.getDate() - 6);
   const catalog = state([conversation("boundary", cutoff.toISOString()), conversation("too-old", new Date(cutoff.getTime() - 1).toISOString()), conversation("active", at(1))]);
-  const groups = recentConversationGroups(catalog, [{ ...runtime("active", false), updated_at: at(13) }], now);
+  const groups = recentConversationGroups(catalog, [{ ...runtime("active", false), updated_at: at(13) }], now, new Set());
   assert.deepEqual(groups.flatMap(group => group.entries.map(entry => entry.conversation.id)), ["active", "boundary"]);
 });
 
 test("binding IDs resolve unread status; marking read moves or removes entries without duplicates", () => {
   const catalog = state([conversation("catalog-id", at(1))]);
   catalog.bindings = [{ conversation_id: "catalog-id", daemon_session_id: "runtime-id", created_at: at(1) }];
-  assert.equal(recentConversationGroups(catalog, [runtime("runtime-id", true)], now)[0].entries[0].unread, true);
-  assert.deepEqual(recentConversationGroups(catalog, [runtime("runtime-id", false)], now), []);
+  assert.equal(recentConversationGroups(catalog, [runtime("runtime-id", true)], now, new Set())[0].entries[0].unread, true);
+  assert.deepEqual(recentConversationGroups(catalog, [runtime("runtime-id", false)], now, new Set()), []);
 });
 
 test("context uses project/workspace names, handles missing timestamps and ties deterministically", () => {
@@ -38,7 +38,21 @@ test("context uses project/workspace names, handles missing timestamps and ties 
   catalog.conversations[0] = { ...catalog.conversations[0], project_id: "p", workspace_id: "w" };
   catalog.projects = [{ id: "p", name: "Project", created_at: at(1), updated_at: at(1) }];
   catalog.workspaces = [{ id: "w", project_id: "p", title: "Workspace", status: "ready", root_path: "/tmp/workspace", created_at: at(1), updated_at: at(1) }];
-  const entries = recentConversationGroups(catalog, [], now)[0].entries;
+  const entries = recentConversationGroups(catalog, [], now, new Set())[0].entries;
   assert.deepEqual(entries.map(entry => entry.conversation.id), ["a", "b"]);
   assert.equal(entries[1].context, "Project / Workspace");
+});
+
+test("working sessions lead within each group and return to recency order when finished", () => {
+  const catalog = state([
+    conversation("new", at(13, 11)), conversation("older-running", at(13, 9)),
+    conversation("newer-running", at(13, 10)), conversation("yesterday-running", at(12)),
+    conversation("unread", at(13)), conversation("unread-running", at(11)),
+  ]);
+  const sessions = [runtime("unread", true), runtime("unread-running", true)];
+  const working = new Set(["older-running", "newer-running", "yesterday-running", "unread-running"]);
+  const order = () => recentConversationGroups(catalog, sessions, now, working).map(group => group.entries.map(entry => entry.conversation.id));
+  assert.deepEqual(order(), [["unread-running", "unread"], ["newer-running", "older-running", "new"], ["yesterday-running"]]);
+  working.delete("newer-running");
+  assert.deepEqual(order()[1], ["older-running", "new", "newer-running"]);
 });

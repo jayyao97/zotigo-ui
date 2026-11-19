@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { buildToolRenderProjection } from "../shared/sessionDisplay";
 import { buildSubagentRuns } from "../src/conversation/SubagentPanel";
 import type { DisplayItem } from "../shared/zotigod";
 
@@ -164,4 +165,26 @@ test("error-only subagent events preserve the failure reason", () => {
 
   assert.equal(runs[0].status, "failed");
   assert.deepEqual(runs[0].history.map((entry) => entry.text), ["command exited with status 2"]);
+});
+
+test("requested spawns wait for actual child start and leave the queue when the turn stops", () => {
+  const call: DisplayItem = {
+    id: "calls", type: "assistant_message", sequence: 1, created_at: "",
+    content: ["one", "two", "three"].map(id => ({
+      type: "tool_call", tool_call: { id, name: "spawn", arguments: "{}" },
+    })),
+  };
+  const status = (id: string, value: "running" | "completed", sequence: number): DisplayItem => ({
+    id: String(sequence), sequence, type: "assistant_message", created_at: "",
+    subagent: { tool_call_id: id, status: value },
+  });
+  const items = [call, status("one", "running", 2)];
+  const states = () => buildSubagentRuns(items).map(run => run.status);
+  assert.deepEqual(states(), ["running", "queued", "queued"]);
+  assert.deepEqual([...buildToolRenderProjection(items).runningSpawns], ["one"]);
+  items.push(status("one", "completed", 3), status("two", "running", 4));
+  assert.deepEqual(states(), ["completed", "running", "queued"]);
+  assert.deepEqual([...buildToolRenderProjection(items).runningSpawns], ["two"]);
+  items.push({ id: "stop", sequence: 5, created_at: "", type: "turn_interrupted" });
+  assert.deepEqual(states(), ["completed", "interrupted", "interrupted"]);
 });

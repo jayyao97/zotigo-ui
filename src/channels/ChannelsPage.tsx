@@ -84,7 +84,8 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
   const selectedConnectionConfig = selectedConnection ? JSON.stringify(connectionInput(selectedConnection)) : "";
   const groupConversationConfig = groupConversation ? JSON.stringify(groupConversation) : "";
   const ownerSenderIDs = selectedConnection?.owner_sender_ids ?? [];
-  const startingConnectionIds = connections.filter((value) => value.status === "starting").map((value) => value.id).sort().join("\n");
+  const runtimeRefreshMs = connections.some((value) => value.status === "starting") ? 1000
+    : connections.some((value) => value.enabled) ? 10000 : 0;
   const readyWorkspaces = useMemo(() => workspaces.filter((value) => value.status === "ready"), [workspaces]);
   const visibleWorkspaces = useMemo(() => readyWorkspaces.filter((value) => value.project_id === groupProjectId), [readyWorkspaces, groupProjectId]);
   const workspaceById = useMemo(() => new Map(workspaces.map((value) => [value.id, value])), [workspaces]);
@@ -185,16 +186,27 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
     return () => { active = false; };
   }, [api, selectedWorkspace?.id, selectedWorkspace?.root_path]);
   useEffect(() => {
-    if (!startingConnectionIds) return;
+    if (!runtimeRefreshMs) return;
     let active = true;
     let timer = 0;
     const refreshRuntime = async () => {
-      try { const latest = await api.listChannelConnections(); if (active) setConnections(latest); } catch { /* keep the last runtime state */ }
-      finally { if (active) timer = window.setTimeout(refreshRuntime, 1000); }
+      const version = requestVersion.current;
+      try {
+        const latest = await api.listChannelConnections();
+        if (!active || version !== requestVersion.current) return;
+        const byId = new Map(latest.map(connection => [connection.id, connection]));
+        setConnections(current => current.map(connection => {
+          const runtime = byId.get(connection.id);
+          if (!runtime) return connection;
+          return { ...connection, status: runtime.status, last_error: runtime.last_error, bot_open_id: runtime.bot_open_id,
+            bot_name: runtime.bot_name, owner_sender_ids: runtime.owner_sender_ids, cot_available: runtime.cot_available };
+        }));
+      } catch { /* keep the last runtime state */ }
+      finally { if (active) timer = window.setTimeout(refreshRuntime, runtimeRefreshMs); }
     };
-    timer = window.setTimeout(refreshRuntime, 500);
+    timer = window.setTimeout(refreshRuntime, runtimeRefreshMs === 1000 ? 500 : runtimeRefreshMs);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [api, startingConnectionIds]);
+  }, [api, runtimeRefreshMs]);
   useEffect(() => { if (!creatingConnection) setConnectionDraft(selectedConnection ? connectionInput(selectedConnection) : emptyConnection()); }, [creatingConnection, selectedConnectionId, selectedConnectionConfig]);
   useEffect(() => {
     if (!groupConversation || !selectedConnection) { setGroupDraft(null); setGroupProjectId(""); return; }

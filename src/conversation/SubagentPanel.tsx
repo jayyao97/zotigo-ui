@@ -1,7 +1,9 @@
 import { stateLabel } from "../../shared/i18n/display";
 import { useLocale } from "../i18n";
 import { t } from "../../shared/i18n/index";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
+import { SelectionTools, type TranslationOptions } from "./ConversationTools";
+import { isNearScrollBottom } from "../app/appHelpers";
 import type React from "react";
 import { ArrowLeft, LoaderCircle } from "lucide-react";
 
@@ -30,13 +32,21 @@ export type SubagentRun = {
   name: string;
   description?: string;
   workdir?: string;
-  status: "running" | "waiting_approval" | "completed" | "failed";
+  status: "queued" | "interrupted" | "running" | "waiting_approval" | "completed" | "failed";
   history: SubagentHistoryEntry[];
 };
 
 export function buildSubagentRuns(items: DisplayItem[]): SubagentRun[] {
   const runs = new Map<string, SubagentRun>();
+  const turnRuns = new Set<string>();
   for (const item of items) {
+    if (item.type === "turn_completed" || item.type === "turn_failed" || item.type === "turn_interrupted") {
+      for (const id of turnRuns) {
+        const run = runs.get(id)!;
+        if (run.status === "queued" || run.status === "running" || run.status === "waiting_approval") run.status = "interrupted";
+      }
+      turnRuns.clear();
+    }
     const subagent = item.subagent;
     if (subagent?.tool_call_id) {
       const run = runs.get(subagent.tool_call_id) ?? {
@@ -46,11 +56,12 @@ export function buildSubagentRuns(items: DisplayItem[]): SubagentRun[] {
         history: [],
       };
       runs.set(subagent.tool_call_id, run);
-      if (run.status === "completed" || run.status === "failed") continue;
+      turnRuns.add(run.id);
+      if (run.status === "completed" || run.status === "failed" || run.status === "interrupted") continue;
       run.name = subagent.name || run.name;
       run.description = subagent.description || run.description;
       run.workdir = subagent.workdir || run.workdir;
-      run.status = subagent.status || run.status;
+      run.status = subagent.status ?? (run.status === "queued" ? "running" : run.status);
       const content = item.content ?? [];
       if (content.length > 0 || item.error) {
         const displayContent = content.length > 0 ? content : [{ type: "text", text: item.error! }];
@@ -65,6 +76,7 @@ export function buildSubagentRuns(items: DisplayItem[]): SubagentRun[] {
     for (const part of item.content ?? []) {
       const call = part.tool_call;
       if (call?.name === "spawn" && call.id) {
+        turnRuns.add(call.id);
         const args = parseJSONObject(call.arguments);
         const run = runs.get(call.id);
         if (run) {
@@ -77,7 +89,7 @@ export function buildSubagentRuns(items: DisplayItem[]): SubagentRun[] {
             name: stringValue(args?.name) || stringValue(args?.description) || "subagent",
             description: stringValue(args?.description),
             workdir: stringValue(args?.workdir),
-            status: "running",
+            status: "queued",
             history: [],
           });
         }
@@ -92,7 +104,7 @@ export function buildSubagentRuns(items: DisplayItem[]): SubagentRun[] {
         history: [],
       };
       runs.set(result.tool_call_id, run);
-      run.status = result.is_error ? "failed" : "completed";
+      run.status = result.is_error || result.result_type === "execution-denied" ? "failed" : "completed";
       run.name = stringValue(metadata?.name) || run.name;
       run.description = stringValue(metadata?.description) || run.description;
       run.workdir = stringValue(metadata?.workdir) || run.workdir;
@@ -110,10 +122,12 @@ export function buildSubagentRuns(items: DisplayItem[]): SubagentRun[] {
 export function SubagentOverview({ runs, onSelect }: { runs: SubagentRun[]; onSelect: (id: string) => void }) {
   useLocale();
   const active = runs.filter((run) => run.status === "running" || run.status === "waiting_approval");
-  const done = runs.filter((run) => run.status === "completed" || run.status === "failed");
+  const queued = runs.filter(run => run.status === "queued");
+  const done = runs.filter((run) => run.status === "completed" || run.status === "failed" || run.status === "interrupted");
   return (
     <div className="subagent-overview">
-      <SubagentSection title={t("subagentPanel.active")} runs={active} empty={t("subagentPanel.noActive")} onSelect={onSelect} />
+      <SubagentSection title={t("subagentPanel.active")} runs={active} empty={queued.length ? undefined : t("subagentPanel.noActive")} onSelect={onSelect} />
+      {queued.length > 0 && <SubagentSection title={t("subagentPanel.queued")} runs={queued} onSelect={onSelect} />}
       <SubagentSection title={t("subagentPanel.done")} runs={done} onSelect={onSelect} />
     </div>
   );
@@ -162,13 +176,34 @@ export function SubagentTranscript({
   workspaceRoot,
   onBack,
   thinkingDisplay,
+  translation,
 }: {
   run?: SubagentRun;
   workspaceRoot?: string;
   onBack: () => void;
   thinkingDisplay?: ThinkingDisplayMode;
+  translation?: TranslationOptions;
 }) {
   useLocale();
+  const scroll = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const lastTop = useRef(0);
+  useLayoutEffect(() => {
+    const viewport = scroll.current;
+    if (!viewport || !content.current) return;
+    following.current = true;
+    const follow = () => {
+      if (!following.current) return;
+      viewport.scrollTop = viewport.scrollHeight;
+      lastTop.current = viewport.scrollTop;
+    };
+    follow();
+    const observer = new ResizeObserver(follow);
+    observer.observe(content.current);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [run?.id]);
   const compact = (value?: string) => compactDisplayPaths(value, workspaceRoot) ?? "";
   const items = useMemo(() => subagentHistoryItems(run, workspaceRoot), [run, workspaceRoot]);
   const toolProjection = useMemo(() => buildToolRenderProjection(items), [items]);
@@ -176,9 +211,9 @@ export function SubagentTranscript({
   const latestThinking = latestReasoningItemId(items);
   const activeToolCallId = run?.status === "running" ? latestPendingToolCall(items)?.id : undefined;
   const renderItem = (item: DisplayItem) => item.role === "user" ? (
-    <UserMessage key={item.id} text={displayContentText(item.content)} />
+    <UserMessage key={item.id} messageId={item.id} text={displayContentText(item.content)} />
   ) : (
-    <div key={item.id} className="message-row assistant">
+    <div key={item.id} data-message-id={item.id} className="message-row assistant">
       <div className="message-bubble assistant">
         <AssistantContentView itemId={item.id} content={item.content ?? []} projection={toolProjection} activeToolCallId={activeToolCallId} />
       </div>
@@ -198,12 +233,20 @@ export function SubagentTranscript({
           {subagentStatusLabel(run.status)}
         </span>
       </header>
-      <div className="subagent-transcript-scroll">
-        <div className="subagent-transcript-content">
+      {translation && <SelectionTools root={scroll} {...translation} />}
+      <div className="subagent-transcript-scroll" ref={scroll} tabIndex={0}
+        onWheel={event => { if (event.deltaY < 0 && event.currentTarget.scrollTop > 0) following.current = false; }}
+        onScroll={event => {
+          const viewport = event.currentTarget;
+          if (viewport.scrollTop < lastTop.current) following.current = false;
+          else if (viewport.scrollTop > lastTop.current && isNearScrollBottom(viewport)) following.current = true;
+          lastTop.current = viewport.scrollTop;
+        }}>
+        <div className="subagent-transcript-content" ref={content}>
           {run.description && <p className="subagent-transcript-objective">{run.description}</p>}
           {run.workdir && <code className="subagent-transcript-workdir">{compact(run.workdir)}</code>}
           {items.length === 0 ? (
-            <div className="subagent-panel-empty">{run.status === "running" || run.status === "waiting_approval" ? subagentStatusLabel(run.status) : t("subagentPanel.noRecordedHistory")}</div>
+            <div className="subagent-panel-empty">{run.status === "queued" || run.status === "running" || run.status === "waiting_approval" ? subagentStatusLabel(run.status) : t("subagentPanel.noRecordedHistory")}</div>
           ) : (
             <div className="display-log subagent-transcript-history">
               {groups.map(group => group.kind === "reasoning" ? (
@@ -236,6 +279,7 @@ function subagentPreview(run: SubagentRun): string {
 }
 
 function subagentStatusLabel(status: SubagentRun["status"]): string {
+  if (status === "queued") return t("subagentPanel.queued");
   if (status === "waiting_approval") return t("conversationTimeline.waitingForApproval");
   return status === "completed" ? t("subagentPanel.completed") : stateLabel(status).replace(/^./, character => character.toUpperCase());
 }

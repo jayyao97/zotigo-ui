@@ -17,6 +17,7 @@ export interface SessionReadState {
 }
 
 export interface ZotigoSession {
+  latest_item_sequence?: number;
   read_state?: SessionReadState;
   id: string;
   state: SessionState;
@@ -312,7 +313,10 @@ export interface DisplayDelta {
   subagent?: DisplaySubagent;
 }
 
+export type ActiveSessionState = "starting" | "running" | "pausing" | "paused";
+
 export type SessionDisplayEvent =
+  | { type: "activity"; revision: number; active: Record<string, ActiveSessionState> }
   | { type: "item"; item: DisplayItem }
   | { type: "delta"; delta: DisplayDelta };
 

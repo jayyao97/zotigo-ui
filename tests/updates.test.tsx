@@ -1,3 +1,4 @@
+import { ModelFavoritesProvider } from "../src/modelFavorites";
 import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 import fs from "node:fs";
@@ -20,13 +21,23 @@ test("settings select model hosts independently and run an update from one fixed
   const previous = Object.fromEntries(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, {value, configurable:true});
   const hosts = [{id:"local",name:"Local",baseUrl:"http://localhost:8766",hasToken:true}, {id:"remote",name:"Remote",baseUrl:"https://remote.test",hasToken:true}];
+  const favoriteHosts: (string | undefined)[] = [];
   const modelHosts: Array<string | undefined> = [];
   const updates: Array<[string, string, string | undefined]> = [];
   let prepared = false;
   let applied = false;
+  let remoteProfiles = [{name: "remote-api", provider: "openai", model: "test-model"}];
   const api = {
     listHosts: async () => hosts,
-    getModelSettings: async (hostId?: string) => {modelHosts.push(hostId); return {revision:"r",default_profile:"",profiles:[]};},
+    getAgents: async (host?: string) => {favoriteHosts.push(host); return {agents:[]};},
+    getDesktopState: async () => ({workspaces:[]}),
+    getProfiles: async (_cwd: unknown, _scope: unknown, hostId?: string) => ({profiles:hostId === "remote" ? remoteProfiles : []}),
+    getModelSettings: async (hostId?: string) => {modelHosts.push(hostId); return {revision:"r",default_profile:"",profiles:hostId === "remote" ? remoteProfiles : []};},
+    updateModelSettings: async (change: {action:string}, hostId: string) => {
+      assert.equal(hostId, "remote"); assert.equal(change.action, "delete");
+      remoteProfiles = [];
+      return {revision:"r2",default_profile:"",profiles:[]};
+    },
     setActiveHost: async () => {throw new Error("Settings must not switch the workbench host");},
     updateComponent: async (target: string, action: string, _channel?: string, hostId?: string) => {
       updates.push([target,action,hostId]);
@@ -42,7 +53,7 @@ test("settings select model hosts independently and run an update from one fixed
   mock.timers.enable({ apis: ["setTimeout"] });
   let workbenchCurrent = true;
   const workbenchApi = bindClientGeneration(api, () => workbenchCurrent);
-  const render = (visibleHosts = hosts) => root.render(<ClientContext.Provider value={{api:workbenchApi,kind:"desktop"}}><SettingsPage updateApi={api} hosts={visibleHosts} initialPage="models" hostName="Outside selection" onSync={()=>{}} syncing={false} syncStatus="" syncError="" translationLanguage="en" onTranslationLanguageChange={()=>{}} translationProfile="" onTranslationProfileChange={()=>{}} thinkingDisplay="expanded" onThinkingDisplayChange={()=>{}} onManageHosts={()=>{}} onBack={()=>{}}/></ClientContext.Provider>);
+  const render = (visibleHosts = hosts) => root.render(<ClientContext.Provider value={{api:workbenchApi,kind:"desktop"}}><ModelFavoritesProvider host="local"><SettingsPage updateApi={api} hosts={visibleHosts} initialPage="models" hostName="Outside selection" onSync={()=>{}} syncing={false} syncStatus="" syncError="" translationLanguage="en" onTranslationLanguageChange={()=>{}} translationProfile="" onTranslationProfileChange={()=>{}} thinkingDisplay="expanded" onThinkingDisplayChange={()=>{}} onManageHosts={()=>{}} onBack={()=>{}}/></ModelFavoritesProvider></ClientContext.Provider>);
   try {
     await act(async () => render());
     assert.deepEqual(modelHosts,["local"]);
@@ -50,11 +61,19 @@ test("settings select model hosts independently and run an update from one fixed
     const picker = document.querySelector<HTMLSelectElement>('[aria-label="Host to configure"]')!;
     await act(async () => {picker.value="remote";picker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
     assert.deepEqual(modelHosts,["local","remote"]);
+    assert.deepEqual(favoriteHosts,[undefined,"remote"]);
     await act(async () => [...document.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent==="Add model")!.click());
     assert.equal(picker.disabled,true,"finish or cancel a model draft before switching its destination");
     await act(async () => [...document.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent==="Cancel")!.click());
     assert.equal(picker.disabled,false);
+    const favoriteOptions = () => [...document.querySelectorAll<HTMLOptionElement>(".settings-favorite-fields option")].map(option => option.value);
+    assert.ok(favoriteOptions().includes("remote-api"));
+    await act(async () => document.querySelector<HTMLButtonElement>(".model-settings-row button:last-child")!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>(".model-delete-confirm button:last-child")!.click());
+    assert.ok(!favoriteOptions().includes("remote-api"));
+    assert.deepEqual(favoriteHosts,[undefined,"remote"], "refreshing API profiles must not reload the agent catalog");
     await act(async () => render([hosts[0]]));
+    assert.equal(document.querySelectorAll(".model-settings").length, 1, "switching hosts must replace the previous host form");
     assert.equal(picker.value,"local","removing the configured host falls back to the local host");
     await act(async () => render([...hosts,{id:"new",name:"New host",baseUrl:"https://new.test",hasToken:false}]));
     assert.equal(picker.options.length,3,"host management changes are reflected without reopening settings");
@@ -73,7 +92,8 @@ test("settings select model hosts independently and run an update from one fixed
     await act(async () => updateButton.click());
     assert.equal(updateButton.disabled,true);
     await act(async () => (document.querySelectorAll("nav button")[1] as HTMLButtonElement).click());
-    assert.equal(document.querySelectorAll(".settings-section").length, 0);
+    assert.ok(document.querySelector("#favorite-models-heading"));
+    assert.equal(document.querySelector('[aria-label="Update target"]'), null);
     workbenchCurrent = false; // Switching the workbench host invalidates its API, not the explicit update destination.
     await act(async () => {mock.timers.tick(2200); await new Promise(resolve=>setImmediate(resolve));});
     await act(async () => (document.querySelectorAll("nav button")[2] as HTMLButtonElement).click());

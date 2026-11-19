@@ -9,11 +9,11 @@ export function createSessionEvents(
   send: (event: SessionEventEnvelope) => void | Promise<void>,
   stream: SessionEventStream = streamSessionEvents,
 ) {
-  let sessionEventsController: AbortController | null = null;
-  function startSessionEvents(sessionId: string, after?: number): void {
-    stopSessionEvents();
+  const controllers = new Map<string | null, AbortController>();
+  function startSessionEvents(sessionId: string | null, after?: number): void {
+    stopSessionEvents(sessionId);
     const controller = new AbortController();
-    sessionEventsController = controller;
+    controllers.set(sessionId, controller);
 
     void (async () => {
       let cursor = after;
@@ -28,7 +28,7 @@ export function createSessionEvents(
             sessionId,
             cursor,
             async (sessionEvent) => {
-              if (sessionEventsController !== controller || controller.signal.aborted) return;
+              if (controllers.get(sessionId) !== controller || controller.signal.aborted) return;
               receivedEvent = true;
               await send({ session_id: sessionId, event: sessionEvent });
               if (sessionEvent.type === "item") {
@@ -36,7 +36,7 @@ export function createSessionEvents(
               }
             },
             () => {
-              if (sessionEventsController !== controller || controller.signal.aborted) return;
+              if (controllers.get(sessionId) !== controller || controller.signal.aborted) return;
               connectedAtMs = Date.now();
               return send({ session_id: sessionId, status: "connected" });
             },
@@ -73,9 +73,14 @@ export function createSessionEvents(
     });
   }
 
-  function stopSessionEvents(): void {
-    sessionEventsController?.abort();
-    sessionEventsController = null;
+  function stopSessionEvents(id?: string | null): void {
+    if (id === undefined) {
+      for (const controller of controllers.values()) controller.abort();
+      controllers.clear();
+    } else {
+      controllers.get(id)?.abort();
+      controllers.delete(id);
+    }
   }
 
 

@@ -6,8 +6,9 @@ import { createRoot } from "react-dom/client";
 import { EditorView } from "@codemirror/view";
 
 import { createClientApi } from "../shared/clientApi";
-import type { DesktopState, NavigationItem, SessionQuery } from "../shared/clientTypes";
+import type { DesktopState, NavigationItem, SessionEventEnvelope, SessionQuery } from "../shared/clientTypes";
 import { ClientContext } from "../src/ClientContext";
+import type { DisplayItem } from "../shared/zotigod";
 import { HostShell } from "../src/HostShell";
 
 const emptyState: DesktopState = {
@@ -47,6 +48,133 @@ test("paginated activity never fetches the full session list and selection never
     assert.equal(fullLists,0,"periodic status poll must remain scoped");
     assert.match(document.querySelector(".recent-session-navigation")!.textContent!,/My completed task/);
   } finally { await act(async () => root.unmount()); window.setInterval=originalInterval; restore(); }
+});
+
+test("activity shows a running session from beyond the first page without fetching the next page", async () => {
+  const restore = installDom();
+  const client = hostClient(false, {...emptyState, sessionQueryVersion: 1});
+  const listeners = new Set<(event: SessionEventEnvelope) => void>();
+  client.api.onSessionEvent = fn => { listeners.add(fn); return () => { listeners.delete(fn); }; };
+  client.api.subscribeSessionEvents = async () => {};
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  const conversations = Array.from({length: 21}, (_, i) => {
+    const time = new Date(date.getTime() - i * 60000).toISOString();
+    return {id: String(i), title: `Task ${i}`, created_at: time, updated_at: time, project_id: null, workspace_id: null};
+  });
+  let release!: () => void;
+  const slowLookup = new Promise<void>(resolve => {release = resolve;});
+  const queries: SessionQuery[] = [];
+  client.api.querySessions = async query => {
+    queries.push(query);
+    if (query.ids?.includes("20")) await slowLookup;
+    if (query.ids?.includes("extra")) throw new Error("active lookup failed");
+    const rows = query.ids ? conversations.filter(row => query.ids!.includes(row.id)) :
+      query.unread === false ? conversations.slice(0, 20) : [];
+    return {
+      conversations: rows,
+      bindings: rows.map(row => ({conversation_id: row.id, daemon_session_id: row.id, created_at: row.created_at})),
+      sessions: rows.map(row => ({id: row.id, created_at: row.created_at, state: "running", working: row.id === "20", live: true})),
+      nextCursor: query.unread === false ? "page-2" : undefined,
+    };
+  };
+  const root = await mountHostShell(client.api);
+  try {
+    await act(async () => click(document.querySelector(".recent-sessions-toggle")!));
+    await act(async () => {
+      for (const listener of listeners) listener({session_id: null, event: {type: "activity", revision: 1, active: {"20": "running"}}});
+    });
+    // Other sessions may start and finish while the remote ID lookup is in flight.
+    await act(async () => {
+      for (const listener of listeners) listener({session_id: null, event: {type: "activity", revision: 2, active: {"20": "running", extra: "running"}}});
+    });
+    await act(async () => release());
+    await flush();
+    assert.equal(queries.filter(query => query.ids?.includes("20")).length, 1);
+    assert.match(document.querySelector(".recent-session-navigation [role=alert]")?.textContent ?? "", /active lookup failed/);
+    const rows = () => document.querySelectorAll(".recent-session-navigation .sidebar-session");
+    assert.equal(rows().length, 20);
+    assert.equal(rows()[0].querySelector("button")?.title, "Task 20");
+    assert.ok(rows()[0].querySelector(".sidebar-session-spinner"));
+    assert.ok(queries.some(query => query.ids?.includes("20") && query.channel === "pinned"));
+    assert.ok(!queries.some(query => query.cursor));
+    assert.ok(document.querySelector(".recent-session-navigation > .recent-session-more"), "the chronological cursor belongs to the list, not a date group");
+    await act(async () => {
+      for (const listener of listeners) listener({session_id: null, event: {type: "activity", revision: 3, active: {}}});
+    });
+    assert.equal(document.querySelector(".recent-session-navigation [role=alert]"), null);
+    assert.equal(rows()[0].querySelector("button")?.title, "Task 0");
+    assert.equal(document.querySelector(".recent-session-navigation .sidebar-session-spinner"), null);
+  } finally { await act(async () => root.unmount()); restore(); }
+});
+
+test("background completion removes the sidebar spinner without opening the session", async () => {
+  const restore = installDom();
+  const now = new Date().toISOString();
+  const client = hostClient(false, {...emptyState, sessionQueryVersion: 1});
+  const listeners = new Set<(event: SessionEventEnvelope) => void>();
+  client.api.onSessionEvent = fn => { listeners.add(fn); return () => { listeners.delete(fn); }; };
+  client.api.subscribeSessionEvents = async () => {};
+  client.api.querySessions = async query => query.ungrouped ? {
+    conversations: [{id:"background", title:"Background investigation", project_id:null, workspace_id:null, created_at:now, updated_at:now}],
+    bindings: [{conversation_id:"background",daemon_session_id:"background",state:"running",created_at:now}],
+    sessions: [{id:"background", state:"running", live:true, working:true, created_at:now}],
+  } : {conversations:[], bindings:[], sessions:[]};
+  const root = await mountHostShell(client.api);
+  try {
+    assert.ok(document.querySelector(".sidebar-session-spinner"));
+    await act(async () => {
+      for (const listener of listeners) listener({session_id:null, event:{type:"activity",revision:2,active:{}}});
+    });
+    assert.match(document.querySelector(".ungrouped-section")!.textContent!, /Background investigation/);
+    assert.equal(document.querySelector(".sidebar-session-spinner"), null);
+    assert.ok(!client.calls.some(call => call.channel === "sessions:list-items"));
+  } finally { await act(async () => root.unmount()); restore(); }
+});
+
+test("idle detail polling recovers profile changes without a body stream or new completion", async () => {
+  const restore = installDom();
+  const now = new Date().toISOString();
+  const state = { ...emptyState, selectedConversationId: "idle",
+    conversations: [{ id: "idle", title: "Idle chat", project_id: null, workspace_id: null, created_at: now, updated_at: now }],
+    bindings: [{ conversation_id: "idle", daemon_session_id: "idle", state: "running" as const, created_at: now }],
+  };
+  const client = hostClient(false, state);
+  const listeners = new Set<(event: SessionEventEnvelope) => void>();
+  const subscriptions: Array<string | null> = [];
+  client.api.onSessionEvent = fn => { listeners.add(fn); return () => { listeners.delete(fn); }; };
+  client.api.subscribeSessionEvents = async id => { subscriptions.push(id); };
+  const items: DisplayItem[] = [{ id: "prompt", sequence: 1, type: "user_message", created_at: now, content: [{ type: "text", text: "hello" }] }];
+  client.api.getSession = async () => ({ id: "idle", created_at: now, state: "running", working: false, live: true,
+    latest_item_sequence: items.at(-1)!.sequence, read_state: { completed_sequence: 0, unread: false, version: 0, read_version: 0 } });
+  const requests: Array<number | undefined> = [];
+  client.api.listSessionItems = async (_id, query) => {
+    requests.push(query?.after);
+    return { items: items.filter(item => item.sequence > (query?.after ?? 0)), next_cursor: "", prev_cursor: "", has_more: false };
+  };
+  client.api.listQueuedInputs = async () => [];
+  const originalInterval = window.setInterval;
+  let poll: (() => void) | undefined;
+  window.setInterval = ((handler: () => void, ms: number) => {
+    if (ms === 5000) poll = handler;
+    return originalInterval(handler, ms);
+  }) as typeof window.setInterval;
+  const root = await mountHostShell(client.api);
+  try {
+    await act(async () => {
+      for (const listener of listeners) listener({session_id:null, event:{type:"activity",revision:0,active:{}}});
+    });
+    await flush();
+    assert.ok(poll);
+    const before = requests.length;
+    await act(async () => poll!()); await flush();
+    assert.equal(requests.length, before, "unchanged idle history shouldn't poll body pages");
+    items.push({id:"profile",sequence:4,type:"profile_changed",profile:{from:"old",to:"new-profile"},created_at:now});
+    await act(async () => poll!()); await flush();
+    assert.equal(requests.at(-1), 1);
+    assert.match(document.body.textContent!, /new-profile/);
+    assert.deepEqual(subscriptions,[null]);
+  } finally { await act(async () => root.unmount()); window.setInterval = originalInterval; restore(); }
 });
 
 function installDom() {
@@ -463,6 +591,10 @@ test("refreshing Codex in Settings updates the mounted composer without mismatch
     await act(async () => click(document.querySelector('[aria-label="Switch host"]')!));
     await act(async () => click([...document.querySelectorAll('.host-menu-popover button')].find((button) => button.textContent === 'Settings')!));
     await flush();
+    assert.equal(document.querySelector("#favorite-models-heading"), null);
+    await act(async () => click(document.querySelectorAll(".settings-nav-item")[1]));
+    await flush();
+    assert.ok(document.querySelector("#favorite-models-heading"));
     const beforeRefresh = preparations;
     updatedCatalog = true;
     await act(async () => click([...document.querySelectorAll('button')].find((button) => button.textContent === 'Refresh models')!));
@@ -506,8 +638,20 @@ test("Sync lives in Settings, reports errors and refreshes the mounted sidebar a
     await act(async () => click(syncButton()));
     assert.equal(syncButton().disabled, true);
     assert.equal((document.querySelector('[aria-label="Switch host"]') as HTMLButtonElement).disabled, true);
-    // Navigating back does not lose the completed sync or remount the workbench.
-    await act(async () => click(document.querySelector('.settings-back')!));
+    const escape = (options: KeyboardEventInit = {}) => act(async () => {
+      document.body.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, ...options }));
+    });
+    const dialog = document.createElement("dialog");
+    dialog.open = true;
+    document.body.append(dialog);
+    await escape();
+    assert.ok(document.querySelector(".settings-page"));
+    dialog.remove();
+    await escape({ isComposing: true });
+    assert.ok(document.querySelector(".settings-page"));
+    // Escape returns to the mounted workbench while the sync continues.
+    await escape();
+    assert.equal(document.querySelector(".settings-page"), null);
     await act(async () => complete({ ...emptyState, projects: [{ id: 'synced-project', name: 'Synced project', created_at: '', updated_at: '' }] }));
     await flush();
     assert.ok(document.querySelector('[aria-label="Projects"]')?.textContent?.includes('Synced project'));
