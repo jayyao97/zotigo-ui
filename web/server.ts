@@ -30,6 +30,14 @@ export function createWebServer(options: { origin: string; token: string; assets
     openExternal: unavailable, downloadImage: unavailable,
   };
   const streams = new Map<() => void, IncomingMessage>();
+  function checkStreamCapacity(request: IncomingMessage) {
+    // Browsers allow six HTTP/1 connections per origin, shared across tabs.
+    // Count file watches too, and leave room for RPC, logout and history reads.
+    if (streams.size >= 32 || [...streams.values()].filter(owner => security.sameSession(request, owner)).length >= 4) {
+      throw new RequestError(429, "Too many event streams.");
+    }
+  }
+
   let loginAttempts = 0;
   let loginWindowStart = Date.now();
 
@@ -98,7 +106,7 @@ export function createWebServer(options: { origin: string; token: string; assets
         let files;
         try { files = parseWatchedFiles(body.files); }
         catch { throw new RequestError(400, "Invalid file subscription."); }
-        if (streams.size >= 32) throw new RequestError(429, "Too many event streams.");
+        checkStreamCapacity(request);
         response.writeHead(200, { "Content-Type": "text/event-stream", "X-Accel-Buffering": "no" });
         response.flushHeaders();
         const controller = new AbortController();
@@ -135,13 +143,8 @@ export function createWebServer(options: { origin: string; token: string; assets
       if (!security.authenticated(request)) throw new RequestError(401, "Sign in to Zotigo Web.");
       if (url.pathname === "/api/session") { json(response, 200, { ok: true }); return; }
       if (url.pathname === "/api/events" && request.method === "GET") {
-        const session = url.searchParams.get("session");
-        const lastEventId = request.headers["last-event-id"];
-        const after = typeof lastEventId === "string" && lastEventId ? lastEventId : url.searchParams.get("after");
-        if (!session || session.length > 256 || (after !== null && (!/^\d+$/.test(after) || !Number.isSafeInteger(Number(after)) || Number(after) < 1))) {
-          throw new RequestError(400, "Invalid event subscription.");
-        }
-        if (streams.size >= 32) throw new RequestError(429, "Too many event streams.");
+        const subscriptions = sessionSubscriptions(url, request.headers["last-event-id"]);
+        checkStreamCapacity(request);
         response.writeHead(200, { "Content-Type": "text/event-stream", "X-Accel-Buffering": "no" });
         response.flushHeaders();
         const controller = new AbortController();
@@ -154,7 +157,7 @@ export function createWebServer(options: { origin: string; token: string; assets
         };
         streams.set(stop, request);
         response.on("close", stop);
-        events.start(session, after === null ? undefined : Number(after));
+        for (const {id, after} of subscriptions) events.start(id, after);
         return;
       }
       if (/^\/sessions\/[^/]+\/images\/[^/]+$/.test(url.pathname)) {
@@ -229,4 +232,34 @@ async function readJson(request: IncomingMessage, limit: number): Promise<Record
 function json(response: ServerResponse, status: number, value: unknown): void {
   response.writeHead(status, { "Content-Type": "application/json" });
   response.end(JSON.stringify(value));
+}
+
+function sessionSubscriptions(url: URL, lastEventId?: string | string[]): Array<{id: string | null; after?: number}> {
+  const targets = url.searchParams.get("targets");
+  if (targets !== null) {
+    let rows: unknown;
+    try { rows = JSON.parse(targets); } catch { throw new RequestError(400, "Invalid event subscriptions."); }
+    if (!Array.isArray(rows) || !rows.length || rows.length > 4) throw new RequestError(400, "Invalid event subscriptions.");
+    const ids = new Set<string | null>();
+    const parsed = rows.map(row => {
+      if (!row || typeof row !== "object") throw new RequestError(400, "Invalid event subscription.");
+      const {id, after} = row;
+      if ((id !== null && (typeof id !== "string" || !id || id.length > 256)) || ids.has(id)
+        || (after !== undefined && (id === null || !Number.isSafeInteger(after) || after < 1))) {
+        throw new RequestError(400, "Invalid event subscription.");
+      }
+      ids.add(id);
+      return {id, after};
+    });
+    if (ids.size === 4 && !ids.has(null)) throw new RequestError(400, "Too many session readers.");
+    return parsed;
+  }
+  // Existing pages use a single SSE cursor until their next reload.
+  const id = url.searchParams.get("session");
+  const after = typeof lastEventId === "string" && lastEventId ? lastEventId : url.searchParams.get("after");
+  const activity = url.searchParams.get("scope") === "activity";
+  if ((activity ? id !== null : !id || id.length > 256) || (after !== null && (!/^\d+$/.test(after) || !Number.isSafeInteger(Number(after)) || Number(after) < 1))) {
+    throw new RequestError(400, "Invalid event subscription.");
+  }
+  return [{id, after: after === null ? undefined : Number(after)}];
 }

@@ -182,10 +182,10 @@ addWorkspaceSourceToCatalog,
     const [file] = parseMessageFiles([input]);
     return uploadMessageFile(assertNonEmptyString(sessionId, "sessionId"), file);
   });
-  handle("daemon:get-profiles", (workingDirectory, scope) => {
-    if (scope !== undefined && scope !== "global") throw new Error("Invalid profile scope.");
+  handle("daemon:get-profiles", (workingDirectory, scope, hostId) => {
+    if (scope != null && scope !== "global") throw new Error("Invalid profile scope.");
     if (scope === "global" && workingDirectory != null) throw new Error("Global profiles cannot include a working directory.");
-    return getProfiles(workingDirectory == null ? undefined : assertString(workingDirectory, "workingDirectory"), scope);
+    return settingsHost(hostId, () => getProfiles(workingDirectory == null ? undefined : assertString(workingDirectory, "workingDirectory"), scope ?? undefined));
   });
   handle("daemon:list-skills", (sessionId, forceReload) =>
     listSkills(
@@ -194,8 +194,8 @@ addWorkspaceSourceToCatalog,
       forceReload === undefined ? false : assertBoolean(forceReload, "forceReload"),
     ),
   );
-  handle("daemon:get-agents", () => getAgents());
-  handle("daemon:prepare-codex", () => prepareCodex());
+  handle("daemon:get-agents", (hostId) => settingsHost(hostId, getAgents));
+  handle("daemon:prepare-codex", (hostId) => settingsHost(hostId, prepareCodex));
 	handle("channels:list-connections", () => listChannelConnections());
 	handle("channels:create-connection", (input) => createChannelConnection(assertChannelConnectionInput(input)));
 	handle("channels:update-connection", (id, input) => updateChannelConnection(assertNonEmptyString(id, "id"), assertChannelConnectionInput(input)));
@@ -250,11 +250,11 @@ addWorkspaceSourceToCatalog,
     listSessionItems(assertString(id, "id"), assertSessionItemsQuery(query)),
   );
   handle("sessions:subscribe-events", (idValue, afterValue) => {
-    const id = assertString(idValue, "id");
+    const id = idValue === null ? null : assertString(idValue, "id");
     const after = assertOptionalPositiveInteger(afterValue, "after");
     events.start(id, after);
   });
-  handle("sessions:unsubscribe-events", () => events.stop());
+  handle("sessions:unsubscribe-events", id => events.stop(id == null ? id : assertString(id, "id")));
   handle("files:subscribe-events", (id, files) => fileEvents.start(assertString(id, "subscriptionId"), parseWatchedFiles(files)));
   handle("files:unsubscribe-events", () => fileEvents.stop());
   handle("desktop:query-sessions", async input => {

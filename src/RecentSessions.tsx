@@ -5,8 +5,8 @@ import { localDateKey, recentConversationGroups, type RecentConversation, type R
 import { t } from "../shared/i18n";
 import { useLocale } from "./i18n";
 
-export function RecentSessions({ state, sessions, renderItem, onSearch, more, onMore, error }: {
-  state: DesktopState; sessions: ZotigoSession[]; renderItem(entry: RecentConversation): ReactNode; onSearch(): void; more?: {unread: boolean; recent: boolean}; onMore?(key: string): void; error?: string;
+export function RecentSessions({ state, sessions, workingIds, renderItem, onSearch, more, onMore, error }: {
+  state: DesktopState; sessions: ZotigoSession[]; workingIds: ReadonlySet<string>; renderItem(entry: RecentConversation): ReactNode; onSearch(): void; more?: {unread: boolean; recent: boolean}; onMore?(key: string): void; error?: string;
 }) {
   const locale = useLocale();
   const [now, setNow] = useState(Date.now);
@@ -16,24 +16,30 @@ export function RecentSessions({ state, sessions, renderItem, onSearch, more, on
     window.addEventListener("focus", refresh);
     return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, []);
-  const groups = useMemo(() => recentConversationGroups(state, sessions, now), [state, sessions, now]);
+  const groups = useMemo(() => recentConversationGroups(state, sessions, now, workingIds), [state, sessions, now, workingIds]);
+  const [dateLimit, setDateLimit] = useState(20);
+  const visibleDatesHaveMore = groups.some(group => group.key !== "unread" && group.entries.length > dateLimit);
   const today = localDateKey(now);
   const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
   const heading = (group: RecentConversationGroup) => group.key === "unread" ? t("app.unread") : group.key === today ? t("recentSessions.today") : group.key === localDateKey(yesterday.getTime()) ? t("recentSessions.yesterday") : new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", weekday: "short" }).format(group.date);
   return <div className="recent-session-navigation" aria-label={t("recentSessions.title")}>
-    {groups.map((group,index) => <RecentGroup key={group.key} group={group} title={heading(group)} renderItem={renderItem}
-      more={group.key === "unread" ? more?.unread : index === groups.length-1 && more?.recent} onMore={() => onMore?.(group.key)} />)}
+    {groups.map(group => <RecentGroup key={group.key} group={group} title={heading(group)} renderItem={renderItem}
+      dateLimit={group.key === "unread" ? undefined : dateLimit} more={group.key === "unread" && more?.unread} onMore={() => onMore?.(group.key)} />)}
+    {(more?.recent || visibleDatesHaveMore) && <button type="button" className="recent-session-more" onClick={() => {
+      if (more?.recent) onMore?.("recent");
+      setDateLimit(limit => limit + 20);
+    }}>{t("recentSessions.moreRecent")}</button>}
     {!groups.length && <p className="sidebar-empty">{t("recentSessions.empty")}</p>}
     {error && <p role="alert" className="sidebar-empty">{error}</p>}
     <button type="button" className="recent-session-search" onClick={onSearch}>{t("recentSessions.searchOlder")}</button>
   </div>;
 }
 
-function RecentGroup({ group, title, renderItem, more, onMore }: { group: RecentConversationGroup; title: string; renderItem(entry: RecentConversation): ReactNode; more?: boolean; onMore(): void }) {
+function RecentGroup({ group, title, renderItem, dateLimit, more, onMore }: { dateLimit?: number; group: RecentConversationGroup; title: string; renderItem(entry: RecentConversation): ReactNode; more?: boolean; onMore(): void }) {
   const [limit, setLimit] = useState(20);
   return <section className="recent-session-group sidebar-section" aria-label={title}>
     <h3>{title}</h3>
-    <div className="sidebar-session-list">{group.entries.slice(0, limit).map(renderItem)}</div>
-    {(group.entries.length > limit || more) && <button type="button" className="recent-session-more" onClick={() => { if (more && limit+20 >= group.entries.length) onMore(); setLimit(current => current + 20); }}>{t("conversationTimeline.showMore")}</button>}
+    <div className="sidebar-session-list">{group.entries.slice(0, dateLimit ?? limit).map(renderItem)}</div>
+    {(dateLimit === undefined && (group.entries.length > limit || more)) && <button type="button" className="recent-session-more" onClick={() => { if (more && limit+20 >= group.entries.length) onMore(); setLimit(current => current + 20); }}>{t("conversationTimeline.showMore")}</button>}
   </section>;
 }

@@ -1052,7 +1052,7 @@ export function AssistantContentView({
               call={part.tool_call}
               result={result}
               progress={part.tool_call?.id ? projection.progressByCall.get(part.tool_call.id) : undefined}
-              active={part.tool_call?.id === activeToolCallId}
+              active={part.tool_call?.name === "spawn" ? projection.runningSpawns.has(part.tool_call.id ?? "") : part.tool_call?.id === activeToolCallId}
             />
           );
         }

@@ -85,6 +85,13 @@ async function createMainWindow(): Promise<void> {
     return { action: "deny" };
   });
   const window = mainWindow;
+  // A reload or crash can discard the renderer without running React cleanup.
+  // did-navigate is a committed main-frame navigation, excluding hash changes.
+  const releaseSubscriptions = () => {
+    if (mainWindow === window) disposeHostSubscriptions();
+  };
+  window.webContents.on("did-navigate", releaseSubscriptions);
+  window.webContents.on("destroyed", releaseSubscriptions);
   window.webContents.on("context-menu", async (_event, params) => {
     if (params.mediaType !== "image") return;
     let locale = "en";
@@ -97,6 +104,7 @@ async function createMainWindow(): Promise<void> {
   mainWindow.on("unresponsive", () => diagnostics?.mark("window-unresponsive"));
   mainWindow.on("responsive", () => diagnostics?.mark("window-responsive"));
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    releaseSubscriptions();
     diagnostics?.mark("renderer-gone", { reason: details.reason, exitCode: details.exitCode });
     console.error("renderer_gone reason=%s exit_code=%d", details.reason, details.exitCode);
   });
@@ -190,14 +198,17 @@ app.on("before-quit", (event) => {
     return;
   }
   quitting = true;
-  applicationService?.dispose();
-  for (const application of hostApplications.values()) application.dispose();
+  disposeHostSubscriptions();
   stopManagedZotigod();
 });
 
 app.on("will-quit", () => {
   closePreferencesStore();
 });
+
+function disposeHostSubscriptions(): void {
+  for (const application of hostApplications.values()) application.dispose();
+}
 
 function registerIpcHandlers(): void {
   ipcMain.handle("window:close", (event) => {

@@ -13,7 +13,6 @@ import {
   hasVisibleAssistantContent,
   groupTimelineItems,
   hasUnresolvedTurnItems,
-  historyBackfillCursor,
   latestPendingToolCall,
   mergeDisplayItems,
   optimisticPromptDisplayItem,
@@ -208,26 +207,6 @@ test("turn-bound history requests older pages only when its start is missing", (
   assert.equal(hasUnresolvedTurnItems([{
     id: "started-1", sequence: 1, type: "turn_started", turn: { id: "turn-1" }, created_at: new Date(0).toISOString(),
   }, answer]), false);
-});
-
-test("history backfill starts at the latest page only when cached history misses a turn start", () => {
-  const previousTurn: DisplayItem = {
-    id: "started-previous", sequence: 1, type: "turn_started", turn: { id: "turn-previous" }, created_at: new Date(0).toISOString(),
-  };
-  const currentAnswer = {
-    ...assistant("answer-current", 500, [{ type: "text", text: "answer" }]),
-    turn: { id: "turn-current" },
-  };
-  assert.equal(historyBackfillCursor([], null, [currentAnswer], "450"), "450");
-  assert.equal(historyBackfillCursor([previousTurn], "1", [currentAnswer], "450"), "450");
-
-  const currentStart: DisplayItem = {
-    id: "started-current", sequence: 450, type: "turn_started", turn: { id: "turn-current" }, created_at: new Date(0).toISOString(),
-  };
-  assert.equal(historyBackfillCursor([previousTurn], "1", [currentStart, currentAnswer], "450"), "450");
-  const adjacentPreviousTurn = { ...previousTurn, sequence: 449 };
-  assert.equal(historyBackfillCursor([adjacentPreviousTurn, currentStart], "1", [currentStart, currentAnswer], "450"), "1");
-  assert.equal(historyBackfillCursor([previousTurn, currentStart], "1", [currentStart, currentAnswer], "450"), "1");
 });
 
 test("terminal durable state keeps accepted steering visible until its durable item arrives", () => {

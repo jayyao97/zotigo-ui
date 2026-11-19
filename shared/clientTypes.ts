@@ -33,7 +33,7 @@ import type {
 export type SessionEventStreamStatus = "connected" | "reconnecting" | "unsupported";
 
 export interface SessionEventEnvelope {
-  session_id: string;
+  session_id: string | null;
   event?: SessionDisplayEvent;
   status?: SessionEventStreamStatus;
 }
@@ -334,14 +334,14 @@ export interface ClientApi {
   setActiveHost(id: string): Promise<void>;
   inspectHostSources(paths: string[]): Promise<SourceCandidate[]>;
   getDaemonConfig(): Promise<DaemonConfig>;
-  getProfiles(workingDirectory?: string, scope?: "global"): Promise<ProfilesResponse>;
+  getProfiles(workingDirectory?: string, scope?: "global", hostId?: string): Promise<ProfilesResponse>;
   getModelSettings(hostId?: string): Promise<import("./modelSettings").ModelSettings>;
   updateComponent(target: "client" | "daemon", action: import("./updates").UpdateAction, channel?: import("./updates").UpdateChannel, hostId?: string): Promise<import("./updates").UpdateStatus>;
   updateModelSettings(change: import("./modelSettings").ModelSettingsChange, hostId?: string): Promise<import("./modelSettings").ModelSettings>;
   testModelSettings(change: import("./modelSettings").ModelSettingsChange, hostId?: string): Promise<import("./modelSettings").ModelTestResult>;
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;
-  getAgents(): Promise<AgentCatalogResponse>;
-  prepareCodex(): Promise<AgentCatalogEntry>;
+  getAgents(hostId?: string): Promise<AgentCatalogResponse>;
+  prepareCodex(hostId?: string): Promise<AgentCatalogEntry>;
   querySessions?(query: SessionQuery): Promise<SessionPage>;
   saveSelection?(input: { projectId: string | null; workspaceId: string | null; sessionId: string | null }): Promise<void>;
   listSessions(): Promise<ZotigoSession[]>;
@@ -358,8 +358,8 @@ export interface ClientApi {
   subscribeFileEvents(subscriptionId: string, files: WatchedFile[]): Promise<void>;
   unsubscribeFileEvents(): Promise<void>;
   onFileEvent(listener: (event: FileEventEnvelope) => void): () => void;
-  subscribeSessionEvents(id: string, after?: number): Promise<void>;
-  unsubscribeSessionEvents(): Promise<void>;
+  subscribeSessionEvents(id: string | null, after?: number): Promise<void>;
+  unsubscribeSessionEvents(id?: string | null): Promise<void>;
   onSessionEvent(listener: (envelope: SessionEventEnvelope) => void): () => void;
   getDesktopState(): Promise<DesktopState>;
   syncDesktopState?(): Promise<DesktopState>;

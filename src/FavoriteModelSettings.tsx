@@ -7,7 +7,7 @@ import { favoriteKey, useSavedModelFavorites, type ModelFavorite } from "./model
 import { compatibleReasoningEffort } from "./conversation/ConversationComposer";
 import type { AgentCatalogEntry, AgentKind, RuntimeProfile } from "../shared/zotigod";
 
-export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: string; onCodexRefresh?: (catalog: AgentCatalogEntry) => void }) {
+export function FavoriteModelSettings({ hostName, targetHost, profileRevision, onCodexRefresh }: { hostName: string; targetHost?: string; profileRevision?: number; onCodexRefresh?: (catalog: AgentCatalogEntry) => void }) {
   useLocale();
   const { api } = useClient();
   const favorites = useSavedModelFavorites();
@@ -17,32 +17,48 @@ export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: 
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const [profile, setProfile] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [catalogLoading, setLoading] = useState(true);
+  const [profilesLoading, setProfilesLoading] = useState(true);
+  const [profileError, setProfileError] = useState("");
+  const loading = catalogLoading || profilesLoading;
   const [error, setError] = useState("");
   const [codexWarning, setCodexWarning] = useState("");
   const [retry, setRetry] = useState(0);
   const [refreshed, setRefreshed] = useState(false);
   useEffect(() => {
     let active = true;
+    setProfilesLoading(true); setProfileError("");
+    void (async () => {
+      const state = targetHost ? undefined : await api.getDesktopState();
+      const workspace = state?.workspaces.find(item => item.id === state.selectedWorkspaceId);
+      const config = await api.getProfiles(workspace?.root_path, workspace ? undefined : "global", targetHost);
+      if (!active) return;
+      setProfiles(config.profiles);
+      setProfile(current => config.profiles.some(item => item.name === current) ? current
+        : config.profiles.find(item => item.name === config.default_profile)?.name ?? config.profiles[0]?.name ?? "");
+    })().catch((cause: unknown) => { if (active) setProfileError(cause instanceof Error ? cause.message : t("favoriteModelSettings.couldNotLoadModels")); })
+      .finally(() => { if (active) setProfilesLoading(false); });
+    return () => { active = false; };
+  }, [api, retry, targetHost, profileRevision]);
+  useEffect(() => {
+    let active = true;
     setLoading(true); setError(""); setCodexWarning(""); setRefreshed(false);
     void (async () => {
-      const [catalog, state] = await Promise.all([api.getAgents(), api.getDesktopState()]);
+      const catalog = await api.getAgents(targetHost);
       const installedCodex = catalog.agents.find((item) => item.id === "codex") ?? catalog.unavailable_agents?.find((item) => item.id === "codex");
       let availableAgents = catalog.agents.filter((item) => item.availability !== "unavailable");
       let codexError = installedCodex?.availability === "unavailable" ? installedCodex.reason || t("favoriteModelSettings.codexUnavailable") : "";
       if (installedCodex && installedCodex.availability !== "unavailable" && (retry > 0 || !installedCodex.models?.length)) {
         try {
-          const prepared = await api.prepareCodex();
+          const prepared = await api.prepareCodex(targetHost);
           availableAgents = availableAgents.map((item) => item.id === "codex" ? prepared : item);
         } catch (cause) {
           codexError = cause instanceof Error ? cause.message : t("favoriteModelSettings.codexUnavailable");
           availableAgents = availableAgents.filter((item) => item.id !== "codex");
         }
       }
-      const workspace = state.workspaces.find((item) => item.id === state.selectedWorkspaceId);
-      const config = await api.getProfiles(workspace?.root_path, workspace ? undefined : "global");
       if (!active) return;
-      setAgents(availableAgents); setProfiles(config.profiles);
+      setAgents(availableAgents);
       setCodexWarning(codexError ? `${t("favoriteModelSettings.codexUnavailable")}: ${codexError}` : "");
       const codex = availableAgents.find((item) => item.id === "codex");
       if (retry > 0 && codex) { onCodexRefresh?.(codex); setRefreshed(true); }
@@ -51,11 +67,10 @@ export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: 
       const first = (retry > 0 ? models.find((item) => item.id === model) : undefined) ?? models.find((item) => item.is_default) ?? models[0];
       setModel(first?.id ?? "");
       setEffort(compatibleReasoningEffort(first?.supported_reasoning_efforts ?? [], retry > 0 ? effort : "medium"));
-      setProfile(config.profiles.find((item) => item.name === config.default_profile)?.name ?? config.profiles[0]?.name ?? "");
     })().catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : t("favoriteModelSettings.couldNotLoadModels")); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [api, retry, onCodexRefresh]);
+  }, [api, retry, onCodexRefresh, targetHost]);
   const models = agents.find((item) => item.id === "codex")?.models ?? [];
   const selectedModel = models.find((item) => item.id === model);
   const favorite: ModelFavorite = agent === "codex" ? { agent, model, reasoningEffort: effort } : { agent, profile };
@@ -79,9 +94,9 @@ export function FavoriteModelSettings({ hostName, onCodexRefresh }: { hostName: 
         <span><strong>{label(item)}</strong><small>{item.agent === "codex" ? t("app.codex") : t("app.zotigo")}</small></span>
         <button type="button" className="settings-secondary-button" aria-label={t("favoriteModelSettings.removeFavorite", { p0: label(item) })} onClick={() => favorites.toggle(item)}>{t("favoriteModelSettings.remove")}</button>
       </div>)}
-      <form className="settings-favorite-form" onSubmit={(event) => { event.preventDefault(); if (valid && !exists && !loading && !error) favorites.toggle(favorite); }}>
+      <form className="settings-favorite-form" onSubmit={(event) => { event.preventDefault(); if (valid && !exists && !loading && !error && !profileError) favorites.toggle(favorite); }}>
         <h3>{t("favoriteModelSettings.addFavorite")}</h3>
-        {loading ? <p role="status">{t("favoriteModelSettings.loadingModels")}</p> : error ? <p role="alert">{error} <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("app.retry2")}</button></p> : <>
+        {loading ? <p role="status">{t("favoriteModelSettings.loadingModels")}</p> : (error || profileError) ? <p role="alert">{error || profileError} <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("app.retry2")}</button></p> : <>
           <div className="settings-favorite-fields">
             <label>{t("favoriteModelSettings.runtime2")}<select value={agent} onChange={(event) => setAgent(event.target.value as AgentKind)}>{agents.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             {agent === "codex" ? <>

@@ -18,7 +18,7 @@ export function localDateKey(time: number): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function recentConversationGroups(state: DesktopState, sessions: ZotigoSession[], now: number): RecentConversationGroup[] {
+export function recentConversationGroups(state: DesktopState, sessions: ZotigoSession[], now: number, workingIds: ReadonlySet<string>): RecentConversationGroup[] {
   const cutoff = new Date(now); cutoff.setHours(0, 0, 0, 0); cutoff.setDate(cutoff.getDate() - 6);
   const runtimes = new Map(sessions.map(session => [session.id, session]));
   const bindings = new Map(state.bindings.map(binding => [binding.conversation_id, binding.daemon_session_id]));
@@ -40,5 +40,10 @@ export function recentConversationGroups(state: DesktopState, sessions: ZotigoSe
     if (!groups.has(key)) groups.set(key, { key, date: entry.at, entries: [] });
     groups.get(key)!.entries.push(entry);
   }
-  return [...(unread.entries.length ? [unread] : []), ...groups.values()];
+  const orderedGroups = [...(unread.entries.length ? [unread] : []), ...groups.values()];
+  for (const group of orderedGroups) {
+    // Stable sorting preserves recency within each status and leaves date headings in order.
+    group.entries.sort((a, b) => Number(workingIds.has(b.conversation.id)) - Number(workingIds.has(a.conversation.id)));
+  }
+  return orderedGroups;
 }

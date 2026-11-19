@@ -130,6 +130,59 @@ test("Web streams forward reconnect cursors, isolate logout and close at session
   }
 });
 
+test("four subscriptions share a Web stream and competing tabs leave capacity for RPC", {timeout: 8000}, async () => {
+  const original = getDaemonConfig().baseUrl;
+  const upstream = new Map<string, ServerResponse>();
+  const daemon = createServer((incoming, response) => {
+    upstream.set(incoming.url!, response);
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(": connected\n\n");
+    if (incoming.url === "/catalog/activity") response.write('event: activity\ndata: {"active":{},"revision":5}\n\n');
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const d = daemon.address(); assert.ok(d && typeof d !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${d.port}`);
+  const origin = "http://127.0.0.1:8080";
+  const token = "fixture-web-stream-capacity-token";
+  const web = createWebServer({origin, token, assetsPath: "/unused"});
+  web.listen(0, "127.0.0.1"); await once(web, "listening");
+  const w = web.address(); assert.ok(w && typeof w !== "string");
+  const url = `http://127.0.0.1:${w.port}`;
+  const connections: IncomingMessage[] = [];
+  try {
+    const login = await new Promise<IncomingMessage>((resolve, reject) => {
+      const req = request(url + "/api/login", {method: "POST", headers: {Host: new URL(origin).host, Origin: origin, "Content-Type": "application/json", "X-Zotigo-Request": "1"}}, resolve);
+      req.on("error", reject); req.end(JSON.stringify({token}));
+    });
+    login.resume();
+    const headers = {Host: new URL(origin).host, Cookie: login.headers["set-cookie"]![0].split(";")[0]};
+    const get = (path: string) => new Promise<IncomingMessage>((resolve, reject) => {
+      const req = request(url + path, {headers}, resolve);
+      req.on("error", reject); req.end();
+    });
+    const targets = [{id: null}, {id: "a", after: 2}, {id: "b", after: 8}, {id:"c"}];
+    const query = "/api/events?" + new URLSearchParams({targets: JSON.stringify(targets)});
+    const stream = await get(query); connections.push(stream);
+    let data = "";
+    for await (const chunk of stream.iterator({destroyOnReturn:false})) {
+      data += chunk.toString();
+      if (data.includes('"revision":5') && data.match(/"status":"connected"/g)?.length === 4) break;
+    }
+    assert.deepEqual(new Set(upstream.keys()), new Set(["/catalog/activity", "/sessions/a/events?after=2", "/sessions/b/events?after=8", "/sessions/c/events"]));
+    for (let i = 0; i < 3; i++) {
+      const tab = await get(query); connections.push(tab); tab.resume(); assert.equal(tab.statusCode, 200);
+    }
+    const refused = await get(query); refused.resume();
+    assert.equal(refused.statusCode, 429);
+    const session = await get("/api/session"); session.resume();
+    assert.equal(session.statusCode, 200);
+  } finally {
+    for (const connection of connections) connection.destroy();
+    web.closeAllConnections(); web.close(); daemon.closeAllConnections(); daemon.close();
+    setDaemonBaseUrl(original);
+  }
+});
+
 test("real Web HTTP boundary enforces authentication, origin, method and operation allowlists", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "zotigo-web-server-test-"));
   await writeFile(path.join(directory, "index.html"), "<!doctype html><title>Zotigo</title>");

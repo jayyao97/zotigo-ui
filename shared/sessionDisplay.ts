@@ -14,6 +14,7 @@ export interface EphemeralDisplayBlock {
 }
 
 export interface ToolRenderProjection {
+  runningSpawns: Set<string>;
   resultsByCall: Map<string, DisplayToolResult>;
   progressByCall: Map<string, string>;
   consumedResults: Set<string>;
@@ -136,9 +137,11 @@ export function workingConversationIds(
   bindings: DaemonSessionBinding[],
   sessions: ZotigoSession[],
   selectedActivity?: { conversationId: string; working: boolean },
+  activeSessions?: ReadonlyMap<string, unknown> | null,
 ): Set<string> {
   const sessionsByID = new Map(sessions.map((session) => [session.id, session]));
   const working = new Set(bindings.flatMap((binding) => {
+    if (activeSessions) return activeSessions.has(binding.daemon_session_id) ? [binding.conversation_id] : [];
     const session = sessionsByID.get(binding.daemon_session_id);
     return session?.working && sessionAllowsActiveTurn(session.state) ? [binding.conversation_id] : [];
   }));
@@ -333,24 +336,6 @@ export function hasUnresolvedTurnItems(items: DisplayItem[]): boolean {
   return items.some((item) => Boolean(item.turn?.id) && !startedTurns.has(item.turn?.id ?? ""));
 }
 
-export function historyBackfillCursor(
-  cachedItems: DisplayItem[],
-  cachedPrevCursor: string | null,
-  latestItems: DisplayItem[],
-  latestPrevCursor: string | null,
-): string | null {
-  if (cachedItems.length === 0) return latestPrevCursor;
-  const cachedLastSequence = cachedItems.reduce((maximum, item) => Math.max(maximum, item.sequence), 0);
-  const latestFirstSequence = latestItems.reduce(
-    (minimum, item) => Math.min(minimum, item.sequence),
-    Number.POSITIVE_INFINITY,
-  );
-  if (cachedLastSequence + 1 < latestFirstSequence) return latestPrevCursor;
-  return hasUnresolvedTurnItems(mergeDisplayItems(cachedItems, latestItems))
-    ? latestPrevCursor
-    : cachedPrevCursor;
-}
-
 export function createOptimisticPromptId(): string {
   // Unlike randomUUID, getRandomValues is available on remote HTTP pages.
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -541,6 +526,7 @@ export function ephemeralDisplayItems(blocks: EphemeralDisplayBlock[]): DisplayI
 }
 
 export function buildToolRenderProjection(items: DisplayItem[]): ToolRenderProjection {
+  const runningSpawns = new Set<string>();
   const resultsByCall = new Map<string, DisplayToolResult>();
   const progressByCall = new Map<string, string>();
   const consumedResults = new Set<string>();
@@ -549,6 +535,13 @@ export function buildToolRenderProjection(items: DisplayItem[]): ToolRenderProje
   for (const item of items) {
     if (item.type === "turn_started" || isFinalTurnItem(item)) {
       pending = new Map();
+      runningSpawns.clear();
+    }
+    if (item.subagent?.tool_call_id) {
+      const { tool_call_id, status } = item.subagent;
+      if (!status || status === "running") runningSpawns.add(tool_call_id);
+      else runningSpawns.delete(tool_call_id);
+      continue;
     }
     if (item.type !== "assistant_message") {
       continue;
@@ -566,6 +559,7 @@ export function buildToolRenderProjection(items: DisplayItem[]): ToolRenderProje
         continue;
       }
       if (part.type === "tool_result" && result && resultId) {
+        runningSpawns.delete(resultId);
         const calls = pending.get(resultId);
         const callLocation = calls?.shift();
         if (callLocation) {
@@ -575,7 +569,7 @@ export function buildToolRenderProjection(items: DisplayItem[]): ToolRenderProje
       }
     }
   }
-  return { resultsByCall, progressByCall, consumedResults };
+  return { resultsByCall, progressByCall, consumedResults, runningSpawns };
 }
 
 export function latestPendingToolCall(items: DisplayItem[], toolName?: string): DisplayToolCall | null {

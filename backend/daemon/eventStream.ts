@@ -5,7 +5,7 @@ import { ZotigodRequestError, UnsupportedSessionEventsError, getDaemonConfig } f
 import { parseDisplayItem, parseDisplaySubagent } from "./displayParsers";
 
 export async function streamSessionEvents(
-  id: string,
+  id: string | null,
   after: number | undefined,
   onEvent: (event: SessionDisplayEvent) => void | Promise<void>,
   onConnected: () => void | Promise<void>,
@@ -16,7 +16,7 @@ export async function streamSessionEvents(
     params.set("after", String(after));
   }
   const search = params.toString();
-  const path = `/sessions/${encodeURIComponent(id)}/events${search ? `?${search}` : ""}`;
+  const path = id === null ? "/catalog/activity" : `/sessions/${encodeURIComponent(id)}/events${search ? `?${search}` : ""}`;
   const response = await fetchDaemon(`${getDaemonConfig().baseUrl}${path}`, {
     headers: { Accept: "text/event-stream", "X-Zotigo-Runtime-Updates": "true" },
     signal,
@@ -95,6 +95,16 @@ export function parseSessionEventFrame(frame: SseFrame): SessionDisplayEvent | n
     return null;
   }
   const data = JSON.parse(frame.data.join("\n")) as unknown;
+  if (frame.event === "activity") {
+    const snapshot = expectRecord(data, "session activity");
+    const revision = snapshot.revision;
+    if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 0) throw new Error("Invalid activity revision");
+    const active = Object.entries(expectRecord(snapshot.active, "active sessions")).map(([id, state]) => {
+      if (state !== "starting" && state !== "running" && state !== "paused" && state !== "pausing") throw new Error("Invalid active session state");
+      return [id, state] as const;
+    });
+    return {type: "activity", revision, active: Object.fromEntries(active)};
+  }
   if (frame.event === "item") {
     const item = parseDisplayItem(data, "session event item");
     const sequence = Number(frame.id);
