@@ -9,3 +9,19 @@ export function searchConversations(state: DesktopState, query: string) {
   }).filter((item) => terms.every((term) => `${item.title} ${item.context}`.toLocaleLowerCase().includes(term)))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id));
 }
+
+export function searchWorkspaces(projects: DesktopState["projects"], workspaces: DesktopState["workspaces"], query: string) {
+  const text = query.trim().toLocaleLowerCase();
+  if (!text) return [];
+  const terms = text.split(/\s+/);
+  const names = new Map(projects.map(project => [project.id, project.name]));
+  return workspaces.map(workspace => {
+    const project = names.get(workspace.project_id) ?? "";
+    const title = workspace.title.toLocaleLowerCase();
+    const context = `${project} ${title}`.toLocaleLowerCase();
+    const rank = title === text ? 0 : title.startsWith(text) ? 1 : 2;
+    return { workspace, project, context, rank };
+  }).filter(row => terms.every(term => row.context.includes(term)))
+    .sort((a, b) => a.rank - b.rank || a.workspace.title.localeCompare(b.workspace.title) || a.project.localeCompare(b.project))
+    .slice(0, 50);
+}

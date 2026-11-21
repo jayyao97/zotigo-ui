@@ -37,9 +37,11 @@ function installDom() {
 
 test("workspace sessions reveal five at a time and collapse resets the limit",async()=>{
  const restore=installDom();const root=createRoot(document.getElementById("root")!);
- const render=async(open:boolean,count=12)=>{await act(async()=>root.render(open?<WorkspaceSessionList>{Array.from({length:count},(_,i)=><span className="session" key={i}>{i}</span>)}</WorkspaceSessionList>:null));};
+ const render=async(open:boolean,count=12,revealIndex=-1)=>{await act(async()=>root.render(open?<WorkspaceSessionList revealIndex={revealIndex}>{Array.from({length:count},(_,i)=><span className="session" key={i}>{i}</span>)}</WorkspaceSessionList>:null));};
  const more=()=>document.querySelector<HTMLButtonElement>(".workspace-sessions-more");
  try {
+  await render(true);assert.equal(document.querySelectorAll(".session").length,5);
+  await render(true,12,11);assert.deepEqual(Array.from(document.querySelectorAll(".session"), row => row.textContent), ["0","1","2","3","4","11"]);
   await render(true);assert.equal(document.querySelectorAll(".session").length,5);
   await act(async()=>more()!.click());assert.equal(document.querySelectorAll(".session").length,10);
   await act(async()=>more()!.click());assert.equal(document.querySelectorAll(".session").length,12);assert.equal(more(),null);

@@ -53,6 +53,7 @@ export function ConversationNavItem({
 
   return (
     <div
+      data-session-id={conversation.id}
       className={`sidebar-session ${selected ? "selected" : ""} ${sort?.dragging ? "dragging" : ""} ${sort?.dropPosition ? `drop-${sort.dropPosition}` : ""}`}
       onMouseEnter={startTitleScroll}
       onMouseLeave={stopTitleScroll}

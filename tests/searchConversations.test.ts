@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { searchConversations } from "../shared/searchConversations";
+import { searchConversations, searchWorkspaces } from "../shared/searchConversations";
 import type { DesktopState } from "../shared/clientTypes";
 
 test("search combines title and project/workspace terms and orders recent sessions", () => {
@@ -12,4 +12,14 @@ test("search combines title and project/workspace terms and orders recent sessio
   assert.deepEqual(searchConversations(state, "  ZOTIGO  linux install ").map((item) => item.id), ["a"]);
   assert.equal(searchConversations(state, "missing").length, 0);
   assert.equal(searchConversations(state, "other")[0].context, "");
+});
+
+test("an empty workspace can be found by name and disambiguated by project", () => {
+  const state = { projects: [{ id: "p", name: "Chat" }, { id: "q", name: "Tools" }],
+    workspaces: [{ id: "a", project_id: "p", title: "Linux staging" }, { id: "b", project_id: "p", title: "Linux" },
+      { id: "c", project_id: "q", title: "Linux" }], conversations: [] } as unknown as DesktopState;
+  const search = (query: string) => searchWorkspaces(state.projects, state.workspaces, query).map(row => row.workspace.id);
+  assert.deepEqual(search(""), []);
+  assert.deepEqual(search("LINUX"), ["b", "c", "a"]);
+  assert.deepEqual(search("linux tools"), ["c"]);
 });
