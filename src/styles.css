@@ -5092,6 +5092,7 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
   :is(.sidebar-default-navigation, .search-palette-results) { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .18) transparent; }
 }
 .sidebar-default-navigation > .sidebar-section { flex: 0 0 auto; }
+.sidebar-default-navigation::after { content: ""; flex: 0 0 var(--search-reveal-space, 0px); }
 .sidebar-default-navigation.is-hidden { transform: translateX(-100%); opacity: 0; pointer-events: none; }
 .channels-sidebar-root { position: absolute; inset: 0; min-height: 0; transform: translateX(100%); opacity: 0; pointer-events: none; transition: transform 200ms cubic-bezier(.2, .8, .2, 1), opacity 160ms ease; }
 .channels-sidebar-root.is-active { transform: translateX(0); opacity: 1; pointer-events: auto; }

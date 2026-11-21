@@ -748,7 +748,16 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     const selector = reveal.kind === "session" ? `[data-session-id="${CSS.escape(reveal.id)}"]` : `[data-workspace-id="${CSS.escape(reveal.id)}"] .workspace-row`;
     let cancelled = false;
     const frame = requestAnimationFrame(() => {
-      const scroll = () => navigation.querySelector(selector)?.scrollIntoView({ block: "nearest" });
+      const scroll = () => {
+        const row = navigation.querySelector(selector);
+        if (!row) return;
+        const top = navigation.scrollTop + row.getBoundingClientRect().top - navigation.getBoundingClientRect().top;
+        // Give even the final row enough room to reach the top of the sidebar.
+        const lastSection = navigation.lastElementChild;
+        const remaining = (lastSection?.getBoundingClientRect().bottom ?? 0) - row.getBoundingClientRect().top;
+        navigation.style.setProperty("--search-reveal-space", `${Math.max(0, Math.ceil(navigation.clientHeight - remaining))}px`);
+        navigation.scrollTop = top;
+      };
       scroll();
       // Adjacent branches can also be closing, moving the target after the first scroll.
       const transitions = (navigation.getAnimations?.({ subtree: true }) ?? [])
@@ -759,7 +768,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         });
       }
     });
-    return () => { cancelled = true; cancelAnimationFrame(frame); };
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      navigation.style.removeProperty("--search-reveal-space");
+    };
   }, [reveal]);
   const actionableSessionItems = useMemo(
     () => authoritativeSessionItems(
