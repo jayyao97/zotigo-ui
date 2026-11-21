@@ -271,6 +271,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
+  const navigationRevision = useRef(0);
+  const [searchTarget, setSearchTarget] = useState<{ kind: "session" | "workspace"; id: string } | null>(null);
   const { searchOpen, setSearchOpen } = useSearchPaletteShortcut();
   const [webNavigationOpen, setWebNavigationOpen] = useState(false);
   const {
@@ -304,6 +306,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     try { return localStorage.getItem("zotigo:sidebar-recent") === "true"; } catch { return false; }
   });
   function showRecentSessions(open: boolean) {
+    navigationRevision.current++;
     leaveChannelsImmediately();
     setRecentSessionsOpen(open);
     setConversationContextMenu(null);
@@ -724,6 +727,40 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const navigationKey = (item: NavigationItem) => `${item.kind}:${item.id}`;
   const pinnedKeys = pinnedItems.map(navigationKey);
   const isNavigationPinned = (kind: NavigationItem["kind"], id: string) => pinnedItems.some((item) => item.kind === kind && item.id === id);
+  useEffect(() => {
+    if (!surfaceActive || repositoriesOpen || channelsOpen) navigationRevision.current++;
+  }, [surfaceActive, repositoriesOpen, channelsOpen]);
+  const reveal = surfaceActive && !recentSessionsOpen && !repositoriesOpen && !channelsOpen && !projectOverviewId && searchTarget && (searchTarget.kind === "session"
+    ? selectedConversation?.id === searchTarget.id
+    : !selectedConversation && selectedWorkspace?.id === searchTarget.id) ? searchTarget : null;
+  const revealSessionPinned = reveal?.kind === "session" && isNavigationPinned("session", reveal.id);
+  const revealWorkspaceId = reveal && !revealSessionPinned ? selectedWorkspace?.id : undefined;
+  const revealWorkspacePinned = !!revealWorkspaceId && isNavigationPinned("workspace", revealWorkspaceId);
+  const revealProjectId = revealWorkspaceId && !revealWorkspacePinned ? selectedWorkspace?.project_id : undefined;
+  const revealSection = !reveal ? undefined : revealSessionPinned || revealWorkspacePinned || (revealProjectId && isNavigationPinned("project", revealProjectId))
+    ? "pinned" : revealWorkspaceId ? "projects" : "ungrouped";
+  useEffect(() => {
+    if (searchTarget && !reveal) setSearchTarget(null);
+  }, [searchTarget, reveal]);
+  useEffect(() => {
+    const navigation = navigationScrollRef.current;
+    if (!reveal || !navigation) return;
+    const selector = reveal.kind === "session" ? `[data-session-id="${CSS.escape(reveal.id)}"]` : `[data-workspace-id="${CSS.escape(reveal.id)}"] .workspace-row`;
+    let cancelled = false;
+    const frame = requestAnimationFrame(() => {
+      const scroll = () => navigation.querySelector(selector)?.scrollIntoView({ block: "nearest" });
+      scroll();
+      // Adjacent branches can also be closing, moving the target after the first scroll.
+      const transitions = (navigation.getAnimations?.({ subtree: true }) ?? [])
+        .filter(animation => "transitionProperty" in animation && animation.transitionProperty === "grid-template-rows");
+      if (transitions.length) {
+        void Promise.allSettled(transitions.map(animation => animation.finished)).then(() => {
+          if (!cancelled) scroll();
+        });
+      }
+    });
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [reveal]);
   const actionableSessionItems = useMemo(
     () => authoritativeSessionItems(
       sessionItems,
@@ -810,11 +847,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       applyDesktopState(await client.getDesktopState());
     }
   }
-  const visibleWorkspaces = useVisibleWorkspaces(navigationScrollRef, `${recentSessionsOpen}:${desktopState.workspaces.map(item => item.id).join(",")}:${[...collapsedProjectIds].join(",")}:${[...collapsedWorkspaceIds].join(",")}`);
+  const visibleWorkspaces = useVisibleWorkspaces(navigationScrollRef, `${revealWorkspaceId ?? ""}:${recentSessionsOpen}:${desktopState.workspaces.map(item => item.id).join(",")}:${[...collapsedProjectIds].join(",")}:${[...collapsedWorkspaceIds].join(",")}`);
   const pagedNavigation = useSessionPages({ client, enabled: desktopState.sessionQueryVersion === 1,
     workingSessionIds: hostActivity?.keys() ?? sessions.filter(session => session.working && sessionAllowsActiveTurn(session.state)).map(session => session.id),
     activity: recentSessionsOpen && !channelsOpen && !repositoriesOpen, channel: activityChannelMode,
-    workspaces: desktopState.workspaces.filter(workspace => visibleWorkspaces.has(workspace.id) && !collapsedWorkspaceIds.has(workspace.id) && (!collapsedProjectIds.has(workspace.project_id) || isNavigationPinned("workspace", workspace.id))).map(workspace => workspace.id),
+    workspaces: desktopState.workspaces.filter(workspace => visibleWorkspaces.has(workspace.id) && (!collapsedWorkspaceIds.has(workspace.id) || revealWorkspaceId === workspace.id) && (!collapsedProjectIds.has(workspace.project_id) || revealProjectId === workspace.project_id || isNavigationPinned("workspace", workspace.id))).map(workspace => workspace.id),
     active: surfaceActive && !channelsOpen && !repositoriesOpen,
     onConnection: online => setConnectionState(online ? "online" : "offline"),
     onPage: page => {
@@ -823,7 +860,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     },
   });
   const ungroupedConversations = useMemo(
-    () => desktopState.conversations.filter((conversation) => conversation.workspace_id === null && !conversation.pinned_at && (desktopState.sessionQueryVersion !== 1 || !pagedNavigation.ids("ungrouped") || pagedNavigation.ids("ungrouped")!.includes(conversation.id))),
+    () => desktopState.conversations.filter((conversation) => conversation.workspace_id === null && !conversation.pinned_at && (desktopState.sessionQueryVersion !== 1 || !pagedNavigation.ids("ungrouped") || pagedNavigation.ids("ungrouped")!.includes(conversation.id) || conversation.id === desktopState.selectedConversationId)),
     [desktopState, pagedNavigation],
   );
   const selectedActiveTurnId = selectedActiveTurn?.turn?.id ?? null;
@@ -1560,14 +1597,19 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }
 
   async function selectProject(id: string | null) {
+    const revision = ++navigationRevision.current;
     setRepositoriesOpen(false);
     setWebNavigationOpen(false);
     setMessage(null);
     if (client.saveSelection) {
       const next = {projectId:id,workspaceId:null,sessionId:null};
       await client.saveSelection(next);
+      if (navigationRevision.current !== revision) return;
       applyDesktopState(current => ({...current,selectedProjectId:id,selectedWorkspaceId:null,selectedConversationId:null}));
-    } else applyDesktopState(await client.selectProject(id));
+    } else {
+      const state = await client.selectProject(id);
+      if (navigationRevision.current === revision) applyDesktopState(state);
+    }
   }
 
   async function openProjectOverview(project: DesktopProject) {
@@ -1577,6 +1619,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }
 
   function toggleProjectOpen(projectId: string) {
+    if (revealProjectId === projectId) {
+      setSearchTarget(null);
+      if (collapsedProjectIds.has(projectId)) return;
+    }
     setCollapsedProjectIds((current) => {
       const next = new Set(current);
       if (next.has(projectId)) next.delete(projectId);
@@ -1591,10 +1637,18 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setProjectOverviewId(null);
     setMessage(null);
     const workspace = desktopState.workspaces.find(item => item.id === id);
-    if (client.saveSelection && workspace) {
-      await client.saveSelection({projectId:workspace.project_id,workspaceId:id,sessionId:null});
-      applyDesktopState(current => ({...current,selectedProjectId:workspace.project_id,selectedWorkspaceId:id,selectedConversationId:null}));
-    } else applyDesktopState(await client.selectWorkspace(id));
+    if (!workspace) return;
+    const revision = ++navigationRevision.current;
+    const previous = { selectedProjectId: desktopState.selectedProjectId, selectedWorkspaceId: desktopState.selectedWorkspaceId, selectedConversationId: desktopState.selectedConversationId };
+    applyDesktopState(current => ({ ...current, selectedProjectId: workspace.project_id, selectedWorkspaceId: id, selectedConversationId: null }));
+    try {
+      if (client.saveSelection) await client.saveSelection({ projectId: workspace.project_id, workspaceId: id, sessionId: null });
+      else await client.selectWorkspace(id);
+    } catch (error) {
+      if (revision !== navigationRevision.current) return;
+      applyDesktopState(current => current.selectedWorkspaceId === id && !current.selectedConversationId ? { ...current, ...previous } : current);
+      setMessage(errorMessage(error));
+    }
   }
 
   function markConversationRead(conversationId: string) {
@@ -1635,6 +1689,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   }
 
   function selectConversation(id: string, sourceState = desktopState, preserveChannels = false) {
+    navigationRevision.current++;
     if (!preserveChannels) leaveChannelsImmediately();
     setWebNavigationOpen(false);
     setConversationContextMenu(null);
@@ -1686,6 +1741,20 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setProjectOverviewId(null);
     setMessage(null);
     await selectProject(null);
+  }
+
+  function revealWorkspace(workspace: DesktopWorkspace) {
+    showRecentSessions(false);
+    setSearchTarget({ kind: "workspace", id: workspace.id });
+    void selectWorkspace(workspace.id);
+  }
+
+  function revealSession(id: string) {
+    showRecentSessions(false);
+    setRepositoriesOpen(false);
+    setProjectOverviewId(null);
+    selectConversation(id);
+    setSearchTarget({ kind: "session", id });
   }
 
   async function openNewConversationForWorkspace(workspace: DesktopWorkspace) {
@@ -2694,7 +2763,14 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       orderedWorkspaceIds,
       "after",
     );
-    const workspaceOpen = !collapsedWorkspaceIds.has(workspace.id);
+    const workspaceOpen = !collapsedWorkspaceIds.has(workspace.id) || revealWorkspaceId === workspace.id;
+    function toggleOpen() {
+      if (revealWorkspaceId === workspace.id) {
+        setSearchTarget(null);
+        if (collapsedWorkspaceIds.has(workspace.id)) return;
+      }
+      toggleWorkspaceCollapsed(workspace.id);
+    }
     return (
       <div
         data-workspace-id={workspace.id}
@@ -2720,7 +2796,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           <button
             type="button"
             className="workspace-collapse-button"
-            onClick={() => toggleWorkspaceCollapsed(workspace.id)}
+            onClick={toggleOpen}
             aria-label={`${workspaceOpen ? t("common.collapse") : t("common.expand")} ${workspace.title}`}
             title={`${workspaceOpen ? t("common.collapse") : t("common.expand")} ${workspace.title}`}
             aria-expanded={workspaceOpen}
@@ -2730,7 +2806,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           <button
             type="button"
             className={`workspace-row ${workspace.id === selectedWorkspace?.id && !selectedConversation ? "selected" : ""}`}
-            onClick={() => toggleWorkspaceCollapsed(workspace.id)}
+            onClick={toggleOpen}
             aria-expanded={workspaceOpen}
             title={workspace.error}
           >
@@ -2792,7 +2868,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           )}
         </div>
         {(workspaceConversations.length > 0 || desktopState.sessionQueryVersion === 1) && <SidebarCollapse open={workspaceOpen}>
-          <WorkspaceSessionList hasMore={pagedNavigation.hasMore(workspace.id)} onMore={() => pagedNavigation.loadMore(workspace.id)}>
+          <WorkspaceSessionList revealIndex={reveal?.kind === "session" && revealWorkspaceId === workspace.id ? workspaceConversations.findIndex(item => item.id === reveal.id) : -1} hasMore={pagedNavigation.hasMore(workspace.id)} onMore={() => pagedNavigation.loadMore(workspace.id)}>
             {workspaceConversations.map((conversation) => (
               <ConversationNavItem
                 key={conversation.id}
@@ -2821,7 +2897,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     const projectWorkspaces = desktopState.workspaces.filter(
       (workspace) => workspace.project_id === project.id && !isNavigationPinned("workspace", workspace.id),
     );
-    const isOpen = !collapsedProjectIds.has(project.id);
+    const isOpen = !collapsedProjectIds.has(project.id) || revealProjectId === project.id;
     const orderedProjectIds = pinned ? pinnedKeys : desktopState.projects.filter((candidate) => !isNavigationPinned("project", candidate.id)).map((candidate) => candidate.id);
     const projectSort = sidebarSortProps(
       pinned ? { kind: "pinned-session", id: navigationKey({ kind: "project", id: project.id }), scopeId: "pinned" } : { kind: "project", id: project.id, scopeId: "projects" },
@@ -3035,7 +3111,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         }
       }}
     >
-      {searchOpen && <SearchPalette state={desktopState} client={desktopState.sessionQueryVersion === 1 ? client : undefined} onPage={page => setDesktopState(current => mergeSessionPage(current, page))} onClose={() => setSearchOpen(false)} onSelect={selectConversation} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
+      {searchOpen && <SearchPalette state={desktopState} client={desktopState.sessionQueryVersion === 1 ? client : undefined} onPage={page => setDesktopState(current => mergeSessionPage(current, page))} onClose={() => setSearchOpen(false)} onSelect={revealSession} onSelectWorkspace={revealWorkspace} onNewConversation={() => void openNewConversation()} onNewProject={openCreateProjectDialog} />}
       <aside className="sidebar">
         <SidebarResizeHandle frameRef={appFrameRef} width={sidebarWidth} onWidth={setSidebarWidth} onResizing={setIsSidebarResizing} />
         <div className="sidebar-chrome" aria-hidden="true">
@@ -3074,7 +3150,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           onSelect={() => void selectConversation(conversation.id)} onContextMenu={event => openConversationContextMenu(event, conversation.id)}
           onRename={() => openRenameConversationDialog(conversation)} onPin={() => void toggleConversationPinned(conversation)} onArchive={() => void archiveConversation(conversation)}
         />} /> : <>
-        <SidebarSection name="pinned" title={t("app.pinned")}>
+        <SidebarSection name="pinned" reveal={revealSection === "pinned"} dismissReveal={revealSection === "pinned" ? () => setSearchTarget(null) : undefined} title={t("app.pinned")}>
           {pinnedItems.length === 0 ? (
             <p className="sidebar-empty">{t("app.noPinnedItems")}</p>
           ) : (
@@ -3102,7 +3178,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           {pagedNavigation.hasMore("pinned") && <button className="workspace-sessions-more" onClick={() => pagedNavigation.loadMore("pinned")}>{t("conversationTimeline.showMore")}</button>}
         </SidebarSection>
 
-        <SidebarSection name="projects" title={t("app.projects")} actions={
+        <SidebarSection name="projects" reveal={revealSection === "projects"} dismissReveal={revealSection === "projects" ? () => setSearchTarget(null) : undefined} title={t("app.projects")} actions={
           <>
           <button type="button" onClick={openCreateProjectDialog} disabled={isBusy} aria-label={t("app.addProject")}>
             <FolderPlus size={15} strokeWidth={1.8} />
@@ -3117,7 +3193,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         </SidebarSection>
 
         {ungroupedConversations.length > 0 && (
-          <SidebarSection name="ungrouped" title={t("app.ungroupedSessions")}>
+          <SidebarSection name="ungrouped" reveal={revealSection === "ungrouped"} dismissReveal={revealSection === "ungrouped" ? () => setSearchTarget(null) : undefined} title={t("app.ungroupedSessions")}>
             <div className="sidebar-session-list">
             {ungroupedConversations.map((conversation) => (
               <ConversationNavItem

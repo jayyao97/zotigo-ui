@@ -436,6 +436,42 @@ test("sidebar sections collapse independently and ungrouped sessions exist witho
   }
 });
 
+test("a late workspace save failure cannot undo a second selection of the same workspace", async () => {
+  const restore = installDom();
+  const time = "2026-01-01T00:00:00Z";
+  const client = hostClient(false, {
+    ...emptyState,
+    projects: [{ id: "p", name: "Project", created_at: time, updated_at: time }],
+    workspaces: [{ id: "w", project_id: "p", title: "Workspace", root_path: "/tmp/test", status: "ready", created_at: time, updated_at: time }],
+    conversations: [{ id: "s", project_id: "p", workspace_id: "w", title: "Session", created_at: time, updated_at: time }],
+    selectedProjectId: "p", selectedWorkspaceId: "w", selectedConversationId: "s",
+  });
+  let finishProject: (() => void) | undefined;
+  let rejectFirst: ((error: Error) => void) | undefined;
+  client.api.saveSelection = async input => {
+    if (!input.workspaceId) await new Promise<void>(resolve => { finishProject = resolve; });
+    else if (!input.sessionId && !rejectFirst) await new Promise<void>((_, reject) => { rejectFirst = reject; });
+  };
+  const root = await mountHostShell(client.api);
+  try {
+    const workspace = () => document.querySelector('.workspace-row-actions button:last-child')!;
+    await act(async () => click(workspace()));
+    assert.ok(rejectFirst);
+    await act(async () => click(document.querySelector('[data-session-id="s"] > button')!));
+    await act(async () => click(workspace()));
+    await act(async () => rejectFirst!(new Error("obsolete save failure")));
+    assert.ok(document.querySelector(".workspace-row.selected"));
+    assert.equal(document.querySelector(".sidebar-session.selected"), null);
+    assert.ok(!document.body.textContent?.includes("obsolete save failure"));
+    await act(async () => click(document.querySelector(".sidebar-new-session")!));
+    assert.ok(finishProject);
+    await act(async () => click(workspace()));
+    await act(async () => finishProject!());
+    assert.ok(document.querySelector(".workspace-row.selected"), "an earlier project selection must not clear the workspace");
+
+  } finally { await act(async () => root.unmount()); restore(); }
+});
+
 test("pinned navigation moves whole subtrees without duplicate selected sessions and supports mixed dragging", async () => {
   const restore = installDom();
   const time = "2026-01-01T00:00:00Z";
