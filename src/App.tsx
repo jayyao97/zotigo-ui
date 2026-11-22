@@ -1782,13 +1782,14 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     // Any navigation while the session loads (a sidebar click, recent
     // sessions, Channels) wins over this request.
     const revision = navigationRevision.current;
+    const current = () => handledOpenSessionRequest.current === nonce && navigationRevision.current === revision;
     void loadSessionIntoState(desktopState, id, client.querySessions).then(({ state, page }) => {
-      if (handledOpenSessionRequest.current !== nonce || navigationRevision.current !== revision) return;
+      if (!current()) return;
       if (page) { applyDesktopState(state); mergeLoadedSessions(page.sessions); }
       const binding = state.bindings.find((value) => value.daemon_session_id === id);
       if (!binding || !state.conversations.some((value) => value.id === binding.conversation_id)) throw new Error(t("app.sessionNotInCatalog"));
       revealSession(binding.conversation_id, state);
-    }).catch((error: unknown) => setMessage(errorMessage(error)));
+    }).catch((error: unknown) => { if (current()) setMessage(errorMessage(error)); });
   }, [openSessionRequest]);
 
   async function openNewConversationForWorkspace(workspace: DesktopWorkspace) {
