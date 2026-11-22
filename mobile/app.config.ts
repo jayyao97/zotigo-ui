@@ -8,6 +8,9 @@ const config: ExpoConfig = {
   scheme: "zotigo",
   orientation: "default",
   userInterfaceStyle: "dark",
+  // System screens (camera, pickers, permission prompts) follow the bundle's
+  // languages; the app sets which one at launch (platform/systemLanguage).
+  locales: { en: "./locales/en.json", "zh-Hans": "./locales/zh-Hans.json" },
   ios: {
     bundleIdentifier: "dev.zotigo.mobile",
     supportsTablet: true,
@@ -17,6 +20,8 @@ const config: ExpoConfig = {
       // User-managed daemons may use HTTP over a trusted private network or VPN.
       NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
       ITSAppUsesNonExemptEncryption: false,
+      CFBundleLocalizations: ["en", "zh-Hans"],
+      CFBundleAllowMixedLocalizations: true,
     },
   },
   android: { package: "dev.zotigo.mobile" },

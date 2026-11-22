@@ -1,0 +1,6 @@
+{
+  "NSCameraUsageDescription": "Take a photo to attach to a Zotigo conversation.",
+  "NSPhotoLibraryUsageDescription": "Attach a screenshot or photo to a Zotigo conversation.",
+  "NSLocalNetworkUsageDescription": "Connect to your Zotigo daemons on your private network.",
+  "NSFaceIDUsageDescription": "Allow Zotigo to access your Face ID biometric data."
+}
