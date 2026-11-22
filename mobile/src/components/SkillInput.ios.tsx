@@ -1,4 +1,6 @@
+import { t } from "@zotigo/shared/i18n/index";
 import { useState } from "react";
+import { useLocale } from "../platform/i18n";
 import { requireNativeView } from "expo";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import type { SkillInputProps } from "./SkillInput";
@@ -9,6 +11,8 @@ const NativeInput = requireNativeView<
     editable: boolean;
     eventCount: number;
     caret: number;
+    placeholder: string;
+    accessibilityLabelText: string;
     onChange: (
       event: NativeSyntheticEvent<{
         text: string;
@@ -28,6 +32,7 @@ export function SkillInput({
   onChange,
   onCaret,
 }: SkillInputProps) {
+  useLocale();
   const [height, setHeight] = useState(44);
   const [eventCount, setEventCount] = useState(0);
   return (
@@ -37,6 +42,8 @@ export function SkillInput({
       editable={editable}
       caret={caret}
       eventCount={eventCount}
+      placeholder={t("mobile.askZotigo")}
+      accessibilityLabelText={t("mobile.message")}
       style={{ height, flex: 1 }}
       onChange={(event) => {
         setEventCount(event.nativeEvent.eventCount);

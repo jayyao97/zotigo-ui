@@ -1,5 +1,7 @@
 import { requireNativeView } from "expo";
-import { useState } from "react";
+import { t } from "@zotigo/shared/i18n/index";
+import { useMemo, useState } from "react";
+import { useLocale } from "../platform/i18n";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import type { SelectionRun, SelectionAction } from "../core/selectionRuns";
 export type SelectableTextProps = {
@@ -18,6 +20,7 @@ export type SelectableTextProps = {
 const NativeText = requireNativeView<
   ViewProps & {
     allowReference: boolean;
+    menuTitles: Record<"reference" | "copy" | "translate", string>;
     highlight?: string;
     runs: SelectionRun[];
     fontSize: number;
@@ -42,11 +45,21 @@ export function SelectableText({
   onSelecting,
   ...props
 }: SelectableTextProps) {
+  const locale = useLocale();
+  const menuTitles = useMemo(
+    () => ({
+      reference: t("conversationTools.addToConversation"),
+      copy: t("app.copy"),
+      translate: t("conversationTools.translate"),
+    }),
+    [locale],
+  );
   const [size, setSize] = useState({ height: lineHeight, width: 0 });
   return (
     <NativeText
       {...props}
       allowReference={allowReference}
+      menuTitles={menuTitles}
       fontSize={fontSize}
       lineHeight={lineHeight}
       style={{

@@ -16,6 +16,7 @@ public class SelectableTextModule: Module {
     View(SelectableTextView.self) {
       Events("onMeasure", "onAction", "onLink", "onSelecting")
       Prop("allowReference") { (view, allowed: Bool) in view.allowReference = allowed }
+      Prop("menuTitles") { (view, titles: [String: String]) in view.menuTitles = titles }
       Prop("highlight") { (view, text: String?) in view.highlight = text ?? "" }
       Prop("runs") { (view, runs: [TextRun]) in view.runs = runs }
       Prop("fontSize") { (view, size: Double) in view.fontSize = size }
@@ -33,6 +34,7 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
   let onLink = EventDispatcher()
   let onSelecting = EventDispatcher()
   var allowReference = true
+  var menuTitles: [String: String] = [:]
   var highlight = ""
   var runs: [TextRun] = []
   var fontSize = 16.0
@@ -144,9 +146,9 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
     guard range.length > 0, NSMaxRange(range) <= source.length else { return nil }
     let text = source.substring(with: range)
     let actions = [
-      UIAction(title: "Add to conversation", image: UIImage(systemName: "text.bubble")) { [weak self] _ in self?.send("reference", text: text) },
-      UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = text },
-      UIAction(title: "Translate", image: UIImage(systemName: "character.bubble")) { [weak self] _ in self?.send("translate", text: text) }
+      UIAction(title: menuTitles["reference"] ?? "Add to conversation", image: UIImage(systemName: "text.bubble")) { [weak self] _ in self?.send("reference", text: text) },
+      UIAction(title: menuTitles["copy"] ?? "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = text },
+      UIAction(title: menuTitles["translate"] ?? "Translate", image: UIImage(systemName: "character.bubble")) { [weak self] _ in self?.send("translate", text: text) }
     ]
     if text.utf16.count > 8000 { actions[0].attributes = .disabled; actions[2].attributes = .disabled }
     return UIMenu(children: allowReference ? actions : Array(actions.dropFirst()))

@@ -26,7 +26,8 @@ const config: ExpoConfig = {
   },
   android: { package: "dev.zotigo.mobile" },
   plugins: [
-    "expo-secure-store",
+    // Tokens use the Keychain without biometrics, so no Face ID prompt string.
+    ["expo-secure-store", { faceIDPermission: false }],
     [
       "expo-video",
       { supportsBackgroundPlayback: false, supportsPictureInPicture: false },

@@ -8,8 +8,13 @@ import Foundation
 public class AppLanguageModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ZotigoAppLanguage")
-    Function("setPreferred") { (language: String) in
-      UserDefaults.standard.set([language], forKey: "AppleLanguages")
+    Function("setPreferred") { (language: String?) in
+      // nil goes back to following the iPhone's language.
+      if let language {
+        UserDefaults.standard.set([language], forKey: "AppleLanguages")
+      } else {
+        UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+      }
     }
   }
 }

@@ -8,9 +8,9 @@ export function useLocale(): Locale {
 }
 export async function initializeLanguage(): Promise<void> {
   const saved = await storage.get(localeStorageKey);
-  const locale = isLocale(saved) ? saved : "en";
-  setLocale(locale);
-  setSystemLanguage(locale);
+  setLocale(isLocale(saved) ? saved : "en");
+  // System screens follow an explicit choice only; until then, the iPhone's.
+  setSystemLanguage(isLocale(saved) ? saved : undefined);
 }
 export async function changeLanguage(locale: Locale): Promise<void> {
   await storage.set(localeStorageKey, locale);

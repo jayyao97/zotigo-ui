@@ -11,6 +11,8 @@ public class SkillInputModule: Module {
       Prop("editable") { (view, editable: Bool) in view.input.isEditable = editable }
       Prop("eventCount") { (view, count: Int) in view.acknowledged = count }
       Prop("caret") { (view, caret: Int) in view.caret = caret }
+      Prop("placeholder") { (view, text: String) in view.placeholderText = text }
+      Prop("accessibilityLabelText") { (view, text: String) in view.input.accessibilityLabel = text }
       OnViewDidUpdateProps { (view: SkillInputView) in view.update() }
     }
   }
@@ -26,6 +28,10 @@ final class SkillInputView: ExpoView, UITextViewDelegate {
   var skills: [String] = []
   var acknowledged = 0
   var caret = 0
+  var placeholderText: String {
+    get { placeholder.text ?? "" }
+    set { placeholder.text = newValue }
+  }
   private var eventCount = 0
   private var updating = false
   private var lastSelection = NSRange(location: 0, length: 0)
