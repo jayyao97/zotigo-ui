@@ -1367,5 +1367,6 @@ export const zhCN: Record<MessageKey, Message> = {
   "mobileUi.goToPath": "前往路径",
   "mobileUi.unsaved": "未保存",
   "mobileUi.manageWorkspace": "管理工作区",
-  "mobileUi.lastKnownUsage": "上次已知用量"
+  "mobileUi.lastKnownUsage": "上次已知用量",
+  "mobileUi.deviceUnreachable": "{name} 没有响应。请确认它已开机，并且当前网络可以访问。"
 };

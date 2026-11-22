@@ -2,7 +2,7 @@ import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import Plus from "lucide-react-native/icons/plus";
 import Monitor from "lucide-react-native/icons/monitor";
 import Check from "lucide-react-native/icons/check";
@@ -11,7 +11,7 @@ import Settings2 from "lucide-react-native/icons/settings-2";
 import { BottomSheet } from "./BottomSheet";
 import type { DaemonClient, Host } from "../core/client";
 import { hosts, storage } from "../platform/storage";
-import { createDaemon } from "../platform/client";
+import { connectionErrorText, lastHostKey, useDeviceSwitch } from "../platform/useDeviceSwitch";
 import { Action, EmptyState, ListGroup, ListRow, Notice, colors, errorText, space, styles } from "./ui";
 
 export function HostPicker({
@@ -31,17 +31,14 @@ export function HostPicker({
   useLocale();
   const [list, setList] = useState<Host[]>([]);
   const [error, setError] = useState("");
-  const [connecting, setConnecting] = useState<string>();
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [{ connecting, failed }, switcher] = useDeviceSwitch();
   const generation = useRef(0);
-  const pending = useRef<DaemonClient | null>(null);
-  const locked = useRef(false);
   const attempted = useRef(false);
   useFocusEffect(
     useCallback(() => {
       const ticket = ++generation.current;
-      setConnecting(undefined);
       hosts
         .list()
         .then(async (value) => {
@@ -50,11 +47,11 @@ export function HostPicker({
           setReady(true);
           if (!client && !attempted.current) {
             attempted.current = true;
-            const last = await storage.get("zotigo.mobile.lastHost");
+            const last = await storage.get(lastHostKey);
             const host =
               value.find((h) => h.id === last) ??
               (value.length === 1 ? value[0] : undefined);
-            if (host && ticket === generation.current) void select(host);
+            if (host && ticket === generation.current) void switcher.select(host, onConnect);
           }
         })
         .catch((error) => {
@@ -62,39 +59,15 @@ export function HostPicker({
         });
       return () => {
         generation.current++;
-        pending.current?.dispose();
+        switcher.cancel();
       };
     }, []),
   );
-  async function select(host: Host) {
-    if (locked.current || host.id === client?.connection.id) return;
-    locked.current = true;
-    const ticket = generation.current;
-    setConnecting(host.id);
-    setError("");
-    try {
-      const connection = await hosts.connection(host);
-      if (ticket !== generation.current) return;
-      const next = createDaemon(connection);
-      pending.current = next;
-      await next.health();
-      if (ticket !== generation.current) return;
-      await storage.set("zotigo.mobile.lastHost", host.id);
-      if (ticket !== generation.current) {
-        next.dispose();
-        return;
-      }
-      pending.current = null;
-      onConnect(next);
-    } catch (error) {
-      pending.current?.dispose();
-      pending.current = null;
-      if (ticket === generation.current) setError(errorText(error));
-    } finally {
-      locked.current = false;
-      if (ticket === generation.current) setConnecting(undefined);
-    }
+  function close() {
+    setOpen(false);
+    switcher.cancel();
   }
+  const problem = failed ? connectionErrorText(failed.error, failed.host.name) : error;
   const current = list.find((host) => host.id === client?.connection.id);
   const deviceRows = list.map((host) => {
     const selected = host.id === client?.connection.id;
@@ -103,15 +76,19 @@ export function HostPicker({
         key={host.id}
         icon={Monitor}
         title={host.name}
-        subtitle={connecting === host.id ? t("webApp.connecting") : host.baseUrl}
+        subtitle={connecting?.id === host.id ? t("webApp.connecting") : host.baseUrl}
         accessibilityLabel={t("mobile.switchDeviceValue", { p0: host.name })}
-        disabled={!!connecting}
         chevron={false}
-        right={selected ? <Check size={18} color={colors.accent} /> : undefined}
-        onPress={() => {
-          setOpen(false);
-          void select(host);
-        }}
+        right={
+          connecting?.id === host.id ? (
+            <ActivityIndicator size="small" color={colors.muted} />
+          ) : selected ? (
+            <Check size={18} color={colors.accent} />
+          ) : undefined
+        }
+        // Rows stay enabled while another device is connecting: choosing one
+        // abandons that attempt, so an unreachable device never traps the user.
+        onPress={() => (selected ? close() : void switcher.select(host, onConnect))}
       />
     );
   });
@@ -128,11 +105,11 @@ export function HostPicker({
     return (
       <View style={{ padding: space.lg, gap: space.md }}>
         <Text style={styles.sectionTitle}>{t("mobile.devices")}</Text>
+        <Notice text={problem} error />
         <ListGroup>
           {deviceRows}
           <ListRow icon={Plus} title={t("mobile.addDevice")} onPress={onAdd} chevron={false} />
         </ListGroup>
-        <Notice text={error} error />
       </View>
     );
   }
@@ -153,18 +130,21 @@ export function HostPicker({
           opacity: pressed ? 0.6 : 1,
         })}
       >
-        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: connecting ? colors.warning : colors.green }} />
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors.green }} />
         <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 14, fontWeight: "500", maxWidth: 240 }}>
-          {connecting ? t("webApp.connecting") : current?.name ?? client.connection.name}
+          {current?.name ?? client.connection.name}
         </Text>
         <ChevronDown size={14} color={colors.muted} />
       </Pressable>
-      <Notice text={error} error />
-      <BottomSheet visible={open} title={t("mobileUi.switchDevice")} onClose={() => setOpen(false)}>
+      <Notice text={open ? "" : error} error />
+      {/* The sheet stays up while connecting: the current device keeps working
+          underneath, and a failure is reported next to the other choices. */}
+      <BottomSheet visible={open} title={t("mobileUi.switchDevice")} onClose={close}>
+        <Notice text={problem} error />
         <ListGroup>{deviceRows}</ListGroup>
         <ListGroup>
-          <ListRow icon={Plus} title={t("mobile.addDevice")} chevron={false} onPress={() => { setOpen(false); onAdd(); }} />
-          <ListRow icon={Settings2} title={t("mobileUi.manageDevices")} onPress={() => { setOpen(false); onManage?.(); }} />
+          <ListRow icon={Plus} title={t("mobile.addDevice")} chevron={false} onPress={() => { close(); onAdd(); }} />
+          <ListRow icon={Settings2} title={t("mobileUi.manageDevices")} onPress={() => { close(); onManage?.(); }} />
         </ListGroup>
       </BottomSheet>
     </View>

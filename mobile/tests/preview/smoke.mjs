@@ -73,6 +73,16 @@ try {
   await bodyIncludes('Home: Multi-host mobile architecture'); await shot('01-home');
   checks.push('Last-used device connects on launch and Home renders populated data');
   await click('Switch device'); await bodyIncludes('Work Linux'); await shot('01b-device-switcher');
+  // A device that does not answer must not trap the user: every row stays usable while it connects.
+  await evaluate(`__ZOTIGO_PREVIEW__.fault('work','unreachable')`);
+  await click('Switch device: Work Linux'); await bodyIncludes('Connecting…'); await shot('01c-device-connecting');
+  assert.deepEqual(await evaluate(`${visibleButtons}.filter(e => (e.getAttribute('aria-label') || '').startsWith('Switch device: ')).map(e => e.getAttribute('aria-disabled'))`), [null, null], 'device rows stay enabled while one is connecting');
+  await click('Switch device: Home Mac Studio');
+  await wait(`!document.body.innerText.includes('Connecting…') && !document.body.innerText.includes('Manage devices')`, 'choosing the current device abandons the attempt and closes the switcher');
+  await bodyIncludes('Home: Multi-host mobile architecture');
+  await evaluate(`__ZOTIGO_PREVIEW__.fault('work','none')`);
+  checks.push('An unreachable device does not block switching: rows stay enabled and the current device keeps working');
+  await click('Switch device'); await bodyIncludes('Work Linux');
   await click('Add device'); await bodyIncludes('Daemon address'); await click('Cancel');
   await click('Settings'); await bodyIncludes('Model profiles'); await shot('02-settings');
   await click('Home Mac Studio'); await bodyIncludes('Choose where you want to work.');

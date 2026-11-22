@@ -17,6 +17,7 @@ const png = attachmentPng;
 type Fault =
   | "none"
   | "offline"
+  | "unreachable"
   | "unauthorized"
   | "catalog"
   | "save-conflict"
@@ -510,6 +511,16 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
   if (host.fault === "offline")
     throw new Error(
       "Fixture: device is offline. Reconnect your VPN and try again.",
+    );
+  if (host.fault === "unreachable")
+    // A sleeping machine or a dropped VPN neither answers nor refuses: the
+    // request stays open until the caller gives up.
+    return new Promise<Response>((_, reject) =>
+      init.signal?.addEventListener(
+        "abort",
+        () => reject(new Error("Fixture request aborted.")),
+        { once: true },
+      ),
     );
   if (
     host.fault === "unauthorized" ||

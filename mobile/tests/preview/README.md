@@ -20,6 +20,7 @@ Browser console/CDP controls:
 __ZOTIGO_PREVIEW__.snapshot("home"); // visible session identities + active stream count
 __ZOTIGO_PREVIEW__.fault("home", "catalog"); // pull Home to refresh: display 503 error
 __ZOTIGO_PREVIEW__.fault("home", "offline");
+__ZOTIGO_PREVIEW__.fault("work", "unreachable"); // never answers: switching reports it after 10 s, other devices stay selectable
 __ZOTIGO_PREVIEW__.disconnect("home"); // close current SSE to exercise reconnect
 __ZOTIGO_PREVIEW__.fault("home", "none"); // recover
 __ZOTIGO_PREVIEW__.fault("home", "save-conflict"); // save preserves editor draft

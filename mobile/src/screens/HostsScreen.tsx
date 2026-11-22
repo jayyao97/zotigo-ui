@@ -1,7 +1,7 @@
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Modal, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Text, View } from "react-native";
 import Check from "lucide-react-native/icons/check";
 import Monitor from "lucide-react-native/icons/monitor";
 import Pencil from "lucide-react-native/icons/pencil";
@@ -10,8 +10,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
 import type { DaemonClient, Host } from "../core/client";
 import { addressOrigin, normalizeAddress } from "../core/client";
-import { hosts, storage } from "../platform/storage";
+import { hosts } from "../platform/storage";
 import { createDaemon } from "../platform/client";
+import { reach } from "../core/deviceSwitch";
+import { connectionErrorText, useDeviceSwitch } from "../platform/useDeviceSwitch";
 import {
   Action,
   colors,
@@ -59,7 +61,7 @@ export function HostsScreen({
   const [address, setAddress] = useState("");
   const [token, setToken] = useState("");
   const [tested, setTested] = useState(false);
-  const [connecting, setConnecting] = useState<string>();
+  const [{ connecting, failed }, switcher] = useDeviceSwitch();
   const pending = useRef<DaemonClient | null>(null);
   useEffect(() => {
     let alive = true;
@@ -82,6 +84,7 @@ export function HostsScreen({
       alive = false;
       mounted.current = false;
       pending.current?.dispose();
+      switcher.cancel();
     };
   }, []);
   async function run(action: () => Promise<void>) {
@@ -99,6 +102,7 @@ export function HostsScreen({
     }
   }
   function edit(host: Host | null) {
+    switcher.cancel();
     void run(async () => {
       setName(host?.name ?? "");
       setAddress(host?.baseUrl ?? "");
@@ -114,36 +118,6 @@ export function HostsScreen({
     setError("");
     if (addOnly) onClose?.();
   }
-  function connect(host: Host) {
-    if (host.id === currentId) return;
-    setConnecting(host.id);
-    void run(async () => {
-      const connection = await hosts.connection(host);
-      if (!mounted.current) return;
-      const client = createDaemon(connection);
-      pending.current = client;
-      try {
-        await client.health();
-        if (!mounted.current) {
-          client.dispose();
-          return;
-        }
-        await storage.set("zotigo.mobile.lastHost", host.id);
-        if (!mounted.current) {
-          client.dispose();
-          return;
-        }
-        pending.current = null;
-        onConnect(client);
-      } catch (e) {
-        client.dispose();
-        pending.current = null;
-        throw e;
-      }
-    }).finally(() => {
-      if (mounted.current) setConnecting(undefined);
-    });
-  }
   // Half-typed addresses are normal here, so rendering must not validate by throwing.
   const origin = addressOrigin(address);
   const movesDevice = !!editing && origin !== undefined && origin !== editing.baseUrl;
@@ -153,7 +127,9 @@ export function HostsScreen({
         {!addOnly && (
           <>
             {!ready && <Loading />}
-            {editing === undefined && <Notice text={error} error />}
+            {editing === undefined && (
+              <Notice text={failed ? connectionErrorText(failed.error, failed.host.name) : error} error />
+            )}
             {ready && !list.length && (
               <Notice text={t("mobile.addYourFirstDeviceUsingItsDaemonAddressAndToken")} />
             )}
@@ -164,12 +140,22 @@ export function HostsScreen({
                     key={host.id}
                     icon={Monitor}
                     title={host.name}
-                    subtitle={connecting === host.id ? t("webApp.connecting") : host.baseUrl}
+                    subtitle={connecting?.id === host.id ? t("webApp.connecting") : host.baseUrl}
                     accessibilityLabel={t("mobile.switchDeviceValue", { p0: host.name })}
                     chevron={false}
                     disabled={busy}
-                    onPress={() => connect(host)}
-                    right={host.id === currentId ? <Check size={18} color={colors.accent} /> : undefined}
+                    // Not disabled while another device is connecting: choosing
+                    // one abandons that attempt (see DeviceSwitch).
+                    onPress={() =>
+                      host.id === currentId ? switcher.cancel() : void switcher.select(host, onConnect)
+                    }
+                    right={
+                      connecting?.id === host.id ? (
+                        <ActivityIndicator size="small" color={colors.muted} />
+                      ) : host.id === currentId ? (
+                        <Check size={18} color={colors.accent} />
+                      ) : undefined
+                    }
                     accessory={
                       <IconButton
                         icon={Pencil}
@@ -279,8 +265,10 @@ export function HostsScreen({
                       });
                       pending.current = client;
                       try {
-                        await client.health();
+                        await reach(client);
                         if (mounted.current) setTested(true);
+                      } catch (e) {
+                        throw new Error(connectionErrorText(e, name.trim() || normalizeAddress(address)));
                       } finally {
                         client.dispose();
                         pending.current = null;

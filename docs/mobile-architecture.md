@@ -22,6 +22,8 @@ The guiding rule is "don't make the user think": every screen has one obvious pr
 - **Forms.** Page-sheet forms (device, new workspace, manage workspace, add workspace source) put the title and the single dismiss action on one row, the primary action full-width below the fields, and destructive actions last in their own group.
 - **iPad (≥768pt).** A persistent sidebar shows the Home content, and the detail stack sits on the right. Opening the device switcher from a detail screen first returns to Home so unsaved-edit guards run.
 
+Switching is one flow (`core/deviceSwitch.ts`) shared by the Home switcher and the Devices screen. The current device stays connected until the new one answers, so a failed switch leaves the user where they were. Only the newest choice counts: picking another device abandons the attempt in flight instead of waiting for it, and a device that gives no answer within 10 seconds is reported by name next to the list. Device rows are therefore never disabled while one is connecting. The wait is bounded by the flow, not by the request, so a transport that never settles an aborted request cannot hold it.
+
 Device switching unmounts the host-scoped navigation stack and aborts its network lifetime, so IDs from different daemons never share state. Name and token edits keep the logical host ID, while the connection instance is always recreated. Changing the origin adds a separate device.
 
 ## UI structure
@@ -37,6 +39,7 @@ Device switching unmounts the host-scoped navigation stack and aborts its networ
 ## Ownership and invariants
 
 - `core/client.ts`: immutable connection, public endpoint methods, credential-bound origin, structured errors, cancellation and request timeout. No implicit mutation retry; bearer never goes into routes, URLs or external image/link requests.
+- `core/deviceSwitch.ts`: the single device-switching flow (newest choice wins, bounded wait, abandoned connections disposed); `platform/useDeviceSwitch.ts` binds it to storage and React.
 - `core/hosts.ts`: serialized registry updates; metadata in AsyncStorage, credentials in device-only Keychain via SecureStore. Missing secret is an error, never an anonymous fallback.
 - `core/timeline.ts`: durable items authoritative; cursor advances only for durable SSE items. Initial recent history then stream after max sequence. Backfill through current turn boundary recovers approvals outside recent page. Reconnect drops volatile previews, replays durable sequence, dedupes. Focus/AppState own stream lifetime.
 - `platform/`: Expo streaming fetch and storage adapters. `screens/` and `features/`: navigation and user interaction; no Node or filesystem assumptions.

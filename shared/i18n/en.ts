@@ -1368,6 +1368,7 @@ export const en = {
   "mobileUi.goToPath": "Go to path",
   "mobileUi.unsaved": "Unsaved",
   "mobileUi.manageWorkspace": "Manage workspace",
-  "mobileUi.lastKnownUsage": "last known usage"
+  "mobileUi.lastKnownUsage": "last known usage",
+  "mobileUi.deviceUnreachable": "{name} did not respond. Check that it is on and reachable from this network."
 } as const;
 export type MessageKey = keyof typeof en;
