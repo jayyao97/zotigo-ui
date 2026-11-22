@@ -1,9 +1,12 @@
 import { CompletionTriggerNavigation, createdCompletionTrigger } from "./CompletionTriggerNavigation";
+import { interactionState } from "../../shared/interactionState";
+import { requestRetryLabel } from "../../shared/requestRetry";
 import { useLocale } from "../i18n";
-import { getLocale, t } from "../../shared/i18n/index";
+import { t } from "../../shared/i18n/index";
 import { messageTimestamp } from "./messageTimestamp";
 import { rehypeSkillTokens } from "../rehypeSkillTokens";
 import { skillTokens } from "../../shared/skillCommands";
+import { formatElapsed, formatCompactTokenCount } from "../../shared/turnDuration";
 import { MarkdownImage } from "../MarkdownImage";
 import {
   Children,
@@ -37,6 +40,7 @@ import remarkBreaks from "remark-breaks";
 
 import {
   buildToolRenderProjection,
+  historicalToolSummary,
   contentLocation,
   groupReasoningItems,
   groupTimelineItems,
@@ -75,11 +79,7 @@ export function TurnActions({ text, disabled, title, onFork }: { text: string; d
   </div>;
 }
 
-export function formatCompactTokenCount(tokens: number): string {
-  if (tokens < 1_000) return tokens.toLocaleString(getLocale());
-  if (tokens < 1_000_000) return `${Math.round(tokens / 1_000)}k`;
-  return `${(tokens / 1_000_000).toFixed(tokens < 10_000_000 ? 1 : 0)}m`;
-}
+export { formatCompactTokenCount } from "../../shared/turnDuration";
 
 export const SessionTimeline = memo(function SessionTimeline({
   binding,
@@ -149,7 +149,6 @@ export const SessionTimeline = memo(function SessionTimeline({
     [interactionHistory, itemsAuthoritative],
   );
   const pendingApprovalIds = session?.state === "paused" ? pendingRequests.approvals : new Set<string>();
-  const pendingInteractionIds = pendingRequests.interactions;
   const activeToolCall = activeTurn
     ? latestPendingToolCall(items, session?.active_tool) ?? latestPendingToolCall(items)
     : null;
@@ -206,11 +205,7 @@ export const SessionTimeline = memo(function SessionTimeline({
                     approvalPending={Boolean(item.approval?.id && pendingApprovalIds.has(item.approval.id))}
                     approvalSubmitting={item.approval?.id ? submittingApprovalIds.has(item.approval.id) : false}
                     onSubmitApproval={onSubmitApproval}
-                    interactionPending={item.interaction?.id && pendingInteractionIds.has(item.interaction.id) ? true
-                      : itemsAuthoritative && interactionHistory.some(candidate => candidate.sequence > item.sequence && (
-                        (candidate.type === "interaction_response" && candidate.interaction?.id === item.interaction?.id)
-                        || candidate.type === "turn_completed" || candidate.type === "turn_failed" || candidate.type === "turn_interrupted"
-                      )) ? false : undefined}
+                    interactionPending={interactionState(item, interactionHistory, itemsAuthoritative, pendingRequests.interactions)}
                     interactionSubmitting={item.interaction?.id ? submittingInteractionIds.has(item.interaction.id) : false}
                     onSubmitInteraction={onSubmitInteraction}
                     smoothStreaming={smoothStreaming && streamingItemIds.has(item.id)}
@@ -575,14 +570,7 @@ function RequestRetryStatus({ item }: { item: DisplayItem }) {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [waiting, item.created_at, retry.attempt]);
-  const seconds = Math.max(0, Math.ceil((Date.parse(item.created_at) + retry.delay_ms - now) / 1000));
-  const label = waiting && seconds > 0
-    ? t("conversationTimeline.requestRetry", { attempt: retry.attempt, seconds })
-    : retry.status === "recovered" ? t("retry.recovered", { attempt: retry.attempt, count: retry.attempt })
-    : retry.status === "failed" ? t("retry.failed", { attempt: retry.attempt, count: retry.attempt })
-    : retry.status === "context_recovery" ? t("retry.contextRecovery")
-    : retry.status === "canceled" ? t("retry.canceled")
-    : t("retry.running", { attempt: retry.attempt });
+  const label = requestRetryLabel(item, now);
   return <div className="timeline-divider" role="status"><span>{label}</span></div>;
 }
 
@@ -982,33 +970,6 @@ function DisclosureMotion({ open, className = "", children }: { open: boolean; c
   );
 }
 
-function historicalToolSummary(items: DisplayItem[]): string {
-  const counts = new Map<string, number>();
-  for (const item of items) {
-    for (const part of item.content ?? []) {
-      const name = part.tool_call?.name?.toLowerCase();
-      if (!name) continue;
-      const category = ["read", "read_file"].includes(name) ? "read"
-        : ["grep", "glob", "search"].includes(name) ? "search"
-        : ["edit", "write", "write_file", "apply_patch"].includes(name) ? "edit"
-        : ["shell", "bash", "exec", "exec_command"].includes(name) ? "command"
-        : name === "spawn" ? "subagent"
-        : "tool";
-      counts.set(category, (counts.get(category) ?? 0) + 1);
-    }
-  }
-  const labels: string[] = [];
-  const activityKeys = {
-    read: "timeline.activity.read", search: "timeline.activity.search",
-    edit: "timeline.activity.edit", command: "timeline.activity.command",
-    subagent: "timeline.activity.subagent", tool: "timeline.activity.tool",
-  } as const;
-  for (const [category, key] of Object.entries(activityKeys)) {
-    const count = counts.get(category) ?? 0;
-    if (count > 0) labels.push(t(key, { count }));
-  }
-  return labels.join(" · ") || t("conversationTimeline.toolActivity");
-}
 
 export function AssistantContentView({
   itemId,
@@ -1412,30 +1373,8 @@ export function displayContentText(content: DisplayContentPart[] | undefined): s
   return text;
 }
 
-function formatElapsed(startedAt: string, now: number): string {
-  const started = Date.parse(startedAt);
-  if (Number.isNaN(started)) {
-    return t("time.seconds", { count: 0 });
-  }
-  return formatDurationSeconds(Math.max(0, Math.floor((now - started) / 1000)));
-}
-
 function formatElapsedBetween(startedAt: string, endedAt: string): string {
-  const started = Date.parse(startedAt);
-  const ended = Date.parse(endedAt);
-  if (Number.isNaN(started) || Number.isNaN(ended)) {
-    return t("time.seconds", { count: 0 });
-  }
-  return formatDurationSeconds(Math.max(0, Math.floor((ended - started) / 1000)));
-}
-
-function formatDurationSeconds(totalSeconds: number): string {
-  if (totalSeconds < 60) {
-    return t("time.seconds", { count: totalSeconds });
-  }
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return seconds === 0 ? t("time.minutes", { count: minutes }) : t("conversationTimeline.mS", { p0: minutes, p1: seconds });
+  return formatElapsed(startedAt, Date.parse(endedAt));
 }
 
 function findToolResultIndex(content: DisplayContentPart[], call: DisplayToolCall | undefined, startIndex: number): number {

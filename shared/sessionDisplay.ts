@@ -1,4 +1,5 @@
 import { isCompletionTriggerCall } from "./completionTriggerDisplay";
+import { t } from "./i18n/index";
 import type { CommandImageMetadata, DisplayDelta, DisplayItem, DisplaySubagent, DisplayToolCall, DisplayToolResult, SessionCommandResponse, SessionState, ZotigoSession } from "./zotigod";
 import type { DaemonSessionBinding } from "./clientTypes";
 
@@ -697,4 +698,32 @@ function isFinalTurnItem(item: DisplayItem): boolean {
 
 function isTurnTerminalItem(item: DisplayItem): boolean {
   return isFinalTurnItem(item) || item.type === "turn_paused";
+}
+
+export function historicalToolSummary(items: DisplayItem[]): string {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    for (const part of item.content ?? []) {
+      const name = part.tool_call?.name?.toLowerCase();
+      if (!name) continue;
+      const category = ["read", "read_file"].includes(name) ? "read"
+        : ["grep", "glob", "search"].includes(name) ? "search"
+        : ["edit", "write", "write_file", "apply_patch"].includes(name) ? "edit"
+        : ["shell", "bash", "exec", "exec_command"].includes(name) ? "command"
+        : name === "spawn" ? "subagent"
+        : "tool";
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+  }
+  const labels: string[] = [];
+  const keys = {
+    read: "timeline.activity.read", search: "timeline.activity.search",
+    edit: "timeline.activity.edit", command: "timeline.activity.command",
+    subagent: "timeline.activity.subagent", tool: "timeline.activity.tool",
+  } as const;
+  for (const [category, key] of Object.entries(keys)) {
+    const count = counts.get(category) ?? 0;
+    if (count > 0) labels.push(t(key, { count }));
+  }
+  return labels.join(" · ") || t("conversationTimeline.toolActivity");
 }

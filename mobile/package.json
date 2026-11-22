@@ -1,0 +1,50 @@
+{
+  "name": "@zotigo/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "node scripts/build-mermaid.mjs && expo start",
+    "ios": "node scripts/build-mermaid.mjs && expo run:ios",
+    "android": "node scripts/build-mermaid.mjs && expo run:android",
+    "typecheck": "node scripts/build-mermaid.mjs && tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "export:ios": "node scripts/build-mermaid.mjs && expo export --platform ios",
+    "prepare:renderers": "node scripts/build-mermaid.mjs"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-navigation/elements": "^2.9.44",
+    "@react-navigation/native": "^7.5.0",
+    "@react-navigation/native-stack": "^7.20.0",
+    "@zotigo/shared": "workspace:*",
+    "expo": "~57.0.27",
+    "expo-asset": "~57.0.19",
+    "expo-clipboard": "~57.0.2",
+    "expo-crypto": "~57.0.3",
+    "expo-document-picker": "~57.0.3",
+    "expo-file-system": "~57.0.7",
+    "expo-image-picker": "~57.0.20",
+    "expo-secure-store": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "expo-video": "~57.0.5",
+    "highlight.js": "^11.12.0",
+    "lucide-react-native": "^1.55.0",
+    "mermaid": "^12.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-markdown-display": "^7.0.2",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.2",
+    "react-native-svg": "15.15.4",
+    "react-native-web": "^0.21.4",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.4",
+    "@types/react": "~19.2.2",
+    "tsx": "^4.20.5",
+    "typescript": "~6.0.3"
+  }
+}

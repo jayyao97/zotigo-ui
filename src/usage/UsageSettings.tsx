@@ -8,7 +8,7 @@ import {
   addDays, addTotals, cumulativeTotals, daysBetween, emptyTotals, formatDayLabel, formatLongDate, formatMonth, formatPercent, formatTokens,
   heatmapCells, heatmapRange, heatmapWeekTotals, heatmapWeeks, intensityLevels, isValidTimeZone, monthColumns, systemTimeZone, todayIn, weekStartDay,
   type HeatmapCell,
-} from "./usageModel";
+} from "../../shared/usageModel";
 import { TimeZonePicker, type TimeZoneChoice } from "./TimeZonePicker";
 import { useUsageQuery } from "./useUsageData";
 

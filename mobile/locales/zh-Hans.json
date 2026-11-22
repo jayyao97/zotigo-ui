@@ -1,0 +1,5 @@
+{
+  "NSCameraUsageDescription": "拍照并添加到 Zotigo 对话中。",
+  "NSPhotoLibraryUsageDescription": "将截图或照片添加到 Zotigo 对话中。",
+  "NSLocalNetworkUsageDescription": "连接你在私有网络中的 Zotigo 守护进程。"
+}

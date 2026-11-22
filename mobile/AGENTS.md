@@ -1,0 +1,13 @@
+# Mobile client
+
+- React Native + Expo; UI lives here, shared daemon DTOs live in `../shared`.
+- Never import Node, Electron, `../backend`, or DOM components into mobile.
+- Requests and subscriptions belong to an immutable daemon connection. Dispose old connections when switching hosts. Never retry mutations automatically.
+- Tokens live in SecureStore. Do not put tokens in route params, AsyncStorage, logs, screenshots, or query strings.
+- Durable daemon items are authoritative. SSE deltas are temporary previews and must not advance the durable cursor.
+- Native stack navigation, accessible controls (44 pt minimum), virtualized lists, bounded previews, and foreground-only subscriptions.
+- Run `corepack pnpm --filter @zotigo/mobile typecheck`, `test`, and `export:ios`; also run root tests/typecheck/build after workspace changes.
+- iOS export on Linux proves bundle construction, not native compilation or device behavior. Record that distinction.
+- For screen or composer changes, run the fixture preview and browser smoke in `tests/preview/README.md`, then inspect populated-page screenshots at a phone viewport. Export or empty-state screenshots alone are insufficient. Store screenshots and per-run reports outside the repository.
+- UI: read the "Interaction" and "UI structure" sections of `../docs/mobile-architecture.md` first. Use `src/theme.ts` tokens and the `components/ui.tsx` primitives (`Action`, `ListGroup`/`ListRow`, `Chip`, `EmptyState`) instead of literal colors or one-off row styles. One primary action per screen; show current values on controls rather than bare icons.
+- i18n keys referenced only by mobile live in the shared catalogs. Before deleting "unused" keys, search `mobile/src` too.

@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Globe, Search } from "lucide-react";
 import { useLocale } from "../i18n";
 import { t } from "../../shared/i18n/index";
-import { loadTimeZoneOptions, matchesTimeZone, systemTimeZone, timeZoneOption, type TimeZoneOption } from "./usageModel";
+import { loadTimeZoneOptions, matchesTimeZone, systemTimeZone, timeZoneOption, type TimeZoneOption } from "../../shared/usageModel";
 
 /** null follows the system zone. */
 export type TimeZoneChoice = string | null;

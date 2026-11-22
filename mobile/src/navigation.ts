@@ -1,0 +1,20 @@
+export type Routes = {
+  Home: undefined;
+  Project: { id: string; title: string };
+  Workspace: { id: string; title: string };
+  Conversation: { id: string; title: string };
+  NewSession: { workspaceId?: string; directory?: string };
+  Files: { path?: string; sessionId?: string; open?: boolean };
+  Settings: undefined;
+  Models: undefined;
+  ConversationPreferences: undefined;
+  TranslationPreferences: undefined;
+  RuntimeSettings: undefined;
+  ModelCatalog: undefined;
+  Profiles: undefined;
+  Devices: { add?: boolean } | undefined;
+  Channels: undefined;
+  Usage: undefined;
+  Sources: { projectId: string; title: string };
+  SourcePicker: { projectId: string };
+};

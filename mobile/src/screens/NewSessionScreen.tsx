@@ -1,0 +1,707 @@
+import { t } from "@zotigo/shared/i18n/index";
+import { useLocale } from "../platform/i18n";
+import { KeyboardFrameView } from "../components/KeyboardFrameView";
+import { DraftImages } from "../components/DraftImages";
+import { SkillInput } from "../components/SkillInput";
+import { AttachmentFiles } from "../components/AttachmentFiles";
+import { pickAttachments } from "../platform/pickAttachments";
+import { pickImages } from "../platform/pickImages";
+import type { DraftFile } from "../core/attachments";
+import type { MessageImageInput } from "@zotigo/shared/zotigod";
+import { ComposerSkills } from "../components/ComposerSkills";
+import { ComposerFrame, PolicyChoices } from "../components/ComposerFrame";
+import ArrowUp from "lucide-react-native/icons/arrow-up";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { Keyboard, Platform, Pressable } from "react-native";
+import { randomUUID } from "expo-crypto";
+import {
+  ComposerStore,
+  emptyDraft,
+  submissionAttempt,
+  prepareAttachments,
+} from "../core/composer";
+import { finishInBackground } from "../platform/backgroundTask";
+import { storage } from "../platform/storage";
+import { compatibleReasoningEffort } from "@zotigo/shared/modelSelection";
+import { useEffect, useRef, useState } from "react";
+import Folder from "lucide-react-native/icons/folder";
+import { Alert, FlatList, Text, View } from "react-native";
+import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
+import { RuntimePicker } from "../components/RuntimePicker";
+import {
+  useNavigation,
+  useIsFocused,
+  useRoute,
+  usePreventRemove,
+  type RouteProp,
+} from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type {
+  AgentCatalogResponse,
+  AgentKind,
+  ApprovalPolicy,
+  ProfilesResponse,
+  CatalogProject,
+  CatalogWorkspace,
+} from "@zotigo/shared/zotigod";
+import { useDaemon } from "../platform/context";
+import { sessionContextReady } from "../core/newSession";
+import type { Routes } from "../navigation";
+import {
+  Action,
+  errorText,
+  Loading,
+  Notice,
+  colors,
+  IconButton,
+  styles,
+  TextField,
+} from "../components/ui";
+
+export function NewSessionScreen() {
+  useLocale();
+  const client = useDaemon(),
+    nav = useNavigation<NativeStackNavigationProp<Routes>>(),
+    route = useRoute<RouteProp<Routes, "NewSession">>();
+  const [workspace, setWorkspace] = useState<CatalogWorkspace>();
+  const [scratch, setScratch] = useState(true);
+  const [profileRevision, setProfileRevision] = useState(0);
+  const [workspaceLoading, setWorkspaceLoading] = useState(true);
+  const [panel, setPanelValue] = useState<"workspace" | "model" | "policy" | null>(
+    null,
+  );
+  const [panelVisible, setPanelVisible] = useState(false);
+  // Retain the pane content until the native dismissal animation completes.
+  const setPanel = (next: typeof panel) => {
+    if (next !== null) setPanelValue(next);
+    setPanelVisible(next !== null);
+  };
+  const choosing = panelVisible && panel === "workspace";
+  const [search, setSearch] = useState("");
+  const [projects, setProjects] = useState<CatalogProject[]>([]);
+  const [projectId, setProjectId] = useState<string>();
+  const [workspaces, setWorkspaces] = useState<CatalogWorkspace[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState("");
+  const [profilesDirectory, setProfilesDirectory] = useState<string>();
+  const [profileError, setProfileError] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [message, setMessage] = useState("");
+  const [files, setFiles] = useState<DraftFile[]>([]);
+  const [images, setImages] = useState<MessageImageInput[]>([]);
+  const [skillNames, setSkillNames] = useState<string[]>([]);
+  const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const header = useHeaderHeight();
+  const [catalog, setCatalog] = useState<AgentCatalogResponse>();
+  const [profiles, setProfiles] = useState<ProfilesResponse>();
+  const [agent, setAgent] = useState<AgentKind>("zotigo");
+  const [profile, setProfile] = useState("");
+  const [model, setModel] = useState("");
+  const [effort, setEffort] = useState("");
+  const [policy, setPolicy] = useState<ApprovalPolicy>("bypass_permissions");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [createdSession, setCreatedSession] = useState<string>();
+  const contextLocked = busy || !!createdSession;
+  const composerAnchor = useRef<View>(null);
+  // Same sources as a conversation's composer: photo library, camera, files.
+  const [attachmentMenu, setAttachmentMenu] = useState(false);
+  const pendingPicker = useRef<(() => void) | undefined>(undefined);
+  function attach(pick: () => Promise<{ images: MessageImageInput[]; files: DraftFile[] } | undefined>) {
+    const open = () => {
+      if (lock.current || !mounted.current) return;
+      lock.current = true;
+      setBusy(true);
+      void pick()
+        .then((result) => {
+          if (result && mounted.current) {
+            setFiles(result.files);
+            setImages(result.images);
+          }
+        })
+        .catch((e) => {
+          if (mounted.current) setError(errorText(e));
+        })
+        .finally(() => {
+          lock.current = false;
+          if (mounted.current) setBusy(false);
+        });
+    };
+    setAttachmentMenu(false);
+    // UIKit must finish dismissing our sheet before presenting the system picker.
+    if (Platform.OS === "ios") pendingPicker.current = open;
+    else open();
+  }
+  const photos = (source: "library" | "camera") => async () => {
+    const picked = await pickImages(source, images, files);
+    return picked && { images: picked, files };
+  };
+  const completed = useRef(false);
+  const lock = useRef(false),
+    mounted = useRef(true);
+  usePreventRemove(
+    busy || !!message.trim() || !!files.length || !!images.length,
+    ({ data }) => {
+      if (completed.current) nav.dispatch(data.action);
+      else if (!lock.current)
+        Alert.alert(
+          t("mobile.discardMessage"),
+          t("mobile.yourUnsentMessageWillBeDiscarded"),
+          [
+            { text: t("mobile.keepEditing"), style: "cancel" },
+            {
+              text: t("mobile.discard"),
+              style: "destructive",
+              onPress: () => nav.dispatch(data.action),
+            },
+          ],
+        );
+      else
+        Alert.alert(t("mobile.pleaseWait"), t("mobile.theSessionIsBeingPreparedOrCreated"));
+    },
+  );
+  useEffect(() => {
+    mounted.current = true;
+    let active = true;
+    client
+      .modelCatalog()
+      .then((a) => {
+        if (active) {
+          setCatalog(a);
+          setAgent(a.default_agent);
+        }
+      })
+      .catch((e) => {
+        if (active) setError(errorText(e));
+      });
+    return () => {
+      active = false;
+      mounted.current = false;
+    };
+  }, [client]);
+  const lastWorkspaceKey = `zotigo.mobile.lastWorkspace:${client.connection.id}`;
+  useEffect(() => {
+    let active = true;
+    const explicit = route.params.workspaceId;
+    setWorkspaceLoading(true);
+    // An explicit workspace wins; otherwise reuse the last one quietly, and
+    // fall back to no project if it was archived or is not ready.
+    void (explicit ? Promise.resolve(explicit) : storage.get(lastWorkspaceKey))
+      .then(async (workspaceId) => {
+        if (!workspaceId || !active) return;
+        const value = await client.workspace(workspaceId).catch((e) => {
+          if (explicit) throw e;
+          return undefined;
+        });
+        if (!active || !value) return;
+        if (value.status !== "ready") {
+          if (explicit)
+            throw new Error(t("mobile.thisWorkspaceIsNotReadyChooseAnotherWorkspace"));
+          return;
+        }
+        setWorkspace((current) => current ?? value);
+        setScratch(false);
+      })
+      .catch((e) => {
+        if (active) setError(errorText(e));
+      })
+      .finally(() => {
+        if (active) setWorkspaceLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, route.params.workspaceId]);
+  useEffect(() => {
+    if (!choosing) return;
+    let active = true;
+    setPickerLoading(true);
+    setPickerError("");
+    if (projectId) {
+      setWorkspaces([]);
+      client
+        .workspaces(projectId)
+        .then((values) => {
+          if (active)
+            setWorkspaces(values.filter((value) => value.status === "ready"));
+        })
+        .catch((e) => {
+          if (active) setPickerError(errorText(e));
+        })
+        .finally(() => {
+          if (active) setPickerLoading(false);
+        });
+    } else {
+      client
+        .projects()
+        .then((values) => {
+          if (active) setProjects(values);
+        })
+        .catch((e) => {
+          if (active) setPickerError(errorText(e));
+        })
+        .finally(() => {
+          if (active) setPickerLoading(false);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [client, choosing, projectId]);
+  const screenFocused = useIsFocused();
+  const lastProfilesDirectory = useRef<string | undefined>(undefined);
+  // There is exactly one directory-scoped profile request owner. Old responses cannot
+  // replace profiles after workspace changes, and creation waits for a matching result.
+  useEffect(() => {
+    if (!screenFocused) return;
+    let active = true;
+    setProfiles(undefined);
+    setProfilesDirectory(undefined);
+    if (lastProfilesDirectory.current !== workspace?.root_path) setProfile("");
+    setProfileError("");
+    void client
+      .profiles(workspace?.root_path)
+      .then((value) => {
+        if (!active) return;
+        setProfiles(value);
+        setProfilesDirectory(workspace?.root_path);
+        lastProfilesDirectory.current = workspace?.root_path;
+        setProfile(current => value.profiles.some(p => p.name === current) ? current : value.default_profile);
+      })
+      .catch((e) => {
+        if (active) setProfileError(errorText(e));
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, workspace, profileRevision, screenFocused]);
+  const selected = catalog?.agents.find((a) => a.id === agent);
+  const modelLabel = !catalog
+    ? t("favoriteModelSettings.loadingModels")
+    : agent === "codex"
+      ? [model, effort].filter(Boolean).join(" · ") || (selected?.label ?? "")
+      : profile || selected?.label || t("mobile.modelAndReasoning");
+  const codex = catalog?.agents.find((a) => a.id === "codex");
+  useEffect(() => {
+    const m =
+      codex?.models?.find((m) => m.id === model) ??
+      codex?.models?.find((m) => m.is_default) ??
+      codex?.models?.[0];
+    setModel(m?.id ?? "");
+    setEffort((current) =>
+      compatibleReasoningEffort(m?.supported_reasoning_efforts ?? [], current),
+    );
+  }, [codex]);
+  async function create() {
+    if (
+      lock.current ||
+      workspaceLoading ||
+      (!scratch && !workspace) ||
+      !sessionContextReady(
+        workspace,
+        agent,
+        profiles,
+        profilesDirectory,
+        profile,
+      )
+    )
+      return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const session = createdSession
+        ? { id: createdSession }
+        : await client.createSession({
+            workspaceId: workspace?.id,
+            agent,
+            profile: agent === "zotigo" ? profile || undefined : undefined,
+            model: agent === "codex" ? model : undefined,
+            reasoningEffort: agent === "codex" ? effort : undefined,
+            approvalPolicy: policy,
+          });
+      setCreatedSession(session.id);
+      void storage.set(lastWorkspaceKey, workspace?.id ?? "").catch(() => {});
+      if (!mounted.current || client.signal.aborted) return;
+      const composer = new ComposerStore(
+        storage,
+        client.connection.id,
+        session.id,
+      );
+      let draft = {
+        ...emptyDraft(),
+        text: message,
+        skills: skillNames,
+        files,
+        images,
+      };
+      const pending = { current: { draft } };
+      await prepareAttachments(
+        client,
+        session.id,
+        pending,
+        composer,
+        (state) => {
+          if (mounted.current) setFiles(state.draft.files ?? []);
+        },
+      );
+      draft = {
+        ...pending.current.draft,
+        files: pending.current.draft.files ?? [],
+      };
+      const attempt = submissionAttempt({ draft }, randomUUID(), false);
+      await composer.write({ draft, attempt });
+      try {
+        // Leaving the app right after Create must not cut the first message off.
+        await finishInBackground("send-message", async () => {
+          await client.send(
+            session.id,
+            {
+              text: attempt.text,
+              skills: attempt.skills,
+              images: attempt.images,
+              client_message_id: attempt.client_message_id,
+            },
+            false,
+          );
+          await composer.write({ draft: emptyDraft() });
+        });
+      } catch (e) {
+        Alert.alert(
+          t("mobile.sessionCreated"),
+          t("mobile.createdNeedsAttention", { error: errorText(e) }),
+        );
+      }
+      completed.current = true;
+      lock.current = false;
+      setBusy(false);
+      if (mounted.current && !client.signal.aborted)
+        nav.replace("Conversation", {
+          id: session.id,
+          title: t("app.newSession"),
+        });
+    } catch (e) {
+      if (mounted.current) setError(errorText(e));
+    } finally {
+      lock.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+  return (
+    <KeyboardFrameView
+      onKeyboardVisibleChange={setKeyboardVisible}
+      keyboardVerticalOffset={header}
+      style={{
+        flex: 1,
+        width: "100%",
+        maxWidth: 860,
+        alignSelf: "center",
+        backgroundColor: colors.background,
+      }}
+    >
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          gap: 8,
+        }}
+      >
+        <Text style={[styles.title, { fontSize: 22, lineHeight: 28 }]}>{t("mobileUi.welcomeTitle")}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("mobileUi.chooseWorkspace")}
+          accessibilityValue={{ text: workspace?.title ?? t("mobileUi.scratch") }}
+          disabled={contextLocked || workspaceLoading}
+          onPress={() => {
+            setProjectId(undefined);
+            setSearch("");
+            setPanel("workspace");
+          }}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            minHeight: 40,
+            paddingHorizontal: 14,
+            borderRadius: 20,
+            backgroundColor: pressed ? colors.selected : colors.surface,
+            opacity: contextLocked ? 0.5 : 1,
+            maxWidth: "100%",
+          })}
+        >
+          <Folder size={16} color={colors.muted} />
+          <Text numberOfLines={1} style={{ color: colors.text, fontSize: 15, fontWeight: "500", flexShrink: 1 }}>
+            {workspaceLoading ? t("markdownImage.loading") : workspace?.title ?? t("mobileUi.scratch")}
+          </Text>
+          <ChevronDown size={15} color={colors.muted} />
+        </Pressable>
+      </View>
+      <View
+        style={{
+          padding: 12,
+          paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 12),
+          gap: 8,
+        }}
+      >
+        <Notice text={error || profileError} error />
+        {createdSession && !busy && (
+          <Notice text={t("mobile.sessionCreatedRetryToFinishUploadingAndSendToThisSessionSessionSettingsCanBeChangedAfterOpeningTheConversation")} />
+        )}
+        <AttachmentFiles
+          files={files}
+          disabled={busy}
+          onRemove={(index) => setFiles(files.filter((_, i) => i !== index))}
+        />
+        {!!images.length && (
+          <DraftImages
+            images={images}
+            disabled={busy}
+            onRemove={(index) =>
+              setImages(images.filter((_, i) => i !== index))
+            }
+          />
+        )}
+        <ComposerSkills
+          text={message}
+          caret={caret}
+          selected={skillNames}
+          disabled={busy}
+          onChange={(text, skills) => {
+            setCaret(caret + text.length - message.length);
+            setMessage(text);
+            setSkillNames(skills);
+          }}
+        />
+        {!catalog && error && (
+          <Action
+            label={t("mobile.retryLoadingModels")}
+            onPress={() => {
+              setError("");
+              void client
+                .modelCatalog()
+                .then((a) => {
+                  setCatalog(a);
+                  setAgent(a.default_agent);
+                })
+                .catch((e) => setError(errorText(e)));
+            }}
+          />
+        )}
+        <ComposerFrame
+          anchorRef={composerAnchor}
+          input={
+            <SkillInput
+              value={message}
+              skills={skillNames}
+              editable={!busy}
+              caret={caret}
+              onCaret={setCaret}
+              onChange={setMessage}
+            />
+          }
+          policy={policy}
+          modelLabel={modelLabel}
+          disabled={{
+            attach: busy || files.length + images.length >= 5,
+            policy: contextLocked,
+            model: contextLocked || !catalog,
+          }}
+          onAttach={() => { Keyboard.dismiss(); setAttachmentMenu(true); }}
+          onPolicy={() => { Keyboard.dismiss(); setPanel("policy"); }}
+          onModel={() => { Keyboard.dismiss(); setPanel("model"); }}
+          trailing={
+            <IconButton
+              filled
+              icon={ArrowUp}
+              label={busy ? t("app.creating") : t("mobile.createSessionAndSend")}
+              disabled={
+                busy ||
+                (!message.trim() && !files.length && !images.length) ||
+                !catalog ||
+                workspaceLoading ||
+                (!scratch && !workspace) ||
+                !sessionContextReady(
+                  workspace,
+                  agent,
+                  profiles,
+                  profilesDirectory,
+                  profile,
+                ) ||
+                selected?.availability !== "available" ||
+                (agent === "codex" && !model) ||
+                (selected?.capabilities.approvals === false &&
+                  policy !== "bypass_permissions")
+              }
+              onPress={() => void create()}
+            />
+          }
+        />
+      </View>
+      <BottomSheet
+        anchorRef={composerAnchor}
+        visible={attachmentMenu}
+        title={t("attachmentMenu.addAttachment")}
+        onClose={() => setAttachmentMenu(false)}
+        onDismiss={() => {
+          const open = pendingPicker.current;
+          pendingPicker.current = undefined;
+          open?.();
+        }}
+      >
+        <ChoiceRow title={t("mobile.photoLibrary")} onPress={() => attach(photos("library"))} />
+        <ChoiceRow title={t("mobile.takePhoto")} onPress={() => attach(photos("camera"))} />
+        <ChoiceRow title={t("mobile.chooseFile")} onPress={() => attach(() => pickAttachments(images, files))} />
+      </BottomSheet>
+      <BottomSheet
+        anchorRef={composerAnchor}
+        visible={panelVisible}
+        scroll={panel !== "workspace" && panel !== "model"}
+        disabled={busy}
+        title={
+          panel === "workspace"
+            ? projectId
+              ? (projects.find((p) => p.id === projectId)?.name ?? t("app.workspaces"))
+              : t("app.projects")
+            : panel === "policy"
+              ? t("channelsPage.permissions")
+              : t("mobile.runtimeAndModel")
+        }
+        onClose={() => setPanel(null)}
+      >
+        <Notice text={error} error />
+        {panel === "workspace" && (
+          <>
+            {!projectId && (
+              <ChoiceRow
+                title={t("app.scratch")}
+                subtitle={t("mobile.workWithoutAProjectOrWorkspace")}
+                selected={scratch}
+                onPress={() => {
+                  setWorkspace(undefined);
+                  setScratch(true);
+                  setPanel(null);
+                }}
+              />
+            )}
+            {projectId && (
+              <Action
+                label={t("mobile.allProjects")}
+                secondary
+                onPress={() => {
+                  setProjectId(undefined);
+                  setSearch("");
+                }}
+              />
+            )}
+            <TextField
+              label={projectId ? t("mobile.searchWorkspaces") : t("mobile.searchProjects")}
+              value={search}
+              onChangeText={setSearch}
+            />
+            <Notice text={pickerError} error />
+            {pickerLoading ? (
+              <Loading />
+            ) : (
+              <FlatList
+                style={{ flexGrow: 0 }}
+                keyboardShouldPersistTaps="handled"
+                data={(projectId
+                  ? workspaces.map((w) => ({
+                      id: w.id,
+                      title: w.title,
+                      subtitle: w.root_path,
+                    }))
+                  : projects.map((p) => ({
+                      id: p.id,
+                      title: p.name,
+                      subtitle: "",
+                    }))
+                ).filter((row) =>
+                  row.title.toLowerCase().includes(search.toLowerCase()),
+                )}
+                keyExtractor={(row) => row.id}
+                ListEmptyComponent={
+                  <Notice
+                    text={
+                      search
+                        ? t("mobile.noMatches")
+                        : projectId
+                          ? t("mobile.noReadyWorkspacesInThisProject")
+                          : t("mobile.noProjectsUseScratchOrCreateAProjectFromHome")
+                    }
+                  />
+                }
+                renderItem={({ item }) => (
+                  <ChoiceRow
+                    icon={Folder}
+                    title={item.title}
+                    subtitle={item.subtitle}
+                    selected={projectId ? workspace?.id === item.id : undefined}
+                    onPress={() => {
+                      if (projectId) {
+                        setWorkspace(workspaces.find((w) => w.id === item.id));
+                        setScratch(false);
+                        setPanel(null);
+                      } else {
+                        setProjectId(item.id);
+                        setSearch("");
+                      }
+                    }}
+                  />
+                )}
+              />
+            )}
+          </>
+        )}
+        {panel === "model" && (
+          <>
+            <Notice text={profileError} error />
+            {profileError && (
+              <Action
+                label={t("mobile.reloadProfiles")}
+                onPress={() => setProfileRevision((v) => v + 1)}
+              />
+            )}
+            <RuntimePicker
+                unavailableAgents={catalog?.unavailable_agents}
+              onConfigureModels={() => { setPanel(null); nav.navigate("Profiles"); }}
+              agents={catalog?.agents ?? []}
+              profiles={profiles}
+              profilesLoading={!profiles && !profileError}
+              value={
+                agent === "codex"
+                  ? { agent, model, reasoningEffort: effort }
+                  : { agent: "zotigo", profile }
+              }
+              disabled={contextLocked}
+              onConfirm={(choice) => {
+                setAgent(choice.agent);
+                if (choice.agent === "codex") {
+                  setModel(choice.model);
+                  setEffort(choice.reasoningEffort);
+                } else setProfile(choice.profile);
+                setPanel(null);
+              }}
+            />
+          </>
+        )}
+        {panel === "policy" && (
+          <PolicyChoices
+            value={policy}
+            disabled={busy}
+            approvalsUnsupported={selected?.capabilities.approvals === false}
+            onChange={(next) => {
+              setPolicy(next);
+              setPanel(null);
+            }}
+          />
+        )}
+      </BottomSheet>
+    </KeyboardFrameView>
+  );
+}
