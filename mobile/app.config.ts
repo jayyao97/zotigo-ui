@@ -31,7 +31,7 @@ const config: ExpoConfig = {
       {
         photosPermission:
           "Attach a screenshot or photo to a Zotigo conversation.",
-        cameraPermission: false,
+        cameraPermission: "Take a photo to attach to a Zotigo conversation.",
         microphonePermission: false,
       },
     ],

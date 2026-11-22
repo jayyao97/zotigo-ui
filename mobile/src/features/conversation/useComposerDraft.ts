@@ -270,15 +270,21 @@ export function useComposerDraft({
       throw e;
     }
   }
-  async function attachImages() {
+  async function attachImages(source: "library" | "camera" = "library") {
     const { images: current, files } = draftRef.current.draft;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      base64: true,
-      quality: 0.8,
-      allowsMultipleSelection: true,
-      selectionLimit: Math.max(1, maxMessageImageCount - current.length - (files?.length ?? 0)),
-    });
+    let result: ImagePicker.ImagePickerResult;
+    if (source === "camera") {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) throw new Error(t("mobile.cameraDenied"));
+      result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], base64: true, quality: 0.8 });
+    } else
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        base64: true,
+        quality: 0.8,
+        allowsMultipleSelection: true,
+        selectionLimit: Math.max(1, maxMessageImageCount - current.length - (files?.length ?? 0)),
+      });
     if (result.canceled || !alive.current) return;
     const images = [...draftRef.current.draft.images];
     for (const asset of result.assets) {

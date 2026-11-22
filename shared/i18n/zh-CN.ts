@@ -334,6 +334,8 @@ export const zhCN: Record<MessageKey, Message> = {
   "mobile.resumeRuntime": "恢复运行时",
   "mobile.retryLoadingModels": "重新加载模型",
   "mobile.photoLibrary": "照片图库",
+  "mobile.takePhoto": "拍照",
+  "mobile.cameraDenied": "相机权限未开启。请在 设置 > Zotigo 中允许访问相机后再拍照。",
   "mobile.chooseFile": "选择文件",
   "mobile.daemonPath": "daemon 路径",
   "mobile.emptyPathListsRegisteredRoots": "留空以列出已注册的根目录",

@@ -334,6 +334,8 @@ export const en = {
   "mobile.resumeRuntime": "Resume runtime",
   "mobile.retryLoadingModels": "Retry loading models",
   "mobile.photoLibrary": "Photo library",
+  "mobile.takePhoto": "Take photo",
+  "mobile.cameraDenied": "Camera access is off. Allow it in Settings > Zotigo to take a photo.",
   "mobile.chooseFile": "Choose file",
   "mobile.daemonPath": "Daemon path",
   "mobile.emptyPathListsRegisteredRoots": "Empty path lists registered roots",

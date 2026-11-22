@@ -829,7 +829,18 @@ function ConversationContent() {
               maxMessageImageCount
           }
           onPress={() => {
-            openAttachmentPicker(composer.attachImages);
+            openAttachmentPicker(() => composer.attachImages("library"));
+          }}
+        />
+        <ChoiceRow
+          title={t("mobile.takePhoto")}
+          disabled={
+            !canSend ||
+            draft.images.length + (draft.files?.length ?? 0) >=
+              maxMessageImageCount
+          }
+          onPress={() => {
+            openAttachmentPicker(() => composer.attachImages("camera"));
           }}
         />
         <ChoiceRow
