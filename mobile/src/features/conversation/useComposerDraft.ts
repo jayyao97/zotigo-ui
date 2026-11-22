@@ -65,6 +65,9 @@ export function useComposerDraft({
   const [promptPreviews, setPromptPreviews] = useState<DisplayItem[]>([]);
   const promptAnchors = useRef(new Map<string, PromptTimelineAnchor>());
   const [loaded, setLoaded] = useState(false);
+  // Edits before the saved draft is read would replace it, including a pending
+  // retry and its message ID, so they are ignored until then.
+  const loadedRef = useRef(false);
   const [queueRevision, setQueueRevision] = useState(0);
   const revision = useRef(0);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -75,6 +78,7 @@ export function useComposerDraft({
       .then((value) => {
         if (active) {
           draftRef.current = value;
+          loadedRef.current = true;
           setSaved(value);
           setLoaded(true);
         }
@@ -105,6 +109,7 @@ export function useComposerDraft({
   }, [items]);
   const update = useCallback(
     (patch: Partial<Draft>) => {
+      if (!loadedRef.current) return;
       const next = {
         ...draftRef.current,
         draft: { ...draftRef.current.draft, ...patch },
