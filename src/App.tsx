@@ -74,6 +74,7 @@ import {
   ArrowUp,
   Bell,
   Circle,
+  Crosshair,
   FileText,
   FolderOpen,
   FolderPlus,
@@ -264,6 +265,23 @@ const emptyDesktopState: DesktopState = {
   selectedWorkspaceId: null,
   selectedConversationId: null,
 };
+
+/**
+ * Height covered at the top of a scroller by the sticky headers of the groups
+ * that contain an element: the bottom of the lowest such header when stuck.
+ */
+function stickyHeaderHeight(element: Element, scroller: Element): number {
+  let covered = 0;
+  for (let child: Element = element; child.parentElement && child.parentElement !== scroller; child = child.parentElement) {
+    // A group's sticky header precedes its content.
+    for (let header = child.previousElementSibling; header; header = header.previousElementSibling) {
+      const style = getComputedStyle(header);
+      if (style.position !== "sticky") continue;
+      covered = Math.max(covered, (Number.parseFloat(style.top) || 0) + header.getBoundingClientRect().height);
+    }
+  }
+  return covered;
+}
 
 export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false, openSessionRequest }: { openSessionRequest?: { id: string; nonce: number }; onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   useLocale();
@@ -749,30 +767,41 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     if (!reveal || !navigation) return;
     const selector = reveal.kind === "session" ? `[data-session-id="${CSS.escape(reveal.id)}"]` : `[data-workspace-id="${CSS.escape(reveal.id)}"] .workspace-row`;
     let cancelled = false;
+    let stopFollowing = () => {};
     const frame = requestAnimationFrame(() => {
       const scroll = () => {
         const row = navigation.querySelector(selector);
         if (!row) return;
-        const top = navigation.scrollTop + row.getBoundingClientRect().top - navigation.getBoundingClientRect().top;
+        // Stop below the sticky section, project and workspace rows that stay
+        // pinned above the target; otherwise they cover it.
+        const covered = stickyHeaderHeight(row, navigation);
+        const top = navigation.scrollTop + row.getBoundingClientRect().top - navigation.getBoundingClientRect().top - covered;
         // Give even the final row enough room to reach the top of the sidebar.
         const lastSection = navigation.lastElementChild;
         const remaining = (lastSection?.getBoundingClientRect().bottom ?? 0) - row.getBoundingClientRect().top;
-        navigation.style.setProperty("--search-reveal-space", `${Math.max(0, Math.ceil(navigation.clientHeight - remaining))}px`);
+        navigation.style.setProperty("--search-reveal-space", `${Math.max(0, Math.ceil(navigation.clientHeight - covered - remaining))}px`);
         navigation.scrollTop = top;
       };
       scroll();
-      // Adjacent branches can also be closing, moving the target after the first scroll.
-      const transitions = (navigation.getAnimations?.({ subtree: true }) ?? [])
-        .filter(animation => "transitionProperty" in animation && animation.transitionProperty === "grid-template-rows");
-      if (transitions.length) {
-        void Promise.allSettled(transitions.map(animation => animation.finished)).then(() => {
-          if (!cancelled) scroll();
-        });
-      }
+      // The target can still move after the first scroll: adjacent branches
+      // finish closing and scrolling loads further sidebar pages above it.
+      // Follow it until the layout settles or the user scrolls. Sections
+      // mounted later, or pages slower than this window, are not followed.
+      if (typeof ResizeObserver === "undefined") return;
+      const observer = new ResizeObserver(() => { if (!cancelled) scroll(); });
+      for (const section of navigation.children) observer.observe(section);
+      stopFollowing = () => {
+        observer.disconnect();
+        window.clearTimeout(timer);
+        for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) navigation.removeEventListener(type, stopFollowing);
+      };
+      const timer = window.setTimeout(stopFollowing, 1500);
+      for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) navigation.addEventListener(type, stopFollowing, { passive: true });
     });
     return () => {
       cancelled = true;
       cancelAnimationFrame(frame);
+      stopFollowing();
       navigation.style.removeProperty("--search-reveal-space");
     };
   }, [reveal]);
@@ -1762,6 +1791,21 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     showRecentSessions(false);
     setSearchTarget({ kind: "workspace", id: workspace.id });
     void selectWorkspace(workspace.id);
+  }
+
+  /**
+   * Scrolls the sidebar to the current session (or workspace) exactly as a
+   * search result does. It only switches the sidebar to the tree; unlike
+   * revealSession it does not reselect, so Web keeps the navigation open.
+   */
+  function revealCurrentSelection() {
+    const target = selectedConversation ? { kind: "session" as const, id: selectedConversation.id }
+      : selectedWorkspace ? { kind: "workspace" as const, id: selectedWorkspace.id } : null;
+    if (!target) return;
+    showRecentSessions(false);
+    setRepositoriesOpen(false);
+    setProjectOverviewId(null);
+    setSearchTarget(target);
   }
 
   function revealSession(id: string, sourceState = desktopState) {
@@ -3158,6 +3202,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         <div className="sidebar-brand">
           <HostMenu />
           <div className="brand-actions">
+            <button type="button" className="locate-selection" aria-label={t("app.locateSelection")} title={t("app.locateSelection")} disabled={!selectedConversation && !selectedWorkspace} onClick={revealCurrentSelection}><Crosshair size={15} strokeWidth={1.8} /></button>
             <button type="button" aria-label={t("app.search")} onClick={() => setSearchOpen(true)} title={t("app.searchKCtrlK")}><Search size={15} strokeWidth={1.8} /></button>
             <button type="button" className="recent-sessions-toggle" aria-label={t("recentSessions.title")} aria-pressed={recentSessionsOpen && !channelsOpen && !repositoriesOpen} title={t("recentSessions.title")} onClick={() => showRecentSessions(!(recentSessionsOpen && !channelsOpen && !repositoriesOpen))}><Bell size={15} strokeWidth={1.8} /></button>
             {kind === "web" && <button ref={webNavigationCloseButton} className="web-navigation-toggle sidebar-navigation-close" type="button" onClick={() => setWebNavigationOpen(false)} aria-label={t("app.closeNavigation")} title={t("app.closeNavigation")}><X size={18} /></button>}

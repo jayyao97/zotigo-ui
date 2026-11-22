@@ -145,3 +145,99 @@ export function isValidTimeZone(value: string): boolean {
   if (value !== "UTC" && !/^[A-Z][A-Za-z_-]*(\/[A-Z][A-Za-z0-9_+-]*)+$/.test(value)) return false;
   try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; }
 }
+
+/** Minutes east of UTC for a zone at the given instant. */
+export function timeZoneOffsetMinutes(timeZone: string, at = new Date()): number {
+  let name = "GMT";
+  try {
+    name = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" }).formatToParts(at).find(part => part.type === "timeZoneName")?.value ?? "GMT";
+  } catch { return 0; }
+  const match = /GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(name);
+  if (!match) return 0;
+  return (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] ?? 0));
+}
+
+/** "UTC", "UTC+8", "UTC+5:45", "UTC-3:30". */
+export function formatUtcOffset(minutes: number): string {
+  if (minutes === 0) return "UTC";
+  const absolute = Math.abs(minutes);
+  const rest = absolute % 60;
+  return `UTC${minutes < 0 ? "-" : "+"}${Math.floor(absolute / 60)}${rest ? `:${String(rest).padStart(2, "0")}` : ""}`;
+}
+
+/** The last segment of an IANA name as a place: "America/Argentina/Buenos_Aires" → "Buenos Aires". */
+export function timeZoneCity(timeZone: string): string {
+  return (timeZone.split("/").at(-1) ?? timeZone).replaceAll("_", " ");
+}
+
+export interface TimeZoneOption {
+  id: string;
+  city: string;
+  /** Localized generic name, such as 中国标准时间 or Pacific Time. */
+  name: string;
+  offset: number;
+  offsetLabel: string;
+}
+
+export function timeZoneOption(id: string, locale: Locale, at = new Date()): TimeZoneOption {
+  let name = "";
+  try {
+    name = new Intl.DateTimeFormat(locale, { timeZone: id, timeZoneName: "longGeneric" }).formatToParts(at).find(part => part.type === "timeZoneName")?.value ?? "";
+  } catch { name = ""; }
+  const offset = timeZoneOffsetMinutes(id, at);
+  // Zones without a localized name fall back to an offset such as GMT+08:00; that adds nothing.
+  if (/^(GMT|UTC)([+-]|$)/.test(name)) name = "";
+  return { id, city: timeZoneCity(id), name, offset, offsetLabel: formatUtcOffset(offset) };
+}
+
+// Every zone the daemon can accept. ICU does not list UTC itself, only
+// cities that happen to be at UTC+0 now.
+function timeZoneIds(): string[] {
+  return ["UTC", ...availableTimeZones().filter(id => id !== "UTC" && isValidTimeZone(id))];
+}
+
+/** UTC first, then west to east, then by name. */
+function sortTimeZoneOptions(options: TimeZoneOption[]): TimeZoneOption[] {
+  return options.sort((left, right) => Number(right.id === "UTC") - Number(left.id === "UTC") || left.offset - right.offset || left.id.localeCompare(right.id));
+}
+
+const optionLoads = new Map<string, Promise<TimeZoneOption[]>>();
+
+/**
+ * Builds the options without blocking: each zone needs two Intl formatters
+ * (about 0.35 ms each), ~150 ms for the whole list, so it is built in slices
+ * that yield between them. Results are shared per locale and hour, since
+ * daylight saving changes offsets.
+ */
+export function loadTimeZoneOptions(locale: Locale, at = new Date()): Promise<TimeZoneOption[]> {
+  const key = `${locale}|${Math.floor(at.getTime() / 3_600_000)}`;
+  let load = optionLoads.get(key);
+  if (!load) {
+    optionLoads.clear();
+    load = (async () => {
+      const options: TimeZoneOption[] = [];
+      const ids = timeZoneIds();
+      for (let index = 0; index < ids.length; index += 40) {
+        if (index) await new Promise(resolve => setTimeout(resolve, 0));
+        for (const id of ids.slice(index, index + 40)) options.push(timeZoneOption(id, locale, at));
+      }
+      return sortTimeZoneOptions(options);
+    })();
+    optionLoads.set(key, load);
+  }
+  return load;
+}
+
+/**
+ * Matches the IANA name (with spaces for underscores), the localized name, or
+ * an offset written as +8, UTC+8, GMT-3:30 or +0545.
+ */
+export function matchesTimeZone(option: TimeZoneOption, query: string): boolean {
+  const text = query.trim().toLowerCase();
+  if (!text) return true;
+  const offset = /^(?:utc|gmt)?\s*([+\-−])\s*(\d{1,2})(?::?(\d{2}))?$/.exec(text);
+  if (offset) return option.offset === (offset[1] === "+" ? 1 : -1) * (Number(offset[2]) * 60 + Number(offset[3] ?? 0));
+  if (text === "utc" || text === "gmt") return option.offset === 0;
+  const haystack = `${option.id} ${option.id.replaceAll("_", " ")} ${option.name}`.toLowerCase();
+  return text.split(/\s+/).every(word => haystack.includes(word));
+}

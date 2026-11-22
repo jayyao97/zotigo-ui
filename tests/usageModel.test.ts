@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { cacheHitRate } from "../shared/usage";
-import { addDays, isValidTimeZone, cumulativeTotals, formatPercent, formatTokens, heatmapCells, heatmapRange, heatmapWeekTotals, intensityLevels, monthColumns, startOfWeek, todayIn, weekStartDay } from "../src/usage/usageModel";
+import { addDays, formatUtcOffset, loadTimeZoneOptions, isValidTimeZone, matchesTimeZone, timeZoneOffsetMinutes, timeZoneOption, cumulativeTotals, formatPercent, formatTokens, heatmapCells, heatmapRange, heatmapWeekTotals, intensityLevels, monthColumns, startOfWeek, todayIn, weekStartDay } from "../src/usage/usageModel";
 
 const day = (date: string, total: number, cacheRead = 0, cacheInput = 0) => ({ date, total, input: total, cacheRead, cacheWrite: 0, output: 0, cacheInput, turns: 1 });
 
@@ -86,4 +86,37 @@ test("today follows the chosen time zone", () => {
 test("time zones must be IANA names the daemon also accepts", () => {
   for (const zone of ["UTC", "Asia/Shanghai", "Asia/Kathmandu", "America/Argentina/Buenos_Aires", "Etc/GMT+1"]) assert.ok(isValidTimeZone(zone), zone);
   for (const zone of ["asia/shanghai", "+08:00", "Local", "Mars/Base", ""]) assert.equal(isValidTimeZone(zone), false, zone);
+});
+
+test("time zone options carry UTC offsets and match names or offsets", () => {
+  const winter = new Date("2026-01-15T00:00:00Z");
+  const summer = new Date("2026-07-15T00:00:00Z");
+  assert.equal(timeZoneOffsetMinutes("Asia/Shanghai", winter), 480);
+  assert.equal(timeZoneOffsetMinutes("America/New_York", winter), -300);
+  assert.equal(timeZoneOffsetMinutes("America/New_York", summer), -240);
+  assert.equal(timeZoneOffsetMinutes("UTC", winter), 0);
+  assert.deepEqual([0, 480, 345, -210].map(formatUtcOffset), ["UTC", "UTC+8", "UTC+5:45", "UTC-3:30"]);
+
+  const kathmandu = timeZoneOption("Asia/Kathmandu", "en", winter);
+  assert.equal(kathmandu.offsetLabel, "UTC+5:45");
+  for (const query of ["", "kathmandu", "Asia/Kath", "+5:45", "UTC+5:45", "+0545", "nepal"]) assert.ok(matchesTimeZone(kathmandu, query), query);
+  for (const query of ["+8", "shanghai", "-5:45"]) assert.equal(matchesTimeZone(kathmandu, query), false, query);
+  const angeles = timeZoneOption("America/Los_Angeles", "en", winter);
+  assert.equal(angeles.city, "Los Angeles");
+  assert.ok(matchesTimeZone(angeles, "los angeles"));
+  assert.ok(matchesTimeZone(angeles, "pacific"));
+  assert.ok(matchesTimeZone(angeles, "-8"));
+  assert.ok(matchesTimeZone(timeZoneOption("Europe/London", "en", winter), "utc"));
+});
+
+test("the time zone list always offers UTC first and is shared per locale", async () => {
+  const at = new Date("2026-01-15T00:00:00Z");
+  const load = loadTimeZoneOptions("zh-CN", at);
+  assert.equal(loadTimeZoneOptions("zh-CN", at), load, "one build per locale and hour");
+  const options = await load;
+  assert.equal(options[0].id, "UTC");
+  assert.equal(options.filter(option => option.id === "UTC").length, 1);
+  assert.ok(options.some(option => option.id === "Asia/Shanghai" && option.offset === 480));
+  const rest = options.slice(1);
+  assert.ok(rest.every((option, index) => index === 0 || rest[index - 1].offset <= option.offset), "west to east");
 });

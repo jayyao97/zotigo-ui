@@ -801,3 +801,41 @@ test("a session opened from Usage loads it, and a later sidebar choice wins over
     assert.match(document.body.textContent ?? "", /load a2 failed/);
   } finally { await act(async () => root.unmount()); Reflect.deleteProperty(globalThis, "CSS"); restore(); }
 });
+
+test("the locate button reveals the selected session in the tree like a search result, without leaving it", async () => {
+  const restore = installDom();
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: { escape: (value: string) => value } });
+  const time = new Date().toISOString();
+  localStorage.setItem("zotigo:sidebar-section:ungrouped:collapsed", "true");
+  const client = hostClient(false, {
+    ...emptyState,
+    conversations: [{ id: "loose", project_id: null, workspace_id: null, title: "Loose session", created_at: time, updated_at: time }],
+  });
+  const root = await mountHostShell(client.api);
+  const locate = () => document.querySelector<HTMLButtonElement>(".brand-actions .locate-selection")!;
+  const ungrouped = () => document.querySelector<HTMLButtonElement>(".ungrouped-section .sidebar-section-toggle")!;
+  try {
+    assert.equal(locate().disabled, true, "nothing to locate without a selection");
+    // Select the session from the activity view, then return to the collapsed tree.
+    await act(async () => click(document.querySelector(".recent-sessions-toggle")!));
+    await act(async () => click(document.querySelector(".recent-session-navigation .sidebar-session > button")!));
+    await flush();
+    assert.equal(locate().disabled, false);
+    const saves = client.calls.filter(call => call.channel === "desktop:save-selection").length;
+    assert.equal(document.querySelector(".ungrouped-section"), null, "the activity view replaces the tree");
+
+    await act(async () => click(locate()));
+    await flush();
+    // The tree replaces the activity view and the collapsed section opens at the selected row.
+    assert.equal(document.querySelector(".recent-sessions-toggle")!.getAttribute("aria-pressed"), "false");
+    assert.equal(ungrouped().getAttribute("aria-expanded"), "true");
+    assert.match(document.querySelector(".ungrouped-section .sidebar-session.selected")?.textContent ?? "", /Loose session/);
+    assert.equal(client.calls.filter(call => call.channel === "desktop:save-selection").length, saves, "locating does not reselect");
+    // Collapsing again dismisses the reveal; locating once more reopens it.
+    await act(async () => click(ungrouped()));
+    assert.equal(ungrouped().getAttribute("aria-expanded"), "false");
+    await act(async () => click(locate()));
+    await flush();
+    assert.equal(ungrouped().getAttribute("aria-expanded"), "true");
+  } finally { await act(async () => root.unmount()); Reflect.deleteProperty(globalThis, "CSS"); restore(); }
+});
