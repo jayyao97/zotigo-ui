@@ -1,3 +1,4 @@
+import { t } from "@zotigo/shared/i18n/index";
 import { mergeReadState } from "@zotigo/shared/sessionReadState";
 import { cachedHistory, cacheHistory } from "./historyCache";
 import type {
@@ -34,6 +35,9 @@ export function activeTurn(items: DisplayItem[]): string | undefined {
       return items[i].turn?.id;
   }
 }
+/** The daemon sends a heartbeat every 15 s; three missed means the stream is dead. */
+export const streamIdleMilliseconds = 45_000;
+
 export class Timeline {
   private state: TimelineSnapshot = {
     items: [],
@@ -57,6 +61,8 @@ export class Timeline {
   constructor(
     readonly client: DaemonClient,
     readonly id: string,
+    /** How long the event stream may stay silent before it is reconnected. */
+    private idleLimit = streamIdleMilliseconds,
   ) {
     const cached = cachedHistory(client, id);
     if (cached) {
@@ -207,7 +213,16 @@ export class Timeline {
             if (!alive()) return;
             this.publish({ status: "connected", error: "", session });
             while (alive()) {
-              const next = await reader.read();
+              // The daemon writes a heartbeat every 15 s, so silence this long
+              // means the connection died without closing (say, after moving
+              // from Wi-Fi to cellular): give up on it and reconnect.
+              let idle: ReturnType<typeof setTimeout> | undefined;
+              const next = await Promise.race([
+                reader.read(),
+                new Promise<{ done: true; value: undefined }>((resolve) => {
+                  idle = setTimeout(() => resolve({ done: true, value: undefined }), this.idleLimit);
+                }),
+              ]).finally(() => clearTimeout(idle));
               if (next.done) break;
               for (const event of parser.push(
                 decoder.decode(next.value, { stream: true }),
@@ -223,17 +238,19 @@ export class Timeline {
             await reader.cancel().catch(() => {});
             reader.releaseLock();
           }
-          if (alive()) throw new Error("Connection ended. Reconnecting…");
+          if (alive()) throw new Error("Event stream ended.");
         } catch (error) {
           if (!alive()) return;
           const fatal =
             error instanceof ApiError &&
             [400, 401, 403, 404, 405].includes(error.status);
-          this.publish({
-            status: fatal ? "offline" : "reconnecting",
-            error:
-              error instanceof Error ? error.message : "Connection failed.",
-          });
+          // A dropped connection is routine and is retried: it shows as
+          // reconnecting, not as an error. Only a refusal stops and reports.
+          this.publish(
+            fatal
+              ? { status: "offline", error: error instanceof Error ? error.message : t("mobile.somethingWentWrong") }
+              : { status: "reconnecting", error: "" },
+          );
           if (fatal) return;
           await new Promise<void>((resolve) => {
             const done = () => {
@@ -254,7 +271,7 @@ export class Timeline {
           error:
             error instanceof Error
               ? error.message
-              : "Could not load conversation.",
+              : t("mobile.somethingWentWrong"),
         });
     } finally {
       this.client.signal.removeEventListener("abort", abort);
@@ -291,7 +308,7 @@ export class Timeline {
               error:
                 error instanceof Error
                   ? error.message
-                  : "Could not refresh runtime.",
+                  : t("mobile.somethingWentWrong"),
             });
         });
     } else if (event.type === "delta") {
@@ -346,7 +363,7 @@ export class Timeline {
       if (!controller.signal.aborted)
         this.publish({
           error:
-            error instanceof Error ? error.message : "Could not load history.",
+            error instanceof Error ? error.message : t("mobile.somethingWentWrong"),
         });
     } finally {
       if (this.backfill === controller) this.backfill = undefined;

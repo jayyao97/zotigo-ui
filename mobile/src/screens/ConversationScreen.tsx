@@ -236,13 +236,19 @@ function ConversationContent() {
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
-      const resume = () => {
-        if (AppState.currentState === "active") void timeline.start();
-      };
-      resume();
+      // "inactive" (Control Center, the app switcher, a permission prompt) is
+      // a brief overlay: the stream keeps running. Only the background stops
+      // it, and coming back from there starts it again.
+      let stopped = AppState.currentState === "background";
+      if (!stopped) void timeline.start();
       const sub = AppState.addEventListener("change", (value) => {
-        if (value === "active") resume();
-        else timeline.stop();
+        if (value === "background" && !stopped) {
+          stopped = true;
+          timeline.stop();
+        } else if (value === "active" && stopped) {
+          stopped = false;
+          void timeline.start();
+        }
       });
       return () => {
         focused.current = false;
@@ -479,7 +485,7 @@ function ConversationContent() {
         </View>
       ),
     });
-  }, [nav]);
+  }, [nav, locale]);
   const modelLabel =
     [state.session?.model || state.session?.profile, state.session?.reasoning_effort]
       .filter(Boolean)

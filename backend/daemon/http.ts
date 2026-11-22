@@ -3,6 +3,7 @@ import { fetchDaemon, type DaemonRequestInit } from "../daemonHttp";
 import type { HealthResponse } from "../../shared/zotigod";
 import type { DaemonConfig } from "../../shared/clientTypes";
 import { expectRecord, expectString, expectOptionalString } from "./validation";
+import { inputDeliveryOutcome } from "../../shared/inputDelivery";
 
 const defaultBaseUrl = "http://127.0.0.1:8766";
 
@@ -23,10 +24,7 @@ export class ZotigodRequestError extends Error {
 export function inputDeliveryFailure(error: unknown): "rejected" | "unknown" {
   // A timeout or server-side failure may follow durable admission.
   if (!(error instanceof ZotigodRequestError)) return "unknown";
-  if (error.status >= 400 && error.status < 500 && error.status !== 408 &&
-      error.code !== "command_pending" && error.code !== "command_id_conflict" &&
-      error.code !== "input_failed") return "rejected";
-  return "unknown";
+  return inputDeliveryOutcome(error.status, error.code);
 }
 
 export function isMessageDuringActiveTurnError(error: unknown): boolean {

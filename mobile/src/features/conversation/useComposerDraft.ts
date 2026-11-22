@@ -5,6 +5,7 @@ import {
   optimisticPromptDisplayItem,
   type PromptTimelineAnchor,
 } from "@zotigo/shared/sessionDisplay";
+import { inputDeliveryOutcome } from "@zotigo/shared/inputDelivery";
 import type { DisplayItem } from "@zotigo/shared/zotigod";
 import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -240,12 +241,11 @@ export function useComposerDraft({
                 : item,
             ),
           );
-        // Validation is definitely rejected; network/5xx remains uncertain and retains the same id.
+        // Only a definite refusal restores the draft for a new send; anything
+        // that may have been admitted keeps the same ID (same rule as Desktop).
         if (
           e instanceof ApiError &&
-          e.status >= 400 &&
-          e.status < 500 &&
-          e.code !== "command_id_conflict"
+          inputDeliveryOutcome(e.status, e.code) === "rejected"
         ) {
           if (alive.current)
             setPromptPreviews((previews) => previews.filter((item) => item.id !== promptId));

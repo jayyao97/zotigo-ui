@@ -51,6 +51,8 @@ function streamBody() {
           `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`,
         ),
       ),
+    /** An SSE comment, like the daemon's heartbeat. */
+    comment: () => controller.enqueue(new TextEncoder().encode(": heartbeat\n\n")),
     close: () => {
       if (!cancelled) controller.close();
     },
@@ -433,6 +435,66 @@ test("an in-flight session refresh cannot overwrite a newer usage event, includi
   } finally {
     release?.();
     timeline.stop();
+    await running;
+  }
+});
+
+test("a stream that goes silent past the heartbeat limit is reconnected from the durable cursor", async () => {
+  // Like a connection lost on a network change: it neither closes nor sends.
+  const silent = streamBody(),
+    next = streamBody();
+  const cursors: string[] = [];
+  const client = new DaemonClient(connection, async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/items")) return json(page([item(10)]));
+    if (parsed.pathname.endsWith("/events")) {
+      cursors.push(parsed.searchParams.get("after")!);
+      return cursors.length === 1 ? silent.response() : next.response();
+    }
+    return json(session);
+  });
+  const timeline = new Timeline(client, "s", 50);
+  const running = timeline.start();
+  try {
+    await waitFor(timeline, (s) => s.status === "connected");
+    silent.emit("item", item(11));
+    await waitFor(timeline, (s) => s.items.length === 2);
+    await waitFor(timeline, () => cursors.length === 2);
+    assert.deepEqual(cursors, ["10", "11"]);
+    assert.ok(silent.cancelled(), "the silent stream is released");
+    await waitFor(timeline, (s) => s.status === "connected");
+    assert.equal(timeline.snapshot().error, "", "a routine reconnect is not shown as an error");
+  } finally {
+    timeline.stop();
+    next.close();
+    await running;
+  }
+});
+
+test("heartbeats keep a quiet stream open", async () => {
+  const stream = streamBody();
+  let opened = 0;
+  const client = new DaemonClient(connection, async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/items")) return json(page([item(10)]));
+    if (parsed.pathname.endsWith("/events")) {
+      opened++;
+      return stream.response();
+    }
+    return json(session);
+  });
+  const timeline = new Timeline(client, "s", 80);
+  const running = timeline.start();
+  try {
+    await waitFor(timeline, (s) => s.status === "connected");
+    for (let i = 0; i < 4; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      stream.comment();
+    }
+    assert.equal(opened, 1);
+  } finally {
+    timeline.stop();
+    stream.close();
     await running;
   }
 });
