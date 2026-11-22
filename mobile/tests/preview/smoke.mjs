@@ -129,6 +129,18 @@ try {
   assert.ok(recent.rows.at(-1).startsWith('Show '), 'Recent is a short preview with a way to see more');
   assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'New project')`), true, 'New project is reachable from Home');
   checks.push('Home lists recent conversations across projects first, with location, age and a bounded preview');
+  // A new conversation offers the same attachment sources as a conversation.
+  await click('New conversation');
+  await click('Attach');
+  for (const source of ['Photo library', 'Take photo', 'Choose file'])
+    await wait(`${visibleButtons}.some(e => e.textContent.trim().startsWith(${JSON.stringify(source)}))`, 'new conversation offers ' + source);
+  await shot('02-new-session-attach');
+  await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await delay(400);
+  await back();
+  await bodyIncludes('Home: Multi-host mobile architecture');
+  checks.push('New conversation offers photo library, camera and files, like a conversation');
   await click('Collapse Zotigo Mobile');
   assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'New conversation in iOS client · feature/mobile')`), false);
   await shot('02b-project-collapsed');

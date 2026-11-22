@@ -1,10 +1,5 @@
 import { t } from "@zotigo/shared/i18n/index";
 import {
-  decodedBase64Size,
-  maxMessageImageCount,
-  messageImageSizeError,
-} from "@zotigo/shared/messageImages";
-import {
   acknowledgeOptimisticPrompt,
   capturePromptTimelineAnchor,
   optimisticPromptDisplayItem,
@@ -12,10 +7,8 @@ import {
 } from "@zotigo/shared/sessionDisplay";
 import type { DisplayItem } from "@zotigo/shared/zotigod";
 import { randomUUID } from "expo-crypto";
-import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { errorText } from "../../components/ui";
-import { validateAttachments } from "../../core/attachments";
 import { ApiError, type DaemonClient } from "../../core/client";
 import {
   ComposerStore,
@@ -26,10 +19,10 @@ import {
   type Draft,
 } from "../../core/composer";
 import type { ConversationReference } from "../../core/conversationReferences";
-import { pickedImageInput } from "../../core/imageInput";
 import { activeTurn, type Timeline } from "../../core/timeline";
 import { finishInBackground } from "../../platform/backgroundTask";
 import { pickAttachments } from "../../platform/pickAttachments";
+import { pickImages } from "../../platform/pickImages";
 import { storage } from "../../platform/storage";
 
 /**
@@ -270,32 +263,10 @@ export function useComposerDraft({
       throw e;
     }
   }
-  async function attachImages(source: "library" | "camera" = "library") {
-    const { images: current, files } = draftRef.current.draft;
-    let result: ImagePicker.ImagePickerResult;
-    if (source === "camera") {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) throw new Error(t("mobile.cameraDenied"));
-      result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], base64: true, quality: 0.8 });
-    } else
-      result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        base64: true,
-        quality: 0.8,
-        allowsMultipleSelection: true,
-        selectionLimit: Math.max(1, maxMessageImageCount - current.length - (files?.length ?? 0)),
-      });
-    if (result.canceled || !alive.current) return;
-    const images = [...draftRef.current.draft.images];
-    for (const asset of result.assets) {
-      images.push(pickedImageInput(asset));
-    }
-    const sizeError = messageImageSizeError(
-      images.map((image) => decodedBase64Size(image.data_base64)),
-    );
-    if (sizeError) throw new Error(sizeError);
-    validateAttachments(images, draftRef.current.draft.files ?? []);
-    update({ images });
+  async function attachImages(source: "library" | "camera") {
+    const { images, files } = draftRef.current.draft;
+    const picked = await pickImages(source, images, files ?? []);
+    if (picked && alive.current) update({ images: picked });
   }
   async function attachFiles() {
     const picked = await pickAttachments(

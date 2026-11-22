@@ -5,6 +5,7 @@ import { DraftImages } from "../components/DraftImages";
 import { SkillInput } from "../components/SkillInput";
 import { AttachmentFiles } from "../components/AttachmentFiles";
 import { pickAttachments } from "../platform/pickAttachments";
+import { pickImages } from "../platform/pickImages";
 import type { DraftFile } from "../core/attachments";
 import type { MessageImageInput } from "@zotigo/shared/zotigod";
 import { ComposerSkills } from "../components/ComposerSkills";
@@ -13,7 +14,7 @@ import ArrowUp from "lucide-react-native/icons/arrow-up";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { Keyboard, Pressable } from "react-native";
+import { Keyboard, Platform, Pressable } from "react-native";
 import { randomUUID } from "expo-crypto";
 import {
   ComposerStore,
@@ -106,6 +107,38 @@ export function NewSessionScreen() {
   const [createdSession, setCreatedSession] = useState<string>();
   const contextLocked = busy || !!createdSession;
   const composerAnchor = useRef<View>(null);
+  // Same sources as a conversation's composer: photo library, camera, files.
+  const [attachmentMenu, setAttachmentMenu] = useState(false);
+  const pendingPicker = useRef<(() => void) | undefined>(undefined);
+  function attach(pick: () => Promise<{ images: MessageImageInput[]; files: DraftFile[] } | undefined>) {
+    const open = () => {
+      if (lock.current || !mounted.current) return;
+      lock.current = true;
+      setBusy(true);
+      void pick()
+        .then((result) => {
+          if (result && mounted.current) {
+            setFiles(result.files);
+            setImages(result.images);
+          }
+        })
+        .catch((e) => {
+          if (mounted.current) setError(errorText(e));
+        })
+        .finally(() => {
+          lock.current = false;
+          if (mounted.current) setBusy(false);
+        });
+    };
+    setAttachmentMenu(false);
+    // UIKit must finish dismissing our sheet before presenting the system picker.
+    if (Platform.OS === "ios") pendingPicker.current = open;
+    else open();
+  }
+  const photos = (source: "library" | "camera") => async () => {
+    const picked = await pickImages(source, images, files);
+    return picked && { images: picked, files };
+  };
   const completed = useRef(false);
   const lock = useRef(false),
     mounted = useRef(true);
@@ -478,25 +511,7 @@ export function NewSessionScreen() {
             policy: contextLocked,
             model: contextLocked || !catalog,
           }}
-          onAttach={() => {
-                if (lock.current) return;
-                lock.current = true;
-                setBusy(true);
-                void pickAttachments(images, files)
-                  .then((result) => {
-                    if (result && mounted.current) {
-                      setFiles(result.files);
-                      setImages(result.images);
-                    }
-                  })
-                  .catch((e) => {
-                    if (mounted.current) setError(errorText(e));
-                  })
-                  .finally(() => {
-                    lock.current = false;
-                    if (mounted.current) setBusy(false);
-                  });
-              }}
+          onAttach={() => { Keyboard.dismiss(); setAttachmentMenu(true); }}
           onPolicy={() => { Keyboard.dismiss(); setPanel("policy"); }}
           onModel={() => { Keyboard.dismiss(); setPanel("model"); }}
           trailing={
@@ -527,6 +542,21 @@ export function NewSessionScreen() {
           }
         />
       </View>
+      <BottomSheet
+        anchorRef={composerAnchor}
+        visible={attachmentMenu}
+        title={t("attachmentMenu.addAttachment")}
+        onClose={() => setAttachmentMenu(false)}
+        onDismiss={() => {
+          const open = pendingPicker.current;
+          pendingPicker.current = undefined;
+          open?.();
+        }}
+      >
+        <ChoiceRow title={t("mobile.photoLibrary")} onPress={() => attach(photos("library"))} />
+        <ChoiceRow title={t("mobile.takePhoto")} onPress={() => attach(photos("camera"))} />
+        <ChoiceRow title={t("mobile.chooseFile")} onPress={() => attach(() => pickAttachments(images, files))} />
+      </BottomSheet>
       <BottomSheet
         anchorRef={composerAnchor}
         visible={panelVisible}
