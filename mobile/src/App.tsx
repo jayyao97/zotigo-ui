@@ -43,6 +43,7 @@ import {
   TranslationPreferencesScreen,
 } from "./screens/SettingsScreen";
 import { ChannelsScreen } from "./screens/ChannelsScreen";
+import { UsageScreen } from "./features/usage/UsageScreen";
 import { NewSessionScreen } from "./screens/NewSessionScreen";
 import { ConversationScreen } from "./screens/ConversationScreen";
 const Stack = createNativeStackNavigator<Routes>();
@@ -387,6 +388,11 @@ export default function App() {
               name="Channels"
               component={ChannelsScreen}
               options={{ title: t("app.channels") }}
+            />
+            <Stack.Screen
+              name="Usage"
+              component={UsageScreen}
+              options={{ title: t("usage.title") }}
             />
           </Stack.Navigator>
         </NavigationContainer>

@@ -27,6 +27,7 @@ import Globe from "lucide-react-native/icons/globe";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import FolderOpen from "lucide-react-native/icons/folder-open";
 import Radio from "lucide-react-native/icons/radio";
+import ChartColumn from "lucide-react-native/icons/chart-column";
 import type {
   AgentCatalogResponse,
   HealthResponse,
@@ -57,6 +58,7 @@ export function SettingsScreen({ connected = true }: { connected?: boolean }) {
         {connected ? <ConnectedDeviceRow /> : <ListRow icon={Monitor} title={t("mobile.devices")} onPress={() => nav.navigate("Devices")} />}
         {connected && <ListRow icon={FolderOpen} title={t("mobile.files")} onPress={() => nav.navigate("Files", {})} />}
         {connected && <ListRow icon={Radio} title={t("app.channels")} onPress={() => nav.navigate("Channels")} />}
+        {connected && <ListRow icon={ChartColumn} title={t("usage.title")} onPress={() => nav.navigate("Usage")} />}
         {connected && <SessionSync />}
       </ListGroup>
     </Section>

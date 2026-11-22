@@ -14,6 +14,7 @@ export type Routes = {
   Profiles: undefined;
   Devices: { add?: boolean } | undefined;
   Channels: undefined;
+  Usage: undefined;
   Sources: { projectId: string; title: string };
   SourcePicker: { projectId: string };
 };

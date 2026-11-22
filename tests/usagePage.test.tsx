@@ -10,7 +10,7 @@ import type { UsageActivity, UsageQuery, UsageResult, UsageSessionPage, UsageSes
 import { ClientContext } from "../src/ClientContext";
 import { UsageSettings, usageTimeZoneStorageKey } from "../src/usage/UsageSettings";
 import { discardUsageCache } from "../src/usage/useUsageData";
-import { addDays } from "../src/usage/usageModel";
+import { addDays } from "../shared/usageModel";
 
 function installDom() {
   const dom = new JSDOM("<!doctype html><html><body><div id=root></div></body></html>", { pretendToBeVisual: true, url: "http://localhost/" });

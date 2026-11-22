@@ -1368,5 +1368,6 @@ export const zhCN: Record<MessageKey, Message> = {
   "mobileUi.unsaved": "未保存",
   "mobileUi.manageWorkspace": "管理工作区",
   "mobileUi.lastKnownUsage": "上次已知用量",
-  "mobileUi.deviceUnreachable": "{name} 没有响应。请确认它已开机，并且当前网络可以访问。"
+  "mobileUi.deviceUnreachable": "{name} 没有响应。请确认它已开机，并且当前网络可以访问。",
+  "mobileUi.usageChartHint": "点击某一天或某一周，下方明细会切换到该时段；再次点击取消。左右滑动查看更早的月份。"
 };

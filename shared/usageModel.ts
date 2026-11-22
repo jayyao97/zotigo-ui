@@ -1,5 +1,5 @@
-import type { Locale } from "../../shared/i18n/index";
-import type { UsageDay, UsageTotals } from "../../shared/usage";
+import type { Locale } from "./i18n/index";
+import type { UsageDay, UsageTotals } from "./usage";
 
 /** Calendar dates are YYYY-MM-DD strings; arithmetic runs on UTC midnights. */
 export function parseDate(date: string): number {
@@ -16,8 +16,11 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((parseDate(to) - parseDate(from)) / 86_400_000);
 }
 export function todayIn(timeZone: string, now = new Date()): string {
-  // en-CA formats as YYYY-MM-DD.
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  // Read the parts rather than relying on a locale's date pattern: Hermes on
+  // iOS formats through the platform, which may not spell en-CA as YYYY-MM-DD.
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const part = (type: string) => parts.find(item => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /** Chinese weeks start on Monday, English weeks on Sunday. */
@@ -121,6 +124,18 @@ export function formatMonth(date: string, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { timeZone: "UTC", month: "short" }).format(parseDate(date));
 }
 
+/**
+ * Zones offered when the runtime cannot list its own. Hermes (mobile) has no
+ * Intl.supportedValuesOf; one zone per common offset keeps the picker useful.
+ */
+const fallbackTimeZones = [
+  "Pacific/Honolulu", "America/Anchorage", "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York",
+  "America/Halifax", "America/Sao_Paulo", "Atlantic/Azores", "Europe/London", "Europe/Paris", "Europe/Berlin", "Africa/Cairo",
+  "Europe/Moscow", "Asia/Dubai", "Asia/Karachi", "Asia/Kolkata", "Asia/Kathmandu", "Asia/Dhaka", "Asia/Bangkok",
+  "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Taipei", "Asia/Singapore", "Asia/Tokyo", "Asia/Seoul", "Australia/Adelaide",
+  "Australia/Sydney", "Pacific/Auckland",
+];
+
 /** Time zones offered by the runtime, with the system zone always present. */
 export function availableTimeZones(): string[] {
   const system = systemTimeZone();
@@ -128,6 +143,7 @@ export function availableTimeZones(): string[] {
   try {
     zones = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
   } catch { zones = []; }
+  if (!zones.length) zones = fallbackTimeZones;
   return zones.includes(system) ? zones : [system, ...zones];
 }
 
@@ -148,13 +164,19 @@ export function isValidTimeZone(value: string): boolean {
 
 /** Minutes east of UTC for a zone at the given instant. */
 export function timeZoneOffsetMinutes(timeZone: string, at = new Date()): number {
-  let name = "GMT";
+  // Compare the zone's wall clock with UTC instead of reading a
+  // "longOffset" name, which Hermes on iOS does not provide.
+  let parts: Intl.DateTimeFormatPart[];
   try {
-    name = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" }).formatToParts(at).find(part => part.type === "timeZoneName")?.value ?? "GMT";
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric",
+    }).formatToParts(at);
   } catch { return 0; }
-  const match = /GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(name);
-  if (!match) return 0;
-  return (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] ?? 0));
+  const part = (type: string) => Number(parts.find(item => item.type === type)?.value);
+  const wall = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour") % 24, part("minute"));
+  const instant = Math.floor(at.getTime() / 60_000) * 60_000;
+  const offset = Math.round((wall - instant) / 60_000);
+  return Number.isFinite(offset) ? offset : 0;
 }
 
 /** "UTC", "UTC+8", "UTC+5:45", "UTC-3:30". */

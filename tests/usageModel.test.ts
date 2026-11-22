@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { cacheHitRate } from "../shared/usage";
-import { addDays, formatUtcOffset, loadTimeZoneOptions, isValidTimeZone, matchesTimeZone, timeZoneOffsetMinutes, timeZoneOption, cumulativeTotals, formatPercent, formatTokens, heatmapCells, heatmapRange, heatmapWeekTotals, intensityLevels, monthColumns, startOfWeek, todayIn, weekStartDay } from "../src/usage/usageModel";
+import { addDays, availableTimeZones, systemTimeZone, formatUtcOffset, loadTimeZoneOptions, isValidTimeZone, matchesTimeZone, timeZoneOffsetMinutes, timeZoneOption, cumulativeTotals, formatPercent, formatTokens, heatmapCells, heatmapRange, heatmapWeekTotals, intensityLevels, monthColumns, startOfWeek, todayIn, weekStartDay } from "../shared/usageModel";
 
 const day = (date: string, total: number, cacheRead = 0, cacheInput = 0) => ({ date, total, input: total, cacheRead, cacheWrite: 0, output: 0, cacheInput, turns: 1 });
 
@@ -119,4 +119,17 @@ test("the time zone list always offers UTC first and is shared per locale", asyn
   assert.ok(options.some(option => option.id === "Asia/Shanghai" && option.offset === 480));
   const rest = options.slice(1);
   assert.ok(rest.every((option, index) => index === 0 || rest[index - 1].offset <= option.offset), "west to east");
+});
+
+test("without Intl.supportedValuesOf (Hermes) common zones are still offered", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(Intl, "supportedValuesOf");
+  try {
+    Object.defineProperty(Intl, "supportedValuesOf", { configurable: true, value: undefined });
+    const zones = availableTimeZones();
+    assert.ok(zones.includes(systemTimeZone()));
+    for (const zone of ["Asia/Shanghai", "America/New_York", "Europe/London"]) assert.ok(zones.includes(zone), zone);
+    assert.ok(zones.every(isValidTimeZone));
+  } finally {
+    if (descriptor) Object.defineProperty(Intl, "supportedValuesOf", descriptor);
+  }
 });

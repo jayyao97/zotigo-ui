@@ -413,6 +413,74 @@ function makeHost(work: boolean): HostState {
   };
 }
 const hosts = { home: makeHost(false), work: makeHost(true) };
+
+// Usage: about four months of tracked days ending today, deterministic per date.
+const usageTracked = 120;
+function usageDayTotal(date: string): number {
+  let seed = 0;
+  for (const char of date) seed = (seed * 31 + char.charCodeAt(0)) % 100003;
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  if (seed % 7 === 0 || weekday === 0) return 0;
+  return Math.round((seed % 97) * 41000 * (weekday === 6 ? 0.3 : 1));
+}
+function usageTotals(total: number) {
+  const input = Math.round(total * 0.92);
+  const cacheRead = Math.round(input * 0.86);
+  return { total, input: input - cacheRead, cache_read: cacheRead, cache_write: 0, output: total - input, cache_input: input, turns: Math.max(total ? 1 : 0, Math.round(total / 60000)) };
+}
+function usageDays(from: string, to: string) {
+  const first = new Date(Date.now() - usageTracked * 86400000).toISOString().slice(0, 10);
+  const days = [];
+  for (let at = Date.parse(`${from}T00:00:00Z`); at <= Date.parse(`${to}T00:00:00Z`); at += 86400000) {
+    const date = new Date(at).toISOString().slice(0, 10);
+    if (date < first) continue;
+    const total = usageDayTotal(date);
+    if (total) days.push({ date, ...usageTotals(total) });
+  }
+  return { days, first };
+}
+function usageSum(days: Array<{ total: number }>) {
+  return usageTotals(days.reduce((sum, day) => sum + day.total, 0));
+}
+function usageActivity(query: URLSearchParams) {
+  const scale = query.get("model") === "gpt-5.3-codex" ? 0.25 : query.get("channel") === "only" ? 0.1 : 1;
+  const { days, first } = usageDays(query.get("from")!, query.get("to")!);
+  const scaled = days.map((day) => ({ ...day, ...usageTotals(Math.round(day.total * scale)) }));
+  const all = usageDays(first, new Date().toISOString().slice(0, 10)).days;
+  const range = usageSum(scaled);
+  const peak = all.reduce((best, day) => (day.total > (best?.total ?? 0) ? day : best), all[0]);
+  return {
+    usage_query_version: 1,
+    tracking_since: `${first}T03:00:00Z`,
+    range,
+    all_time: usageSum(all),
+    by_model: range.total ? [
+      { model: "claude-opus-4", runtime: "zotigo", ...usageTotals(Math.round(range.total * 0.7)) },
+      { model: "gpt-5.3-codex", runtime: "codex", ...usageTotals(Math.round(range.total * 0.25)) },
+      { model: "", runtime: "zotigo", ...usageTotals(Math.round(range.total * 0.05)) },
+    ] : [],
+    days: scaled,
+    peak_day: peak ? { date: peak.date, total: peak.total } : null,
+    current_streak_days: 4,
+    longest_streak_days: 23,
+  };
+}
+function usageSessions(host: HostState, query: URLSearchParams) {
+  const { days } = usageDays(query.get("from")!, query.get("to")!);
+  const total = usageSum(days).total;
+  if (!total) return { usage_query_version: 1, sessions: [] };
+  const ids = [...host.sessions.keys()].slice(0, 5);
+  const shares = [0.34, 0.21, 0.12, 0.07, 0.04];
+  const sessions = [...ids, "deleted-session"].map((id, index) => ({
+    session_id: id,
+    models: index === 1 ? ["gpt-5.3-codex"] : ["claude-opus-4"],
+    channel_turns: index === 2 ? 30 : 0,
+    last_completed_at: new Date().toISOString(),
+    ...usageTotals(Math.round(total * (shares[index] ?? 0.02))),
+  }));
+  return { usage_query_version: 1, sessions: sessions.slice(0, Number(query.get("limit") ?? 50)) };
+}
+
 const envelope = (data: unknown) => Response.json({ code: "ok", data });
 const failure = (message: string, status = 400, code = "fixture_error") =>
   Response.json({ code, message }, { status });
@@ -529,6 +597,14 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
     return failure("Fixture: daemon token is invalid.", 401, "unauthorized");
   if (path === "/health")
     return envelope({ status: "ok", protocol_version: "1" });
+  // Work Linux runs an older daemon without usage endpoints.
+  if (path.startsWith("/usage/") && key === "work") return failure("Not found", 404, "not_found");
+  if (path === "/usage/activity") return envelope(usageActivity(url.searchParams));
+  if (path === "/usage/sessions") return envelope(usageSessions(host, url.searchParams));
+  if (path === "/catalog/sessions" && url.searchParams.get("ids")) {
+    const ids = url.searchParams.get("ids")!.split(",");
+    return envelope({ query_version: 1, sessions: ids.filter((id) => host.sessions.has(id)).map((id) => ({ ...projection(host, id), availability: "ready" })) });
+  }
   if (path === "/agents") return envelope(agents);
   if (path === "/agents/codex/prepare") return envelope(agents.agents[0]);
   if (path === "/config/models/test") return envelope({ ok: true });

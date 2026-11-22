@@ -98,6 +98,13 @@ try {
     await wait(`[...document.querySelectorAll('[role="heading"]')].some(e => e.getClientRects().length && e.textContent.trim() === ${JSON.stringify(row)})`, 'screen titled ' + row);
     await back();
   }
+  // Usage reads the same daemon endpoints as Desktop; a tap on a day narrows the period below.
+  await click('Usage'); await bodyIncludes('All time'); await bodyIncludes('Peak day'); await shot('02b-usage');
+  const day = await evaluate(`(() => { const cells = [...document.querySelectorAll('svg rect[aria-label]')]; const cell = cells[cells.length - 3]; for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) cell.dispatchEvent(new MouseEvent(type, { bubbles: true })); return cell.getAttribute('aria-label'); })()`);
+  await wait(`!!document.querySelector('[aria-label="Clear chart selection"]')`, 'a tapped day becomes the period');
+  assert.ok(await evaluate(`document.body.innerText.includes(${JSON.stringify(day)} + ' · ')`), 'period summary names the tapped day ' + day);
+  await back();
+  checks.push('Usage shows totals and the year chart; tapping a day narrows period details to it');
   await click('Files'); await click('README.md'); await wait(`document.querySelector('[aria-label="File content"]')?.value.includes('export function connect')`, 'file opens in the editor');
   await click('Parent directory'); await bodyIncludes('preview.png'); await shot('02a-files'); await back();
   await back();

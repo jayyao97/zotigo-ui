@@ -1369,6 +1369,7 @@ export const en = {
   "mobileUi.unsaved": "Unsaved",
   "mobileUi.manageWorkspace": "Manage workspace",
   "mobileUi.lastKnownUsage": "last known usage",
-  "mobileUi.deviceUnreachable": "{name} did not respond. Check that it is on and reachable from this network."
+  "mobileUi.deviceUnreachable": "{name} did not respond. Check that it is on and reachable from this network.",
+  "mobileUi.usageChartHint": "Tap a day or week to show its details below; tap it again to clear. Scroll sideways for earlier months."
 } as const;
 export type MessageKey = keyof typeof en;
