@@ -302,6 +302,7 @@ export const en = {
   "app.newWorkspace": "New workspace",
   "app.createWorkspace": "Create workspace",
   "app.search": "Search",
+  "app.locateSelection": "Reveal the current selection",
   "app.searchKCtrlK": "Search (⌘K / Ctrl+K)",
   "app.notifications": "Notifications",
   "app.closeNavigation": "Close navigation",

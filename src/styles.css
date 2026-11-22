@@ -467,6 +467,7 @@ p {
 }
 
 .brand-actions .sidebar-navigation-close { display: none; }
+.brand-actions button:disabled { opacity: .4; }
 
 .utility-nav {
   width: 44px;

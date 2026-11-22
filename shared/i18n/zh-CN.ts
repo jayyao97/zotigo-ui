@@ -301,6 +301,7 @@ export const zhCN: Record<MessageKey, Message> = {
   "app.newWorkspace": "新建工作区",
   "app.createWorkspace": "创建工作区",
   "app.search": "搜索",
+  "app.locateSelection": "定位到当前选中项",
   "app.searchKCtrlK": "搜索（⌘K / Ctrl+K）",
   "app.notifications": "通知",
   "app.closeNavigation": "关闭导航",
