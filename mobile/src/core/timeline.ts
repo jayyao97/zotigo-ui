@@ -7,7 +7,6 @@ import type {
 } from "@zotigo/shared/zotigod";
 import {
   appendDisplayDelta,
-  historyBackfillCursor,
   hasUnresolvedTurnItems,
   ephemeralDisplayItems,
   mergeDisplayItems,
@@ -17,6 +16,7 @@ import {
 } from "@zotigo/shared/sessionDisplay";
 import { ApiError, type DaemonClient } from "./client";
 import { EventDecoder } from "./events";
+import { historyBackfillCursor } from "./historyBackfill";
 export interface TimelineSnapshot {
   items: DisplayItem[];
   previews: DisplayItem[];
@@ -294,7 +294,7 @@ export class Timeline {
                   : "Could not refresh runtime.",
             });
         });
-    } else {
+    } else if (event.type === "delta") {
       if (this.state.items.some((i) => i.id === event.delta.item_id)) return;
       // Previews are disposable; bound memory when the worker never completes a block.
       this.previews = appendDisplayDelta(

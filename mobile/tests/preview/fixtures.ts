@@ -418,7 +418,7 @@ const failure = (message: string, status = 400, code = "fixture_error") =>
 function publish(host: HostState, id: string, event: SessionDisplayEvent) {
   if (event.type === "item") host.sessions.get(id)?.items.push(event.item);
   const bytes = new TextEncoder().encode(
-    `event: ${event.type}\ndata: ${JSON.stringify(event.type === "item" ? event.item : event.delta)}\n\n`,
+    `event: ${event.type}\ndata: ${JSON.stringify(event.type === "item" ? event.item : event.type === "delta" ? event.delta : event)}\n\n`,
   );
   for (const controller of host.streams.get(id) ?? [])
     controller.enqueue(bytes);
