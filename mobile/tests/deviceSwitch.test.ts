@@ -42,6 +42,16 @@ test("a device that never answers is reported as unreachable instead of waiting 
   await reach(new DaemonClient({ ...home, token: "t" }, async () => ok()), 20);
 });
 
+test("a wrong token fails the reach even though /health is public", async () => {
+  // The daemon answers /health without checking the token.
+  const daemon = async (url: string | URL | Request) =>
+    new URL(String(url)).pathname === "/health"
+      ? ok()
+      : Response.json({ code: "unauthorized", message: "authentication required" }, { status: 401 });
+  const client = new DaemonClient({ ...home, token: "wrong" }, daemon);
+  await assert.rejects(reach(client, 1000), /authentication required/);
+});
+
 test("choosing another device abandons one that is still connecting", async () => {
   const h = harness({ mini: silent, home: ok }, 60_000);
   const first = h.switcher.select(mini, h.onConnect);

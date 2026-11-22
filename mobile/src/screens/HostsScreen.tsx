@@ -39,13 +39,14 @@ export function HostsScreen({
   currentId,
   addOnly = false,
   onClose,
-  onChanged,
+  onRemoved,
 }: {
   onConnect: (client: DaemonClient) => void;
   currentId?: string;
   addOnly?: boolean;
   onClose?: () => void;
-  onChanged?: (id: string) => void;
+  /** A device was removed; its connection must close. */
+  onRemoved?: (id: string) => void;
 }) {
   useLocale();
   const [list, setList] = useState<Host[]>([]);
@@ -244,9 +245,17 @@ export function HostsScreen({
                         },
                         token,
                       );
-                      setList(await hosts.list());
-                      if (sameDevice) onChanged?.(editing.id);
+                      const next = await hosts.list();
+                      setList(next);
                       close();
+                      // The connection is immutable, so new details need a new
+                      // one. Like any switch, the current connection stays
+                      // until the new one answers; a wrong token is reported
+                      // here and leaves the device usable.
+                      const saved = sameDevice && editing.id === currentId
+                        ? next.find((host) => host.id === editing.id)
+                        : undefined;
+                      if (saved) void switcher.select(saved, onConnect);
                     })
                   }
                 />
@@ -296,7 +305,7 @@ export function HostsScreen({
                               void run(async () => {
                                 await hosts.remove(editing.id);
                                 setList(await hosts.list());
-                                onChanged?.(editing.id);
+                                onRemoved?.(editing.id);
                                 close();
                               }),
                           },

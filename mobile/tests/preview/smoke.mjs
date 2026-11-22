@@ -91,7 +91,19 @@ try {
   await input('Daemon address', 'not a url'); await bodyIncludes('Save device');
   await click('Save device'); await wait(`[...document.querySelectorAll('[role="alert"]')].some(e => e.getClientRects().length && e.textContent.trim())`, 'invalid address is reported');
   await click('Cancel');
+  // A wrong token for the current device is reported and the device stays
+  // connected; the right token switches to a fresh connection.
+  await click('Edit Home Mac Studio'); await input('Daemon token', 'wrong-token'); await click('Save device');
+  await wait(`document.body.innerText.includes('Fixture: daemon token is invalid.')`, 'a wrong token is reported');
+  assert.ok(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'Switch device: Home Mac Studio')`), 'the Devices screen stays open');
+  await shot('02a-wrong-token');
+  await click('Edit Home Mac Studio'); await input('Daemon token', 'fixture-token'); await click('Save device');
+  await wait(`!document.body.innerText.includes('Fixture: daemon token is invalid.') && !document.body.innerText.includes('Connecting…')`, 'the right token reconnects');
+  await bodyIncludes('Choose where you want to work.');
+  checks.push('Editing the current device keeps it connected until the new token answers; a wrong token is reported');
   await back();
+  await back(); await bodyIncludes('Home: Multi-host mobile architecture');
+  await click('Settings'); await bodyIncludes('Model profiles');
   // Each Settings row leads to a screen titled with the same words.
   for (const row of ['Model profiles', 'Favorite models', 'Runtime status']) {
     await click(row);

@@ -8,15 +8,17 @@ export class DeviceUnreachable extends Error {
 }
 
 /**
- * Resolves once the daemon answers. The wait is bounded here rather than by the
- * request, so a transport that never settles an aborted request cannot hold the
- * caller. The caller disposes the client when this rejects.
+ * Resolves once the daemon answers and accepts the token. `/health` is public
+ * on the daemon, so an authenticated read (`/projects`, as Desktop's host test
+ * does) is what tells a wrong token apart. The wait is bounded here rather than
+ * by the request, so a transport that never settles an aborted request cannot
+ * hold the caller. The caller disposes the client when this rejects.
  */
 export async function reach(client: DaemonClient, timeout = 10000): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      client.health(),
+      Promise.all([client.health(), client.projects()]),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new DeviceUnreachable()), timeout);
       }),

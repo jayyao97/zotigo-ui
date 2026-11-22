@@ -375,7 +375,7 @@ export default function App() {
                   currentId={client?.connection.id}
                   addOnly={route.params?.add}
                   onClose={() => navigation.goBack()}
-                  onChanged={(id) => {
+                  onRemoved={(id) => {
                     if (id === client?.connection.id) {
                       client.dispose();
                       setClient(null);
