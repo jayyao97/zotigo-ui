@@ -1,14 +1,15 @@
 import { useCallback, useMemo, useRef, useState, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { Hash, RefreshCw } from "lucide-react";
+import { Hash, RefreshCw, X } from "lucide-react";
 import { useClient } from "../ClientContext";
 import { useLocale } from "../i18n";
 import { t } from "../../shared/i18n/index";
 import { cacheHitRate, type UsageActivity, type UsageChannelFilter, type UsageSession, type UsageSessionPage, type UsageTotals } from "../../shared/usage";
 import {
-  addDays, addTotals, availableTimeZones, cumulativeTotals, daysBetween, emptyTotals, formatDayLabel, formatLongDate, formatMonth, formatPercent, formatTokens,
+  addDays, addTotals, cumulativeTotals, daysBetween, emptyTotals, formatDayLabel, formatLongDate, formatMonth, formatPercent, formatTokens,
   heatmapCells, heatmapRange, heatmapWeekTotals, heatmapWeeks, intensityLevels, isValidTimeZone, monthColumns, systemTimeZone, todayIn, weekStartDay,
   type HeatmapCell,
 } from "./usageModel";
+import { TimeZonePicker, type TimeZoneChoice } from "./TimeZonePicker";
 import { useUsageQuery } from "./useUsageData";
 
 export const usageTimeZoneStorageKey = "zotigo:usage-time-zone";
@@ -21,12 +22,13 @@ type Period =
   | { kind: "selection"; from: string; to: string };
 type HeatmapView = "daily" | "weekly" | "cumulative";
 
-function storedTimeZone(): string {
+/** A stored IANA name, or null to follow the system zone. */
+function storedTimeZone(): TimeZoneChoice {
   try {
     const value = localStorage.getItem(usageTimeZoneStorageKey);
     if (value && isValidTimeZone(value)) return value;
-  } catch { /* Fall back to the system zone. */ }
-  return systemTimeZone();
+  } catch { /* Follow the system zone. */ }
+  return null;
 }
 
 function periodRange(period: Period, today: string, earliest: string): { from: string; to: string } {
@@ -39,13 +41,14 @@ function periodRange(period: Period, today: string, earliest: string): { from: s
 export function UsageSettings({ hostId, hostName, onOpenSession }: { hostId: string; hostName: string; onOpenSession?: (id: string) => void }) {
   const locale = useLocale();
   const { api } = useClient();
-  const zones = useMemo(availableTimeZones, []);
-  const [timeZone, setTimeZoneState] = useState(storedTimeZone);
-  const [zoneDraft, setZoneDraft] = useState(timeZone);
+  const [zoneChoice, setZoneChoice] = useState<TimeZoneChoice>(storedTimeZone);
+  const timeZone = zoneChoice ?? systemTimeZone();
   const [model, setModel] = useState("");
   const [channel, setChannel] = useState<UsageChannelFilter>("all");
   const [view, setView] = useState<HeatmapView>("daily");
   const [period, setPeriod] = useState<Period>({ kind: "recent", days: 7 });
+  // Clearing a heatmap selection returns to the period chosen before it.
+  const [periodBeforeSelection, setPeriodBeforeSelection] = useState<Period>({ kind: "recent", days: 7 });
   const [revision, setRevision] = useState(0);
   const [sessionPages, setSessionPages] = useState(1);
   const knownModels = useRef(new Set<string>());
@@ -71,66 +74,54 @@ export function UsageSettings({ hostId, hostName, onOpenSession }: { hostId: str
   const unsupported = year.result?.supported === false;
   const loading = year.loading || periodActivity.loading || sessions.loading;
   const error = year.error || periodActivity.error || sessions.error;
+  const trackingFrom = yearData?.trackingSince ? todayIn(timeZone, new Date(yearData.trackingSince)) : null;
+  const periodLabel = periodText(period, selected, locale);
 
-  const changeTimeZone = (value: string) => {
-    if (!isValidTimeZone(value)) { setZoneDraft(timeZone); return; }
-    setTimeZoneState(value); setZoneDraft(value); setSessionPages(1);
-    try { localStorage.setItem(usageTimeZoneStorageKey, value); } catch { /* In-memory preference still works. */ }
+  const changeTimeZone = (value: TimeZoneChoice) => {
+    setZoneChoice(value); setSessionPages(1);
+    try {
+      if (value === null) localStorage.removeItem(usageTimeZoneStorageKey);
+      else localStorage.setItem(usageTimeZoneStorageKey, value);
+    } catch { /* In-memory preference still works. */ }
   };
   const changePeriod = (next: Period) => { setPeriod(next); setSessionPages(1); };
   const selectRange = (from: string, to: string) => {
-    if (period.kind === "selection" && period.from === from && period.to === to) changePeriod({ kind: "recent", days: 7 });
-    else changePeriod({ kind: "selection", from, to });
+    if (period.kind === "selection" && period.from === from && period.to === to) { changePeriod(periodBeforeSelection); return; }
+    if (period.kind !== "selection") setPeriodBeforeSelection(period);
+    changePeriod({ kind: "selection", from, to });
   };
 
   return <section className="usage-settings" aria-labelledby="usage-heading">
     <header className="usage-header">
       <div>
         <h1 id="usage-heading">{t("usage.title")}</h1>
-        <p>{t("usage.hostLine", { host: hostName })}{yearData?.trackingSince ? ` · ${t("usage.trackingSince", { date: formatLongDate(todayIn(timeZone, new Date(yearData.trackingSince)), locale) })}` : ""}</p>
+        <p>{t("usage.hostLine", { host: hostName })}{trackingFrom ? ` · ${t("usage.trackingSince", { date: formatLongDate(trackingFrom, locale) })}` : ""}</p>
       </div>
-      <div className="usage-header-actions">
-        <label className="usage-zone">
-          <span>{t("usage.timeZone")}</span>
-          <input list="usage-time-zones" aria-label={t("usage.timeZone")} value={zoneDraft} spellCheck={false}
-            onChange={event => {
-              setZoneDraft(event.target.value);
-              // Choosing a suggestion applies at once; typing applies on Enter or blur.
-              if ((event.nativeEvent as InputEvent).inputType === "insertReplacementText") changeTimeZone(event.target.value);
-            }}
-            onBlur={() => changeTimeZone(zoneDraft)}
-            onKeyDown={event => { if (event.key === "Enter") changeTimeZone(zoneDraft); if (event.key === "Escape") { event.stopPropagation(); setZoneDraft(timeZone); } }} />
-          <datalist id="usage-time-zones">{zones.map(zone => <option key={zone} value={zone} />)}</datalist>
-        </label>
-        <button type="button" className="settings-secondary-button" onClick={() => setRevision(value => value + 1)} disabled={loading} aria-label={t("usage.refresh")} title={t("usage.refresh")}>
-          <RefreshCw size={15} className={loading ? "usage-spin" : undefined} />{t("usage.refresh")}
-        </button>
-      </div>
+      {!unsupported && <button type="button" className="usage-icon-button" onClick={() => setRevision(value => value + 1)} disabled={loading} aria-label={t("usage.refresh")} title={t("usage.refreshHelp")}>
+        <RefreshCw size={15} strokeWidth={1.8} className={loading ? "usage-spin" : undefined} />
+      </button>}
     </header>
 
     {unsupported ? <div className="settings-card usage-empty" role="status">{t("usage.unsupported", { host: hostName })}</div> : <>
-      {error && <p className="usage-error" role="alert">{error}</p>}
-      <div className="usage-filters">
-        <label><span>{t("usage.model")}</span>
-          <select value={model} onChange={event => { setModel(event.target.value); setSessionPages(1); }}>
-            <option value="">{t("usage.allModels")}</option>
-            {models.map(name => <option key={name} value={name}>{name}</option>)}
-            {model && !models.includes(model) && <option value={model}>{model}</option>}
-          </select>
-        </label>
-        <label><span>{t("usage.channel")}</span>
-          <select value={channel} onChange={event => { setChannel(event.target.value as UsageChannelFilter); setSessionPages(1); }}>
-            <option value="all">{t("usage.channelAll")}</option>
-            <option value="only">{t("usage.channelOnly")}</option>
-            <option value="exclude">{t("usage.channelExclude")}</option>
-          </select>
-        </label>
+      <div className="usage-toolbar" role="group" aria-label={t("usage.filters")}>
+        <select className="usage-filter-select" aria-label={t("usage.model")} value={model} onChange={event => { setModel(event.target.value); setSessionPages(1); }}>
+          <option value="">{t("usage.allModels")}</option>
+          {models.map(name => <option key={name} value={name}>{name}</option>)}
+          {model && !models.includes(model) && <option value={model}>{model}</option>}
+        </select>
+        <select className="usage-filter-select" aria-label={t("usage.channel")} value={channel} onChange={event => { setChannel(event.target.value as UsageChannelFilter); setSessionPages(1); }}>
+          <option value="all">{t("usage.channelAll")}</option>
+          <option value="only">{t("usage.channelOnly")}</option>
+          <option value="exclude">{t("usage.channelExclude")}</option>
+        </select>
+        <TimeZonePicker value={zoneChoice} onChange={changeTimeZone} />
       </div>
+      {error && <p className="usage-error" role="alert">{error}</p>}
 
       {yearData && yearData.trackingSince === null && !model && channel === "all"
         ? <div className="settings-card usage-empty">{t("usage.empty")}</div>
         : <>
-          <Overview year={yearData} period={periodData} selected={selected} periodLabel={periodText(period, selected, locale)} />
+          <Overview year={yearData} />
           <section className="usage-section" aria-labelledby="usage-activity-heading">
             <div className="usage-section-heading">
               <h2 id="usage-activity-heading">{t("usage.activity")}</h2>
@@ -139,16 +130,28 @@ export function UsageSettings({ hostId, hostName, onOpenSession }: { hostId: str
               </div>
             </div>
             <div className="settings-card usage-chart-card">
-              <ActivityCharts data={yearData} range={range} view={view} selected={period.kind === "selection" ? selected : null} onSelect={selectRange} />
+              <ActivityCharts data={yearData} range={range} trackingFrom={trackingFrom} view={view} selected={period.kind === "selection" ? selected : null} onSelect={selectRange} />
             </div>
+            <p className="usage-hint">{t("usage.heatmapHint")}</p>
           </section>
-          <ModelTable data={periodData} label={periodText(period, selected, locale)} />
-          <SessionRanking
-            period={period} selected={selected} earliest={range.from} today={today} onPeriod={changePeriod}
-            page={sessions.result?.supported ? sessions.result.data : undefined} periodTotal={periodData?.range.total}
-            canLoadMore={Boolean(sessions.result?.supported && sessions.result.data.nextCursor) && limit < maxSessionRows}
-            onLoadMore={() => setSessionPages(value => value + 1)} loading={sessions.loading} onOpenSession={onOpenSession}
-          />
+          <section className="usage-section usage-period-section" aria-labelledby="usage-period-heading">
+            <div className="usage-section-heading">
+              <h2 id="usage-period-heading">{t("usage.periodDetails")}</h2>
+              <PeriodPicker period={period} onPeriod={changePeriod} onClearSelection={() => changePeriod(periodBeforeSelection)} selected={selected} />
+            </div>
+            {period.kind === "custom" && <div className="usage-period-range">
+              <input type="date" aria-label={t("usage.period.from")} min={range.from} max={today} value={period.from} onChange={event => event.target.value && changePeriod({ ...period, from: event.target.value })} />
+              <span>–</span>
+              <input type="date" aria-label={t("usage.period.to")} min={range.from} max={today} value={period.to} onChange={event => event.target.value && changePeriod({ ...period, to: event.target.value })} />
+            </div>}
+            <PeriodSummary data={periodData} selected={selected} trackingFrom={trackingFrom} label={periodLabel} />
+            <ModelTable data={periodData} />
+            <SessionRanking
+              page={sessions.result?.supported ? sessions.result.data : undefined} periodTotal={periodData?.range.total}
+              canLoadMore={Boolean(sessions.result?.supported && sessions.result.data.nextCursor) && limit < maxSessionRows}
+              onLoadMore={() => setSessionPages(value => value + 1)} loading={sessions.loading} onOpenSession={onOpenSession}
+            />
+          </section>
         </>}
     </>}
   </section>;
@@ -160,24 +163,61 @@ function periodText(period: Period, selected: { from: string; to: string }, loca
   return `${formatLongDate(selected.from, locale)} – ${formatLongDate(selected.to, locale)}`;
 }
 
-function Overview({ year, period, selected, periodLabel }: { year?: UsageActivity; period?: UsageActivity; selected: { from: string; to: string }; periodLabel: string }) {
+/** Today, the last 7/30/90 days or custom dates; a heatmap selection shows as a removable chip. */
+function PeriodPicker({ period, selected, onPeriod, onClearSelection }: { period: Period; selected: { from: string; to: string }; onPeriod: (period: Period) => void; onClearSelection: () => void }) {
   const locale = useLocale();
-  const tokens = (value?: number) => value === undefined ? "—" : formatTokens(value, locale);
-  // Sum the heatmap's days so the card applies the same cache rule as the trend.
-  const rate = year ? cacheHitRate((year.days ?? []).filter(day => day.date >= selected.from && day.date <= selected.to).reduce(addTotals, emptyTotals())) : null;
-  const cards: Array<{ label: string; value: string; detail?: string; title?: string }> = [
-    { label: t("usage.allTime"), value: tokens(year?.allTime.total), detail: year ? t("usage.turns", { count: year.allTime.turns }) : undefined },
-    { label: t("usage.selectedPeriod"), value: tokens(period?.range.total), detail: periodLabel },
-    { label: t("usage.peakDay"), value: year?.peakDay ? formatTokens(year.peakDay.total, locale) : "—", detail: year?.peakDay ? formatLongDate(year.peakDay.date, locale) : undefined },
-    { label: t("usage.cacheHitRate"), value: formatPercent(rate), detail: t("usage.cacheHitRateNote"), title: rate === null ? t("usage.noCacheReads") : undefined },
-    { label: t("usage.currentStreak"), value: year ? t("usage.days", { count: year.currentStreakDays }) : "—" },
-    { label: t("usage.longestStreak"), value: year ? t("usage.days", { count: year.longestStreakDays }) : "—" },
+  const active = period.kind === "recent" ? String(period.days) : period.kind;
+  const choices: Array<{ value: string; label: string; next: Period }> = [
+    { value: "1", label: t("usage.period.today"), next: { kind: "recent", days: 1 } },
+    ...([7, 30, 90] as const).map(days => ({ value: String(days), label: t("usage.days", { count: days }), next: { kind: "recent", days } as Period })),
+    { value: "custom", label: t("usage.period.custom"), next: { kind: "custom", from: selected.from, to: selected.to } },
   ];
-  return <div className="usage-overview">
-    {cards.map(card => <div key={card.label} className="usage-stat" title={card.title}>
-      <span>{card.label}</span><strong>{card.value}</strong>{card.detail && <small>{card.detail}</small>}
+  return <div className="usage-period">
+    {period.kind === "selection" && <span className="usage-selection-chip">
+      {selected.from === selected.to ? formatLongDate(selected.from, locale) : `${formatDayLabel(selected.from, locale)} – ${formatDayLabel(selected.to, locale)}`}
+      <button type="button" aria-label={t("usage.period.clearSelection")} title={t("usage.period.clearSelection")} onClick={onClearSelection}><X size={12} strokeWidth={2} /></button>
+    </span>}
+    <div className="usage-segmented" role="group" aria-label={t("usage.period")}>
+      {choices.map(choice => <button key={choice.value} type="button" aria-pressed={active === choice.value} className={active === choice.value ? "is-active" : ""}
+        onClick={() => { if (active !== choice.value) onPeriod(choice.next); }}>{choice.label}</button>)}
+    </div>
+  </div>;
+}
+
+interface Stat { label: string; value: string; detail?: string; title?: string }
+function StatGrid({ stats, className }: { stats: Stat[]; className?: string }) {
+  return <div className={`usage-overview${className ? ` ${className}` : ""}`}>
+    {stats.map(stat => <div key={stat.label} className="usage-stat" title={stat.title ?? stat.detail}>
+      <span>{stat.label}</span><strong>{stat.value}</strong>{stat.detail && <small>{stat.detail}</small>}
     </div>)}
   </div>;
+}
+
+/** All-time figures; they ignore the selected period. */
+function Overview({ year }: { year?: UsageActivity }) {
+  const locale = useLocale();
+  return <StatGrid stats={[
+    { label: t("usage.allTime"), value: year ? formatTokens(year.allTime.total, locale) : "—", detail: year ? t("usage.turns", { count: year.allTime.turns }) : undefined },
+    { label: t("usage.peakDay"), value: year?.peakDay ? formatTokens(year.peakDay.total, locale) : "—", detail: year?.peakDay ? formatLongDate(year.peakDay.date, locale) : undefined },
+    { label: t("usage.currentStreak"), value: year ? t("usage.days", { count: year.currentStreakDays }) : "—" },
+    { label: t("usage.longestStreak"), value: year ? t("usage.days", { count: year.longestStreakDays }) : "—" },
+  ]} />;
+}
+
+function PeriodSummary({ data, selected, trackingFrom, label }: { data?: UsageActivity; selected: { from: string; to: string }; trackingFrom: string | null; label: string }) {
+  const locale = useLocale();
+  const tokens = (value?: number) => value === undefined ? "—" : formatTokens(value, locale);
+  // Sum days so the card applies the same cache rule as the trend and the table.
+  const rate = data ? cacheHitRate((data.days ?? []).reduce(addTotals, emptyTotals())) : null;
+  // Days before tracking started have no data; they would dilute the average.
+  const first = trackingFrom && trackingFrom > selected.from ? trackingFrom : selected.from;
+  const days = Math.max(1, daysBetween(first, selected.to) + 1);
+  return <StatGrid className="usage-period-summary" stats={[
+    { label: t("usage.total"), value: tokens(data?.range.total), detail: data ? `${label} · ${t("usage.turns", { count: data.range.turns })}` : label },
+    { label: t("usage.dailyAverage"), value: data ? formatTokens(Math.round(data.range.total / days), locale) : "—", detail: t("usage.days", { count: days }) },
+    { label: t("usage.cacheHitRate"), value: formatPercent(rate), detail: t("usage.cacheHitRateNote"), title: rate === null ? t("usage.noCacheReads") : undefined },
+    { label: t("usage.output"), value: tokens(data?.range.output), detail: data ? t("usage.inputDetail", { input: formatTokens(data.range.input, locale) }) : undefined },
+  ]} />;
 }
 
 const pitch = 14;
@@ -188,8 +228,8 @@ const header = 18;
 
 interface Tooltip { x: number; y: number; lines: string[] }
 
-function ActivityCharts({ data, range, view, selected, onSelect }: {
-  data?: UsageActivity; range: { from: string; to: string }; view: HeatmapView;
+function ActivityCharts({ data, range, trackingFrom, view, selected, onSelect }: {
+  data?: UsageActivity; range: { from: string; to: string }; trackingFrom: string | null; view: HeatmapView;
   selected: { from: string; to: string } | null; onSelect: (from: string, to: string) => void;
 }) {
   const locale = useLocale();
@@ -223,7 +263,9 @@ function ActivityCharts({ data, range, view, selected, onSelect }: {
       container.current?.querySelector<SVGRectElement>(`.usage-heatmap [data-index="${next}"]`)?.focus();
     },
   });
-  const describe = (label: string, totals: UsageTotals) => [
+  // Days before the first recorded turn have no data rather than zero usage.
+  const untracked = (to: string) => trackingFrom !== null && to < trackingFrom;
+  const describe = (label: string, totals: UsageTotals, end: string) => untracked(end) ? [label, t("usage.beforeTracking")] : [
     label,
     t("usage.tooltipTokens", { tokens: formatTokens(totals.total, locale) }),
     totals.total > 0 ? t("usage.tooltipHitRate", { rate: formatPercent(cacheHitRate(totals)) }) : "",
@@ -243,17 +285,17 @@ function ActivityCharts({ data, range, view, selected, onSelect }: {
     chart = <svg className="usage-heatmap" viewBox={`0 0 ${chartWidth} ${header + 7 * pitch}`} role="group" aria-label={t("usage.heatmapLabel")}>
       {monthAxis}
       {weekdayLabels.map(({ row, label }) => <text key={row} className="usage-axis" x={0} y={header + row * pitch + 9}>{label}</text>)}
-      {pastCells.map((cell, index) => <rect key={cell.date} {...cellButton(index, pastCells.length, { horizontal: 7, vertical: 1 }, describe(formatLongDate(cell.date, locale), cell), inSelection(cell.date, cell.date), () => onSelect(cell.date, cell.date))} x={gutter + cell.column * pitch} y={header + cell.row * pitch} width={cellSize} height={cellSize} rx={2.5}
-        className={`usage-cell level-${dailyLevel(cell.total)}${inSelection(cell.date, cell.date) ? " is-selected" : ""}`}
-        onMouseMove={event => show(event, describe(formatLongDate(cell.date, locale), cell))} onMouseLeave={() => setTooltip(null)}
+      {pastCells.map((cell, index) => <rect key={cell.date} {...cellButton(index, pastCells.length, { horizontal: 7, vertical: 1 }, describe(formatLongDate(cell.date, locale), cell, cell.date), inSelection(cell.date, cell.date), () => onSelect(cell.date, cell.date))} x={gutter + cell.column * pitch} y={header + cell.row * pitch} width={cellSize} height={cellSize} rx={2.5}
+        className={`usage-cell level-${dailyLevel(cell.total)}${untracked(cell.date) ? " is-untracked" : ""}${inSelection(cell.date, cell.date) ? " is-selected" : ""}`}
+        onMouseMove={event => show(event, describe(formatLongDate(cell.date, locale), cell, cell.date))} onMouseLeave={() => setTooltip(null)}
         onClick={() => onSelect(cell.date, cell.date)} />)}
     </svg>;
   } else if (view === "weekly") {
     chart = <svg className="usage-heatmap" viewBox={`0 0 ${chartWidth} ${header + 3 * pitch}`} role="group" aria-label={t("usage.heatmapLabel")}>
       {monthAxis}
-      {weeks.map((week, index) => <rect key={week.start} {...cellButton(index, weeks.length, { horizontal: 1, vertical: 0 }, describe(`${formatDayLabel(week.start, locale)} – ${formatDayLabel(week.end, locale)}`, week), inSelection(week.start, week.end), () => onSelect(week.start, week.end))} x={gutter + week.column * pitch} y={header} width={cellSize} height={3 * pitch - 3} rx={2.5}
-        className={`usage-cell level-${weeklyLevel(week.total)}${inSelection(week.start, week.end) ? " is-selected" : ""}`}
-        onMouseMove={event => show(event, describe(`${formatDayLabel(week.start, locale)} – ${formatDayLabel(week.end, locale)}`, week))} onMouseLeave={() => setTooltip(null)}
+      {weeks.map((week, index) => <rect key={week.start} {...cellButton(index, weeks.length, { horizontal: 1, vertical: 0 }, describe(`${formatDayLabel(week.start, locale)} – ${formatDayLabel(week.end, locale)}`, week, week.end), inSelection(week.start, week.end), () => onSelect(week.start, week.end))} x={gutter + week.column * pitch} y={header} width={cellSize} height={3 * pitch - 3} rx={2.5}
+        className={`usage-cell level-${weeklyLevel(week.total)}${untracked(week.end) ? " is-untracked" : ""}${inSelection(week.start, week.end) ? " is-selected" : ""}`}
+        onMouseMove={event => show(event, describe(`${formatDayLabel(week.start, locale)} – ${formatDayLabel(week.end, locale)}`, week, week.end))} onMouseLeave={() => setTooltip(null)}
         onClick={() => onSelect(week.start, week.end)} />)}
     </svg>;
   } else {
@@ -300,7 +342,12 @@ function HitRateTrend({ cells, weeks, view, range, show, hide }: {
   const points = view === "weekly"
     ? weeks.map(week => ({ x: gutter + week.column * pitch + cellSize / 2, label: `${formatDayLabel(week.start, locale)} – ${formatDayLabel(week.end, locale)}`, totals: week as UsageTotals }))
     : cells.filter(cell => !cell.future).map(cell => ({ x: gutter + (daysBetween(range.from, cell.date) + 0.5) * pitch / 7, label: formatLongDate(cell.date, locale), totals: cell as UsageTotals }));
-  const y = (rate: number) => top + (1 - rate) * height;
+  // Hit rates usually sit near 100%; start the axis just below the lowest
+  // point so changes stay visible, and at 0% once rates fall below half.
+  const rates = points.map(point => cacheHitRate(point.totals)).filter((rate): rate is number => rate !== null);
+  const lowest = rates.length ? Math.min(...rates) : 0;
+  const floor = lowest >= 0.5 ? Math.max(0, Math.floor(lowest * 10) / 10 - 0.1) : 0;
+  const y = (rate: number) => top + (1 - (rate - floor) / (1 - floor)) * height;
   const segments: string[] = [];
   let current = "";
   for (const point of points) {
@@ -326,9 +373,9 @@ function HitRateTrend({ cells, weeks, view, range, show, hide }: {
         show(event, rate === null ? [nearest.label, t("usage.noCacheReads")] : [nearest.label, t("usage.tooltipHitRate", { rate: formatPercent(rate) }),
           t("usage.tooltipCacheDetail", { read: formatTokens(nearest.totals.cacheRead, locale), input: formatTokens(nearest.totals.cacheInput, locale) })]);
       }}>
-      {[0, 0.5, 1].map(rate => <g key={rate}>
+      {[floor, (floor + 1) / 2, 1].map(rate => <g key={rate}>
         <line className="usage-grid" x1={gutter} x2={chartWidth} y1={y(rate)} y2={y(rate)} />
-        <text className="usage-axis" x={0} y={y(rate) + 3}>{`${rate * 100}%`}</text>
+        <text className="usage-axis" x={0} y={y(rate) + 3}>{`${Math.round(rate * 100)}%`}</text>
       </g>)}
       {segments.map(segment => <path key={segment.slice(0, 24)} className="usage-line" d={segment} />)}
       {isolated.map(point => <circle key={point.x} className="usage-point" cx={point.x} cy={y(cacheHitRate(point.totals)!)} r={1.8} />)}
@@ -336,12 +383,12 @@ function HitRateTrend({ cells, weeks, view, range, show, hide }: {
   </div>;
 }
 
-function ModelTable({ data, label }: { data?: UsageActivity; label: string }) {
+function ModelTable({ data }: { data?: UsageActivity }) {
   const locale = useLocale();
   if (!data) return null;
   const showWrite = data.byModel.some(entry => entry.cacheWrite > 0);
-  return <section className="usage-section" aria-labelledby="usage-models-heading">
-    <div className="usage-section-heading"><h2 id="usage-models-heading">{t("usage.byModel")}</h2><small>{label}</small></div>
+  return <section className="usage-subsection" aria-labelledby="usage-models-heading">
+    <h3 id="usage-models-heading">{t("usage.byModel")}</h3>
     <div className="settings-card usage-table-card">
       {data.byModel.length === 0 ? <p className="usage-muted">{t("usage.noUsageInPeriod")}</p> :
         <table className="usage-table">
@@ -363,33 +410,12 @@ function ModelTable({ data, label }: { data?: UsageActivity; label: string }) {
   </section>;
 }
 
-function SessionRanking({ period, selected, earliest, today, onPeriod, page, periodTotal, canLoadMore, onLoadMore, loading, onOpenSession }: {
-  period: Period; selected: { from: string; to: string }; earliest: string; today: string; onPeriod: (period: Period) => void;
+function SessionRanking({ page, periodTotal, canLoadMore, onLoadMore, loading, onOpenSession }: {
   page?: UsageSessionPage; periodTotal?: number; canLoadMore: boolean; onLoadMore: () => void; loading: boolean; onOpenSession?: (id: string) => void;
 }) {
   const locale = useLocale();
-  const value = period.kind === "recent" ? String(period.days) : period.kind;
-  return <section className="usage-section" aria-labelledby="usage-sessions-heading">
-    <div className="usage-section-heading">
-      <h2 id="usage-sessions-heading">{t("usage.sessionRanking")}</h2>
-      <div className="usage-period">
-        <select aria-label={t("usage.period")} value={value} onChange={event => {
-          const next = event.target.value;
-          if (next === "custom") onPeriod({ kind: "custom", from: selected.from, to: selected.to });
-          else if (next !== "selection") onPeriod({ kind: "recent", days: Number(next) as 1 | 7 | 30 | 90 });
-        }}>
-          <option value="1">{t("usage.period.today")}</option>
-          {([7, 30, 90] as const).map(days => <option key={days} value={days}>{t("usage.period.recent", { count: days })}</option>)}
-          <option value="custom">{t("usage.period.custom")}</option>
-          {period.kind === "selection" && <option value="selection">{t("usage.period.selection")}</option>}
-        </select>
-        {period.kind === "custom" && <>
-          <input type="date" aria-label={t("usage.period.from")} min={earliest} max={today} value={period.from} onChange={event => event.target.value && onPeriod({ ...period, from: event.target.value })} />
-          <span>–</span>
-          <input type="date" aria-label={t("usage.period.to")} min={earliest} max={today} value={period.to} onChange={event => event.target.value && onPeriod({ ...period, to: event.target.value })} />
-        </>}
-      </div>
-    </div>
+  return <section className="usage-subsection" aria-labelledby="usage-sessions-heading">
+    <h3 id="usage-sessions-heading">{t("usage.sessionRanking")}</h3>
     <div className="settings-card usage-ranking">
       {!page ? <p className="usage-muted">{loading ? t("usage.loading") : ""}</p>
         : page.sessions.length === 0 ? <p className="usage-muted">{t("usage.noUsageInPeriod")}</p>

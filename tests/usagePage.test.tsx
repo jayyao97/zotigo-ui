@@ -10,6 +10,7 @@ import type { UsageActivity, UsageQuery, UsageResult, UsageSessionPage, UsageSes
 import { ClientContext } from "../src/ClientContext";
 import { UsageSettings, usageTimeZoneStorageKey } from "../src/usage/UsageSettings";
 import { discardUsageCache } from "../src/usage/useUsageData";
+import { addDays } from "../src/usage/usageModel";
 
 function installDom() {
   const dom = new JSDOM("<!doctype html><html><body><div id=root></div></body></html>", { pretendToBeVisual: true, url: "http://localhost/" });
@@ -110,41 +111,97 @@ test("usage page renders overview, models and ranked sessions", async () => {
   }
 });
 
-test("changing the time zone refetches and returning to a previous zone uses the cache", async () => {
+test("the time zone is picked from a searchable list, follows the system by default and reuses cached results", async () => {
   const restore = installDom();
   discardUsageCache();
   try {
-    localStorage.setItem(usageTimeZoneStorageKey, "UTC");
+    const system = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // An unusable stored name falls back to following the system zone.
+    localStorage.setItem(usageTimeZoneStorageKey, "+08:00");
     const { api, activityCalls } = fakeApi();
     await render(api);
-    const before = activityCalls.length;
-    const input = document.querySelector<HTMLInputElement>(".usage-zone input")!;
-    const commit = async (value: string) => {
+    assert.ok(activityCalls.every(call => call.timeZone === system));
+    const trigger = () => document.querySelector<HTMLButtonElement>(".usage-zone-picker > button")!;
+    assert.match(trigger().textContent ?? "", /System/);
+    assert.equal(document.querySelector(".usage-zone-picker input"), null, "the zone is not typed into a field");
+
+    const search = async (query: string) => {
+      if (!document.querySelector(".usage-zone-menu")) await act(async () => trigger().click());
+      // The full list is built in slices after opening.
+      for (let attempt = 0; attempt < 50 && document.querySelector(".usage-zone-loading"); attempt++) await flush();
+      assert.equal(document.querySelector(".usage-zone-loading"), null);
+      const input = document.querySelector<HTMLInputElement>(".usage-zone-search input")!;
       await act(async () => {
         input.focus();
-        // Bypass React's value tracker so the change is detected.
-        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(input, value);
+        // Bypass React's value tracker; its legacy change polyfill notices on keydown.
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(input, query);
         input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "x", bubbles: true }));
       });
-      await act(async () => {
-        input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      });
-      await flush();
+      return input;
     };
-    await commit("Asia/Shanghai");
-    assert.ok(activityCalls.slice(before).some(call => call.timeZone === "Asia/Shanghai"));
-    assert.equal(localStorage.getItem(usageTimeZoneStorageKey), "Asia/Shanghai");
-    // Names Intl accepts but the daemon rejects are not saved.
-    await commit("asia/shanghai");
-    assert.equal(localStorage.getItem(usageTimeZoneStorageKey), "Asia/Shanghai");
-    await commit("+08:00");
-    assert.equal(localStorage.getItem(usageTimeZoneStorageKey), "Asia/Shanghai");
-    await commit("Not/AZone");
-    assert.equal(localStorage.getItem(usageTimeZoneStorageKey), "Asia/Shanghai");
-    assert.equal(input.value, "Asia/Shanghai");
+    const options = () => [...document.querySelectorAll<HTMLElement>('.usage-zone-options [role="option"]')];
 
-    // Cached results render at once while the request is refreshed.
-    await commit("UTC");
+    // Opening does not wait for the full list: system and UTC are there at once.
+    await act(async () => trigger().click());
+    assert.ok(document.querySelector(".usage-zone-loading"));
+    assert.deepEqual(options().map(option => option.querySelector("strong")?.textContent), ["System", "UTC"]);
+    // Following the system and UTC always lead the list.
+    await search("");
+    assert.match(options()[0].textContent ?? "", /System/);
+    assert.match(options()[1].textContent ?? "", /^UTC.*Coordinated Universal Time/);
+    let utcSearch = await search("utc");
+    assert.match(options()[0].textContent ?? "", /^UTC/, "UTC itself comes before cities at UTC+0");
+    await act(async () => { utcSearch.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+
+    // Names match; the system row only shows for its own label.
+    utcSearch = await search("shanghai");
+    let input = utcSearch;
+    assert.deepEqual(options().map(option => option.querySelector("small")?.textContent?.split(" · ")[0]), ["Asia/Shanghai"]);
+    // Arrow keys move the active option; Enter while composing belongs to the input method.
+    input = await search("+8");
+    const activeId = () => input.getAttribute("aria-activedescendant");
+    assert.equal(activeId(), options()[0].id);
+    await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })); });
+    assert.equal(activeId(), options()[1].id);
+    assert.ok(options()[1].classList.contains("is-active"));
+    await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true })); });
+    assert.ok(document.querySelector(".usage-zone-menu"), "a composing Enter does not choose");
+    // Escape closes only the picker: the settings page ignores a handled Escape.
+    const escape = new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    await act(async () => { input.dispatchEvent(escape); });
+    assert.equal(escape.defaultPrevented, true);
+    assert.equal(document.querySelector(".usage-zone-menu"), null);
+    assert.equal(document.activeElement, trigger(), "focus returns to the trigger");
+    assert.equal(localStorage.getItem(usageTimeZoneStorageKey), "+08:00", "nothing was chosen");
+
+    // Offsets match too; Enter picks the first match.
+    input = await search("+5:45");
+    assert.ok(options().length >= 1 && options().every(option => /UTC\+5:45/.test(option.textContent ?? "")));
+    const before = activityCalls.length;
+    await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    await flush();
+    assert.equal(document.querySelector(".usage-zone-menu"), null);
+    const nepal = localStorage.getItem(usageTimeZoneStorageKey) ?? "";
+    assert.match(nepal, /^Asia\/Kath?mandu$/);
+    assert.ok(activityCalls.slice(before).some(call => call.timeZone === nepal));
+    assert.match(trigger().textContent ?? "", /UTC\+5:45/);
+
+    // Nothing matches: nothing to choose, nothing saved.
+    input = await search("Not/AZone");
+    assert.equal(options().length, 0);
+    await act(async () => { input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    assert.equal(document.querySelector(".usage-zone-menu"), null);
+    assert.equal(localStorage.getItem(usageTimeZoneStorageKey), nepal);
+
+    // The first row returns to following the system zone and forgets the choice.
+    await act(async () => trigger().click());
+    const systemRow = options()[0];
+    assert.match(systemRow.textContent ?? "", new RegExp(`System.*${system}`));
+    await act(async () => systemRow.click());
+    await flush();
+    assert.equal(localStorage.getItem(usageTimeZoneStorageKey), null);
+    assert.equal(activityCalls.at(-1)!.timeZone, system);
+    // Cached results render at once.
     assert.match(document.body.textContent ?? "", /3M/);
   } finally {
     await unmount();
@@ -166,7 +223,7 @@ test("an older daemon shows an update hint", async () => {
   }
 });
 
-test("clicking a heatmap day selects it as the ranking period", async () => {
+test("clicking a heatmap day selects it as the period", async () => {
   const restore = installDom();
   discardUsageCache();
   try {
@@ -179,7 +236,9 @@ test("clicking a heatmap day selects it as the ranking period", async () => {
     await act(async () => { cells.at(-1)!.dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
     await flush();
     assert.deepEqual(sessionCalls.at(-1) && [sessionCalls.at(-1)!.from, sessionCalls.at(-1)!.to], [today, today]);
-    assert.equal(document.querySelector<HTMLSelectElement>(".usage-period select")!.value, "selection");
+    // The selection shows as a removable chip and no preset is active.
+    assert.ok(document.querySelector(".usage-selection-chip"));
+    assert.equal(document.querySelector('.usage-period [aria-pressed="true"]'), null);
     // The heatmap has one tab stop, today's cell, and is operable from the keyboard.
     const focusable = [...document.querySelectorAll('.usage-heatmap [tabindex="0"]')];
     assert.equal(focusable.length, 1);
@@ -189,7 +248,22 @@ test("clicking a heatmap day selects it as the ranking period", async () => {
     // Clicking the same day again returns to the default period.
     await act(async () => { document.querySelectorAll(".usage-heatmap rect")[cells.length - 1].dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
     await flush();
-    assert.equal(document.querySelector<HTMLSelectElement>(".usage-period select")!.value, "7");
+    assert.equal(document.querySelector(".usage-selection-chip"), null);
+    assert.equal(document.querySelector('.usage-period [aria-pressed="true"]')?.textContent, "7 days");
+
+    // Clearing a selection returns to the preset chosen before it.
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>(".usage-period button")].find(button => button.textContent === "90 days")!.click());
+    await act(async () => { document.querySelectorAll(".usage-heatmap rect")[cells.length - 1].dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
+    await act(async () => document.querySelector<HTMLButtonElement>(".usage-selection-chip button")!.click());
+    assert.equal(document.querySelector('.usage-period [aria-pressed="true"]')?.textContent, "90 days");
+
+    // The chip's close button also clears it; presets switch the period.
+    await act(async () => { document.querySelectorAll(".usage-heatmap rect")[cells.length - 1].dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
+    await act(async () => document.querySelector<HTMLButtonElement>(".usage-selection-chip button")!.click());
+    assert.equal(document.querySelector(".usage-selection-chip"), null);
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>(".usage-period button")].find(button => button.textContent === "30 days")!.click());
+    await flush();
+    assert.deepEqual([sessionCalls.at(-1)!.from, sessionCalls.at(-1)!.to], [addDays(today, -29), today]);
   } finally {
     await unmount();
     restore();
