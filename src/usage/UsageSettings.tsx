@@ -56,13 +56,13 @@ export function UsageSettings({ hostId, hostName, onOpenSession }: { hostId: str
   const selected = periodRange(period, today, range.from);
   const filters = { timeZone, model: model || undefined, channel };
 
-  const yearKey = `${hostId}|activity|${JSON.stringify({ ...filters, ...range })}`;
-  const year = useUsageQuery<UsageActivity>(yearKey, () => api.getUsageActivity({ ...filters, ...range }), revision);
-  const periodKey = `${hostId}|activity|${JSON.stringify({ ...filters, ...selected })}`;
-  const periodActivity = useUsageQuery<UsageActivity>(periodKey, () => api.getUsageActivity({ ...filters, ...selected }), revision);
+  const yearKey = `activity|${JSON.stringify({ ...filters, ...range })}`;
+  const year = useUsageQuery<UsageActivity>(hostId, yearKey, () => api.getUsageActivity({ ...filters, ...range }), revision);
+  const periodKey = `activity|${JSON.stringify({ ...filters, ...selected })}`;
+  const periodActivity = useUsageQuery<UsageActivity>(hostId, periodKey, () => api.getUsageActivity({ ...filters, ...selected }), revision);
   const limit = Math.min(maxSessionRows, sessionPages * sessionPageSize);
-  const sessionsKey = `${hostId}|sessions|${JSON.stringify({ ...filters, ...selected, limit })}`;
-  const sessions = useUsageQuery<UsageSessionPage>(sessionsKey, () => api.getUsageSessions({ ...filters, ...selected, limit }), revision);
+  const sessionsKey = `sessions|${JSON.stringify({ ...filters, ...selected, limit })}`;
+  const sessions = useUsageQuery<UsageSessionPage>(hostId, sessionsKey, () => api.getUsageSessions({ ...filters, ...selected, limit }), revision);
 
   const yearData = year.result?.supported ? year.result.data : undefined;
   const periodData = periodActivity.result?.supported ? periodActivity.result.data : undefined;

@@ -4,6 +4,7 @@ import { useVisibleWorkspaces } from "./useVisibleWorkspaces";
 import { useSessionPages } from "./useSessionPages";
 import type { ChannelActivityMode } from "./activitySettings";
 import { loadSessionIntoState, mergeSessionPage, mergeCatalogStructure } from "../shared/sessionPages";
+import { discardUsageCache } from "./usage/useUsageData";
 import { observeLongTasks, traceInteraction, traceNextPaint } from "./performanceDiagnostics";
 import { LayoutGrid } from "lucide-react";
 import { WorkspacePanelHome } from "./WorkspacePanelHome";
@@ -241,6 +242,7 @@ const volatileStateByHost = new Map<string, HostVolatileState>();
 let volatileStateGeneration = 0;
 
 export function discardHostVolatileState(clientScope?: string): void {
+  discardUsageCache(clientScope);
   if (clientScope === undefined) volatileStateGeneration++;
   const states = clientScope === undefined
     ? [...volatileStateByHost.entries()]
@@ -1777,8 +1779,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     if (!openSessionRequest || handledOpenSessionRequest.current === openSessionRequest.nonce) return;
     handledOpenSessionRequest.current = openSessionRequest.nonce;
     const { id, nonce } = openSessionRequest;
+    // Any navigation while the session loads (a sidebar click, recent
+    // sessions, Channels) wins over this request.
+    const revision = navigationRevision.current;
     void loadSessionIntoState(desktopState, id, client.querySessions).then(({ state, page }) => {
-      if (handledOpenSessionRequest.current !== nonce) return;
+      if (handledOpenSessionRequest.current !== nonce || navigationRevision.current !== revision) return;
       if (page) { applyDesktopState(state); mergeLoadedSessions(page.sessions); }
       const binding = state.bindings.find((value) => value.daemon_session_id === id);
       if (!binding || !state.conversations.some((value) => value.id === binding.conversation_id)) throw new Error(t("app.sessionNotInCatalog"));

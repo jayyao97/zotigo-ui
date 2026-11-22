@@ -6,11 +6,24 @@ export const usagePollMilliseconds = 60_000;
 interface CacheEntry { value: UsageResult<unknown>; at: number }
 
 // Results stay in memory for the window's lifetime so returning to the page
-// or switching back to a previous time zone renders immediately.
+// or switching back to a previous time zone renders immediately. Entries are
+// keyed by host; a host whose address or credentials change is discarded.
 const cache = new Map<string, CacheEntry>();
 const cacheLimit = 64;
+let allGeneration = 0;
+const hostGenerations = new Map<string, number>();
+const generation = (host: string) => `${allGeneration}:${hostGenerations.get(host) ?? 0}`;
+const cacheKey = (host: string, key: string) => `${host}\u0000${key}`;
 
-export function clearUsageCache(): void { cache.clear(); }
+/**
+ * Drops cached usage for one host, or every host when omitted. Requests that
+ * were already in flight for it are ignored when they return.
+ */
+export function discardUsageCache(host?: string): void {
+  if (host === undefined) { allGeneration++; cache.clear(); return; }
+  hostGenerations.set(host, (hostGenerations.get(host) ?? 0) + 1);
+  for (const key of [...cache.keys()]) if (key.startsWith(`${host}\u0000`)) cache.delete(key);
+}
 
 function remember(key: string, value: UsageResult<unknown>): void {
   cache.delete(key);
@@ -29,7 +42,8 @@ export interface UsageState<T> {
  * change, on `revision` change, and every minute while the document is
  * visible; the cached or previous result stays visible during the request.
  */
-export function useUsageQuery<T>(key: string | null, load: () => Promise<UsageResult<T>>, revision: number): UsageState<T> {
+export function useUsageQuery<T>(host: string, query: string | null, load: () => Promise<UsageResult<T>>, revision: number): UsageState<T> {
+  const key = query === null ? null : cacheKey(host, query);
   const [state, setState] = useState<UsageState<T>>(() => {
     const cached = key ? cache.get(key) : undefined;
     return { result: cached?.value as UsageResult<T> | undefined, loading: Boolean(key) };
@@ -41,14 +55,18 @@ export function useUsageQuery<T>(key: string | null, load: () => Promise<UsageRe
   // Background polls are silent; only key changes and manual refreshes show loading.
   const run = useCallback((target: string, silent = false) => {
     const id = ++request.current;
+    const started = generation(host);
     if (!silent) setState(current => ({ ...current, loading: true }));
     loadRef.current().then(value => {
+      // A response from before the host was discarded may describe another machine.
+      if (generation(host) !== started) { if (id === request.current) setState({ loading: false }); return; }
       remember(target, value);
       if (id === request.current) setState({ result: value, loading: false });
     }, (error: unknown) => {
+      if (generation(host) !== started) { if (id === request.current) setState({ loading: false }); return; }
       if (id === request.current) setState(current => ({ result: current.result, error: error instanceof Error ? error.message : String(error), loading: false }));
     });
-  }, []);
+  }, [host]);
 
   useEffect(() => {
     if (!key) { request.current++; setState({ loading: false }); return; }

@@ -9,7 +9,7 @@ import { setLocale } from "../shared/i18n/index";
 import type { UsageActivity, UsageQuery, UsageResult, UsageSessionPage, UsageSessionsQuery } from "../shared/usage";
 import { ClientContext } from "../src/ClientContext";
 import { UsageSettings, usageTimeZoneStorageKey } from "../src/usage/UsageSettings";
-import { clearUsageCache } from "../src/usage/useUsageData";
+import { discardUsageCache } from "../src/usage/useUsageData";
 
 function installDom() {
   const dom = new JSDOM("<!doctype html><html><body><div id=root></div></body></html>", { pretendToBeVisual: true, url: "http://localhost/" });
@@ -77,7 +77,7 @@ async function render(api: ClientApi, onOpenSession?: (id: string) => void) {
 
 test("usage page renders overview, models and ranked sessions", async () => {
   const restore = installDom();
-  clearUsageCache();
+  discardUsageCache();
   setLocale("zh-CN");
   try {
     localStorage.setItem(usageTimeZoneStorageKey, "Asia/Kathmandu");
@@ -112,7 +112,7 @@ test("usage page renders overview, models and ranked sessions", async () => {
 
 test("changing the time zone refetches and returning to a previous zone uses the cache", async () => {
   const restore = installDom();
-  clearUsageCache();
+  discardUsageCache();
   try {
     localStorage.setItem(usageTimeZoneStorageKey, "UTC");
     const { api, activityCalls } = fakeApi();
@@ -154,7 +154,7 @@ test("changing the time zone refetches and returning to a previous zone uses the
 
 test("an older daemon shows an update hint", async () => {
   const restore = installDom();
-  clearUsageCache();
+  discardUsageCache();
   try {
     const { api } = fakeApi({ unsupported: true });
     await render(api);
@@ -168,7 +168,7 @@ test("an older daemon shows an update hint", async () => {
 
 test("clicking a heatmap day selects it as the ranking period", async () => {
   const restore = installDom();
-  clearUsageCache();
+  discardUsageCache();
   try {
     localStorage.setItem(usageTimeZoneStorageKey, "UTC");
     const today = new Date().toISOString().slice(0, 10);
@@ -190,6 +190,46 @@ test("clicking a heatmap day selects it as the ranking period", async () => {
     await act(async () => { document.querySelectorAll(".usage-heatmap rect")[cells.length - 1].dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
     await flush();
     assert.equal(document.querySelector<HTMLSelectElement>(".usage-period select")!.value, "7");
+  } finally {
+    await unmount();
+    restore();
+  }
+});
+
+test("discarding a host drops its cached usage and ignores requests already in flight", async () => {
+  const restore = installDom();
+  discardUsageCache();
+  try {
+    localStorage.setItem(usageTimeZoneStorageKey, "UTC");
+    const shown = () => /3M/.test(document.body.textContent ?? "");
+    const never = { ...fakeApi().api, getUsageActivity: () => new Promise(() => {}), getUsageSessions: () => new Promise(() => {}) } as ClientApi;
+
+    await render(fakeApi().api);
+    assert.ok(shown());
+    await unmount();
+    // Another host's discard keeps this host's cache.
+    discardUsageCache("dev");
+    await render(never);
+    assert.ok(shown(), "cached usage renders at once");
+    await unmount();
+    discardUsageCache("local");
+    await render(never);
+    assert.equal(shown(), false, "an edited host must not show the previous machine's usage");
+    await unmount();
+
+    // A response that started before the discard is not cached.
+    let release: () => void = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const slow = fakeApi().api;
+    const delayed = { ...slow, getUsageActivity: async (query: UsageQuery) => { await gate; return slow.getUsageActivity(query); }, getUsageSessions: async (query: UsageSessionsQuery) => { await gate; return slow.getUsageSessions(query); } } as ClientApi;
+    await render(delayed);
+    discardUsageCache("local");
+    await act(async () => release());
+    await flush();
+    assert.equal(shown(), false);
+    await unmount();
+    await render(never);
+    assert.equal(shown(), false);
   } finally {
     await unmount();
     restore();
