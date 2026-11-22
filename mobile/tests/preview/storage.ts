@@ -11,12 +11,18 @@ export const fixtureHosts = [
     baseUrl: "https://work.fixture.test",
   },
 ];
-const data = new Map<string, string>([
-  ["zotigo.mobile.lastHost", "preview-home"],
-  ["zotigo.mobile.hosts.v1", JSON.stringify(fixtureHosts)],
-]);
+// `?empty` starts like a first install, with no saved devices.
+const empty = typeof location !== "undefined" && new URLSearchParams(location.search).has("empty");
+const data = new Map<string, string>(
+  empty
+    ? []
+    : [
+        ["zotigo.mobile.lastHost", "preview-home"],
+        ["zotigo.mobile.hosts.v1", JSON.stringify(fixtureHosts)],
+      ],
+);
 const credentials = new Map<string, string>(
-  fixtureHosts.map((host) => ["host." + host.id, "fixture-token"]),
+  empty ? [] : fixtureHosts.map((host) => ["host." + host.id, "fixture-token"]),
 );
 function adapter(values: Map<string, string>): Storage {
   return {

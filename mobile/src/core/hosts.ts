@@ -7,6 +7,7 @@ export interface Storage {
 const registryKey = "zotigo.mobile.hosts.v1";
 export class HostStore {
   private queue = Promise.resolve();
+  private listeners = new Set<() => void>();
   constructor(
     private storage: Storage,
     private secrets: Storage,
@@ -32,6 +33,11 @@ export class HostStore {
       name: h.name,
       baseUrl: normalizeAddress(h.baseUrl),
     }));
+  }
+  /** Calls `listener` after every save or removal; returns the unsubscribe. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
   savedToken(id: string) {
     return this.secrets.get("host." + id);
@@ -87,7 +93,10 @@ export class HostStore {
     });
   }
   private serial<T>(run: () => Promise<T>): Promise<T> {
-    const task = this.queue.then(run);
+    const task = this.queue.then(run).then((value) => {
+      for (const listener of [...this.listeners]) listener();
+      return value;
+    });
     this.queue = task.then(
       () => {},
       () => {},

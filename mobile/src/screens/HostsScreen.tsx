@@ -11,6 +11,7 @@ import { randomUUID } from "expo-crypto";
 import type { DaemonClient, Host } from "../core/client";
 import { addressOrigin, normalizeAddress } from "../core/client";
 import { hosts } from "../platform/storage";
+import { useHostList } from "../platform/useHostList";
 import { createDaemon } from "../platform/client";
 import { reach } from "../core/deviceSwitch";
 import { connectionErrorText, useDeviceSwitch } from "../platform/useDeviceSwitch";
@@ -49,8 +50,9 @@ export function HostsScreen({
   onRemoved?: (id: string) => void;
 }) {
   useLocale();
-  const [list, setList] = useState<Host[]>([]);
-  const [ready, setReady] = useState(false);
+  const hostList = useHostList();
+  const list = hostList.list,
+    ready = hostList.ready;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
@@ -65,26 +67,12 @@ export function HostsScreen({
   const [{ connecting, failed }, switcher] = useDeviceSwitch();
   const pending = useRef<DaemonClient | null>(null);
   useEffect(() => {
-    let alive = true;
     mounted.current = true;
-    hosts
-      .list()
-      .then((value) => {
-        if (alive) {
-          setList(value);
-          setReady(true);
-        }
-      })
-      .catch((e) => {
-        if (alive) {
-          setError(errorText(e));
-          setReady(true);
-        }
-      });
+    // A failure from an earlier visit is old news; one in flight keeps going.
+    switcher.dismiss();
     // The switch is app-wide: an attempt started here keeps going after the
     // screen closes and is reported wherever devices are listed.
     return () => {
-      alive = false;
       mounted.current = false;
       pending.current?.dispose();
     };
@@ -130,7 +118,7 @@ export function HostsScreen({
           <>
             {!ready && <Loading />}
             {editing === undefined && (
-              <Notice text={failed ? connectionErrorText(failed.error, failed.host.name) : error} error />
+              <Notice text={failed ? connectionErrorText(failed.error, failed.host.name) : error || hostList.error} error />
             )}
             {ready && !list.length && (
               <Notice text={t("mobile.addYourFirstDeviceUsingItsDaemonAddressAndToken")} />
@@ -243,30 +231,32 @@ export function HostsScreen({
                         name,
                         baseUrl: address,
                       };
-                      if (sameDevice && editing.id === currentId) {
-                        // The connection in use is immutable, so new details
-                        // need a new one. Like any switch, the current one
-                        // stays until the new details answer, and they are
-                        // saved only then: a wrong token is reported here and
-                        // never replaces the working one, now or next launch.
+                      const isCurrent = sameDevice && editing.id === currentId;
+                      const tokenChanged =
+                        !sameDevice || token.trim() !== ((await hosts.savedToken(editing.id)) ?? "");
+                      // Connect with the new details first, and save them only
+                      // once they answer, when they replace the connection in
+                      // use (a new token for this device) or when there is no
+                      // connection yet (the first device): a wrong token is
+                      // reported here and never stored.
+                      if ((isCurrent && tokenChanged) || (!currentId && !editing)) {
                         const connection = {
-                          id: editing.id,
+                          id: host.id,
                           name: name.trim(),
                           baseUrl: normalizeAddress(address),
                           token: token.trim(),
                         };
                         close();
-                        void switcher.select(connection, onConnect, {
-                          connection,
-                          accept: async () => {
-                            await hosts.save(host, token);
-                            if (mounted.current) setList(await hosts.list());
-                          },
-                        });
+                        void switcher.select(
+                          { id: connection.id, name: connection.name, baseUrl: connection.baseUrl },
+                          onConnect,
+                          { connection, accept: () => hosts.save(host, token) },
+                        );
                         return;
                       }
+                      // Otherwise (another device, or only a new name) save as
+                      // is; a name shows from the saved list at once.
                       await hosts.save(host, token);
-                      setList(await hosts.list());
                       close();
                     })
                   }
@@ -316,7 +306,6 @@ export function HostsScreen({
                             onPress: () =>
                               void run(async () => {
                                 await hosts.remove(editing.id);
-                                setList(await hosts.list());
                                 onRemoved?.(editing.id);
                                 close();
                               }),

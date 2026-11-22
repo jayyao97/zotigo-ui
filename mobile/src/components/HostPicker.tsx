@@ -1,7 +1,7 @@
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useVisibleEffect } from "../platform/visibility";
+import { useEffect, useRef, useState } from "react";
+import { useHostList } from "../platform/useHostList";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import Plus from "lucide-react-native/icons/plus";
 import Monitor from "lucide-react-native/icons/monitor";
@@ -9,10 +9,10 @@ import Check from "lucide-react-native/icons/check";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
 import Settings2 from "lucide-react-native/icons/settings-2";
 import { BottomSheet } from "./BottomSheet";
-import type { DaemonClient, Host } from "../core/client";
-import { hosts, storage } from "../platform/storage";
+import type { DaemonClient } from "../core/client";
+import { storage } from "../platform/storage";
 import { connectionErrorText, lastHostKey, useDeviceSwitch } from "../platform/useDeviceSwitch";
-import { Action, EmptyState, ListGroup, ListRow, Notice, colors, errorText, space, styles } from "./ui";
+import { Action, EmptyState, ListGroup, ListRow, Notice, colors, space, styles } from "./ui";
 
 export function HostPicker({
   client,
@@ -29,51 +29,34 @@ export function HostPicker({
   onConnect: (client: DaemonClient) => void;
 }) {
   useLocale();
-  const [list, setList] = useState<Host[]>([]);
-  const [error, setError] = useState("");
+  const { list, ready, error } = useHostList();
   const [open, setOpen] = useState(false);
-  const [ready, setReady] = useState(false);
   const [{ connecting, failed }, switcher] = useDeviceSwitch();
+  // Reconnect to the last device once, when the saved list is first known.
   const attempted = useRef(false);
-  const mounted = useRef(true);
   useEffect(() => {
-    mounted.current = true;
+    if (!ready || client || attempted.current || switcher.state.connecting) return;
+    attempted.current = true;
+    let active = true;
+    void storage
+      .get(lastHostKey)
+      .then((last) => {
+        const host = list.find((h) => h.id === last) ?? (list.length === 1 ? list[0] : undefined);
+        if (host && active) void switcher.select(host, onConnect);
+      })
+      .catch(() => {});
     return () => {
-      mounted.current = false;
+      active = false;
     };
-  }, []);
-  // Refreshes the list when the screen comes back (a device may have been
-  // added). It never cancels a switch: the switch is app-wide, so leaving
-  // must not drop it.
-  useVisibleEffect(
-    useCallback(() => {
-      let active = true;
-      hosts
-        .list()
-        .then(async (value) => {
-          if (!active) return;
-          setList(value);
-          setReady(true);
-          if (!client && !attempted.current && !switcher.state.connecting) {
-            attempted.current = true;
-            const last = await storage.get(lastHostKey);
-            const host =
-              value.find((h) => h.id === last) ??
-              (value.length === 1 ? value[0] : undefined);
-            if (host && mounted.current) void switcher.select(host, onConnect);
-          }
-        })
-        .catch((error) => {
-          if (active) setError(errorText(error));
-        });
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
+  }, [ready]);
+  // Whether the attempt in flight was started from this sheet.
+  const startedHere = useRef(false);
   function close() {
     setOpen(false);
-    switcher.cancel();
+    // Only this sheet's own attempt: one started on the Devices screen (such
+    // as saving new details) keeps going, and its result is reported there.
+    if (startedHere.current) switcher.cancel();
+    startedHere.current = false;
   }
   const problem = failed ? connectionErrorText(failed.error, failed.host.name) : error;
   const current = list.find((host) => host.id === client?.connection.id);
@@ -96,12 +79,30 @@ export function HostPicker({
         }
         // Rows stay enabled while another device is connecting: choosing one
         // abandons that attempt, so an unreachable device never traps the user.
-        onPress={() => (selected ? close() : connecting?.id === host.id ? undefined : void switcher.select(host, onConnect))}
+        onPress={() => {
+          if (selected) return close();
+          if (connecting?.id === host.id) return;
+          startedHere.current = open;
+          void switcher.select(host, onConnect);
+        }}
       />
     );
   });
+  // A device being added is listed while it connects, before it is saved.
+  const unsaved = connecting && !list.some((host) => host.id === connecting.id) ? connecting : undefined;
+  if (unsaved)
+    deviceRows.push(
+      <ListRow
+        key={unsaved.id}
+        icon={Monitor}
+        title={unsaved.name}
+        subtitle={t("webApp.connecting")}
+        chevron={false}
+        right={<ActivityIndicator size="small" color={colors.muted} />}
+      />,
+    );
   if (!client) {
-    if (ready && !list.length)
+    if (ready && !deviceRows.length && !problem)
       return (
         <EmptyState
           icon={Monitor}

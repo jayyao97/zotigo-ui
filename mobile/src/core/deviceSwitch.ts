@@ -99,6 +99,10 @@ export class DeviceSwitch {
   cancel() {
     this.begin({});
   }
+  /** Clears a reported failure; an attempt in flight keeps going. */
+  dismiss() {
+    if (this.state.failed) this.set({});
+  }
   private begin(state: SwitchState) {
     this.attempt++;
     this.pending?.dispose();
