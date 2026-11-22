@@ -3,21 +3,28 @@ import { AppState, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocale } from "../../platform/i18n";
+import { useAlwaysVisible, useVisibleEffect } from "../../platform/visibility";
 import { Action, colors, errorText, space, styles } from "../../components/ui";
 
 // Focus-bound reads cannot commit after a route blur, host replacement, or newer refresh.
+// Coming back to a page with data refreshes it quietly: the list stays as it is
+// and changes only if the answer differs. Only the first load and pull to
+// refresh show progress.
 export function useCatalogLoad<T>(load: () => Promise<T>, poll = false) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
   const active = useRef(false);
-  const inFlight = useRef(0);
+  // The ticket of the request in flight, if any; a quiet refresh skips while
+  // the current one is still out.
+  const pending = useRef(0);
+  const loaded = useRef(false);
   const refresh = useCallback(
     async (silent = false) => {
-      if (silent && inFlight.current > 0) return;
-      inFlight.current++;
+      if (silent && pending.current === generation.current && pending.current) return;
       const ticket = ++generation.current;
+      pending.current = ticket;
       if (!silent) {
         setLoading(true);
         setError("");
@@ -25,6 +32,7 @@ export function useCatalogLoad<T>(load: () => Promise<T>, poll = false) {
       try {
         const result = await load();
         if (active.current && ticket === generation.current) {
+          loaded.current = true;
           setData(result);
           setError("");
         }
@@ -32,28 +40,30 @@ export function useCatalogLoad<T>(load: () => Promise<T>, poll = false) {
         if (active.current && ticket === generation.current)
           setError(errorText(e));
       } finally {
-        inFlight.current--;
+        if (pending.current === ticket) pending.current = 0;
         if (active.current && ticket === generation.current) setLoading(false);
       }
     },
     [load],
   );
-  useFocusEffect(
-    useCallback(() => {
-      active.current = true;
-      void refresh();
-      const timer = poll
-        ? setInterval(() => {
-            if (AppState.currentState === "active") void refresh(true);
-          }, 10000)
-        : undefined;
-      return () => {
-        if (timer) clearInterval(timer);
-        active.current = false;
-        generation.current++;
-      };
-    }, [refresh, poll]),
-  );
+  const focus = useCallback(() => {
+    active.current = true;
+    void refresh(loaded.current);
+    const timer = poll
+      ? setInterval(() => {
+          if (AppState.currentState === "active") void refresh(true);
+        }, 10000)
+      : undefined;
+    return () => {
+      if (timer) clearInterval(timer);
+      active.current = false;
+      // Its answer would be dropped, so a return starts a fresh one.
+      generation.current++;
+      setLoading(false);
+    };
+  }, [refresh, poll]);
+  // In the iPad sidebar this runs for as long as it is mounted.
+  useVisibleEffect(focus);
   return { data, error, loading, refresh: () => refresh() };
 }
 export function useMutation() {
@@ -68,6 +78,7 @@ export function useMutation() {
       alive.current = false;
     };
   }, []);
+  const always = useAlwaysVisible();
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
@@ -76,7 +87,7 @@ export function useMutation() {
       };
     }, []),
   );
-  const isCurrent = () => alive.current && focused.current;
+  const isCurrent = () => alive.current && (always || focused.current);
   const run = async (work: () => Promise<unknown>) => {
     if (lock.current || !isCurrent()) return;
     lock.current = true;

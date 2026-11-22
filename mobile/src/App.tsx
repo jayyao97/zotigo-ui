@@ -28,6 +28,7 @@ import { StatusBar } from "expo-status-bar";
 import type { DaemonClient } from "./core/client";
 import type { Routes } from "./navigation";
 import { DaemonContext } from "./platform/context";
+import { AlwaysVisibleContext } from "./platform/visibility";
 import { DeviceSwitchContext, useDeviceSwitchRoot } from "./platform/useDeviceSwitch";
 import { IconButton, Action, EmptyState, colors } from "./components/ui";
 import { HostPicker } from "./components/HostPicker";
@@ -108,7 +109,9 @@ function TabletSidebar({
       }}
     >
       <NavigationContext.Provider value={sidebarNavigation}>
-        <SidebarContent client={client} connect={connect} />
+        <AlwaysVisibleContext.Provider value>
+          <SidebarContent client={client} connect={connect} />
+        </AlwaysVisibleContext.Provider>
       </NavigationContext.Provider>
     </View>
   );

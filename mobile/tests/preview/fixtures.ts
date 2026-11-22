@@ -556,9 +556,12 @@ const modelSettings: Record<string, ModelSettings> = Object.fromEntries(["home",
   profiles: ["balanced", "review"].map(name => ({ name, provider: "openai", model: "gpt-5.3-codex", base_url: "", thinking_level: name === "review" ? "high" : "", context_window: 0, max_output_tokens: null, mode: "", has_api_key: true })),
 }]));
 
+/** Paths requested so far, for smoke checks on how often a screen reloads. */
+const requested: string[] = [];
 export const fixtureFetch: Fetch = async (input, init = {}) => {
   if (init.signal?.aborted) throw new Error("Fixture request aborted.");
   const url = new URL(input);
+  requested.push(url.pathname);
   const key =
     url.hostname === "home.fixture.test"
       ? "home"
@@ -1348,6 +1351,12 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
 };
 export const preview = {
   hosts: ["home", "work"],
+  /** How many times `path` was requested since the last call; resets the count. */
+  takeRequests(path: string) {
+    const count = requested.filter((value) => value === path).length;
+    requested.length = 0;
+    return count;
+  },
   appendMarkdown(host: "home" | "work", text: string) {
     publish(hosts[host], "session-shared", {
       type: "delta",

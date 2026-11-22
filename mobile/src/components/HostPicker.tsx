@@ -1,7 +1,7 @@
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useFocusEffect } from "@react-navigation/native";
+import { useVisibleEffect } from "../platform/visibility";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import Plus from "lucide-react-native/icons/plus";
 import Monitor from "lucide-react-native/icons/monitor";
@@ -43,9 +43,9 @@ export function HostPicker({
     };
   }, []);
   // Refreshes the list when the screen comes back (a device may have been
-  // added). It never cancels a switch: the iPad sidebar re-runs this on every
-  // navigation, and the switch is app-wide, so leaving must not drop it.
-  useFocusEffect(
+  // added). It never cancels a switch: the switch is app-wide, so leaving
+  // must not drop it.
+  useVisibleEffect(
     useCallback(() => {
       let active = true;
       hosts

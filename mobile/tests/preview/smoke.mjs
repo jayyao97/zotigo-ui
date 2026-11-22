@@ -236,6 +236,19 @@ try {
   await evaluate('__streamCode.scrollIntoView({block:"center"})');
   await shot('12-streaming-rich-content');
   checks.push('Repeated SSE text updates preserve existing code and image nodes instead of remounting them');
+  // iPad: the sidebar stays on screen, so opening and leaving detail screens
+  // must not reload it (the list would flash and lose its place).
+  await call('Emulation.setDeviceMetricsOverride', { width: 1180, height: 820, deviceScaleFactor: 2, mobile: true });
+  await evaluate(`__ZOTIGO_PREVIEW__.reset(); __ZOTIGO_PREVIEW__.resetStorage(); true`);
+  await call('Page.navigate', { url: address });
+  await wait(`typeof __ZOTIGO_PREVIEW__ !== 'undefined'`);
+  await bodyIncludes('Home: Multi-host mobile architecture'); await delay(1000);
+  await evaluate(`__ZOTIGO_PREVIEW__.takeRequests('/catalog/navigation')`);
+  await click('Implement persistent drafts'); await delay(800); await back(); await delay(500);
+  await click('Settings'); await bodyIncludes('Model profiles'); await back(); await delay(500);
+  assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.takeRequests('/catalog/navigation')`), 0, 'navigating on iPad does not reload the sidebar');
+  await shot('13-ipad-sidebar');
+  checks.push('iPad sidebar is not reloaded by opening and leaving detail screens');
   assert.deepEqual(runtimeErrors, [], 'No uncaught browser runtime exceptions');
   await fs.writeFile(path.join(output, 'smoke.json'), JSON.stringify({ passed: true, viewport: '393x852 @2', preview: address, checks, screenshots, runtimeErrors, limits: 'React Native Web fixture validation; not native iOS validation.' }, null, 2));
   console.log(JSON.stringify({ passed: true, checks: checks.length, output }));

@@ -32,7 +32,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
+import { useVisibleEffect } from "../../platform/visibility";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { CatalogWorkspace, CatalogSessionProjection } from "@zotigo/shared/zotigod";
@@ -69,7 +70,7 @@ const indent = 20;
 function RunningIndicator() {
   useLocale();
   const rotation = useRef(new Animated.Value(0)).current;
-  useFocusEffect(
+  useVisibleEffect(
     useCallback(() => {
       rotation.setValue(0);
       const animation = Animated.loop(
