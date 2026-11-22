@@ -316,6 +316,8 @@ export interface ClientApi {
   closeWindow?: () => Promise<void>;
   uploadAttachment(sessionId: string, file: MessageFileInput): Promise<string>;
 	listChannelConnections(): Promise<import("./channels").ChannelConnection[]>;
+  getUsageActivity(query: import("./usage").UsageQuery): Promise<import("./usage").UsageResult<import("./usage").UsageActivity>>;
+  getUsageSessions(query: import("./usage").UsageSessionsQuery): Promise<import("./usage").UsageResult<import("./usage").UsageSessionPage>>;
 	createChannelConnection(input: import("./channels").ChannelConnectionInput): Promise<import("./channels").ChannelConnection>;
 	updateChannelConnection(id: string, input: import("./channels").ChannelConnectionInput): Promise<import("./channels").ChannelConnection>;
 	deleteChannelConnection(id: string): Promise<void>;

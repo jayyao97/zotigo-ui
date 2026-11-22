@@ -14,7 +14,8 @@ import { TranslationProfileSettings } from "./TranslationProfileSettings";
 import type { AgentCatalogEntry } from "../shared/zotigod";
 import { ModelFavoritesProvider } from "./modelFavorites";
 import { FavoriteModelSettings } from "./FavoriteModelSettings";
-import { ArrowLeft, Settings, Server, RefreshCw } from "lucide-react";
+import { ArrowLeft, Settings, Server, RefreshCw, ChartColumn } from "lucide-react";
+import { UsageSettings } from "./usage/UsageSettings";
 import type { ThinkingDisplayMode } from "./thinkingDisplay";
 
 export function SettingsPage({
@@ -40,13 +41,14 @@ export function SettingsPage({
   thinkingDisplay,
   onThinkingDisplayChange,
   onManageHosts,
+  onOpenSession,
   onBack,
 }: {
   activityFilterSupported?: boolean;
   activityChannelMode?: ChannelActivityMode;
   onActivityChannelModeChange?: (mode: ChannelActivityMode) => void;
   activeHost?: string;
-  initialPage?: "general" | "models";
+  initialPage?: "general" | "models" | "usage";
   hostName: string;
   hosts: HostProfile[];
   updateApi: ClientApi;
@@ -64,6 +66,7 @@ export function SettingsPage({
   thinkingDisplay: ThinkingDisplayMode;
   onThinkingDisplayChange: (mode: ThinkingDisplayMode) => void;
   onManageHosts: () => void;
+  onOpenSession?: (id: string) => void;
   onBack: () => void;
 }) {
   useEffect(() => {
@@ -83,7 +86,7 @@ export function SettingsPage({
   const [modelEditing, setModelEditing] = useState(false);
   const [profileRevision, setProfileRevision] = useState(0);
   useEffect(() => { if (modelHost !== requestedModelHost) setModelHost(modelHost); }, [modelHost, requestedModelHost]);
-  const [page, setPage] = useState<"general" | "models" | "updates">(initialPage);
+  const [page, setPage] = useState<"general" | "models" | "usage" | "updates">(initialPage);
   const targetHostName = modelHost === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : hosts.find(host => host.id === modelHost)?.name ?? modelHost;
   return (
     <main className="settings-page">
@@ -99,13 +102,14 @@ export function SettingsPage({
             <span>{t("settingsPage.general")}</span>
           </button>
           <button type="button" className={`settings-nav-item ${page === "models" ? "is-active" : ""}`} aria-current={page === "models" ? "page" : undefined} onClick={() => setPage("models")}><Server size={16}/><span>{t("models.title")}</span></button>
+          <button type="button" className={`settings-nav-item ${page === "usage" ? "is-active" : ""}`} aria-current={page === "usage" ? "page" : undefined} onClick={() => setPage("usage")}><ChartColumn size={16}/><span>{t("usage.title")}</span></button>
           <button type="button" className={`settings-nav-item ${page === "updates" ? "is-active" : ""}`} aria-current={page === "updates" ? "page" : undefined} onClick={() => setPage("updates")}><RefreshCw size={16}/><span>{t("updates.title")}</span></button>
         </nav>
       </aside>
 
       <section className="settings-main">
         <div className="settings-content">
-          {page === "updates" ? <UpdateSettings api={updateApi} hosts={hosts}/> : page === "models" ? <>
+          {page === "updates" ? <UpdateSettings api={updateApi} hosts={hosts}/> : page === "usage" ? <UsageSettings hostId={activeHost} hostName={hostName} onOpenSession={onOpenSession} /> : page === "models" ? <>
             <label className="settings-row settings-host-picker"><span><strong>{t("settings.targetHost")}</strong><small>{hosts.find(host => host.id === modelHost)?.baseUrl}</small></span>
               <select aria-label={t("settings.targetHost")} value={modelHost} disabled={modelEditing} onChange={event => setModelHost(event.target.value)}>
                 {hosts.map(host => <option key={host.id} value={host.id}>{host.id === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : host.name}</option>)}

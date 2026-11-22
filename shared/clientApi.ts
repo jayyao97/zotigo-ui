@@ -19,6 +19,8 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     translateSelection: (id, text, language, profile) => invoke("sessions:translate", id, text, language, profile),
     uploadAttachment: (sessionId, file) => invoke("desktop:upload-attachment", sessionId, file),
 	listChannelConnections: () => invoke("channels:list-connections"),
+    getUsageActivity: (query) => invoke("usage:activity", query),
+    getUsageSessions: (query) => invoke("usage:sessions", query),
 	createChannelConnection: (input) => invoke("channels:create-connection", input),
 	updateChannelConnection: (id, input) => invoke("channels:update-connection", id, input),
 	deleteChannelConnection: (id) => invoke("channels:delete-connection", id),

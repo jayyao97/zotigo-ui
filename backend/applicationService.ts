@@ -1,5 +1,7 @@
 import { setCatalogSelection } from "./preferencesStore";
-import { queryCatalogSessions } from "./zotigod";
+import { queryCatalogSessions, getUsageActivity } from "./zotigod";
+import { getUsageSessions } from "./usageService";
+import { parseUsageQuery, parseUsageSessionsQuery } from "../shared/usage";
 import { parseMessageFiles, type MessageFileInput } from "../shared/messageFiles";
 import { createFileEvents } from "./fileEvents";
 import { parseModelSettingsChange } from "../shared/modelSettings";
@@ -197,6 +199,8 @@ addWorkspaceSourceToCatalog,
   handle("daemon:get-agents", (hostId) => settingsHost(hostId, getAgents));
   handle("daemon:prepare-codex", (hostId) => settingsHost(hostId, prepareCodex));
 	handle("channels:list-connections", () => listChannelConnections());
+  handle("usage:activity", (query) => getUsageActivity(parseUsageQuery(query)));
+  handle("usage:sessions", (query) => getUsageSessions(parseUsageSessionsQuery(query)));
 	handle("channels:create-connection", (input) => createChannelConnection(assertChannelConnectionInput(input)));
 	handle("channels:update-connection", (id, input) => updateChannelConnection(assertNonEmptyString(id, "id"), assertChannelConnectionInput(input)));
 	handle("channels:delete-connection", (id) => deleteChannelConnection(assertNonEmptyString(id, "id")));
