@@ -8,7 +8,7 @@ import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import SquarePen from "lucide-react-native/icons/square-pen";
 import MessageSquare from "lucide-react-native/icons/message-square";
 import Settings from "lucide-react-native/icons/settings";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CommonActions,
   DarkTheme,
@@ -28,6 +28,7 @@ import { StatusBar } from "expo-status-bar";
 import type { DaemonClient } from "./core/client";
 import type { Routes } from "./navigation";
 import { DaemonContext } from "./platform/context";
+import { DeviceSwitchContext, useDeviceSwitchRoot } from "./platform/useDeviceSwitch";
 import { IconButton, Action, EmptyState, colors } from "./components/ui";
 import { HostPicker } from "./components/HostPicker";
 import { HostsScreen } from "./screens/HostsScreen";
@@ -174,8 +175,13 @@ export default function App() {
   useEffect(() => { void initializeLanguage().catch(() => {}); }, []);
   useLocale();
   const { width } = useWindowDimensions();
-  const wide = width >= 768;
+  // Hysteresis: free resizing in Stage Manager or Split View near the
+  // threshold must not flip the sidebar (and remount it) on every step.
+  const wideRef = useRef(width >= 768);
+  if (wideRef.current ? width < 720 : width >= 768) wideRef.current = !wideRef.current;
+  const wide = wideRef.current;
   const [client, setClient] = useState<DaemonClient | null>(null);
+  const deviceSwitch = useDeviceSwitchRoot();
   const sidebar = useSidebarWidth();
   const [dragWidth, setDragWidth] = useState<number>();
   useEffect(() => setDragWidth(undefined), [sidebar.width]);
@@ -191,6 +197,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
+      <DeviceSwitchContext.Provider value={deviceSwitch}>
       <DaemonContext.Provider value={client}>
         <NavigationContainer
           key={client?.connection.id ?? "no-device"}
@@ -397,6 +404,7 @@ export default function App() {
           </Stack.Navigator>
         </NavigationContainer>
       </DaemonContext.Provider>
+      </DeviceSwitchContext.Provider>
     </SafeAreaProvider>
   );
 }

@@ -1,6 +1,6 @@
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import Plus from "lucide-react-native/icons/plus";
@@ -34,32 +34,40 @@ export function HostPicker({
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const [{ connecting, failed }, switcher] = useDeviceSwitch();
-  const generation = useRef(0);
   const attempted = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // Refreshes the list when the screen comes back (a device may have been
+  // added). It never cancels a switch: the iPad sidebar re-runs this on every
+  // navigation, and the switch is app-wide, so leaving must not drop it.
   useFocusEffect(
     useCallback(() => {
-      const ticket = ++generation.current;
+      let active = true;
       hosts
         .list()
         .then(async (value) => {
-          if (ticket !== generation.current) return;
+          if (!active) return;
           setList(value);
           setReady(true);
-          if (!client && !attempted.current) {
+          if (!client && !attempted.current && !switcher.state.connecting) {
             attempted.current = true;
             const last = await storage.get(lastHostKey);
             const host =
               value.find((h) => h.id === last) ??
               (value.length === 1 ? value[0] : undefined);
-            if (host && ticket === generation.current) void switcher.select(host, onConnect);
+            if (host && mounted.current) void switcher.select(host, onConnect);
           }
         })
         .catch((error) => {
-          if (ticket === generation.current) setError(errorText(error));
+          if (active) setError(errorText(error));
         });
       return () => {
-        generation.current++;
-        switcher.cancel();
+        active = false;
       };
     }, []),
   );
@@ -88,7 +96,7 @@ export function HostPicker({
         }
         // Rows stay enabled while another device is connecting: choosing one
         // abandons that attempt, so an unreachable device never traps the user.
-        onPress={() => (selected ? close() : void switcher.select(host, onConnect))}
+        onPress={() => (selected ? close() : connecting?.id === host.id ? undefined : void switcher.select(host, onConnect))}
       />
     );
   });

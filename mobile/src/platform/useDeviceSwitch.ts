@@ -1,13 +1,13 @@
 import { t } from "@zotigo/shared/i18n/index";
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { DeviceSwitch, DeviceUnreachable, type SwitchState } from "../core/deviceSwitch";
 import { createDaemon } from "./client";
 import { hosts, storage } from "./storage";
 
 export const lastHostKey = "zotigo.mobile.lastHost";
 
-/** The one device-switching flow, shared by the Home switcher and the Devices screen. */
-export function useDeviceSwitch() {
+/** Creates the app's one device-switching flow. Only `App` calls this. */
+export function useDeviceSwitchRoot() {
   const [state, setState] = useState<SwitchState>({});
   const [switcher] = useState(
     () =>
@@ -21,6 +21,19 @@ export function useDeviceSwitch() {
       ),
   );
   return [state, switcher] as const;
+}
+
+/**
+ * One flow for the whole app, so the Home switcher, the iPad sidebar and the
+ * Devices screen (which can be on screen together on iPad) share it and the
+ * newest choice wins wherever it was made.
+ */
+export const DeviceSwitchContext = createContext<ReturnType<typeof useDeviceSwitchRoot> | null>(null);
+
+export function useDeviceSwitch() {
+  const value = useContext(DeviceSwitchContext);
+  if (!value) throw new Error("DeviceSwitchContext is missing.");
+  return value;
 }
 
 /** Daemon and storage errors keep their own text; only "no answer" is ours to word. */
