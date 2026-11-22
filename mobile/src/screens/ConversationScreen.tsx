@@ -60,6 +60,7 @@ import {
 } from "../components/ui";
 import { useLayoutTransition } from "../components/useLayoutTransition";
 import { emptyDraft } from "../core/composer";
+import { ForkRequests } from "../core/forkRequests";
 import { Timeline, activeTurn } from "../core/timeline";
 import { timelineRows, type TimelineRow } from "../core/timelineRows";
 import { retainExpandedTimelineGroups } from "../core/timelineScroll";
@@ -352,16 +353,11 @@ function ConversationContent() {
     () => sessionTurnActions(state.items),
     [state.items],
   );
-  const forkRequests = useRef(new Map<string, string>());
+  const forks = useMemo(() => new ForkRequests(randomUUID), [client, id]);
   const forkFrom = useCallback(
     (turnId: string) => {
       void run(async () => {
-        let request = forkRequests.current.get(turnId);
-        if (!request) {
-          request = randomUUID();
-          forkRequests.current.set(turnId, request);
-        }
-        const session = await client.fork(id, request, turnId);
+        const session = await forks.fork(turnId, (request) => client.fork(id, request, turnId));
         if (focused.current && !client.signal.aborted)
           nav.push("Conversation", {
             id: session.id,
@@ -369,7 +365,7 @@ function ConversationContent() {
           });
       });
     },
-    [client, id, title],
+    [client, forks, id, title],
   );
 
   const openFile = useCallback(
@@ -803,6 +799,7 @@ function ConversationContent() {
           setOptionPane(undefined);
           nav.navigate("Profiles");
         }}
+        onFork={() => forks.fork(undefined, (request) => client.fork(id, request))}
         onForked={(session) => {
           if (!focused.current || client.signal.aborted) return;
           setOptionPane(undefined);

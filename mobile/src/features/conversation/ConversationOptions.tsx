@@ -4,7 +4,6 @@ import type {
   ProfilesResponse,
   ZotigoSession,
 } from "@zotigo/shared/zotigod";
-import { randomUUID } from "expo-crypto";
 import { useEffect, useState, type RefObject } from "react";
 import { Text, View } from "react-native";
 import { BottomSheet } from "../../components/BottomSheet";
@@ -43,6 +42,7 @@ export function ConversationOptions({
   onReadState,
   onOpenFiles,
   onOpenProfiles,
+  onFork,
   onForked,
   onArchived,
 }: {
@@ -68,6 +68,8 @@ export function ConversationOptions({
   onReadState: (version: number | null) => Promise<unknown>;
   onOpenFiles: () => void;
   onOpenProfiles: () => void;
+  /** Forks the whole conversation; a retry after an uncertain failure reuses its request. */
+  onFork: () => Promise<{ id: string }>;
   onForked: (session: { id: string }) => void;
   onArchived: () => void;
 }) {
@@ -190,7 +192,7 @@ export function ConversationOptions({
           onFiles={onOpenFiles}
           onNotifications={() => onPane("notifications")}
           onContext={() => onPane("context")}
-          onFork={() => void run(async () => onForked(await client.fork(id, randomUUID())))}
+          onFork={() => void run(async () => onForked(await onFork()))}
           onReadState={() => {
             const read = session?.read_state;
             if (read) void run(() => onReadState(read.unread ? read.version : null));
