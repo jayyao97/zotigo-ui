@@ -6,7 +6,8 @@
     "modules": [
       "SelectableTextModule",
       "SkillInputModule",
-      "KeyboardInsetModule"
+      "KeyboardInsetModule",
+      "BackgroundTaskModule"
     ]
   }
 }

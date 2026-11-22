@@ -21,6 +21,7 @@ import {
   submissionAttempt,
   prepareAttachments,
 } from "../core/composer";
+import { finishInBackground } from "../platform/backgroundTask";
 import { storage } from "../platform/storage";
 import { compatibleReasoningEffort } from "@zotigo/shared/modelSelection";
 import { useEffect, useRef, useState } from "react";
@@ -321,17 +322,20 @@ export function NewSessionScreen() {
       const attempt = submissionAttempt({ draft }, randomUUID(), false);
       await composer.write({ draft, attempt });
       try {
-        await client.send(
-          session.id,
-          {
-            text: attempt.text,
-            skills: attempt.skills,
-            images: attempt.images,
-            client_message_id: attempt.client_message_id,
-          },
-          false,
-        );
-        await composer.write({ draft: emptyDraft() });
+        // Leaving the app right after Create must not cut the first message off.
+        await finishInBackground("send-message", async () => {
+          await client.send(
+            session.id,
+            {
+              text: attempt.text,
+              skills: attempt.skills,
+              images: attempt.images,
+              client_message_id: attempt.client_message_id,
+            },
+            false,
+          );
+          await composer.write({ draft: emptyDraft() });
+        });
       } catch (e) {
         Alert.alert(
           t("mobile.sessionCreated"),

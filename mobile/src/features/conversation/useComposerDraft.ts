@@ -28,6 +28,7 @@ import {
 import type { ConversationReference } from "../../core/conversationReferences";
 import { pickedImageInput } from "../../core/imageInput";
 import { activeTurn, type Timeline } from "../../core/timeline";
+import { finishInBackground } from "../../platform/backgroundTask";
 import { pickAttachments } from "../../platform/pickAttachments";
 import { storage } from "../../platform/storage";
 
@@ -303,7 +304,9 @@ export function useComposerDraft({
     update,
     addReference,
     /** Send the current draft, or retry the persisted attempt. Single-flight per session. */
-    submit: (mode: "queue" | "steering") => composer.submit(() => sendRequest(mode)),
+    // Leaving the app right after Send must not cut the request off.
+    submit: (mode: "queue" | "steering") =>
+      composer.submit(() => finishInBackground("send-message", () => sendRequest(mode))),
     attachImages,
     attachFiles,
     promptPreviews,

@@ -45,7 +45,7 @@ Device switching unmounts the host-scoped navigation stack and aborts its networ
 - `core/deviceSwitch.ts`: the single device-switching flow (newest choice wins, bounded wait, abandoned connections disposed); `platform/useDeviceSwitch.ts` binds it to storage and React.
 - `core/hosts.ts`: serialized registry updates; metadata in AsyncStorage, credentials in device-only Keychain via SecureStore. Missing secret is an error, never an anonymous fallback.
 - `core/timeline.ts`: durable items authoritative; cursor advances only for durable SSE items. Initial recent history then stream after max sequence. Backfill through current turn boundary recovers approvals outside recent page. Reconnect drops volatile previews, replays durable sequence, dedupes. Focus/AppState own stream lifetime.
-- `platform/`: Expo streaming fetch and storage adapters. `screens/` and `features/`: navigation and user interaction; no Node or filesystem assumptions.
+- `platform/`: Expo streaming fetch and storage adapters. `platform/backgroundTask` wraps a send in an iOS background task (native `ZotigoBackgroundTask` in `modules/selectable-text/ios/`), so leaving the app right after Send does not cut the request off; iOS grants about 30 seconds, after which an unfinished send shows as unconfirmed with a manual retry. `screens/` and `features/`: navigation and user interaction; no Node or filesystem assumptions.
 - Existing shared business rules reused without importing desktop renderer. Don't promote speculative shared application frameworks before there are real cross-platform callers.
 
 ## Performance
