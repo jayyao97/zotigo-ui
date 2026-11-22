@@ -745,3 +745,59 @@ test("switching back shows only that host's cached sidebar while its refresh is 
     discardHostVolatileState(); restore();
   }
 });
+
+test("a session opened from Usage loads it, and a later sidebar choice wins over a slow load", async () => {
+  const restore = installDom();
+  // Revealing the opened session in the sidebar uses CSS.escape, which jsdom lacks.
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: { escape: (value: string) => value } });
+  const now = new Date().toISOString();
+  const row = (id: string) => ({ id, title: `Session ${id}`, project_id: null, workspace_id: null, created_at: now, updated_at: now });
+  const client = hostClient(false, { ...emptyState, sessionQueryVersion: 1, conversations: [row("b")], bindings: [{ conversation_id: "b", daemon_session_id: "b", created_at: now }] });
+  const pending = new Map<string, () => void>();
+  const failing = new Map<string, () => void>();
+  client.api.querySessions = query => new Promise((resolve, reject) => {
+    // Sidebar pages list b; a, c and d are only reachable by id and load slowly.
+    const id = query.ids?.[0] ?? "b";
+    const page = { conversations: [row(id)], bindings: [{ conversation_id: id, daemon_session_id: id, created_at: now }], sessions: [] };
+    if (id === "b") resolve(page); else { pending.set(id, () => resolve(page)); failing.set(id, () => reject(new Error(`load ${id} failed`))); }
+  });
+  const totals = { total: 10, input: 10, cacheRead: 0, cacheWrite: 0, output: 0, cacheInput: 0, turns: 1 };
+  client.api.getUsageActivity = async () => ({ supported: true, data: { trackingSince: now, range: totals, allTime: totals, byModel: [], days: [], peakDay: null, currentStreakDays: 0, longestStreakDays: 0 } });
+  client.api.getUsageSessions = async () => ({ supported: true, data: { sessions: ["a", "c", "d", "a2"].map(id => ({ ...totals, sessionId: id, title: `Session ${id}`, availability: "available" as const, models: [], channelTurns: 0, lastCompletedAt: now })) } });
+  const root = await mountHostShell(client.api);
+  const openFromUsage = async (id: string) => {
+    await act(async () => click(document.querySelector(".brand-button")!));
+    await act(async () => click([...document.querySelectorAll(".host-menu-popover button")].at(-1)!));
+    await act(async () => click([...document.querySelectorAll(".settings-nav-item")].find(button => button.textContent === "Usage")!));
+    await flush();
+    await act(async () => click([...document.querySelectorAll("button.usage-session-row")].find(button => button.textContent?.includes(`Session ${id}`))!));
+    await flush();
+  };
+  const selected = () => document.querySelector(".sidebar-session.selected")?.textContent ?? "";
+  try {
+    await openFromUsage("a");
+    assert.equal(document.querySelector(".settings-page"), null, "returns to the workbench");
+    await act(async () => pending.get("a")!()); await flush();
+    assert.match(selected(), /Session a/);
+
+    await openFromUsage("c");
+    await act(async () => click([...document.querySelectorAll(".sidebar-session > button")].find(button => button.textContent?.includes("Session b"))!));
+    await flush();
+    assert.match(selected(), /Session b/);
+    await act(async () => pending.get("c")!()); await flush();
+    assert.match(selected(), /Session b/, "the slow load must not take over the newer choice");
+
+    // A late failure of a superseded load does not show its error on the newer choice.
+    await openFromUsage("d");
+    await act(async () => click([...document.querySelectorAll(".sidebar-session > button")].find(button => button.textContent?.includes("Session b"))!));
+    await flush();
+    await act(async () => failing.get("d")!()); await flush();
+    assert.match(selected(), /Session b/);
+    assert.doesNotMatch(document.body.textContent ?? "", /load d failed/);
+
+    // A failure of the current load is still reported.
+    await openFromUsage("a2");
+    await act(async () => failing.get("a2")!()); await flush();
+    assert.match(document.body.textContent ?? "", /load a2 failed/);
+  } finally { await act(async () => root.unmount()); Reflect.deleteProperty(globalThis, "CSS"); restore(); }
+});

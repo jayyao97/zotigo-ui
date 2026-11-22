@@ -15,6 +15,7 @@ Both clients manage a running `zotigod` daemon through public HTTP APIs only. Th
 - `/files/capabilities`, `/files/open`, `/files/save`, and `/files/list` for remote workspace text files; `/files/upload` for message attachments
 - `/catalog/snapshot`, `/catalog/sessions`, and `/catalog/navigation` (with `/order`, `/pin`, and `/import`)
 - `/channels/connections` and `/channels/conversations`
+- `/usage/activity` and `/usage/sessions`
 - `/updates`
 - `/sessions` and public session actions, items, events, approvals, images, queue, and organization endpoints
 

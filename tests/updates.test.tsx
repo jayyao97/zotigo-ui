@@ -57,7 +57,7 @@ test("settings select model hosts independently and run an update from one fixed
   try {
     await act(async () => render());
     assert.deepEqual(modelHosts,["local"]);
-    assert.deepEqual([...document.querySelectorAll("nav button")].map(b=>b.textContent), ["General","Models","Versions and updates"]);
+    assert.deepEqual([...document.querySelectorAll("nav button")].map(b=>b.textContent), ["General","Models","Usage","Versions and updates"]);
     const picker = document.querySelector<HTMLSelectElement>('[aria-label="Host to configure"]')!;
     await act(async () => {picker.value="remote";picker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
     assert.deepEqual(modelHosts,["local","remote"]);
@@ -78,7 +78,7 @@ test("settings select model hosts independently and run an update from one fixed
     await act(async () => render([...hosts,{id:"new",name:"New host",baseUrl:"https://new.test",hasToken:false}]));
     assert.equal(picker.options.length,3,"host management changes are reflected without reopening settings");
     await act(async () => render());
-    await act(async () => (document.querySelectorAll("nav button")[2] as HTMLButtonElement).click());
+    await act(async () => (document.querySelectorAll("nav button")[3] as HTMLButtonElement).click());
     const targetPicker = document.querySelector<HTMLSelectElement>('[aria-label="Update target"]')!;
     assert.equal(targetPicker.options.length,2);
     await act(async()=>{targetPicker.value="remote";targetPicker.dispatchEvent(new dom.window.Event("change",{bubbles:true}));});
@@ -96,7 +96,7 @@ test("settings select model hosts independently and run an update from one fixed
     assert.equal(document.querySelector('[aria-label="Update target"]'), null);
     workbenchCurrent = false; // Switching the workbench host invalidates its API, not the explicit update destination.
     await act(async () => {mock.timers.tick(2200); await new Promise(resolve=>setImmediate(resolve));});
-    await act(async () => (document.querySelectorAll("nav button")[2] as HTMLButtonElement).click());
+    await act(async () => (document.querySelectorAll("nav button")[3] as HTMLButtonElement).click());
     assert.ok(applied);
     assert.deepEqual(updates.filter(([,action])=>action==="prepare" || action==="apply"),[["daemon","prepare","remote"],["daemon","apply","remote"]]);
     assert.equal(document.querySelectorAll(".settings-section")[2].querySelector("button")!.textContent,"Check for updates");

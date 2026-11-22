@@ -4,6 +4,7 @@ import { useVisibleWorkspaces } from "./useVisibleWorkspaces";
 import { useSessionPages } from "./useSessionPages";
 import type { ChannelActivityMode } from "./activitySettings";
 import { loadSessionIntoState, mergeSessionPage, mergeCatalogStructure } from "../shared/sessionPages";
+import { discardUsageCache } from "./usage/useUsageData";
 import { observeLongTasks, traceInteraction, traceNextPaint } from "./performanceDiagnostics";
 import { LayoutGrid } from "lucide-react";
 import { WorkspacePanelHome } from "./WorkspacePanelHome";
@@ -241,6 +242,7 @@ const volatileStateByHost = new Map<string, HostVolatileState>();
 let volatileStateGeneration = 0;
 
 export function discardHostVolatileState(clientScope?: string): void {
+  discardUsageCache(clientScope);
   if (clientScope === undefined) volatileStateGeneration++;
   const states = clientScope === undefined
     ? [...volatileStateByHost.entries()]
@@ -263,7 +265,7 @@ const emptyDesktopState: DesktopState = {
   selectedConversationId: null,
 };
 
-export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false }: { onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
+export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false, openSessionRequest }: { openSessionRequest?: { id: string; nonce: number }; onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   useLocale();
   const [queueRefresh, setQueueRefresh] = useState(0);
   const submitModeRef = useRef<SendMode | null>(null);
@@ -748,7 +750,16 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     const selector = reveal.kind === "session" ? `[data-session-id="${CSS.escape(reveal.id)}"]` : `[data-workspace-id="${CSS.escape(reveal.id)}"] .workspace-row`;
     let cancelled = false;
     const frame = requestAnimationFrame(() => {
-      const scroll = () => navigation.querySelector(selector)?.scrollIntoView({ block: "nearest" });
+      const scroll = () => {
+        const row = navigation.querySelector(selector);
+        if (!row) return;
+        const top = navigation.scrollTop + row.getBoundingClientRect().top - navigation.getBoundingClientRect().top;
+        // Give even the final row enough room to reach the top of the sidebar.
+        const lastSection = navigation.lastElementChild;
+        const remaining = (lastSection?.getBoundingClientRect().bottom ?? 0) - row.getBoundingClientRect().top;
+        navigation.style.setProperty("--search-reveal-space", `${Math.max(0, Math.ceil(navigation.clientHeight - remaining))}px`);
+        navigation.scrollTop = top;
+      };
       scroll();
       // Adjacent branches can also be closing, moving the target after the first scroll.
       const transitions = (navigation.getAnimations?.({ subtree: true }) ?? [])
@@ -759,7 +770,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         });
       }
     });
-    return () => { cancelled = true; cancelAnimationFrame(frame); };
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      navigation.style.removeProperty("--search-reveal-space");
+    };
   }, [reveal]);
   const actionableSessionItems = useMemo(
     () => authoritativeSessionItems(
@@ -1749,13 +1764,33 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     void selectWorkspace(workspace.id);
   }
 
-  function revealSession(id: string) {
+  function revealSession(id: string, sourceState = desktopState) {
     showRecentSessions(false);
     setRepositoriesOpen(false);
     setProjectOverviewId(null);
-    selectConversation(id);
+    selectConversation(id, sourceState);
     setSearchTarget({ kind: "session", id });
   }
+
+  // Other surfaces (Usage settings) open sessions that may be outside the loaded pages.
+  // A remount after a host switch must not replay the previous host's request.
+  const handledOpenSessionRequest = useRef(openSessionRequest?.nonce ?? null);
+  useEffect(() => {
+    if (!openSessionRequest || handledOpenSessionRequest.current === openSessionRequest.nonce) return;
+    handledOpenSessionRequest.current = openSessionRequest.nonce;
+    const { id, nonce } = openSessionRequest;
+    // Any navigation while the session loads (a sidebar click, recent
+    // sessions, Channels) wins over this request.
+    const revision = navigationRevision.current;
+    const current = () => handledOpenSessionRequest.current === nonce && navigationRevision.current === revision;
+    void loadSessionIntoState(desktopState, id, client.querySessions).then(({ state, page }) => {
+      if (!current()) return;
+      if (page) { applyDesktopState(state); mergeLoadedSessions(page.sessions); }
+      const binding = state.bindings.find((value) => value.daemon_session_id === id);
+      if (!binding || !state.conversations.some((value) => value.id === binding.conversation_id)) throw new Error(t("app.sessionNotInCatalog"));
+      revealSession(binding.conversation_id, state);
+    }).catch((error: unknown) => { if (current()) setMessage(errorMessage(error)); });
+  }, [openSessionRequest]);
 
   async function openNewConversationForWorkspace(workspace: DesktopWorkspace) {
     leaveChannelsImmediately();

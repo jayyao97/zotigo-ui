@@ -63,6 +63,7 @@ export function HostShell() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [surface, setSurface] = useState<"workbench" | "settings">("workbench");
+  const [openSessionRequest, setOpenSessionRequest] = useState<{ id: string; nonce: number } | undefined>();
   const [modelSetup, setModelSetup] = useState(false);
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const [translationLanguage, setTranslationLanguage] = useTranslationLanguage(selected);
@@ -185,7 +186,7 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ToastProvider key={selected}><ModelFavoritesProvider host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App onSessionQuerySupport={onSessionQuerySupport} activityChannelMode={activityChannelMode} onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} />
+          <App onSessionQuerySupport={onSessionQuerySupport} activityChannelMode={activityChannelMode} onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} openSessionRequest={openSessionRequest} />
         </div>
         {surface === "settings" && <SettingsPage
           activityFilterSupported={querySupport?.host === selected ? querySupport.supported : undefined} activityChannelMode={activityChannelMode} onActivityChannelModeChange={setActivityChannelMode}
@@ -209,6 +210,7 @@ export function HostShell() {
           onTranslationProfileChange={setTranslationProfile}
           onThinkingDisplayChange={updateThinkingDisplay}
           onManageHosts={openHostSettings}
+          onOpenSession={(id) => { setOpenSessionRequest((current) => ({ id, nonce: (current?.nonce ?? 0) + 1 })); setModelSetup(false); setSurface("workbench"); }}
           onBack={() => { setModelSetup(false); setSurface("workbench"); }}
         />}
       </ModelFavoritesProvider></ToastProvider> : <main className="web-login"><p>{error || t("hostShell.loadingHosts")}</p></main>}

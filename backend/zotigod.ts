@@ -109,3 +109,4 @@ export {
   saveDaemonFile,
   listDaemonDirectory,
 } from "./daemon/hostServices";
+export { getUsageActivity, getUsageSessionRows } from "./daemon/usage";

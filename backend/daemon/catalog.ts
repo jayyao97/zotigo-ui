@@ -430,9 +430,11 @@ function parseWorkspaceDeletePreview(value: unknown, context: string): Workspace
   };
 }
 
-export async function queryCatalogSessions(input: import("../../shared/clientTypes").SessionQuery) {
+// includeArchived is not part of SessionQuery: the sidebar never lists
+// archived sessions, and renderer queries must not opt into them.
+export async function queryCatalogSessions(input: import("../../shared/clientTypes").SessionQuery, options: { includeArchived?: boolean } = {}) {
   const params = new URLSearchParams({page: "true", limit: String(input.limit ?? 50)});
-  for (const [key, value] of Object.entries({workspace_id: input.workspaceId, project_id: input.projectId, ungrouped: input.ungrouped, pinned: input.pinned, unread: input.unread, since: input.since, channel: input.channel, q: input.query, cursor: input.cursor, ids: input.ids?.join(","), sync_codex: input.syncCodex})) {
+  for (const [key, value] of Object.entries({workspace_id: input.workspaceId, project_id: input.projectId, ungrouped: input.ungrouped, pinned: input.pinned, unread: input.unread, since: input.since, channel: input.channel, q: input.query, cursor: input.cursor, ids: input.ids?.join(","), include_archived: options.includeArchived || undefined, sync_codex: input.syncCodex})) {
     if (value !== undefined) params.set(key, String(value));
   }
   const record = expectRecord(await requestJSON(`/catalog/sessions?${params}`), "session page");
