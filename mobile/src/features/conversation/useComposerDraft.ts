@@ -67,6 +67,10 @@ export function useComposerDraft({
   const draftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     let active = true;
+    // A new store (new credentials for the same device) reads its own draft;
+    // edits wait for it like on first load.
+    loadedRef.current = false;
+    setLoaded(false);
     composer
       .read()
       .then((value) => {

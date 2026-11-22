@@ -353,7 +353,9 @@ function ConversationContent() {
     () => sessionTurnActions(state.items),
     [state.items],
   );
-  const forks = useMemo(() => new ForkRequests(randomUUID), [client, id]);
+  // Keyed by the device, not the connection: new credentials for the same
+  // device must not lose the ID a retry needs.
+  const forks = useMemo(() => new ForkRequests(randomUUID), [client.connection.id, id]);
   const forkFrom = useCallback(
     (turnId: string) => {
       void run(async () => {

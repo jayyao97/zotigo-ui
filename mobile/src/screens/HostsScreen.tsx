@@ -81,11 +81,12 @@ export function HostsScreen({
           setReady(true);
         }
       });
+    // The switch is app-wide: an attempt started here keeps going after the
+    // screen closes and is reported wherever devices are listed.
     return () => {
       alive = false;
       mounted.current = false;
       pending.current?.dispose();
-      switcher.cancel();
     };
   }, []);
   async function run(action: () => Promise<void>) {
@@ -148,7 +149,7 @@ export function HostsScreen({
                     // Not disabled while another device is connecting: choosing
                     // one abandons that attempt (see DeviceSwitch).
                     onPress={() =>
-                      host.id === currentId ? switcher.cancel() : void switcher.select(host, onConnect)
+                      host.id === currentId ? switcher.cancel() : connecting?.id === host.id ? undefined : void switcher.select(host, onConnect)
                     }
                     right={
                       connecting?.id === host.id ? (
@@ -237,25 +238,36 @@ export function HostsScreen({
                     void run(async () => {
                       // Throws for an invalid address; `run` shows the message.
                       const sameDevice = !!editing && editing.baseUrl === normalizeAddress(address);
-                      await hosts.save(
-                        {
-                          id: sameDevice ? editing.id : randomUUID(),
-                          name,
-                          baseUrl: address,
-                        },
-                        token,
-                      );
-                      const next = await hosts.list();
-                      setList(next);
+                      const host = {
+                        id: sameDevice ? editing.id : randomUUID(),
+                        name,
+                        baseUrl: address,
+                      };
+                      if (sameDevice && editing.id === currentId) {
+                        // The connection in use is immutable, so new details
+                        // need a new one. Like any switch, the current one
+                        // stays until the new details answer, and they are
+                        // saved only then: a wrong token is reported here and
+                        // never replaces the working one, now or next launch.
+                        const connection = {
+                          id: editing.id,
+                          name: name.trim(),
+                          baseUrl: normalizeAddress(address),
+                          token: token.trim(),
+                        };
+                        close();
+                        void switcher.select(connection, onConnect, {
+                          connection,
+                          accept: async () => {
+                            await hosts.save(host, token);
+                            if (mounted.current) setList(await hosts.list());
+                          },
+                        });
+                        return;
+                      }
+                      await hosts.save(host, token);
+                      setList(await hosts.list());
                       close();
-                      // The connection is immutable, so new details need a new
-                      // one. Like any switch, the current connection stays
-                      // until the new one answers; a wrong token is reported
-                      // here and leaves the device usable.
-                      const saved = sameDevice && editing.id === currentId
-                        ? next.find((host) => host.id === editing.id)
-                        : undefined;
-                      if (saved) void switcher.select(saved, onConnect);
                     })
                   }
                 />

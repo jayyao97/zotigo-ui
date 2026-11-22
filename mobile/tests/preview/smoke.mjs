@@ -97,10 +97,14 @@ try {
   await wait(`document.body.innerText.includes('Fixture: daemon token is invalid.')`, 'a wrong token is reported');
   assert.ok(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'Switch device: Home Mac Studio')`), 'the Devices screen stays open');
   await shot('02a-wrong-token');
+  // The wrong token was not stored: the form still holds the working one.
+  await click('Edit Home Mac Studio');
+  await wait(`document.querySelector('[aria-label="Daemon token"]')?.value === 'fixture-token'`, 'a rejected token is not saved');
+  await click('Cancel');
   await click('Edit Home Mac Studio'); await input('Daemon token', 'fixture-token'); await click('Save device');
   await wait(`!document.body.innerText.includes('Fixture: daemon token is invalid.') && !document.body.innerText.includes('Connecting…')`, 'the right token reconnects');
   await bodyIncludes('Choose where you want to work.');
-  checks.push('Editing the current device keeps it connected until the new token answers; a wrong token is reported');
+  checks.push('Editing the current device keeps it connected until the new token answers; a wrong token is reported and not saved');
   await back();
   await back(); await bodyIncludes('Home: Multi-host mobile architecture');
   await click('Settings'); await bodyIncludes('Model profiles');

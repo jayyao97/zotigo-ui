@@ -42,14 +42,57 @@ test("a device that never answers is reported as unreachable instead of waiting 
   await reach(new DaemonClient({ ...home, token: "t" }, async () => ok()), 20);
 });
 
+/** A daemon that checks the token on every path but /health, like zotigod. */
+function daemon(token: string, routes: Record<string, () => Response> = {}) {
+  return async (url: string | URL | Request, init?: RequestInit) => {
+    const path = new URL(String(url)).pathname;
+    if (path === "/health") return ok();
+    if (new Headers(init?.headers).get("Authorization") !== `Bearer ${token}`)
+      return Response.json({ code: "unauthorized", message: "authentication required" }, { status: 401 });
+    return routes[path]?.() ?? Response.json({ code: "not_found", message: "not found" }, { status: 404 });
+  };
+}
+const capabilities = () => Response.json({ code: "ok", data: { read: true, write: true, list: true } });
+
 test("a wrong token fails the reach even though /health is public", async () => {
-  // The daemon answers /health without checking the token.
-  const daemon = async (url: string | URL | Request) =>
-    new URL(String(url)).pathname === "/health"
-      ? ok()
-      : Response.json({ code: "unauthorized", message: "authentication required" }, { status: 401 });
-  const client = new DaemonClient({ ...home, token: "wrong" }, daemon);
+  const client = new DaemonClient({ ...home, token: "wrong" }, daemon("right", { "/files/capabilities": capabilities }));
   await assert.rejects(reach(client, 1000), /authentication required/);
+  await reach(new DaemonClient({ ...home, token: "right" }, daemon("right", { "/files/capabilities": capabilities })), 1000);
+});
+
+test("a daemon too old for the token check is still reached with the right token", async () => {
+  // No /files/capabilities: 404 comes only after the token was accepted.
+  await reach(new DaemonClient({ ...home, token: "right" }, daemon("right")), 1000);
+  await assert.rejects(reach(new DaemonClient({ ...home, token: "wrong" }, daemon("right")), 1000), /authentication required/);
+});
+
+test("new details for a device are accepted only after they answer", async () => {
+  const saved: string[] = [];
+  const connected: string[] = [];
+  const switcher = new DeviceSwitch(
+    {
+      connection: async () => assert.fail("unsaved details are used, not the stored ones"),
+      create: (connection) =>
+        new DaemonClient(connection, daemon("right", { "/files/capabilities": capabilities })),
+      remember: async () => {},
+      timeout: 1000,
+    },
+    () => {},
+  );
+  const attempt = (token: string) =>
+    switcher.select(home, (client) => connected.push(client.connection.token), {
+      connection: { ...home, token },
+      accept: async () => {
+        saved.push(token);
+      },
+    });
+  await attempt("wrong");
+  assert.deepEqual(saved, [], "a wrong token is never saved");
+  assert.deepEqual(connected, []);
+  assert.match(String((switcher.state.failed?.error as Error).message), /authentication required/);
+  await attempt("right");
+  assert.deepEqual(saved, ["right"]);
+  assert.deepEqual(connected, ["right"]);
 });
 
 test("choosing another device abandons one that is still connecting", async () => {
