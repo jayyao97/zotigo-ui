@@ -249,6 +249,22 @@ try {
   assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.takeRequests('/catalog/navigation')`), 0, 'navigating on iPad does not reload the sidebar');
   await shot('13-ipad-sidebar');
   checks.push('iPad sidebar is not reloaded by opening and leaving detail screens');
+  // A change made in a detail screen shows in the sidebar at once.
+  await click('Implement persistent drafts'); await wait(`!!document.querySelector('[aria-label="Message"]')`, 'conversation opens');
+  await click('Conversation details'); await input('Rename conversation', 'Drafts renamed on iPad');
+  await click('Save'); await delay(300); await click('Dismiss sheet');
+  await wait(`[...document.querySelectorAll('[role="button"]')].some(e => e.getBoundingClientRect().left < 400 && e.innerText.startsWith('Drafts renamed on iPad'))`, 'the sidebar shows the new title');
+  checks.push('A rename in a detail screen updates the iPad sidebar without waiting for its poll');
+  // First run on iPad: a new device appears and connects without a restart.
+  await call('Page.navigate', { url: address + (address.includes('?') ? '&' : '?') + 'empty' });
+  await wait(`typeof __ZOTIGO_PREVIEW__ !== 'undefined'`);
+  await click('Add device');
+  await input('Name', 'Home Mac Studio'); await input('Daemon address', 'https://home.fixture.test'); await input('Daemon token', 'fixture-token');
+  await click('Save device');
+  await bodyIncludes('Home: Multi-host mobile architecture');
+  assert.equal(await evaluate(`document.body.innerText.includes('Connect a device')`), false, 'the sidebar no longer offers to add a first device');
+  await shot('14-ipad-first-device');
+  checks.push('First run on iPad: adding a device connects to it and the sidebar shows it');
   assert.deepEqual(runtimeErrors, [], 'No uncaught browser runtime exceptions');
   await fs.writeFile(path.join(output, 'smoke.json'), JSON.stringify({ passed: true, viewport: '393x852 @2', preview: address, checks, screenshots, runtimeErrors, limits: 'React Native Web fixture validation; not native iOS validation.' }, null, 2));
   console.log(JSON.stringify({ passed: true, checks: checks.length, output }));

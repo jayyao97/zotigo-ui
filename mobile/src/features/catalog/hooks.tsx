@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AppState, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { DaemonClient } from "../../core/client";
 import { useLocale } from "../../platform/i18n";
 import { useAlwaysVisible, useVisibleEffect } from "../../platform/visibility";
 import { Action, colors, errorText, space, styles } from "../../components/ui";
@@ -10,7 +11,12 @@ import { Action, colors, errorText, space, styles } from "../../components/ui";
 // Coming back to a page with data refreshes it quietly: the list stays as it is
 // and changes only if the answer differs. Only the first load and pull to
 // refresh show progress.
-export function useCatalogLoad<T>(load: () => Promise<T>, poll = false) {
+export function useCatalogLoad<T>(
+  load: () => Promise<T>,
+  poll = false,
+  /** Refreshes quietly after a change made through this connection. */
+  changes?: DaemonClient,
+) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,8 +27,10 @@ export function useCatalogLoad<T>(load: () => Promise<T>, poll = false) {
   const pending = useRef(0);
   const loaded = useRef(false);
   const refresh = useCallback(
-    async (silent = false) => {
-      if (silent && pending.current === generation.current && pending.current) return;
+    async (silent = false, fresh = false) => {
+      // A poll is skipped while a request is out; a known change is not, since
+      // the request in flight may have started before it.
+      if (silent && !fresh && pending.current === generation.current && pending.current) return;
       const ticket = ++generation.current;
       pending.current = ticket;
       if (!silent) {
@@ -49,6 +57,7 @@ export function useCatalogLoad<T>(load: () => Promise<T>, poll = false) {
   const focus = useCallback(() => {
     active.current = true;
     void refresh(loaded.current);
+    const unsubscribe = changes?.onCatalogChange(() => void refresh(true, true));
     const timer = poll
       ? setInterval(() => {
           if (AppState.currentState === "active") void refresh(true);
@@ -56,12 +65,13 @@ export function useCatalogLoad<T>(load: () => Promise<T>, poll = false) {
       : undefined;
     return () => {
       if (timer) clearInterval(timer);
+      unsubscribe?.();
       active.current = false;
       // Its answer would be dropped, so a return starts a fresh one.
       generation.current++;
       setLoading(false);
     };
-  }, [refresh, poll]);
+  }, [refresh, poll, changes]);
   // In the iPad sidebar this runs for as long as it is mounted.
   useVisibleEffect(focus);
   return { data, error, loading, refresh: () => refresh() };

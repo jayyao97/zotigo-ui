@@ -206,6 +206,7 @@ export function HomeScreen({ hostPicker }: { hostPicker?: ReactNode }) {
       return { projects, sessions, workspaces, workspaceErrors, navigation };
     }, [daemon]),
     true,
+    daemon,
   );
   const rows = useMemo(
     () =>

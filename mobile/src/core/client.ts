@@ -112,9 +112,29 @@ export class DaemonClient {
   }
   dispose() {
     this.lifetime.abort();
+    this.catalogListeners.clear();
   }
   get signal() {
     return this.lifetime.signal;
+  }
+  private catalogListeners = new Set<() => void>();
+  /**
+   * Calls `listener` after a change made through this connection succeeds
+   * that can alter the conversation list: sessions, projects, workspaces and
+   * sources. Lists that stay on screen (the iPad sidebar) use it to refresh
+   * at once instead of waiting for their next poll.
+   */
+  onCatalogChange(listener: () => void): () => void {
+    this.catalogListeners.add(listener);
+    return () => this.catalogListeners.delete(listener);
+  }
+  private catalogChanged(method: string, path: string) {
+    if (method === "GET") return;
+    // Read-state and title suggestions change nothing in the list; files,
+    // channels and settings are not part of it.
+    if (!/^\/(sessions|projects|workspaces|catalog|repositories)(\/|$|\?)/.test(path)) return;
+    if (/\/(title-suggestion|approvals|interactions|images)\b/.test(path)) return;
+    for (const listener of [...this.catalogListeners]) listener();
   }
   private async response<T>(
     path: string,
@@ -168,7 +188,7 @@ export class DaemonClient {
     timeout = 30000,
     headers: Record<string, string> = {},
   ): Promise<T> {
-    return this.response(
+    const result = await this.response(
       path,
       {
         method,
@@ -185,6 +205,8 @@ export class DaemonClient {
       },
       timeout,
     );
+    this.catalogChanged(method, path);
+    return result;
   }
   async uploadAttachment(id: string, file: MessageFileInput): Promise<string> {
     parseMessageFiles([file]);
