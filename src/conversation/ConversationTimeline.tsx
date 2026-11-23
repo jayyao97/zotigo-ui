@@ -149,8 +149,9 @@ export const SessionTimeline = memo(function SessionTimeline({
     [interactionHistory, itemsAuthoritative],
   );
   const pendingApprovalIds = session?.state === "paused" ? pendingRequests.approvals : new Set<string>();
+  const sessionActiveTool = currentSessionActiveTool(session, items);
   const activeToolCall = activeTurn
-    ? latestPendingToolCall(items, session?.active_tool) ?? latestPendingToolCall(items)
+    ? latestPendingToolCall(items, sessionActiveTool) ?? latestPendingToolCall(items)
     : null;
   const showThinking = Boolean(activeTurn && !hasDisplayActivityAfter(items, activeTurn.sequence));
   const toolProjection = useMemo(() => buildToolRenderProjection(orderedItems), [orderedItems]);
@@ -248,8 +249,8 @@ export const SessionTimeline = memo(function SessionTimeline({
                 }
                 return renderItem(group.item);
               })}
-              {activeTurn && !activeToolCall && (session?.active_tool || showThinking) && (
-                <ThinkingStatus label={session?.active_tool ? t("conversationTimeline.running", { p0: session.active_tool }) : t("app.thinking")} />
+              {activeTurn && !activeToolCall && (sessionActiveTool || showThinking) && (
+                <ThinkingStatus label={sessionActiveTool ? t("conversationTimeline.running", { p0: sessionActiveTool }) : t("app.thinking")} />
               )}
             </>
           )}
@@ -331,6 +332,17 @@ export function compactDisplayPaths(value?: string, workspaceRoot?: string): str
     compacted = compacted.split(workspaceRoot.slice(0, markerIndex + zotigoMarker.length)).join("$ZOTIGO_HOME");
   }
   return compacted;
+}
+
+// Tool results stream in before the next session poll. A snapshot that predates
+// a displayed result would otherwise announce the finished tool as running.
+function currentSessionActiveTool(session: ZotigoSession | null, items: DisplayItem[]): string | undefined {
+  const tool = session?.active_tool;
+  const snapshotSequence = session?.latest_item_sequence;
+  if (!tool || snapshotSequence === undefined) return tool;
+  const staleSnapshot = items.some(item => item.sequence > snapshotSequence
+    && item.content?.some(part => part.type === "tool_result"));
+  return staleSnapshot ? undefined : tool;
 }
 
 export function latestActiveTurn(items: DisplayItem[]): DisplayItem | null {
