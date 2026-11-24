@@ -160,7 +160,7 @@ export async function listQueuedInputs(id: string): Promise<import("../../shared
     const row = expectRecord(value, "queued input");
     if (row.state !== "queued" && row.state !== "paused" && row.state !== "sending") throw new Error("Invalid queue state");
     if (typeof row.editable !== "boolean") throw new Error("Invalid queue editable flag");
-    return { ...parseSessionCommandResponse(value, "queued input"), state: row.state, revision: expectNumber(row.revision, "revision"), editable: row.editable, image_editing_supported: row.image_editing_supported === true };
+    return { ...parseSessionCommandResponse(value, "queued input"), state: row.state, revision: expectNumber(row.revision, "revision"), editable: row.editable, cancellable: row.cancellable === undefined ? row.editable : row.cancellable === true, image_editing_supported: row.image_editing_supported === true };
   });
 }
 

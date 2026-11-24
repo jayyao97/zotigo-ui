@@ -208,15 +208,21 @@ export interface CreateConversationInput {
   projectId: string | null;
   workspaceId?: string | null;
   title?: string;
-  prompt?: string;
-  skills?: string[];
-  images?: MessageImageInput[];
-  files?: MessageFileInput[];
   profile?: string;
   approvalPolicy?: ApprovalPolicy;
   agent?: AgentKind;
   model?: string;
   reasoningEffort?: string;
+  message?: FirstMessageInput;
+}
+
+/** A new session's first message. The backend delivers it, so a page reload cannot drop it. */
+export interface FirstMessageInput {
+  clientMessageId: string;
+  text: string;
+  skills?: string[];
+  images?: MessageImageInput[];
+  files?: MessageFileInput[];
 }
 
 export interface SendConversationMessageInput {
@@ -393,7 +399,11 @@ export interface ClientApi {
   openMarkdownLink(input: OpenMarkdownLinkInput): Promise<OpenMarkdownLinkResult>;
   saveTextFile(input: SaveTextFileInput): Promise<TextFileSnapshot>;
   downloadImage(url: string): Promise<void>;
-  createConversationWithSession(input: CreateConversationInput): Promise<DesktopActionResult>;
+  createConversation(input: CreateConversationInput): Promise<DesktopActionResult>;
+  /** Outcome of a first message started by createConversation. */
+  waitFirstMessage(clientMessageId: string): Promise<DesktopActionResult>;
+  /** Delivers a first message again under the same client message id. */
+  retryFirstMessage(input: FirstMessageInput & { conversationId: string }): Promise<DesktopActionResult>;
   startConversationSession(conversationId: string): Promise<DesktopActionResult>;
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
   listQueuedInputs(id: string): Promise<import("./zotigod").QueuedInput[] | null>;

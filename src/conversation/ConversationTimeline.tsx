@@ -1,4 +1,5 @@
 import { CompletionTriggerNavigation, createdCompletionTrigger } from "./CompletionTriggerNavigation";
+import { SubagentNavigation } from "./SubagentNavigation";
 import { interactionState } from "../../shared/interactionState";
 import { requestRetryLabel } from "../../shared/requestRetry";
 import { useLocale } from "../i18n";
@@ -105,6 +106,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   onRetryPrompt,
   onRestorePrompt,
   onDismissPrompt,
+  hasPendingPrompt = false,
 }: {
   binding: DaemonSessionBinding | null;
   session: ZotigoSession | null;
@@ -129,6 +131,8 @@ export const SessionTimeline = memo(function SessionTimeline({
   onRetryPrompt?: (id: string) => void;
   onRestorePrompt?: (id: string) => void;
   onDismissPrompt?: (id: string) => void;
+  /** A prompt rendered outside the timeline already fills an otherwise empty conversation. */
+  hasPendingPrompt?: boolean;
 }) {
   useLocale();
   const compactedItemCacheRef = useRef(new WeakMap<DisplayItem, { workspaceRoot: string; item: DisplayItem }>());
@@ -173,7 +177,7 @@ export const SessionTimeline = memo(function SessionTimeline({
               {t("conversationTimeline.forkedFrom")}{" "}{forkSourceTitle || session.forked_from.session_id}
             </button>
           </div>}
-          {itemsLoading && visibleItems.length === 0 ? (
+          {hasPendingPrompt && visibleItems.length === 0 ? null : itemsLoading && visibleItems.length === 0 ? (
             <div className="assistant-note">
               <p>{t("conversationTimeline.loadingDisplayHistory")}</p>
             </div>
@@ -1087,6 +1091,7 @@ function DisplayContentPartView({ part, daemonUrl, smoothStreaming }: { part: Di
 function ToolProcess({ call, result, progress, active = false }: { call: DisplayToolCall | undefined; result?: DisplayToolResult; progress?: string; active?: boolean }) {
   useLocale();
   const openNotification = useContext(CompletionTriggerNavigation);
+  const subagentNavigation = useContext(SubagentNavigation);
   const triggerId = createdCompletionTrigger(call, result);
   const running = !result && (active || Boolean(progress));
   const summary = running ? formatRunningToolCall(call) : formatToolCallProcess(call);
@@ -1097,6 +1102,20 @@ function ToolProcess({ call, result, progress, active = false }: { call: Display
 
   if (triggerId && openNotification && !isFailure) {
     return <div className="completion-tool-result"><button type="button" className="completion-open-link" onClick={() => openNotification(triggerId)}><span className="process-icon" aria-hidden="true"><Bell size={13} strokeWidth={1.75} /></span><span>{t("completionTriggers.view")}</span><ChevronRight size={12} /></button></div>;
+  }
+
+  const subagentId = call?.name === "spawn" ? call.id : undefined;
+  if (subagentId && subagentNavigation?.has(subagentId) && !isFailure) {
+    // Same trigger anatomy as ToolDisclosure, so icon, text and chevron share its alignment.
+    return (
+      <div className={`tool-disclosure subagent-open-link ${running ? "running" : ""}`}>
+        <button type="button" className="disclosure-trigger" title={t("conversationTimeline.openSubagent")} onClick={() => subagentNavigation.open(subagentId)}>
+          <span className="process-icon" aria-hidden="true"><SquareTerminal size={13} strokeWidth={1.75} /></span>
+          <p>{summary}</p>
+          <span className="disclosure-chevron" aria-hidden="true"><ChevronRight size={12} strokeWidth={2} /></span>
+        </button>
+      </div>
+    );
   }
 
   if ((!detail && !expandableRunningShell) || shouldSuppressToolResult(call, result)) {

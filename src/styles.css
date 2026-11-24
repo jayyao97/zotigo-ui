@@ -2573,6 +2573,11 @@ p {
   opacity: 1;
 }
 
+/* Navigates instead of expanding, so its chevron stays visible. */
+.subagent-open-link > .disclosure-trigger .disclosure-chevron {
+  opacity: 1;
+}
+
 .disclosure-chevron svg {
   display: block;
   width: 12px;
@@ -5132,8 +5137,6 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .channels-group-list::before { bottom: 9px; }
 .channels-project-group .workspace-sessions { margin-left: 17px; }
 .channels-chat-group + .channels-chat-group { margin-top: 5px; }
-.channels-group-icon { position: absolute; top: 2px; left: 4px; z-index: 2; display: grid; width: 24px; min-height: 26px; place-items: center; color: var(--text-muted); pointer-events: none; }
-.channels-group-icon svg { stroke: currentColor; }
 .channels-chat-conversations { position: relative; }
 .channels-conversation-item { display: flex; align-items: center; margin: 0 8px; border-radius: 8px; }
 .channels-conversation-item:hover, .channels-conversation-item.is-active { background: var(--surface-row); }

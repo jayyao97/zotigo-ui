@@ -68,8 +68,8 @@ import {
 	updateChannelConversation,
 	listChannelMessages,
 } from "./zotigod";
+import { createFirstMessageDeliveries } from "./firstMessageDeliveries";
 import type {
-  AgentKind,
   ApprovalPolicy,
   MessageImageInput,
   SessionCommandResponse,
@@ -97,6 +97,7 @@ import {
   assertAddWorkspaceSourceInput,
   optionalTrimmedString,
   assertCreateConversationInput,
+  assertFirstMessageInput,
   assertApprovalPolicy,
   assertSendConversationMessageInput,
   assertApprovalDecisions,
@@ -154,6 +155,17 @@ addWorkspaceSourceToCatalog,
   function handle(channel: string, listener: (...args: unknown[]) => unknown): void {
     handlers.set(channel, listener);
   }
+  const firstMessages = createFirstMessageDeliveries({
+    upload: (message) => uploadMessageFiles(message.conversationId, message.text, message.files),
+    async send(message, text) {
+      let session = await getOrCreateStartedSession(message.conversationId);
+      const command = await sendMessageOrSteering(session.id, text, message.images, message.skills, message.clientMessageId);
+      if (command.type !== "steering") session = await refreshSentSession(session);
+      return { session, command };
+    },
+    // A failed upload happens before any message is sent.
+    failure: (error, stage) => ({ error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: stage === "upload" ? "rejected" : inputDeliveryFailure(error) }),
+  });
   handle("hosts:list", () => listHosts());
   handle("hosts:save", (input) => saveHost(input as import("../shared/hosts").HostInput));
   handle("hosts:delete", (id) => deleteHost(assertString(id, "id")));
@@ -393,30 +405,38 @@ addWorkspaceSourceToCatalog,
     if (currentHost()?.id && currentHost()?.id !== "local") return saveDaemonFile(value);
     return saveAuthorizedTextFile(value, await authorizedFileRoots(value.path, value.sessionId));
   });
-  handle("desktop:create-conversation-with-session", async (input) => {
+  // Creation returns before the worker starts so navigation shows the session
+  // immediately. The first message is delivered here in the background, under
+  // this request's host, so it does not depend on the page that submitted it.
+  handle("desktop:create-conversation", async (input) => {
     const conversationInput = assertCreateConversationInput(input);
-    if (!conversationInput.prompt && conversationInput.images.length === 0 && conversationInput.files.length === 0) {
-      throw new Error("message requires text or images");
-    }
+    let session: Awaited<ReturnType<typeof createSession>>;
     try {
-      const session = await createStartAndMessageSession(
-        conversationInput.workspaceId ?? null,
-        conversationInput.title,
-        conversationInput.prompt,
-        conversationInput.images,
-        conversationInput.skills,
-        conversationInput.profile,
-        conversationInput.approvalPolicy,
-        conversationInput.agent,
-        conversationInput.model,
-        conversationInput.reasoningEffort,
-        conversationInput.files,
-      );
-      return { state: await getCatalogDesktopState(), ...session };
+      session = await createSession({
+        workspaceId: conversationInput.workspaceId ?? undefined,
+        agent: conversationInput.agent ?? "zotigo",
+        approvalPolicy: conversationInput.approvalPolicy,
+        ...(conversationInput.agent === "codex"
+          ? { model: conversationInput.model, reasoningEffort: conversationInput.reasoningEffort }
+          : { profile: conversationInput.profile }),
+      });
     } catch (error) {
       return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: inputDeliveryFailure(error) };
     }
+    // The session exists: its first message goes out even if a catalog step below fails.
+    if (conversationInput.message) firstMessages.start({ ...conversationInput.message, conversationId: session.id });
+    try {
+      await setCatalogSessionTitle(session.id, conversationInput.title?.trim() || "New session");
+      if (conversationInput.workspaceId && session.workspace_position === undefined) {
+        await setCatalogSessionPosition(session.id, -Date.now());
+      }
+      return { state: await selectCatalogSession(session.id), session };
+    } catch (error) {
+      return { state: await getCatalogDesktopState(), session, error: errorMessage(error), errorCode: requestErrorCode(error) };
+    }
   });
+  handle("desktop:wait-first-message", (clientMessageId) => firstMessages.wait(assertNonEmptyString(clientMessageId, "clientMessageId")));
+  handle("desktop:retry-first-message", (input) => firstMessages.retry(assertFirstMessageInput(input)));
   handle("desktop:start-conversation-session", async (conversationIdValue) => {
     const conversationId = assertString(conversationIdValue, "conversationId");
 
@@ -551,38 +571,6 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     return roots;
   }
 
-  async function createStartAndMessageSession(
-    workspaceId: string | null,
-    title: string | undefined,
-    text: string,
-    images: MessageImageInput[],
-    skills: string[],
-    profile?: string,
-    approvalPolicy?: ApprovalPolicy,
-    agent: AgentKind = "zotigo",
-    model?: string,
-    reasoningEffort?: string,
-    files: MessageFileInput[] = [],
-  ): Promise<{ session: ZotigoSession; command: SessionCommandResponse }> {
-    const created = await createSession({
-      workspaceId: workspaceId ?? undefined,
-      agent,
-      approvalPolicy,
-      ...(agent === "codex"
-        ? { model, reasoningEffort }
-        : { profile }),
-    });
-    await setCatalogSessionTitle(created.id, title?.trim() || "New session");
-    if (workspaceId && created.workspace_position === undefined) {
-      await setCatalogSessionPosition(created.id, -Date.now());
-    }
-    await selectCatalogSession(created.id);
-    text = await uploadMessageFiles(created.id, text, files);
-    const started = await startSession(created.id);
-    const command = await sendSessionMessage(started.id, text, images, skills);
-    return { session: started, command };
-  }
-
   async function sendConversationMessage(
     conversationId: string,
     text: string,
@@ -599,8 +587,20 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     if (command.type === "steering") {
       return { session, command };
     }
-    session = await getSession(session.id);
-    return { session, command };
+    return { session: await refreshSentSession(session), command };
+  }
+
+  /**
+   * Reads a session's state after the daemon accepted a message. The command is
+   * already confirmed, so a failed read keeps the earlier state instead of turning
+   * the delivery into an error that would invite a resend.
+   */
+  async function refreshSentSession(session: ZotigoSession): Promise<ZotigoSession> {
+    try {
+      return await getSession(session.id);
+    } catch {
+      return session;
+    }
   }
 
   async function getOrCreateStartedSession(

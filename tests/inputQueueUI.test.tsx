@@ -93,6 +93,13 @@ test("queued messages edit and delete by revision and lock once sending", async 
     assert.equal(document.querySelectorAll("li").length, 1);
     assert.match(document.body.textContent!, /Second message/);
     assert.equal(document.querySelector<HTMLButtonElement>('[aria-label="Send now"]')!.disabled, true);
+    items.push({ ...items[0], id: "delegated", state: "paused", revision: 4, editable: false, cancellable: true });
+    await act(async () => root.render(<InputQueue client={client} sessionId="s" refresh={11} active={false} />));
+    const delegated = document.querySelectorAll("li")[1];
+    assert.equal(delegated.querySelector<HTMLButtonElement>('[aria-label="Edit queued message"]')!.disabled, true);
+    assert.equal(delegated.querySelector<HTMLButtonElement>('[aria-label="Send now"]')!.disabled, true);
+    await act(async () => delegated.querySelector<HTMLButtonElement>('[aria-label="Delete queued message"]')!.click());
+    assert.equal(items.length, 1);
     items = [...items, { id: "c", sequence: 0, type: "message", text: "Send this now", created_at: "", revision: 1, state: "queued", editable: true }];
     await act(async () => root.render(<InputQueue daemonUrl="http://localhost:1234" client={client} sessionId="s" refresh={1} active={false} />));
     await act(async () => document.querySelectorAll<HTMLButtonElement>('[aria-label="Send now"]')[1].click());

@@ -254,7 +254,8 @@ export class DaemonClient {
             (item.text !== undefined && typeof item.text !== "string") ||
             !["queued", "paused", "sending"].includes(item.state) ||
             !Number.isInteger(item.revision) ||
-            typeof item.editable !== "boolean",
+            typeof item.editable !== "boolean" ||
+            (item.cancellable !== undefined && typeof item.cancellable !== "boolean"),
         )
       )
         throw new Error("Invalid input queue.");

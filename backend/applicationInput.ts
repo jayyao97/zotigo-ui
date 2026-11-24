@@ -2,6 +2,7 @@
 // the application service as `unknown`; these turn it into typed input or throw.
 import { attachmentSizeError, parseMessageFiles, type MessageFileInput } from "../shared/messageFiles";
 import { decodedBase64Size, maxMessageImageCount, messageImageSizeError } from "../shared/messageImages";
+import type { FirstMessage } from "./firstMessageDeliveries";
 import type {
   AgentKind,
   ApprovalPolicy,
@@ -149,27 +150,20 @@ export function assertCreateConversationInput(value: unknown): {
   projectId: string | null;
   workspaceId: string | null;
   title?: string;
-  prompt: string;
-  images: MessageImageInput[];
-  files: MessageFileInput[];
-  skills: string[];
   profile?: string;
   approvalPolicy?: ApprovalPolicy;
   agent?: AgentKind;
   model?: string;
   reasoningEffort?: string;
+  message?: Omit<FirstMessage, "conversationId">;
 } {
   const record = assertRecord(value, "create conversation input");
-  const { images, files } = assertAttachments(record);
   return {
+    message: record.message === undefined ? undefined : assertNewFirstMessage(record.message),
     projectId: assertNullableString(record.projectId, "projectId"),
     workspaceId:
       record.workspaceId === undefined ? null : assertNullableString(record.workspaceId, "workspaceId"),
     title: record.title === undefined ? undefined : assertString(record.title, "title"),
-    prompt: record.prompt === undefined ? "" : assertString(record.prompt, "prompt").trim(),
-    images,
-    files,
-    skills: assertSkillNames(record.skills),
     profile: record.profile === undefined ? undefined : assertNonEmptyString(record.profile, "profile"),
     approvalPolicy:
       record.approvalPolicy === undefined
@@ -198,6 +192,20 @@ export function assertApprovalPolicy(value: unknown, name: string): ApprovalPoli
     throw new Error(`${name} must be manual, auto or bypass_permissions`);
   }
   return policy;
+}
+
+function assertNewFirstMessage(value: unknown): Omit<FirstMessage, "conversationId"> {
+  const record = assertRecord(value, "first message");
+  const { images, files } = assertAttachments(record);
+  const text = assertString(record.text, "text").trim();
+  if (!text && images.length === 0 && files.length === 0) throw new Error("message requires text or images");
+  return { clientMessageId: assertNonEmptyString(record.clientMessageId, "clientMessageId"), text, images, files, skills: assertSkillNames(record.skills) };
+}
+
+/** A first-message retry names its session and keeps the original client message id. */
+export function assertFirstMessageInput(value: unknown): FirstMessage {
+  const record = assertRecord(value, "first message");
+  return { ...assertNewFirstMessage(record), conversationId: assertNonEmptyString(record.conversationId, "conversationId") };
 }
 
 export function assertSendConversationMessageInput(value: unknown): {

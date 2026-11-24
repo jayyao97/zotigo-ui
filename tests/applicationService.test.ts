@@ -253,14 +253,15 @@ test("Codex conversation creation forwards the selected approval policy", async 
   setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
   const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
   try {
-    const result = await service.invoke("desktop:create-conversation-with-session", [{
-      projectId: null, prompt: "hello", images: [], skills: [], agent: "codex",
+    const result = await service.invoke("desktop:create-conversation", [{
+      projectId: null, agent: "codex",
       model: "gpt-5.6-luna", reasoningEffort: "max", approvalPolicy: "bypass_permissions",
     }]);
     assert.equal(result.ok, true);
     assert.deepEqual(createBody, {
       agent: "codex", model: "gpt-5.6-luna", reasoning_effort: "max", approval_policy: "bypass_permissions",
     });
+    assert.equal((result as { value?: { deliveryState?: string } }).value?.deliveryState, "rejected", "a refused create leaves nothing behind");
   } finally {
     service.dispose(); setDaemonBaseUrl(original);
     const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed;
@@ -517,11 +518,168 @@ test("prompt identity survives the client boundary and message-to-steering fallb
   }
 });
 
-test("creation preserves server positions and only reorders for legacy daemons", async () => {
+test("a catalog failure after creation is not reported as a rejected create", async () => {
+  const original = getDaemonConfig().baseUrl;
+  const session = { id: "new", state: "created", approval_policy: "auto", created_at: "2026-01-01", workspace_position: -1 };
+  const daemon = createServer((request, response) => {
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
+    if (request.url === "/sessions/new/title") {
+      response.writeHead(400, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ code: "invalid_request", message: "title refused" }));
+      return;
+    }
+    const data = request.url === "/sessions" ? session
+      : request.url === "/catalog/navigation" ? { projects: [], workspaces: [], pinned: [], legacy_order_imported: true }
+      : request.url === "/projects" ? { projects: [] } : { sessions: [] };
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ code: "ok", data }));
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  try {
+    const result = await service.invoke("desktop:create-conversation", [{ projectId: null, workspaceId: "workspace" }]);
+    const value = (result as { value?: { error?: string; deliveryState?: string } }).value;
+    assert.match(value?.error ?? "", /title refused/);
+    assert.equal(value?.deliveryState, undefined, "the session already exists");
+  } finally {
+    service.dispose(); setDaemonBaseUrl(original);
+    const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed;
+  }
+});
+
+// A daemon double for first-message delivery. Responses to /messages can be held or failed.
+async function firstMessageDaemon(options: { failFirstSend?: boolean; forbidRefreshAfterSend?: boolean } = {}) {
+  const session = { id: "new", state: "created", approval_policy: "auto", created_at: "2026-01-01", workspace_position: -1 };
+  const projection = { runtime: session, organization: null, availability: "available" };
+  const counts = { snapshot: 0, uploads: 0, start: 0 };
+  const messages: Array<{ client_message_id?: string; text?: string }> = [];
+  let release: () => void = () => {};
+  let refreshPending = false;
+  const sendHeld = new Promise<void>(resolve => { release = resolve; });
+  const daemon = createServer(async (request, response) => {
+    const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk);
+    const reply = (data: unknown, status = 200) => { response.writeHead(status, { "Content-Type": "application/json" }); response.end(JSON.stringify(status === 200 ? { code: "ok", data } : { code: "internal_error", message: "worker failed" })); };
+    const url = request.url ?? "";
+    if (url === "/catalog/snapshot?sessions=none") { counts.snapshot++; response.writeHead(404); response.end(); return; }
+    if (url.startsWith("/files/upload")) { counts.uploads++; return reply({ path: `/uploads/${counts.uploads}/notes.txt` }); }
+    if (url === "/sessions/new/start") { counts.start++; return reply({ ...session, state: "running" }); }
+    if (url === "/sessions/new/messages") {
+      messages.push(JSON.parse(Buffer.concat(chunks).toString()));
+      refreshPending = Boolean(options.forbidRefreshAfterSend);
+      await sendHeld;
+      if (options.failFirstSend && messages.length === 1) return reply(null, 500);
+      return reply({ id: messages.at(-1)!.client_message_id, sequence: 1, type: "message", created_at: "2026-01-01" });
+    }
+    // Only the read that follows an accepted message is refused.
+    if (url === "/sessions/new" && refreshPending) {
+      refreshPending = false;
+      response.writeHead(403, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ code: "forbidden", message: "refresh denied" }));
+      return;
+    }
+    switch (url) {
+      case "/sessions": return reply(session);
+      case "/sessions/new": return reply(session);
+      case "/sessions/new/title": case "/catalog/sessions/new": return reply(projection);
+      case "/projects": return reply({ projects: [] });
+      case "/catalog/navigation": return reply({ projects: [], workspaces: [], pinned: [], legacy_order_imported: true });
+      case "/catalog/sessions": return reply({ sessions: [projection] });
+      default: response.writeHead(404); response.end();
+    }
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  return { url: `http://127.0.0.1:${address.port}`, counts, messages, release: () => release(),
+    close: async () => { const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed; } };
+}
+
+const firstMessage = { clientMessageId: "optimistic-prompt-1", text: "hello", skills: [], images: [] };
+type Invoked = { ok: boolean; value?: { session?: { id: string }; state?: { selectedConversationId: string | null }; command?: { id: string }; error?: string; deliveryState?: string } };
+
+test("creation returns before its first message is delivered, reading the catalog once", async () => {
+  const daemon = await firstMessageDaemon();
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  const host = { id: "dev", name: "dev", baseUrl: daemon.url, token: "" };
+  try {
+    const created = await withConnection(host, () => service.invoke("desktop:create-conversation", [{ projectId: null, workspaceId: "workspace", message: firstMessage }])) as Invoked;
+    assert.equal(created.value?.session?.id, "new");
+    assert.equal(created.value?.state?.selectedConversationId, "new");
+    assert.equal(daemon.counts.snapshot, 1, "the success path reuses the state selection already returned");
+    assert.equal(daemon.messages.length, 1, "delivery is already on its way");
+    let settled = false;
+    const outcome = withConnection(host, () => service.invoke("desktop:wait-first-message", [firstMessage.clientMessageId])).then(value => { settled = true; return value as Invoked; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(settled, false, "the create response did not wait for the send");
+    daemon.release();
+    assert.equal((await outcome).value?.command?.id, firstMessage.clientMessageId);
+    assert.equal(daemon.messages[0].client_message_id, firstMessage.clientMessageId);
+    assert.equal(daemon.counts.start, 1);
+    // Another host never sees, or retries, this host's message.
+    const elsewhere = { ...host, id: "local", baseUrl: "http://127.0.0.1:1" };
+    const foreign = await withConnection(elsewhere, () => service.invoke("desktop:wait-first-message", [firstMessage.clientMessageId])) as Invoked;
+    assert.equal(foreign.value?.deliveryState, "unknown");
+    assert.equal(daemon.messages.length, 1);
+  } finally {
+    service.dispose();
+    await daemon.close();
+  }
+});
+
+test("an accepted send stays confirmed when the follow-up session refresh fails", async () => {
+  const daemon = await firstMessageDaemon({ forbidRefreshAfterSend: true });
+  daemon.release();
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  const host = { id: "dev", name: "dev", baseUrl: daemon.url, token: "" };
+  try {
+    await withConnection(host, () => service.invoke("desktop:create-conversation", [{ projectId: null, workspaceId: "workspace", message: firstMessage }]));
+    const outcome = await withConnection(host, () => service.invoke("desktop:wait-first-message", [firstMessage.clientMessageId])) as Invoked;
+    assert.equal(outcome.value?.error, undefined, "the refresh is not part of delivery");
+    assert.equal(outcome.value?.deliveryState, undefined);
+    assert.equal(outcome.value?.command?.id, firstMessage.clientMessageId, "the accepted command is kept");
+    assert.equal(outcome.value?.session?.id, "new");
+    // A later message to an existing session follows the same rule.
+    const sent = await withConnection(host, () => service.invoke("desktop:send-conversation-message", [{ conversationId: "new", clientMessageId: "optimistic-prompt-2", text: "again" }])) as Invoked;
+    assert.equal(sent.value?.error, undefined);
+    assert.equal(sent.value?.command?.id, "optimistic-prompt-2");
+    assert.equal(daemon.messages.length, 2);
+  } finally {
+    service.dispose();
+    await daemon.close();
+  }
+});
+
+test("a first-message retry reuses the uploaded text and message id", async () => {
+  const daemon = await firstMessageDaemon({ failFirstSend: true });
+  daemon.release();
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  const host = { id: "dev", name: "dev", baseUrl: daemon.url, token: "" };
+  const message = { ...firstMessage, files: [{ name: "notes.txt", mime_type: "text/plain", data_base64: Buffer.from("notes").toString("base64") }] };
+  try {
+    await withConnection(host, () => service.invoke("desktop:create-conversation", [{ projectId: null, workspaceId: "workspace", message }]));
+    const first = await withConnection(host, () => service.invoke("desktop:wait-first-message", [message.clientMessageId])) as Invoked;
+    assert.equal(first.value?.deliveryState, "unknown", "a 5xx may follow admission");
+    const retried = await withConnection(host, () => service.invoke("desktop:retry-first-message", [{ ...message, conversationId: "new" }])) as Invoked;
+    assert.equal(retried.value?.command?.id, message.clientMessageId);
+    assert.equal(daemon.counts.uploads, 1, "the retry does not upload again");
+    assert.equal(daemon.messages.length, 2);
+    assert.deepEqual(daemon.messages[1], daemon.messages[0], "identical input under the same id lets the daemon run it once");
+    // A retry after confirmation returns the accepted command without another send.
+    const again = await withConnection(host, () => service.invoke("desktop:retry-first-message", [{ ...message, conversationId: "new" }])) as Invoked;
+    assert.equal(again.value?.command?.id, message.clientMessageId);
+    assert.equal(daemon.messages.length, 2);
+  } finally {
+    service.dispose();
+    await daemon.close();
+  }
+});
+
+test("creation selects the session without starting a worker or sending a message", async () => {
   const original = getDaemonConfig().baseUrl;
   for (const serverPosition of [undefined, -123456789, 0]) {
     let reorderCount = 0;
-    let sent = false;
+    let workerTouched = false;
     const session = { id: "new", state: "created", approval_policy: "auto", created_at: "2026-01-01" };
     const projection = { runtime: session, organization: null, availability: "available" };
     const daemon = createServer((request, response) => {
@@ -535,8 +693,7 @@ test("creation preserves server positions and only reorders for legacy daemons",
         case "/catalog/navigation": data = { projects: [], workspaces: [], pinned: [], legacy_order_imported: true }; break;
         case "/catalog/sessions/new": data = projection; break;
         case "/catalog/sessions": data = { sessions: [projection] }; break;
-        case "/sessions/new/start": data = session; break;
-        case "/sessions/new/messages": sent = true; data = { id: "cmd", sequence: 1, type: "message", created_at: "2026-01-01" }; break;
+        case "/sessions/new/start": case "/sessions/new/messages": workerTouched = true; data = session; break;
         default: response.writeHead(404); response.end(); return;
       }
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -547,11 +704,13 @@ test("creation preserves server positions and only reorders for legacy daemons",
     setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
     const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
     try {
-      const result = await service.invoke("desktop:create-conversation-with-session", [{
-        projectId: null, workspaceId: "workspace", prompt: "hello", images: [], skills: [],
-      }]);
+      const result = await service.invoke("desktop:create-conversation", [{ projectId: null, workspaceId: "workspace" }]);
       assert.equal(result.ok, true);
-      assert.equal(sent, true, JSON.stringify(result));
+      const value = (result as { value?: { session?: { id: string }; state?: { selectedConversationId: string | null } } }).value;
+      assert.equal(value?.session?.id, "new", JSON.stringify(result));
+      assert.equal(value?.state?.selectedConversationId, "new");
+      assert.equal(workerTouched, false, "the worker starts with the first message");
+      // Server positions are preserved; only legacy daemons need a reorder.
       assert.equal(reorderCount, serverPosition === undefined ? 1 : 0);
     } finally {
       service.dispose(); setDaemonBaseUrl(original);
