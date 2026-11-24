@@ -223,6 +223,8 @@ import { SessionInspector } from "./inspector/SessionInspector";
 import { WorkspaceBindingList } from "./workspace/WorkspaceBindingList";
 import { WorkspaceAddSourceSection } from "./workspace/WorkspaceAddSourceSection";
 import { WorkspaceSourcesDialog } from "./workspace/WorkspaceSourcesDialog";
+import { discardNewPromptSubmissions, newPromptSubmission, putNewPromptSubmission, takeNewPromptSubmission, updateNewPromptSubmission, useNewPromptSubmissions } from "./app/newPromptSubmissions";
+import { HostChangedError } from "../shared/bindClientGeneration";
 import { CreateWorkspaceSourcesField } from "./workspace/CreateWorkspaceSourcesField";
 import { CreateWorkspaceDialog } from "./workspace/CreateWorkspaceDialog";
 import { CreateProjectDialog } from "./project/CreateProjectDialog";
@@ -245,6 +247,7 @@ let volatileStateGeneration = 0;
 
 export function discardHostVolatileState(clientScope?: string): void {
   discardUsageCache(clientScope);
+  discardNewPromptSubmissions(clientScope);
   if (clientScope === undefined) volatileStateGeneration++;
   const states = clientScope === undefined
     ? [...volatileStateByHost.entries()]
@@ -395,12 +398,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setEphemeralBlocksState(next);
   }
   const [optimisticPromptItems, setOptimisticPromptItems] = useState<DisplayItem[]>([]);
-  // sessionCreated: the prompt now belongs to a created session, so only its delivery is uncertain.
-  const [newPromptPreview, setNewPromptPreview] = useState<{ draftKey: string; item: DisplayItem; sessionCreated?: boolean } | null>(null);
+  const newPromptSubmissions = useNewPromptSubmissions(clientScope);
   const promptAnchors = useRef(new Map<string, PromptTimelineAnchor>());
   const promptRetries = useRef(new Map<string, () => Promise<void>>());
   const promptRecovery = useRef(new Map<string, { restore: () => void; discard: () => void; release: () => void }>());
-  const newPromptRecovery = useRef<{ restore: () => void; discard: () => void } | null>(null);
   const promptScope = useRef("");
   promptScope.current = `${clientScope}:${desktopState.selectedConversationId}`;
   const [sessionItemsLoading, setSessionItemsLoading] = useState(false);
@@ -855,10 +856,22 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const activePrompt = activeComposerDraft.prompt;
   const composerAttachments = activeComposerDraft.attachments;
   const selectedSkillNames = activeComposerDraft.selectedSkillNames;
-  // Once the created session's own user_message arrives, the timeline shows the prompt instead.
-  const showNewPromptPreview = newPromptPreview?.draftKey === composerDraftKey && !(newPromptPreview.sessionCreated
-    && newPromptPreview.item.delivery?.state !== "failed" && newPromptPreview.item.delivery?.state !== "rejected"
-    && sessionItems.some(item => item.type === "user_message"));
+  // A first message gives way to its own user_message, matched by client message id.
+  const newPrompt = [...newPromptSubmissions].reverse().find(submission => submission.draftKey === composerDraftKey);
+  const showNewPromptPreview = Boolean(newPrompt) && !sessionItems.some(item => item.id === newPrompt!.id);
+  // The submission whose delivery failure is shown in the banner, so its confirmation can clear it.
+  const newPromptBannerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (newPromptSubmissions.length === 0) return;
+    const delivered = new Set(sessionItems.map(item => item.id));
+    for (const submission of newPromptSubmissions) {
+      // A confirmed send only bridges the visible timeline; history brings the prompt back later.
+      const confirmed = !submission.item.delivery && submission.draft === null;
+      if (!delivered.has(submission.id) && !(confirmed && submission.draftKey !== composerDraftKey)) continue;
+      updateNewPromptSubmission(clientScope, submission.id, () => null);
+      if (newPromptBannerRef.current === submission.id) { newPromptBannerRef.current = null; setMessage(null); }
+    }
+  }, [clientScope, composerDraftKey, newPromptSubmissions, sessionItems]);
 
   useEffect(() => {
     const updateVisibility = () => setConversationVisible(conversationIsVisible(conversationScrollRef.current));
@@ -1976,48 +1989,24 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
 
     const trace = traceInteraction("new-session");
+    const scope = clientScope;
     const submittedDraftKey = composerDraftKey;
     const submittedDraft = activeComposerDraft;
     const submittedAttachments = submittedDraft.attachments;
     const submittedSkills = submittedDraft.selectedSkillNames;
     const preview = optimisticPromptDisplayItem({ id: createOptimisticPromptId(), text: trimmedPrompt || submittedAttachments.map(item => item.name).join("\n"), steering: false, createdAt: new Date().toISOString() });
-    setNewPromptPreview({ draftKey: submittedDraftKey, item: preview });
+    // The submission lives in a per-host store so a host switch cannot drop it.
+    putNewPromptSubmission(scope, { id: preview.id, draftKey: submittedDraftKey, item: preview, draft: submittedDraft });
     trace("optimistic-state");
     traceNextPaint(trace, "optimistic-paint-opportunity");
-    newPromptRecovery.current = {
-      restore: () => {
-        updateComposerDraft(submittedDraftKey, current => restoreSubmittedDraft(current, submittedDraft));
-        setNewPromptPreview(null);
-        newPromptRecovery.current = null;
-      },
-      discard: () => {
-        for (const attachment of submittedAttachments) if (attachment.url) URL.revokeObjectURL(attachment.url);
-        setNewPromptPreview(null);
-        newPromptRecovery.current = null;
-      },
-    };
     updateComposerDraft(submittedDraftKey, () => emptyComposerDraft());
     setPreviewAttachmentId(null);
     setIsBusy(true);
     setMessage(null);
-    // Once the session exists, the prompt preview and any retry belong to its draft.
-    let deliveryDraftKey = submittedDraftKey;
-    let sessionCreated = false;
     const submittedScope = promptScope.current;
-    let createdScope = submittedScope;
-    const failDelivery = (error: string, state: "failed" | "rejected") => {
-      setNewPromptPreview({ draftKey: deliveryDraftKey, item: { ...preview, delivery: { state, error } }, sessionCreated });
-      // A failure for a session the user already left must not surface in another one.
-      // The scope may still be the submitted one if React has not rendered the new selection yet.
-      if (promptScope.current === submittedScope || promptScope.current === createdScope) setMessage(sessionCreated ? error : t("app.checkTheSessionListBeforeRestoringThisDraft", { p0: error }));
-      if (newPromptRecovery.current && sessionCreated) {
-        const retryDraftKey = deliveryDraftKey;
-        newPromptRecovery.current.restore = () => {
-          updateComposerDraft(retryDraftKey, current => restoreSubmittedDraft(current, submittedDraft));
-          setNewPromptPreview(null);
-          newPromptRecovery.current = null;
-        };
-      }
+    const failCreation = (error: string, state: "failed" | "rejected") => {
+      updateNewPromptSubmission(scope, preview.id, current => ({ ...current, item: { ...preview, delivery: { state, error } } }));
+      if (promptScope.current === submittedScope) setMessage(state === "rejected" ? error : t("app.checkTheSessionListBeforeRestoringThisDraft", { p0: error }));
     };
     try {
       const provisionalTitle = titleFromPrompt(trimmedPrompt);
@@ -2042,51 +2031,86 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             }),
       });
       trace("created");
+      // The state keeps whatever the user selected meanwhile; the submission follows the created session.
       applyDesktopActionResult(created);
       if (created.error || !created.session) {
-        const error = created.error ?? t("app.sessionNotInCatalog");
-        if (created.deliveryState === "rejected") {
-          // The daemon refused creation; nothing exists to check before restoring.
-          setNewPromptPreview({ draftKey: deliveryDraftKey, item: { ...preview, delivery: { state: "rejected", error } } });
-          if (promptScope.current === submittedScope) setMessage(error);
-        } else failDelivery(error, "failed");
+        failCreation(created.error ?? t("app.sessionNotInCatalog"), created.deliveryState === "rejected" ? "rejected" : "failed");
         return;
       }
       pagedNavigation.refresh();
-      sessionCreated = true;
-      deliveryDraftKey = draftKeyForSelection({
-        conversationId: created.state?.selectedConversationId ?? created.session.id,
-        projectId: created.state?.selectedProjectId ?? null,
-        workspaceId: created.state?.selectedWorkspaceId ?? null,
-      });
-      createdScope = `${clientScope}:${created.state?.selectedConversationId ?? created.session.id}`;
-      setNewPromptPreview({ draftKey: deliveryDraftKey, item: preview, sessionCreated });
-      const result = await client.sendConversationMessage({
-        conversationId: created.session.id,
-        clientMessageId: preview.id,
-        text: trimmedPrompt,
-        skills: submittedSkills.length > 0 ? submittedSkills : undefined,
-        images: images.length > 0 ? images : undefined,
-        files: files.length > 0 ? files : undefined,
-      });
+      const sessionId = created.session.id;
+      updateNewPromptSubmission(scope, preview.id, current => ({
+        ...current,
+        sessionId,
+        draftKey: draftKeyForSelection({ conversationId: sessionId, projectId: null, workspaceId: null }),
+        message: {
+          conversationId: sessionId,
+          clientMessageId: preview.id,
+          text: trimmedPrompt,
+          skills: submittedSkills.length > 0 ? submittedSkills : undefined,
+          images: images.length > 0 ? images : undefined,
+          files: files.length > 0 ? files : undefined,
+        },
+      }));
+      await deliverNewPrompt(preview.id, [submittedScope, `${scope}:${sessionId}`]);
       trace("response");
-      applyDesktopActionResult(result);
-      if (result.error) {
-        failDelivery(result.error, result.deliveryState === "rejected" ? "rejected" : "failed");
-      } else {
-        // Keep the delivered prompt visible until its user_message reaches the timeline.
-        setNewPromptPreview(current => current?.item.id === preview.id ? { ...current, item: { ...preview, delivery: undefined } } : current);
-        newPromptRecovery.current = null;
-        for (const attachment of submittedAttachments) {
-          if (attachment.url) URL.revokeObjectURL(attachment.url);
-        }
-        void refreshSessions({ quiet: true });
-      }
     } catch (error) {
-      failDelivery(errorMessage(error), "failed");
+      // The create request never left when the host changed, so nothing was created.
+      if (error instanceof HostChangedError) updateNewPromptSubmission(scope, preview.id, current => ({ ...current, item: { ...preview, delivery: { state: "rejected", error: t("app.firstMessageNotSentHostChanged") } } }));
+      else failCreation(errorMessage(error), "failed");
     } finally {
       setIsBusy(false);
     }
+  }
+
+  /** Sends or resends a created session's first message under its original client message id. */
+  async function deliverNewPrompt(id: string, messageScopes: string[]) {
+    const scope = clientScope;
+    const submission = newPromptSubmission(scope, id);
+    if (!submission?.message) return;
+    // After an uncertain attempt, a blocked retry still cannot prove the message is missing.
+    const attemptedBefore = submission.item.delivery?.state === "failed";
+    const setDelivery = (delivery: DisplayItem["delivery"]) => updateNewPromptSubmission(scope, id, current => ({ ...current, item: { ...current.item, delivery } }));
+    const fail = (error: string, state: "failed" | "rejected") => {
+      // Reconciliation may already have confirmed the message through its user_message.
+      if (!newPromptSubmission(scope, id)) return;
+      setDelivery({ state, error });
+      if (!messageScopes.includes(promptScope.current)) return;
+      newPromptBannerRef.current = id;
+      setMessage(error);
+    };
+    setDelivery({ state: "sending" });
+    try {
+      const result = await client.sendConversationMessage(submission.message);
+      applyDesktopActionResult(result);
+      if (result.error) {
+        fail(result.error, result.deliveryState === "rejected" ? "rejected" : "failed");
+        return;
+      }
+      // Keep the delivered prompt visible until its user_message reaches the timeline.
+      updateNewPromptSubmission(scope, id, current => ({ ...current, item: { ...current.item, delivery: undefined }, draft: null, message: undefined }));
+      void refreshSessions({ quiet: true });
+    } catch (error) {
+      // A request blocked by a host switch never reached the daemon.
+      if (error instanceof HostChangedError) {
+        if (newPromptSubmission(scope, id)) setDelivery({ state: attemptedBefore ? "failed" : "rejected", error: t("app.firstMessageNotSentHostChanged") });
+      } else fail(errorMessage(error), "failed");
+    }
+  }
+
+  function retryNewPrompt(id: string) {
+    if (newPromptBannerRef.current === id) { newPromptBannerRef.current = null; setMessage(null); }
+    void deliverNewPrompt(id, [promptScope.current]);
+  }
+
+  function dismissNewPrompt(id: string) {
+    updateNewPromptSubmission(clientScope, id, () => null);
+    if (newPromptBannerRef.current === id) { newPromptBannerRef.current = null; setMessage(null); }
+  }
+
+  function restoreNewPrompt(id: string) {
+    const submission = takeNewPromptSubmission(clientScope, id);
+    if (submission?.draft) updateComposerDraft(submission.draftKey, current => restoreSubmittedDraft(current, submission.draft!));
   }
 
   function rememberModelSelection(selection: ModelFavorite) {
@@ -3485,22 +3509,28 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           onTouchCancel={handleConversationTouchEnd}
         >
           {searchWindow && <div className="search-history-notice">{t("app.showingMessagesNearASearchResult")}{" "}<button type="button" onClick={closeSearchWindow}>{t("app.returnToConversation")}</button></div>}
-          <article className={`conversation-body${!selectedConversation && newPromptPreview?.draftKey === composerDraftKey ? " has-prompt-preview" : ""}`}>
-            {showNewPromptPreview && (
+          <article className={`conversation-body${!selectedConversation && newPrompt ? " has-prompt-preview" : ""}`}>
+            {showNewPromptPreview && newPrompt && (
               <>
                 <UserMessage
-                  text={displayContentText(newPromptPreview.item.content)}
-                  delivery={newPromptPreview.item.delivery}
-                  onRestore={() => newPromptRecovery.current?.restore()}
-                  onDismiss={() => newPromptRecovery.current?.discard()}
+                  text={displayContentText(newPrompt.item.content)}
+                  delivery={newPrompt.item.delivery}
+                  onRetry={newPrompt.message ? () => retryNewPrompt(newPrompt.id) : undefined}
+                  onRestore={() => restoreNewPrompt(newPrompt.id)}
+                  onDismiss={() => dismissNewPrompt(newPrompt.id)}
                 />
-                {newPromptPreview.item.delivery?.state === "failed" && (
+                {newPrompt.item.delivery?.state === "failed" && (newPrompt.sessionId ? (
+                  // Restoring would resend under a new id; only retry or let go.
                   <div className="message-delivery">
-                    <span>{t(newPromptPreview.sessionCreated ? "app.checkConversationBeforeRestoringMessageMayHaveArrived" : "app.checkSessionsBeforeRestoringCreationMayHaveSucceeded")}</span>
-                    <button type="button" onClick={() => newPromptRecovery.current?.restore()}>{t("app.restoreDraft")}</button>
-                    <button type="button" onClick={() => newPromptRecovery.current?.discard()}>{t("app.dismiss")}</button>
+                    <button type="button" onClick={() => dismissNewPrompt(newPrompt.id)}>{t("app.dismiss")}</button>
                   </div>
-                )}
+                ) : (
+                  <div className="message-delivery">
+                    <span>{t("app.checkSessionsBeforeRestoringCreationMayHaveSucceeded")}</span>
+                    <button type="button" onClick={() => restoreNewPrompt(newPrompt.id)}>{t("app.restoreDraft")}</button>
+                    <button type="button" onClick={() => dismissNewPrompt(newPrompt.id)}>{t("app.dismiss")}</button>
+                  </div>
+                ))}
               </>
             )}
             {selectedConversation ? (

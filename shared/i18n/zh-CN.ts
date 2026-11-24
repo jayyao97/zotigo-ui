@@ -549,7 +549,7 @@ export const zhCN: Record<MessageKey, Message> = {
   "app.showingMessagesNearASearchResult": "正在显示搜索结果附近的消息",
   "app.returnToConversation": "返回会话",
   "app.checkSessionsBeforeRestoringCreationMayHaveSucceeded": "恢复草稿前请检查会话，会话可能已创建成功。",
-  "app.checkConversationBeforeRestoringMessageMayHaveArrived": "恢复前请先查看会话，消息可能已经送达。",
+  "app.firstMessageNotSentHostChanged": "未发送：消息送达前切换了主机。",
   "app.restoreDraft": "恢复草稿",
   "app.dismiss": "关闭",
   "app.scrollToLatestMessage": "滚动到最新消息",

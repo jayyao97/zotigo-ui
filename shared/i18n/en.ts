@@ -550,7 +550,7 @@ export const en = {
   "app.showingMessagesNearASearchResult": "Showing messages near a search result",
   "app.returnToConversation": "Return to conversation",
   "app.checkSessionsBeforeRestoringCreationMayHaveSucceeded": "Check sessions before restoring; creation may have succeeded.",
-  "app.checkConversationBeforeRestoringMessageMayHaveArrived": "Check the conversation before restoring; the message may have arrived.",
+  "app.firstMessageNotSentHostChanged": "Not sent: the host changed before this message was delivered.",
   "app.restoreDraft": "Restore draft",
   "app.dismiss": "Dismiss",
   "app.scrollToLatestMessage": "Scroll to latest message",
