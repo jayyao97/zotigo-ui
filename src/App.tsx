@@ -18,6 +18,7 @@ import { addWorkspaceRepositories } from "../shared/addWorkspaceRepositories";
 import { referencePrompt } from "../shared/conversationReferences";
 import { InputQueue } from "./conversation/InputQueue";
 import { CompletionTriggerNavigation } from "./conversation/CompletionTriggerNavigation";
+import { SubagentNavigation, type SubagentNavigationValue } from "./conversation/SubagentNavigation";
 import { CompletionTriggers } from "./conversation/CompletionTriggers";
 import { alternateSendMode, type SendMode } from "./sendMode";
 import { ConversationTools, ComposerReferences } from "./conversation/ConversationTools";
@@ -299,6 +300,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     channelsOpen, repositoriesOpen, setRepositoriesOpen, channelsSidebarActive, channelsSessionVisible, setChannelsSessionVisible,
     channelsNavigationRequest, channelsEntryButton, openChannels, closeChannels, leaveChannelsImmediately,
   } = useChannelsNavigation();
+  // The side panel belongs to the visible conversation, including one opened from Channels.
+  const sidePanelSurface = !repositoriesOpen && (!channelsOpen || channelsSessionVisible);
   const [channelsSidebarRoot, setChannelsSidebarRoot] = useState<HTMLDivElement | null>(null);
   const webNavigationButton = useRef<HTMLButtonElement>(null);
   const channelsNavigationButton = useRef<HTMLButtonElement>(null);
@@ -392,7 +395,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setEphemeralBlocksState(next);
   }
   const [optimisticPromptItems, setOptimisticPromptItems] = useState<DisplayItem[]>([]);
-  const [newPromptPreview, setNewPromptPreview] = useState<{ draftKey: string; item: DisplayItem } | null>(null);
+  // sessionCreated: the prompt now belongs to a created session, so only its delivery is uncertain.
+  const [newPromptPreview, setNewPromptPreview] = useState<{ draftKey: string; item: DisplayItem; sessionCreated?: boolean } | null>(null);
   const promptAnchors = useRef(new Map<string, PromptTimelineAnchor>());
   const promptRetries = useRef(new Map<string, () => Promise<void>>());
   const promptRecovery = useRef(new Map<string, { restore: () => void; discard: () => void; release: () => void }>());
@@ -922,6 +926,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     [ephemeralBlocks],
   );
   const subagentRuns = useMemo(() => buildSubagentRuns(timelineItems), [timelineItems]);
+  const subagentRunIdKey = subagentRuns.map((run) => run.id).join("\n");
+  const subagentNavigation = useMemo<SubagentNavigationValue>(() => {
+    const ids = new Set(subagentRunIdKey.split("\n"));
+    return { has: (id) => ids.has(id), open: (id) => showPanelTab(subagentSidePanelTab(id)) };
+  }, [subagentRunIdKey]);
   const previewAttachment = useMemo(
     () => composerAttachments.find((attachment) => attachment.id === previewAttachmentId) ?? null,
     [composerAttachments, previewAttachmentId],
@@ -1987,19 +1996,35 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     setPreviewAttachmentId(null);
     setIsBusy(true);
     setMessage(null);
+    // Once the session exists, the prompt preview and any retry belong to its draft.
+    let deliveryDraftKey = submittedDraftKey;
+    let sessionCreated = false;
+    const submittedScope = promptScope.current;
+    let createdScope = submittedScope;
+    const failDelivery = (error: string, state: "failed" | "rejected") => {
+      setNewPromptPreview({ draftKey: deliveryDraftKey, item: { ...preview, delivery: { state, error } }, sessionCreated });
+      // A failure for a session the user already left must not surface in another one.
+      // The scope may still be the submitted one if React has not rendered the new selection yet.
+      if (promptScope.current === submittedScope || promptScope.current === createdScope) setMessage(sessionCreated ? error : t("app.checkTheSessionListBeforeRestoringThisDraft", { p0: error }));
+      if (newPromptRecovery.current && sessionCreated) {
+        const retryDraftKey = deliveryDraftKey;
+        newPromptRecovery.current.restore = () => {
+          updateComposerDraft(retryDraftKey, current => restoreSubmittedDraft(current, submittedDraft));
+          setNewPromptPreview(null);
+          newPromptRecovery.current = null;
+        };
+      }
+    };
     try {
       const provisionalTitle = titleFromPrompt(trimmedPrompt);
       const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
       const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
       trace("request");
-      const result = await client.createConversationWithSession({
+      // Create first so navigation shows the session while its worker starts.
+      const created = await client.createConversation({
         projectId: desktopState.selectedProjectId,
         workspaceId: desktopState.selectedWorkspaceId,
         title: provisionalTitle,
-        prompt: trimmedPrompt,
-        skills: submittedSkills.length > 0 ? submittedSkills : undefined,
-        images: images.length > 0 ? images : undefined,
-        files: files.length > 0 ? files : undefined,
         agent: selectedAgent,
         ...(selectedAgent === "codex"
           ? {
@@ -2012,23 +2037,38 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               approvalPolicy: selectedApprovalPolicy ?? "auto",
             }),
       });
+      trace("created");
+      applyDesktopActionResult(created);
+      if (created.error || !created.session) {
+        const error = created.error ?? t("app.sessionNotInCatalog");
+        if (created.deliveryState === "rejected") {
+          // The daemon refused creation; nothing exists to check before restoring.
+          setNewPromptPreview({ draftKey: deliveryDraftKey, item: { ...preview, delivery: { state: "rejected", error } } });
+          setMessage(error);
+        } else failDelivery(error, "failed");
+        return;
+      }
+      pagedNavigation.refresh();
+      sessionCreated = true;
+      deliveryDraftKey = draftKeyForSelection({
+        conversationId: created.state?.selectedConversationId ?? created.session.id,
+        projectId: created.state?.selectedProjectId ?? null,
+        workspaceId: created.state?.selectedWorkspaceId ?? null,
+      });
+      createdScope = `${clientScope}:${created.state?.selectedConversationId ?? created.session.id}`;
+      setNewPromptPreview({ draftKey: deliveryDraftKey, item: preview, sessionCreated });
+      const result = await client.sendConversationMessage({
+        conversationId: created.session.id,
+        clientMessageId: preview.id,
+        text: trimmedPrompt,
+        skills: submittedSkills.length > 0 ? submittedSkills : undefined,
+        images: images.length > 0 ? images : undefined,
+        files: files.length > 0 ? files : undefined,
+      });
       trace("response");
       applyDesktopActionResult(result);
       if (result.error) {
-        const retryDraftKey = draftKeyForSelection({
-          conversationId: result.state?.selectedConversationId ?? null,
-          projectId: result.state?.selectedProjectId ?? null,
-          workspaceId: result.state?.selectedWorkspaceId ?? null,
-        });
-        setNewPromptPreview({ draftKey: retryDraftKey, item: { ...preview, delivery: { state: result.deliveryState === "rejected" ? "rejected" : "failed", error: result.error } } });
-        if (newPromptRecovery.current) {
-          newPromptRecovery.current.restore = () => {
-            updateComposerDraft(retryDraftKey, current => restoreSubmittedDraft(current, submittedDraft));
-            setNewPromptPreview(null);
-            newPromptRecovery.current = null;
-          };
-        }
-        setMessage(result.error);
+        failDelivery(result.error, result.deliveryState === "rejected" ? "rejected" : "failed");
       } else {
         setNewPromptPreview(null);
         newPromptRecovery.current = null;
@@ -2038,8 +2078,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         void refreshSessions({ quiet: true });
       }
     } catch (error) {
-      setNewPromptPreview({ draftKey: submittedDraftKey, item: { ...preview, delivery: { state: "failed", error: errorMessage(error) } } });
-      setMessage(t("app.checkTheSessionListBeforeRestoringThisDraft", { p0: errorMessage(error) }));
+      failDelivery(errorMessage(error), "failed");
     } finally {
       setIsBusy(false);
     }
@@ -3159,7 +3198,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.isComposing || document.querySelector("dialog[open], [aria-modal=true]")) return;
-      if (channelsOpen || repositoriesOpen) return;
+      if (!sidePanelSurface) return;
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "p") {
         event.preventDefault(); browseFiles();
       } else if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === "KeyB") {
@@ -3168,19 +3207,20 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [channelsOpen, repositoriesOpen, workspaceFileRoot, selectedSession?.id]);
+  }, [sidePanelSurface, workspaceFileRoot, selectedSession?.id]);
 
   const activeSidePanelTab = sidePanelTabs.tabs.find((tab) => tab.id === sidePanelTabs.activeTabId) ?? null;
   const liveFiles = useLiveFiles(client, openFiles, openFilesRef, setOpenFiles,
-    sidePanelOpen && !channelsOpen && !repositoriesOpen && activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined,
+    sidePanelOpen && sidePanelSurface && activeSidePanelTab?.kind === "file" ? activeSidePanelTab.path : undefined,
     hostSwitchingRef);
 
   return (
     <MarkdownImageContext.Provider value={markdownImageContext}>
     <CompletionTriggerNavigation.Provider value={triggerId => showPanelTab({ id: "notifications", kind: "notifications", triggerId })}>
+    <SubagentNavigation.Provider value={subagentNavigation}>
     <main
       ref={appFrameRef}
-      className={`app-frame ${isSidebarResizing ? "resizing-sidebar" : ""} ${channelsOpen ? "channels-mode" : ""} ${repositoriesOpen ? "repositories-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${!channelsOpen && !repositoriesOpen && sidePanelOpen ? "has-subagent-panel" : ""} ${!channelsOpen && !repositoriesOpen && sidePanelExpanded ? "side-panel-expanded" : ""} ${!channelsOpen && !repositoriesOpen && isSidePanelResizing ? "resizing-side-panel" : ""}`}
+      className={`app-frame ${isSidebarResizing ? "resizing-sidebar" : ""} ${channelsOpen ? "channels-mode" : ""} ${repositoriesOpen ? "repositories-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${sidePanelSurface && sidePanelOpen ? "has-subagent-panel" : ""} ${sidePanelSurface && sidePanelExpanded ? "side-panel-expanded" : ""} ${sidePanelSurface && isSidePanelResizing ? "resizing-side-panel" : ""}`}
       style={{ "--preferred-sidebar-width": `${sidebarWidth}px`, "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
       onClickCapture={(event) => void handleMarkdownLinkClick(event)}
       onKeyDown={(event) => {
@@ -3441,7 +3481,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         >
           {searchWindow && <div className="search-history-notice">{t("app.showingMessagesNearASearchResult")}{" "}<button type="button" onClick={closeSearchWindow}>{t("app.returnToConversation")}</button></div>}
           <article className={`conversation-body${!selectedConversation && newPromptPreview?.draftKey === composerDraftKey ? " has-prompt-preview" : ""}`}>
-            {newPromptPreview?.draftKey === composerDraftKey && (
+            {newPromptPreview?.draftKey === composerDraftKey && !(newPromptPreview.sessionCreated && !newPromptPreview.item.delivery
+              && sessionItems.some(item => item.type === "user_message")) && (
               <>
                 <UserMessage
                   text={displayContentText(newPromptPreview.item.content)}
@@ -3451,7 +3492,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 />
                 {newPromptPreview.item.delivery?.state === "failed" && (
                   <div className="message-delivery">
-                    <span>{t("app.checkSessionsBeforeRestoringCreationMayHaveSucceeded")}</span>
+                    <span>{t(newPromptPreview.sessionCreated ? "app.checkConversationBeforeRestoringMessageMayHaveArrived" : "app.checkSessionsBeforeRestoringCreationMayHaveSucceeded")}</span>
                     <button type="button" onClick={() => newPromptRecovery.current?.restore()}>{t("app.restoreDraft")}</button>
                     <button type="button" onClick={() => newPromptRecovery.current?.discard()}>{t("app.dismiss")}</button>
                   </div>
@@ -3770,7 +3811,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       </SessionInspector>}
 
       {(
-        <aside inert={channelsOpen || repositoriesOpen || !sidePanelOpen} aria-hidden={channelsOpen || repositoriesOpen || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label={t("app.sidePanel")}>
+        <aside inert={!sidePanelSurface || !sidePanelOpen} aria-hidden={!sidePanelSurface || !sidePanelOpen} ref={sidePanelRef} className="subagent-side-panel" aria-label={t("app.sidePanel")}>
           <div
             className="side-panel-resize-handle"
             role="separator"
@@ -3834,13 +3875,13 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
             onSubagents={() => showPanelTab({ id: "subagents", kind: "subagents" })}
             onOpenFile={id => { const tab = sidePanelTabs.tabs.find(tab => tab.id === id); if (tab) showPanelTab(tab); }}
           />) : activeSidePanelTab.kind === "notifications" ? (
-            selectedBinding && <CompletionTriggers key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} active={sidePanelOpen && !channelsOpen && surfaceActive} triggerId={activeSidePanelTab.triggerId} focusRequest={activeSidePanelTab} />
+            selectedBinding && <CompletionTriggers key={clientScope + ":" + selectedBinding.daemon_session_id} client={client} sessionId={selectedBinding.daemon_session_id} active={sidePanelOpen && sidePanelSurface && surfaceActive} triggerId={activeSidePanelTab.triggerId} focusRequest={activeSidePanelTab} />
           ) : activeSidePanelTab.kind === "subagents" ? (
             <SubagentOverview runs={subagentRuns} onSelect={(id) => showPanelTab(subagentSidePanelTab(id))} />
           ) : activeSidePanelTab.kind === "subagent" ? (
             <SubagentTranscript
               key={JSON.stringify([clientScope, selectedBinding?.daemon_session_id, activeSidePanelTab.runId])}
-              translation={selectedBinding && sidePanelOpen && surfaceActive && !channelsOpen && !repositoriesOpen ? {
+              translation={selectedBinding && sidePanelOpen && surfaceActive && sidePanelSurface ? {
                 language: translationLanguage,
                 translationProfile,
                 translate: (text, language) => client.translateSelection(selectedBinding.daemon_session_id, text, language, translationProfile || undefined),
@@ -3853,7 +3894,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           ) : openFiles[activeSidePanelTab.path] ? (
             <Suspense fallback={<div className="subagent-panel-empty">{t("app.loadingEditor")}</div>}>
               <OpenWorkspaceFileTab
-                active={sidePanelOpen && !channelsOpen && surfaceActive}
+                active={sidePanelOpen && sidePanelSurface && surfaceActive}
                 state={openFiles[activeSidePanelTab.path]}
                 line={activeSidePanelTab.line}
                 column={activeSidePanelTab.column}
@@ -4096,6 +4137,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         />
       )}
     </main>
+    </SubagentNavigation.Provider>
     </CompletionTriggerNavigation.Provider>
     </MarkdownImageContext.Provider>
   );

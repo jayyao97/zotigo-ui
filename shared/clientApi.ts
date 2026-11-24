@@ -107,7 +107,7 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     openMarkdownLink: (input) => invoke("desktop:open-markdown-link", input),
     saveTextFile: (input) => invoke("desktop:save-text-file", input),
     downloadImage: (url) => invoke("desktop:download-image", url),
-    createConversationWithSession: (input) => invoke("desktop:create-conversation-with-session", input),
+    createConversation: (input) => invoke("desktop:create-conversation", input),
     startConversationSession: (conversationId) => invoke("desktop:start-conversation-session", conversationId),
     sendConversationMessage: (input) => invoke("desktop:send-conversation-message", input),
     listQueuedInputs: (id) => invoke("sessions:queue-list", id),

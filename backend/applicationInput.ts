@@ -149,10 +149,6 @@ export function assertCreateConversationInput(value: unknown): {
   projectId: string | null;
   workspaceId: string | null;
   title?: string;
-  prompt: string;
-  images: MessageImageInput[];
-  files: MessageFileInput[];
-  skills: string[];
   profile?: string;
   approvalPolicy?: ApprovalPolicy;
   agent?: AgentKind;
@@ -160,16 +156,11 @@ export function assertCreateConversationInput(value: unknown): {
   reasoningEffort?: string;
 } {
   const record = assertRecord(value, "create conversation input");
-  const { images, files } = assertAttachments(record);
   return {
     projectId: assertNullableString(record.projectId, "projectId"),
     workspaceId:
       record.workspaceId === undefined ? null : assertNullableString(record.workspaceId, "workspaceId"),
     title: record.title === undefined ? undefined : assertString(record.title, "title"),
-    prompt: record.prompt === undefined ? "" : assertString(record.prompt, "prompt").trim(),
-    images,
-    files,
-    skills: assertSkillNames(record.skills),
     profile: record.profile === undefined ? undefined : assertNonEmptyString(record.profile, "profile"),
     approvalPolicy:
       record.approvalPolicy === undefined

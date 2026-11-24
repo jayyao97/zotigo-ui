@@ -314,8 +314,9 @@ async function chooseDevHost() {
 for (const override of [false, true]) test(`new sessions default to full access and respect explicit auto selection (${override})`, async () => {
   const restore = installDom();
   const client = hostClient();
-  let submitted: Parameters<typeof client.api.createConversationWithSession>[0] | undefined;
-  client.api.createConversationWithSession = async input => { submitted = input; return { state: emptyState }; };
+  let submitted: Parameters<typeof client.api.createConversation>[0] | undefined;
+  client.api.createConversation = async input => { submitted = input; return { state: emptyState, session: { id: "new", state: "created", live: true, working: false, created_at: "2026-01-01T00:00:00Z" } }; };
+  client.api.sendConversationMessage = async () => ({ command: { id: "cmd", sequence: 1, type: "message", created_at: "2026-01-01T00:00:00Z" } });
   const root = await mountHostShell(client.api);
   try {
     assert.equal(document.querySelector(".approval-policy-trigger")?.textContent, "Full access");
@@ -330,6 +331,87 @@ for (const override of [false, true]) test(`new sessions default to full access 
     await act(async () => document.querySelector("form.new-chat-composer")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     assert.ok(submitted);
     assert.equal(submitted.approvalPolicy, override ? "auto" : "bypass_permissions");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
+test("a new session appears in navigation before its first message is delivered", async () => {
+  const restore = installDom();
+  const time = "2026-01-01T00:00:00Z";
+  const project = { id: "project", name: "Project", created_at: time, updated_at: time };
+  const workspace = { id: "workspace", project_id: "project", title: "Workspace", root_path: "/workspace", status: "ready" as const, created_at: time, updated_at: time };
+  const initial: DesktopState = { ...emptyState, projects: [project], workspaces: [workspace], selectedProjectId: "project", selectedWorkspaceId: "workspace" };
+  const client = hostClient(false, initial);
+  const session = { id: "new-session", state: "created" as const, live: true, working: false, created_at: time };
+  const created: DesktopState = { ...initial, selectedConversationId: session.id,
+    conversations: [{ id: session.id, project_id: "project", workspace_id: "workspace", title: "hello", created_at: time, updated_at: time }],
+    bindings: [{ conversation_id: session.id, daemon_session_id: session.id, created_at: time }] };
+  client.api.createConversation = async () => ({ state: created, session });
+  let sent: Parameters<typeof client.api.sendConversationMessage>[0] | undefined;
+  let deliver!: () => void;
+  client.api.sendConversationMessage = input => { sent = input; return new Promise(resolve => { deliver = () => resolve({ session, command: { id: "cmd", sequence: 1, type: "message", created_at: time } }); }); };
+  client.api.getSession = async () => session;
+  client.api.listSessionItems = async () => ({ items: [], next_cursor: "", prev_cursor: "", has_more: false });
+  client.api.subscribeSessionEvents = async () => {};
+  const root = await mountHostShell(client.api);
+  try {
+    const editor = EditorView.findFromDOM(document.querySelector(".cm-content")!)!;
+    await act(async () => editor.dispatch({ changes: { from: 0, insert: "hello" } }));
+    await act(async () => document.querySelector("form.new-chat-composer")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await flush();
+    assert.equal(sent?.conversationId, session.id, "the first message targets the created session");
+    assert.ok(document.querySelector(`[data-workspace-id="workspace"] [data-session-id="${session.id}"]`), "navigation shows the session while delivery is pending");
+    assert.match(document.querySelector(".conversation-body")?.textContent ?? "", /hello/, "the submitted prompt stays visible");
+    await act(async () => deliver());
+    await flush();
+    assert.ok(document.querySelector(`[data-session-id="${session.id}"]`));
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
+for (const stage of ["create", "send"] as const) test(`a failed new session ${stage} keeps the prompt recoverable in the right draft`, async () => {
+  const restore = installDom();
+  const time = "2026-01-01T00:00:00Z";
+  const project = { id: "project", name: "Project", created_at: time, updated_at: time };
+  const workspace = { id: "workspace", project_id: "project", title: "Workspace", root_path: "/workspace", status: "ready" as const, created_at: time, updated_at: time };
+  const initial: DesktopState = { ...emptyState, projects: [project], workspaces: [workspace], selectedProjectId: "project", selectedWorkspaceId: "workspace" };
+  const client = hostClient(false, initial);
+  const session = { id: "new-session", state: "created" as const, live: true, working: false, created_at: time };
+  const created: DesktopState = { ...initial, selectedConversationId: session.id,
+    conversations: [{ id: session.id, project_id: "project", workspace_id: "workspace", title: "hello", created_at: time, updated_at: time }],
+    bindings: [{ conversation_id: session.id, daemon_session_id: session.id, created_at: time }] };
+  client.api.createConversation = async () => stage === "create"
+    ? { state: initial, error: "create exploded" }
+    : { state: created, session };
+  let sent = false;
+  client.api.sendConversationMessage = async () => { sent = true; return { error: "send exploded" }; };
+  client.api.listQueuedInputs = async () => [];
+  client.api.getSession = async () => session;
+  client.api.listSessionItems = async () => ({ items: [], next_cursor: "", prev_cursor: "", has_more: false });
+  client.api.subscribeSessionEvents = async () => {};
+  const root = await mountHostShell(client.api);
+  try {
+    const editor = EditorView.findFromDOM(document.querySelector(".cm-content")!)!;
+    await act(async () => editor.dispatch({ changes: { from: 0, insert: "hello" } }));
+    await act(async () => document.querySelector("form.new-chat-composer")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await flush();
+    assert.equal(sent, stage === "send");
+    const body = document.querySelector(".conversation-body")?.textContent ?? "";
+    assert.match(body, /hello/, "the failed prompt stays visible");
+    // Only an uncreated session can leave the user unsure whether creation happened.
+    assert.equal(body.includes("creation may have succeeded"), stage === "create");
+    assert.match(document.body.textContent ?? "", stage === "create" ? /create exploded/ : /send exploded/);
+    assert.equal(document.querySelector(`[data-session-id="${session.id}"]`) !== null, stage === "send");
+    const restoreButton = [...document.querySelectorAll<HTMLButtonElement>(".conversation-body button")].find(button => /Restore/.test(button.textContent ?? ""));
+    assert.ok(restoreButton, "the prompt can be restored");
+    await act(async () => click(restoreButton));
+    await flush();
+    assert.match(document.querySelector(".cm-content")?.textContent ?? "", /hello/, "the draft returns to the composer the user is looking at");
+    assert.equal(document.querySelector("form.new-chat-composer") !== null, stage === "create");
   } finally {
     await act(async () => root.unmount());
     restore();

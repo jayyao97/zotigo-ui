@@ -253,8 +253,8 @@ test("Codex conversation creation forwards the selected approval policy", async 
   setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
   const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
   try {
-    const result = await service.invoke("desktop:create-conversation-with-session", [{
-      projectId: null, prompt: "hello", images: [], skills: [], agent: "codex",
+    const result = await service.invoke("desktop:create-conversation", [{
+      projectId: null, agent: "codex",
       model: "gpt-5.6-luna", reasoningEffort: "max", approvalPolicy: "bypass_permissions",
     }]);
     assert.equal(result.ok, true);
@@ -517,11 +517,11 @@ test("prompt identity survives the client boundary and message-to-steering fallb
   }
 });
 
-test("creation preserves server positions and only reorders for legacy daemons", async () => {
+test("creation selects the session without starting a worker or sending a message", async () => {
   const original = getDaemonConfig().baseUrl;
   for (const serverPosition of [undefined, -123456789, 0]) {
     let reorderCount = 0;
-    let sent = false;
+    let workerTouched = false;
     const session = { id: "new", state: "created", approval_policy: "auto", created_at: "2026-01-01" };
     const projection = { runtime: session, organization: null, availability: "available" };
     const daemon = createServer((request, response) => {
@@ -535,8 +535,7 @@ test("creation preserves server positions and only reorders for legacy daemons",
         case "/catalog/navigation": data = { projects: [], workspaces: [], pinned: [], legacy_order_imported: true }; break;
         case "/catalog/sessions/new": data = projection; break;
         case "/catalog/sessions": data = { sessions: [projection] }; break;
-        case "/sessions/new/start": data = session; break;
-        case "/sessions/new/messages": sent = true; data = { id: "cmd", sequence: 1, type: "message", created_at: "2026-01-01" }; break;
+        case "/sessions/new/start": case "/sessions/new/messages": workerTouched = true; data = session; break;
         default: response.writeHead(404); response.end(); return;
       }
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -547,11 +546,13 @@ test("creation preserves server positions and only reorders for legacy daemons",
     setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
     const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
     try {
-      const result = await service.invoke("desktop:create-conversation-with-session", [{
-        projectId: null, workspaceId: "workspace", prompt: "hello", images: [], skills: [],
-      }]);
+      const result = await service.invoke("desktop:create-conversation", [{ projectId: null, workspaceId: "workspace" }]);
       assert.equal(result.ok, true);
-      assert.equal(sent, true, JSON.stringify(result));
+      const value = (result as { value?: { session?: { id: string }; state?: { selectedConversationId: string | null } } }).value;
+      assert.equal(value?.session?.id, "new", JSON.stringify(result));
+      assert.equal(value?.state?.selectedConversationId, "new");
+      assert.equal(workerTouched, false, "the worker starts with the first message");
+      // Server positions are preserved; only legacy daemons need a reorder.
       assert.equal(reorderCount, serverPosition === undefined ? 1 : 0);
     } finally {
       service.dispose(); setDaemonBaseUrl(original);

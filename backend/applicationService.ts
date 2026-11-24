@@ -69,7 +69,6 @@ import {
 	listChannelMessages,
 } from "./zotigod";
 import type {
-  AgentKind,
   ApprovalPolicy,
   MessageImageInput,
   SessionCommandResponse,
@@ -393,26 +392,13 @@ addWorkspaceSourceToCatalog,
     if (currentHost()?.id && currentHost()?.id !== "local") return saveDaemonFile(value);
     return saveAuthorizedTextFile(value, await authorizedFileRoots(value.path, value.sessionId));
   });
-  handle("desktop:create-conversation-with-session", async (input) => {
+  // Creation returns before the worker starts so navigation shows the session
+  // immediately; the first message follows through desktop:send-conversation-message.
+  handle("desktop:create-conversation", async (input) => {
     const conversationInput = assertCreateConversationInput(input);
-    if (!conversationInput.prompt && conversationInput.images.length === 0 && conversationInput.files.length === 0) {
-      throw new Error("message requires text or images");
-    }
     try {
-      const session = await createStartAndMessageSession(
-        conversationInput.workspaceId ?? null,
-        conversationInput.title,
-        conversationInput.prompt,
-        conversationInput.images,
-        conversationInput.skills,
-        conversationInput.profile,
-        conversationInput.approvalPolicy,
-        conversationInput.agent,
-        conversationInput.model,
-        conversationInput.reasoningEffort,
-        conversationInput.files,
-      );
-      return { state: await getCatalogDesktopState(), ...session };
+      const session = await createConversationSession(conversationInput);
+      return { state: await getCatalogDesktopState(), session };
     } catch (error) {
       return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: inputDeliveryFailure(error) };
     }
@@ -551,36 +537,21 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     return roots;
   }
 
-  async function createStartAndMessageSession(
-    workspaceId: string | null,
-    title: string | undefined,
-    text: string,
-    images: MessageImageInput[],
-    skills: string[],
-    profile?: string,
-    approvalPolicy?: ApprovalPolicy,
-    agent: AgentKind = "zotigo",
-    model?: string,
-    reasoningEffort?: string,
-    files: MessageFileInput[] = [],
-  ): Promise<{ session: ZotigoSession; command: SessionCommandResponse }> {
+  async function createConversationSession(input: ReturnType<typeof assertCreateConversationInput>): Promise<ZotigoSession> {
     const created = await createSession({
-      workspaceId: workspaceId ?? undefined,
-      agent,
-      approvalPolicy,
-      ...(agent === "codex"
-        ? { model, reasoningEffort }
-        : { profile }),
+      workspaceId: input.workspaceId ?? undefined,
+      agent: input.agent ?? "zotigo",
+      approvalPolicy: input.approvalPolicy,
+      ...(input.agent === "codex"
+        ? { model: input.model, reasoningEffort: input.reasoningEffort }
+        : { profile: input.profile }),
     });
-    await setCatalogSessionTitle(created.id, title?.trim() || "New session");
-    if (workspaceId && created.workspace_position === undefined) {
+    await setCatalogSessionTitle(created.id, input.title?.trim() || "New session");
+    if (input.workspaceId && created.workspace_position === undefined) {
       await setCatalogSessionPosition(created.id, -Date.now());
     }
     await selectCatalogSession(created.id);
-    text = await uploadMessageFiles(created.id, text, files);
-    const started = await startSession(created.id);
-    const command = await sendSessionMessage(started.id, text, images, skills);
-    return { session: started, command };
+    return created;
   }
 
   async function sendConversationMessage(

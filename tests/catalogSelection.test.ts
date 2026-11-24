@@ -115,6 +115,15 @@ test("browser selection survives reload and ignores late earlier choices and bac
     { projectId: null, workspaceId: null, sessionId: null });
 });
 
+test("a background request returning after session creation keeps the new session selected", () => {
+  const client = createBrowserSelection({ getItem: () => null, setItem: () => {} });
+  const background = client.begin("desktop:get-state");
+  const created = { projectId: "p", workspaceId: "w", sessionId: "new" };
+  client.begin("desktop:create-conversation").accept(created);
+  background.accept({ projectId: null, workspaceId: null, sessionId: null });
+  assert.deepEqual(client.begin("desktop:get-state").selection, created);
+});
+
 test("late ordinary and selection RPC values keep the current visible selection, including nested action results", async () => {
   const client = createBrowserSelection({ getItem: () => null, setItem: () => {} });
   const selectA = client.begin("desktop:select-conversation");

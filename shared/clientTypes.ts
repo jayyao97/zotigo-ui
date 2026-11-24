@@ -208,10 +208,6 @@ export interface CreateConversationInput {
   projectId: string | null;
   workspaceId?: string | null;
   title?: string;
-  prompt?: string;
-  skills?: string[];
-  images?: MessageImageInput[];
-  files?: MessageFileInput[];
   profile?: string;
   approvalPolicy?: ApprovalPolicy;
   agent?: AgentKind;
@@ -393,7 +389,7 @@ export interface ClientApi {
   openMarkdownLink(input: OpenMarkdownLinkInput): Promise<OpenMarkdownLinkResult>;
   saveTextFile(input: SaveTextFileInput): Promise<TextFileSnapshot>;
   downloadImage(url: string): Promise<void>;
-  createConversationWithSession(input: CreateConversationInput): Promise<DesktopActionResult>;
+  createConversation(input: CreateConversationInput): Promise<DesktopActionResult>;
   startConversationSession(conversationId: string): Promise<DesktopActionResult>;
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
   listQueuedInputs(id: string): Promise<import("./zotigod").QueuedInput[] | null>;

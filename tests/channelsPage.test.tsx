@@ -209,10 +209,13 @@ test("channel navigation separates available groups from bound Project sessions"
     await act(async () => click(navigation.querySelector('[aria-label="Collapse Project One"]')!));
     assert.doesNotMatch(navigation.textContent ?? "", /Connected group|Investigate README/);
     await act(async () => click(navigation.querySelector('[aria-label="Expand Project One"]')!));
+    // Groups use the same disclosure icon and animated collapse as Session workspaces.
+    assert.ok(navigation.querySelector('.channels-chat-group .workspace-collapse-button[aria-label="Collapse Connected group"] .project-disclosure-icon'));
     await act(async () => click(navigation.querySelector('[aria-label="Collapse Connected group"]')!));
-    assert.doesNotMatch(navigation.textContent ?? "", /Investigate README/);
+    assert.ok(navigation.querySelector(".channels-chat-group .sidebar-collapse[inert][aria-hidden=true]"));
     await act(async () => click(navigation.querySelector('[aria-label="Expand Connected group"]')!));
     assert.match(navigation.textContent ?? "", /Investigate README/);
+    assert.ok(navigation.querySelector(".channels-chat-group .sidebar-collapse.is-open:not([inert])"));
     assert.ok(navigation.querySelector('[aria-label="Configure Connected group"]'));
 
     await act(async () => click(navigation.querySelector('[aria-label="Connect group"]')!));
@@ -236,6 +239,32 @@ test("channel navigation separates available groups from bound Project sessions"
     await flush();
     assert.equal(navigation.querySelector('[aria-label="Collapse Project One"]'), null);
     assert.match(navigation.querySelector(".channels-available-groups")?.textContent ?? "", /Connected group/);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
+test("channel topics page five at a time like Session workspaces and reveal the open session", async () => {
+  const restore = installDom();
+  try {
+    const connected = conversation({ id: "group-connected", workspace_id: workspace.id, enabled: true });
+    const topics = Array.from({ length: 7 }, (_, index) => conversation({ id: `topic-${index}`, root_id: `message-${index}`, display_name: `Topic ${index}`, session_id: `session-${index}`, enabled: true, last_activity_at: `2026-01-0${9 - index}T00:00:00Z` }));
+    const api = {
+      listChannelConnections: async () => [connection("connection-1", "Bot One")],
+      listChannelGroups: async () => [{ ...groupRuntime, chat_id: connected.chat_id, name: "Connected group", available: true, conversation_id: connected.id, workspace_id: workspace.id, enabled: true, allowed_sender_ids: ["owner-1"] }],
+      listChannelConversations: async () => [connected, ...topics],
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    const render = (selectedSessionId?: string) => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={Boolean(selectedSessionId)} selectedSessionId={selectedSessionId} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>);
+    await act(async () => render());
+    await flush();
+    const navigation = document.querySelector("#navigation")!;
+    const titles = () => Array.from(navigation.querySelectorAll(".channels-conversation-item"), row => row.textContent);
+    assert.deepEqual(titles(), ["Topic 0", "Topic 1", "Topic 2", "Topic 3", "Topic 4"]);
+    await act(async () => render("session-6"));
+    assert.deepEqual(titles(), ["Topic 0", "Topic 1", "Topic 2", "Topic 3", "Topic 4", "Topic 6"]);
+    await act(async () => click(navigation.querySelector(".workspace-sessions-more")!));
+    assert.equal(titles().length, 7);
+    assert.equal(navigation.querySelector(".workspace-sessions-more"), null);
     await act(async () => root.unmount());
   } finally { restore(); }
 });
