@@ -261,6 +261,7 @@ test("Codex conversation creation forwards the selected approval policy", async 
     assert.deepEqual(createBody, {
       agent: "codex", model: "gpt-5.6-luna", reasoning_effort: "max", approval_policy: "bypass_permissions",
     });
+    assert.equal((result as { value?: { deliveryState?: string } }).value?.deliveryState, "rejected", "a refused create leaves nothing behind");
   } finally {
     service.dispose(); setDaemonBaseUrl(original);
     const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed;
@@ -514,6 +515,37 @@ test("prompt identity survives the client boundary and message-to-steering fallb
   } finally {
     setDaemonBaseUrl(original);
     daemon.close(); await once(daemon, "close");
+  }
+});
+
+test("a catalog failure after creation is not reported as a rejected create", async () => {
+  const original = getDaemonConfig().baseUrl;
+  const session = { id: "new", state: "created", approval_policy: "auto", created_at: "2026-01-01", workspace_position: -1 };
+  const daemon = createServer((request, response) => {
+    if (request.url === "/catalog/snapshot?sessions=none") { response.writeHead(404); response.end(); return; }
+    if (request.url === "/sessions/new/title") {
+      response.writeHead(400, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ code: "invalid_request", message: "title refused" }));
+      return;
+    }
+    const data = request.url === "/sessions" ? session
+      : request.url === "/catalog/navigation" ? { projects: [], workspaces: [], pinned: [], legacy_order_imported: true }
+      : request.url === "/projects" ? { projects: [] } : { sessions: [] };
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ code: "ok", data }));
+  });
+  daemon.listen(0, "127.0.0.1"); await once(daemon, "listening");
+  const address = daemon.address(); assert.ok(address && typeof address !== "string");
+  setDaemonBaseUrl(`http://127.0.0.1:${address.port}`);
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  try {
+    const result = await service.invoke("desktop:create-conversation", [{ projectId: null, workspaceId: "workspace" }]);
+    const value = (result as { value?: { error?: string; deliveryState?: string } }).value;
+    assert.match(value?.error ?? "", /title refused/);
+    assert.equal(value?.deliveryState, undefined, "the session already exists");
+  } finally {
+    service.dispose(); setDaemonBaseUrl(original);
+    const closed = once(daemon, "close"); daemon.close(); daemon.closeAllConnections(); await closed;
   }
 });
 

@@ -855,6 +855,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const activePrompt = activeComposerDraft.prompt;
   const composerAttachments = activeComposerDraft.attachments;
   const selectedSkillNames = activeComposerDraft.selectedSkillNames;
+  // Once the created session's own user_message arrives, the timeline shows the prompt instead.
+  const showNewPromptPreview = newPromptPreview?.draftKey === composerDraftKey && !(newPromptPreview.sessionCreated
+    && newPromptPreview.item.delivery?.state !== "failed" && newPromptPreview.item.delivery?.state !== "rejected"
+    && sessionItems.some(item => item.type === "user_message"));
 
   useEffect(() => {
     const updateVisibility = () => setConversationVisible(conversationIsVisible(conversationScrollRef.current));
@@ -2044,7 +2048,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         if (created.deliveryState === "rejected") {
           // The daemon refused creation; nothing exists to check before restoring.
           setNewPromptPreview({ draftKey: deliveryDraftKey, item: { ...preview, delivery: { state: "rejected", error } } });
-          setMessage(error);
+          if (promptScope.current === submittedScope) setMessage(error);
         } else failDelivery(error, "failed");
         return;
       }
@@ -2070,7 +2074,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       if (result.error) {
         failDelivery(result.error, result.deliveryState === "rejected" ? "rejected" : "failed");
       } else {
-        setNewPromptPreview(null);
+        // Keep the delivered prompt visible until its user_message reaches the timeline.
+        setNewPromptPreview(current => current?.item.id === preview.id ? { ...current, item: { ...preview, delivery: undefined } } : current);
         newPromptRecovery.current = null;
         for (const attachment of submittedAttachments) {
           if (attachment.url) URL.revokeObjectURL(attachment.url);
@@ -3481,8 +3486,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         >
           {searchWindow && <div className="search-history-notice">{t("app.showingMessagesNearASearchResult")}{" "}<button type="button" onClick={closeSearchWindow}>{t("app.returnToConversation")}</button></div>}
           <article className={`conversation-body${!selectedConversation && newPromptPreview?.draftKey === composerDraftKey ? " has-prompt-preview" : ""}`}>
-            {newPromptPreview?.draftKey === composerDraftKey && !(newPromptPreview.sessionCreated && !newPromptPreview.item.delivery
-              && sessionItems.some(item => item.type === "user_message")) && (
+            {showNewPromptPreview && (
               <>
                 <UserMessage
                   text={displayContentText(newPromptPreview.item.content)}
@@ -3504,6 +3508,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                 onRetryPrompt={(id) => { if (!isBusy) void promptRetries.current.get(id)?.(); }}
                 onRestorePrompt={(id) => { if (!isBusy) promptRecovery.current.get(id)?.restore(); }}
                 onDismissPrompt={(id) => { if (!isBusy) promptRecovery.current.get(id)?.discard(); }}
+                hasPendingPrompt={showNewPromptPreview}
                 onFork={timelineActions.onFork}
                 forkBusy={isBusy}
                 forkSourceTitle={forkSourceConversation?.title}

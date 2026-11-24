@@ -396,11 +396,29 @@ addWorkspaceSourceToCatalog,
   // immediately; the first message follows through desktop:send-conversation-message.
   handle("desktop:create-conversation", async (input) => {
     const conversationInput = assertCreateConversationInput(input);
+    let session: Awaited<ReturnType<typeof createSession>>;
     try {
-      const session = await createConversationSession(conversationInput);
-      return { state: await getCatalogDesktopState(), session };
+      session = await createSession({
+        workspaceId: conversationInput.workspaceId ?? undefined,
+        agent: conversationInput.agent ?? "zotigo",
+        approvalPolicy: conversationInput.approvalPolicy,
+        ...(conversationInput.agent === "codex"
+          ? { model: conversationInput.model, reasoningEffort: conversationInput.reasoningEffort }
+          : { profile: conversationInput.profile }),
+      });
     } catch (error) {
       return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: inputDeliveryFailure(error) };
+    }
+    try {
+      await setCatalogSessionTitle(session.id, conversationInput.title?.trim() || "New session");
+      if (conversationInput.workspaceId && session.workspace_position === undefined) {
+        await setCatalogSessionPosition(session.id, -Date.now());
+      }
+      await selectCatalogSession(session.id);
+      return { state: await getCatalogDesktopState(), session };
+    } catch (error) {
+      // The session exists, so this failure is never a clean rejection.
+      return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error) };
     }
   });
   handle("desktop:start-conversation-session", async (conversationIdValue) => {
@@ -535,23 +553,6 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
       ...state.workspaces.map((workspace) => workspace.root_path),
     ].filter((value): value is string => Boolean(value));
     return roots;
-  }
-
-  async function createConversationSession(input: ReturnType<typeof assertCreateConversationInput>): Promise<ZotigoSession> {
-    const created = await createSession({
-      workspaceId: input.workspaceId ?? undefined,
-      agent: input.agent ?? "zotigo",
-      approvalPolicy: input.approvalPolicy,
-      ...(input.agent === "codex"
-        ? { model: input.model, reasoningEffort: input.reasoningEffort }
-        : { profile: input.profile }),
-    });
-    await setCatalogSessionTitle(created.id, input.title?.trim() || "New session");
-    if (input.workspaceId && created.workspace_position === undefined) {
-      await setCatalogSessionPosition(created.id, -Date.now());
-    }
-    await selectCatalogSession(created.id);
-    return created;
   }
 
   async function sendConversationMessage(

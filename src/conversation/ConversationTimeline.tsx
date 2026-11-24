@@ -106,6 +106,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   onRetryPrompt,
   onRestorePrompt,
   onDismissPrompt,
+  hasPendingPrompt = false,
 }: {
   binding: DaemonSessionBinding | null;
   session: ZotigoSession | null;
@@ -130,6 +131,8 @@ export const SessionTimeline = memo(function SessionTimeline({
   onRetryPrompt?: (id: string) => void;
   onRestorePrompt?: (id: string) => void;
   onDismissPrompt?: (id: string) => void;
+  /** A prompt rendered outside the timeline already fills an otherwise empty conversation. */
+  hasPendingPrompt?: boolean;
 }) {
   useLocale();
   const compactedItemCacheRef = useRef(new WeakMap<DisplayItem, { workspaceRoot: string; item: DisplayItem }>());
@@ -174,7 +177,7 @@ export const SessionTimeline = memo(function SessionTimeline({
               {t("conversationTimeline.forkedFrom")}{" "}{forkSourceTitle || session.forked_from.session_id}
             </button>
           </div>}
-          {itemsLoading && visibleItems.length === 0 ? (
+          {hasPendingPrompt && visibleItems.length === 0 ? null : itemsLoading && visibleItems.length === 0 ? (
             <div className="assistant-note">
               <p>{t("conversationTimeline.loadingDisplayHistory")}</p>
             </div>

@@ -337,7 +337,7 @@ for (const override of [false, true]) test(`new sessions default to full access 
   }
 });
 
-test("a new session appears in navigation before its first message is delivered", async () => {
+for (const timelineHasPrompt of [false, true]) test(`a new session appears in navigation before its first message is delivered (timeline prompt: ${timelineHasPrompt})`, async () => {
   const restore = installDom();
   const time = "2026-01-01T00:00:00Z";
   const project = { id: "project", name: "Project", created_at: time, updated_at: time };
@@ -353,9 +353,14 @@ test("a new session appears in navigation before its first message is delivered"
   let deliver!: () => void;
   client.api.sendConversationMessage = input => { sent = input; return new Promise(resolve => { deliver = () => resolve({ session, command: { id: "cmd", sequence: 1, type: "message", created_at: time } }); }); };
   client.api.getSession = async () => session;
-  client.api.listSessionItems = async () => ({ items: [], next_cursor: "", prev_cursor: "", has_more: false });
+  // The daemon may already show the accepted prompt before the send request returns.
+  const items: DisplayItem[] = timelineHasPrompt ? [{ id: "prompt", sequence: 1, type: "user_message", created_at: time, content: [{ type: "text", text: "hello" }] }] : [];
+  client.api.listSessionItems = async () => ({ items, next_cursor: "", prev_cursor: "", has_more: false });
   client.api.subscribeSessionEvents = async () => {};
+  client.api.listQueuedInputs = async () => [];
   const root = await mountHostShell(client.api);
+  const prompts = () => [...document.querySelectorAll(".conversation-body .message-row.user")].filter(row => row.textContent?.includes("hello")).length;
+  const body = () => document.querySelector(".conversation-body")?.textContent ?? "";
   try {
     const editor = EditorView.findFromDOM(document.querySelector(".cm-content")!)!;
     await act(async () => editor.dispatch({ changes: { from: 0, insert: "hello" } }));
@@ -363,17 +368,20 @@ test("a new session appears in navigation before its first message is delivered"
     await flush();
     assert.equal(sent?.conversationId, session.id, "the first message targets the created session");
     assert.ok(document.querySelector(`[data-workspace-id="workspace"] [data-session-id="${session.id}"]`), "navigation shows the session while delivery is pending");
-    assert.match(document.querySelector(".conversation-body")?.textContent ?? "", /hello/, "the submitted prompt stays visible");
+    assert.equal(prompts(), 1, "the submitted prompt is shown exactly once");
+    assert.doesNotMatch(body(), /No display items|Loading display history/, "the pending prompt replaces the empty timeline note");
     await act(async () => deliver());
     await flush();
     assert.ok(document.querySelector(`[data-session-id="${session.id}"]`));
+    assert.equal(prompts(), 1, "the delivered prompt stays visible until the timeline shows it");
+    assert.doesNotMatch(body(), /Sending/);
   } finally {
     await act(async () => root.unmount());
     restore();
   }
 });
 
-for (const stage of ["create", "send"] as const) test(`a failed new session ${stage} keeps the prompt recoverable in the right draft`, async () => {
+for (const stage of ["rejected", "create", "send"] as const) test(`a failed new session ${stage} keeps the prompt recoverable in the right draft`, async () => {
   const restore = installDom();
   const time = "2026-01-01T00:00:00Z";
   const project = { id: "project", name: "Project", created_at: time, updated_at: time };
@@ -384,9 +392,9 @@ for (const stage of ["create", "send"] as const) test(`a failed new session ${st
   const created: DesktopState = { ...initial, selectedConversationId: session.id,
     conversations: [{ id: session.id, project_id: "project", workspace_id: "workspace", title: "hello", created_at: time, updated_at: time }],
     bindings: [{ conversation_id: session.id, daemon_session_id: session.id, created_at: time }] };
-  client.api.createConversation = async () => stage === "create"
-    ? { state: initial, error: "create exploded" }
-    : { state: created, session };
+  client.api.createConversation = async () => stage === "send"
+    ? { state: created, session }
+    : { state: initial, error: "create exploded", deliveryState: stage === "rejected" ? "rejected" : undefined };
   let sent = false;
   client.api.sendConversationMessage = async () => { sent = true; return { error: "send exploded" }; };
   client.api.listQueuedInputs = async () => [];
@@ -404,14 +412,62 @@ for (const stage of ["create", "send"] as const) test(`a failed new session ${st
     assert.match(body, /hello/, "the failed prompt stays visible");
     // Only an uncreated session can leave the user unsure whether creation happened.
     assert.equal(body.includes("creation may have succeeded"), stage === "create");
-    assert.match(document.body.textContent ?? "", stage === "create" ? /create exploded/ : /send exploded/);
+    assert.match(document.body.textContent ?? "", stage === "send" ? /send exploded/ : /create exploded/);
     assert.equal(document.querySelector(`[data-session-id="${session.id}"]`) !== null, stage === "send");
     const restoreButton = [...document.querySelectorAll<HTMLButtonElement>(".conversation-body button")].find(button => /Restore/.test(button.textContent ?? ""));
     assert.ok(restoreButton, "the prompt can be restored");
     await act(async () => click(restoreButton));
     await flush();
     assert.match(document.querySelector(".cm-content")?.textContent ?? "", /hello/, "the draft returns to the composer the user is looking at");
-    assert.equal(document.querySelector("form.new-chat-composer") !== null, stage === "create");
+    assert.equal(document.querySelector("form.new-chat-composer") !== null, stage !== "send");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
+test("the side panel follows a conversation opened from Channels and hides on configuration pages", async () => {
+  const restore = installDom();
+  const time = "2026-01-01T00:00:00Z";
+  const project = { id: "project", name: "Project", created_at: time, updated_at: time };
+  const workspace = { id: "workspace", project_id: "project", title: "Workspace", root_path: "/workspace", status: "ready" as const, created_at: time, updated_at: time };
+  const state: DesktopState = { ...emptyState, projects: [project], workspaces: [workspace], selectedProjectId: "project", selectedWorkspaceId: "workspace", selectedConversationId: "session-1",
+    conversations: [{ id: "session-1", project_id: "project", workspace_id: "workspace", title: "Investigate README", created_at: time, updated_at: time }],
+    bindings: [{ conversation_id: "session-1", daemon_session_id: "session-1", created_at: time }] };
+  const client = hostClient(false, state);
+  const session = { id: "session-1", state: "ended" as const, live: false, working: false, created_at: time };
+  client.api.getSession = async () => session;
+  client.api.listSessionItems = async () => ({ items: [], next_cursor: "", prev_cursor: "", has_more: false });
+  client.api.subscribeSessionEvents = async () => {};
+  client.api.listQueuedInputs = async () => [];
+  const base = { connection_id: "connection-1", chat_id: "chat", chat_type: "group", chat_name: "Group", session_strategy: "topic", enabled: true, allowed_sender_ids: [], observed_senders: [], agent: "zotigo", profile_name: "", model: "", reasoning_effort: "", agent_instructions_mode: "inherit", agent_instructions: "", approval_instructions_mode: "inherit", approval_instructions: "", last_activity_at: time, created_at: time, updated_at: time };
+  client.api.listChannelConnections = async () => [{ id: "connection-1", provider: "feishu", name: "Bot", app_id: "app", has_secret: true, enabled: true, status: "running", allow_chat_ids: [], owner_sender_ids: [], agent_instructions: "", approval_instructions: "", review_all_tools: true, cot_available: true, progress_mode: "cot", created_at: time, updated_at: time }] as never;
+  client.api.listChannelGroups = async () => [{ chat_id: "chat", name: "Group", available: true, conversation_id: "group", workspace_id: "workspace", enabled: true, allowed_sender_ids: [], session_strategy: "topic", agent: "zotigo", profile_name: "", model: "", reasoning_effort: "" }] as never;
+  client.api.listChannelConversations = async () => [
+    { ...base, id: "group", display_name: "Group", workspace_id: "workspace" },
+    { ...base, id: "topic", root_id: "message-1", display_name: "Investigate README", session_id: "session-1" },
+  ] as never;
+  const root = await mountHostShell(client.api);
+  const panelHidden = () => document.querySelector(".subagent-side-panel")!.hasAttribute("inert");
+  try {
+    await act(async () => click(document.querySelector('[aria-label="Toggle side panel"]')!));
+    assert.equal(panelHidden(), false, "the side panel opens for a selected session");
+    await act(async () => click(document.querySelector('[aria-label="Channels"]')!));
+    await flush();
+    assert.equal(panelHidden(), true, "Channels configuration has no side panel");
+    const topic = [...document.querySelectorAll<HTMLButtonElement>(".channels-conversation-item > button")].find(button => button.textContent?.includes("Investigate README"));
+    assert.ok(topic);
+    await act(async () => click(topic));
+    await flush();
+    // Entering Channels closes the panel; the opened conversation can show it again.
+    await act(async () => click(document.querySelector('[aria-label="Toggle side panel"]')!));
+    assert.equal(panelHidden(), false, "a conversation opened from Channels can use the side panel");
+    await act(async () => click(document.querySelector('[aria-label="Configure Group"]')!));
+    await flush();
+    assert.equal(panelHidden(), true, "returning to a Channels group hides the side panel");
+    await act(async () => click(document.querySelector('[aria-label="Repository library"]')!));
+    await flush();
+    assert.equal(panelHidden(), true, "Repositories has no side panel");
   } finally {
     await act(async () => root.unmount());
     restore();
