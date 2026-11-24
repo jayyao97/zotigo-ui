@@ -649,7 +649,7 @@ for (const outcome of ["refused", "delivered"] as const) test(`a session selecte
   }
 });
 
-for (const order of ["event-first", "timeout-then-event", "timeout-then-retry"] as const) test(`a first message whose response times out reconciles by its message id (${order})`, async () => {
+for (const order of ["event-first", "timeout-then-event", "timeout-then-retry", "timeout-then-rejected-retry"] as const) test(`a first message whose response times out reconciles by its message id (${order})`, async () => {
   const restore = installDom();
   const fixture = newSessionFixture();
   const { client } = fixture;
@@ -684,12 +684,20 @@ for (const order of ["event-first", "timeout-then-event", "timeout-then-retry"] 
       await act(async () => click(retry));
       await flush();
       assert.deepEqual(sends, [id, id], "the retry reuses the message id so the daemon runs it once");
-      await act(async () => responses[1]({ command: fixture.command(id) }));
+      if (order === "timeout-then-rejected-retry") {
+        // The first attempt may already be accepted; a refused retry cannot prove otherwise.
+        await act(async () => responses[1]({ error: "permission denied", deliveryState: "rejected" }));
+        await flush();
+        assert.equal(fixture.prompts(), 1);
+        assert.ok(fixture.buttonIn(/Retry/), "the message stays retryable under its id");
+        assert.equal(fixture.buttonIn(/Restore/), undefined, "restoring would resend under a new id");
+        assert.doesNotMatch(fixture.body(), /Message was not sent/);
+      } else await act(async () => responses[1]({ command: fixture.command(id) }));
       await fixture.emitItem(session.id, fixture.promptItem(id));
     }
     assert.equal(fixture.prompts(), 1, "the prompt is shown once");
     assert.doesNotMatch(fixture.body(), /Could not confirm|creation may have succeeded/);
-    assert.doesNotMatch(document.body.textContent ?? "", /request timed out/, "a confirmed message leaves no failure banner");
+    assert.doesNotMatch(document.body.textContent ?? "", /request timed out|permission denied/, "a confirmed message leaves no failure banner");
     assert.equal(fixture.buttonIn(/Retry|Restore|Dismiss/), undefined);
     assert.ok(sends.every(value => value === id));
   } finally {

@@ -2068,13 +2068,16 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     const scope = clientScope;
     const submission = newPromptSubmission(scope, id);
     if (!submission?.message) return;
-    // After an uncertain attempt, a blocked retry still cannot prove the message is missing.
-    const attemptedBefore = submission.item.delivery?.state === "failed";
     const setDelivery = (delivery: DisplayItem["delivery"]) => updateNewPromptSubmission(scope, id, current => ({ ...current, item: { ...current.item, delivery } }));
+    // "rejected" means this attempt was not accepted; it is only final when no earlier attempt may have been.
+    const settle = (error: string, state: "failed" | "rejected") => updateNewPromptSubmission(scope, id, current => {
+      const mayHaveArrived = current.mayHaveArrived || state === "failed";
+      return { ...current, ...(mayHaveArrived ? { mayHaveArrived: true as const } : {}), item: { ...current.item, delivery: { state: mayHaveArrived ? "failed" : "rejected", error } } };
+    });
     const fail = (error: string, state: "failed" | "rejected") => {
       // Reconciliation may already have confirmed the message through its user_message.
       if (!newPromptSubmission(scope, id)) return;
-      setDelivery({ state, error });
+      settle(error, state);
       if (!messageScopes.includes(promptScope.current)) return;
       newPromptBannerRef.current = id;
       setMessage(error);
@@ -2092,9 +2095,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       void refreshSessions({ quiet: true });
     } catch (error) {
       // A request blocked by a host switch never reached the daemon.
-      if (error instanceof HostChangedError) {
-        if (newPromptSubmission(scope, id)) setDelivery({ state: attemptedBefore ? "failed" : "rejected", error: t("app.firstMessageNotSentHostChanged") });
-      } else fail(errorMessage(error), "failed");
+      if (error instanceof HostChangedError) settle(t("app.firstMessageNotSentHostChanged"), "rejected");
+      else fail(errorMessage(error), "failed");
     }
   }
 

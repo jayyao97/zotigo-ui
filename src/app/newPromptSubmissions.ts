@@ -20,6 +20,12 @@ export type NewPromptSubmission = {
   draft: ComposerDraft | null;
   /** First-message request; a retry resends it with the same client message id. */
   message?: SendConversationMessageInput;
+  /**
+   * An earlier attempt ended without a confirmed outcome, so the daemon may hold the
+   * message. A later refusal or blocked retry cannot prove it missing; only its
+   * user_message settles it.
+   */
+  mayHaveArrived?: true;
 };
 
 const submissionsByHost = new Map<string, readonly NewPromptSubmission[]>();
