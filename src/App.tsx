@@ -225,6 +225,7 @@ import { WorkspaceAddSourceSection } from "./workspace/WorkspaceAddSourceSection
 import { WorkspaceSourcesDialog } from "./workspace/WorkspaceSourcesDialog";
 import { discardNewPromptSubmissions, newPromptSubmission, putNewPromptSubmission, takeNewPromptSubmission, updateNewPromptSubmission, useNewPromptSubmissions } from "./app/newPromptSubmissions";
 import { HostChangedError } from "../shared/bindClientGeneration";
+import type { FirstMessageInput } from "../shared/clientTypes";
 import { CreateWorkspaceSourcesField } from "./workspace/CreateWorkspaceSourcesField";
 import { CreateWorkspaceDialog } from "./workspace/CreateWorkspaceDialog";
 import { CreateProjectDialog } from "./project/CreateProjectDialog";
@@ -861,6 +862,14 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const showNewPromptPreview = Boolean(newPrompt) && !sessionItems.some(item => item.id === newPrompt!.id);
   // The submission whose delivery failure is shown in the banner, so its confirmation can clear it.
   const newPromptBannerRef = useRef<string | null>(null);
+  // First messages this App is waiting for. A remounted App resumes waiting for the rest.
+  const newPromptWaitsRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const submission of newPromptSubmissions) {
+      if (!submission.sessionId || submission.item.delivery?.state !== "sending" || newPromptWaitsRef.current.has(submission.id)) continue;
+      void deliverNewPrompt(submission.id, [`${clientScope}:${submission.sessionId}`], "wait");
+    }
+  }, [newPromptSubmissions]);
   useEffect(() => {
     if (newPromptSubmissions.length === 0) return;
     const delivered = new Set(sessionItems.map(item => item.id));
@@ -2012,9 +2021,18 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       const provisionalTitle = titleFromPrompt(trimmedPrompt);
       const images = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind === "image").map(attachmentToMessageImage));
       const files = await Promise.all(submittedAttachments.filter((attachment) => attachment.kind !== "image" && attachment.upload?.state !== "ready").map(attachmentToMessageFile));
+      const message: FirstMessageInput = {
+        clientMessageId: preview.id,
+        text: trimmedPrompt,
+        skills: submittedSkills.length > 0 ? submittedSkills : undefined,
+        images: images.length > 0 ? images : undefined,
+        files: files.length > 0 ? files : undefined,
+      };
       trace("request");
-      // Create first so navigation shows the session while its worker starts.
+      // The backend creates the session and delivers the message itself, so navigation
+      // shows the session at once and a reload of this page cannot drop the message.
       const created = await client.createConversation({
+        message,
         projectId: desktopState.selectedProjectId,
         workspaceId: desktopState.selectedWorkspaceId,
         title: provisionalTitle,
@@ -2033,26 +2051,21 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       trace("created");
       // The state keeps whatever the user selected meanwhile; the submission follows the created session.
       applyDesktopActionResult(created);
-      if (created.error || !created.session) {
+      if (!created.session) {
         failCreation(created.error ?? t("app.sessionNotInCatalog"), created.deliveryState === "rejected" ? "rejected" : "failed");
         return;
       }
+      // A catalog step may fail after the session exists; its first message is still on its way.
+      if (created.error && promptScope.current === submittedScope) setMessage(created.error);
       pagedNavigation.refresh();
       const sessionId = created.session.id;
       updateNewPromptSubmission(scope, preview.id, current => ({
         ...current,
         sessionId,
         draftKey: draftKeyForSelection({ conversationId: sessionId, projectId: null, workspaceId: null }),
-        message: {
-          conversationId: sessionId,
-          clientMessageId: preview.id,
-          text: trimmedPrompt,
-          skills: submittedSkills.length > 0 ? submittedSkills : undefined,
-          images: images.length > 0 ? images : undefined,
-          files: files.length > 0 ? files : undefined,
-        },
+        message: { ...message, conversationId: sessionId },
       }));
-      await deliverNewPrompt(preview.id, [submittedScope, `${scope}:${sessionId}`]);
+      await deliverNewPrompt(preview.id, [submittedScope, `${scope}:${sessionId}`], "wait");
       trace("response");
     } catch (error) {
       // The create request never left when the host changed, so nothing was created.
@@ -2063,11 +2076,15 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     }
   }
 
-  /** Sends or resends a created session's first message under its original client message id. */
-  async function deliverNewPrompt(id: string, messageScopes: string[]) {
+  /**
+   * Waits for the backend's delivery of a first message, or asks it to retry under
+   * the original client message id.
+   */
+  async function deliverNewPrompt(id: string, messageScopes: string[], mode: "wait" | "retry") {
     const scope = clientScope;
     const submission = newPromptSubmission(scope, id);
-    if (!submission?.message) return;
+    if (!submission?.message || newPromptWaitsRef.current.has(id)) return;
+    newPromptWaitsRef.current.add(id);
     const setDelivery = (delivery: DisplayItem["delivery"]) => updateNewPromptSubmission(scope, id, current => ({ ...current, item: { ...current.item, delivery } }));
     // "rejected" means this attempt was not accepted; it is only final when no earlier attempt may have been.
     const settle = (error: string, state: "failed" | "rejected") => updateNewPromptSubmission(scope, id, current => {
@@ -2084,7 +2101,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     };
     setDelivery({ state: "sending" });
     try {
-      const result = await client.sendConversationMessage(submission.message);
+      const result = await (mode === "wait" ? client.waitFirstMessage(id) : client.retryFirstMessage(submission.message));
       applyDesktopActionResult(result);
       if (result.error) {
         fail(result.error, result.deliveryState === "rejected" ? "rejected" : "failed");
@@ -2094,15 +2111,18 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
       updateNewPromptSubmission(scope, id, current => ({ ...current, item: { ...current.item, delivery: undefined }, draft: null, message: undefined }));
       void refreshSessions({ quiet: true });
     } catch (error) {
-      // A request blocked by a host switch never reached the daemon.
-      if (error instanceof HostChangedError) settle(t("app.firstMessageNotSentHostChanged"), "rejected");
-      else fail(errorMessage(error), "failed");
+      if (error instanceof HostChangedError) {
+        // The backend keeps delivering a started message; an App for its host resumes waiting.
+        if (mode === "retry") settle(t("app.firstMessageNotSentHostChanged"), "rejected");
+      } else fail(errorMessage(error), "failed");
+    } finally {
+      newPromptWaitsRef.current.delete(id);
     }
   }
 
   function retryNewPrompt(id: string) {
     if (newPromptBannerRef.current === id) { newPromptBannerRef.current = null; setMessage(null); }
-    void deliverNewPrompt(id, [promptScope.current]);
+    void deliverNewPrompt(id, [promptScope.current], "retry");
   }
 
   function dismissNewPrompt(id: string) {
@@ -2160,6 +2180,8 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
     if (!selectedConversation || runtimeOccupied || isBusy || attachmentsBlocked || (!text && composerAttachments.length === 0)) {
       return;
     }
+    // A later message must not overtake the session's first message, which the backend is still delivering.
+    if (newPromptSubmissions.some(submission => submission.sessionId === selectedConversation.id && submission.item.delivery?.state === "sending")) return;
     if ((text === "/compact" || text === "/compress") && composerAttachments.length === 0 && activeComposerDraft.selectedSkillNames.length === 0) {
       if ((selectedSession?.agent ?? selectedAgent) === "codex") {
         setMessage(t("app.compactNativeOnly"));

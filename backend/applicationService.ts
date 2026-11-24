@@ -68,6 +68,7 @@ import {
 	updateChannelConversation,
 	listChannelMessages,
 } from "./zotigod";
+import { createFirstMessageDeliveries } from "./firstMessageDeliveries";
 import type {
   ApprovalPolicy,
   MessageImageInput,
@@ -96,6 +97,7 @@ import {
   assertAddWorkspaceSourceInput,
   optionalTrimmedString,
   assertCreateConversationInput,
+  assertFirstMessageInput,
   assertApprovalPolicy,
   assertSendConversationMessageInput,
   assertApprovalDecisions,
@@ -153,6 +155,17 @@ addWorkspaceSourceToCatalog,
   function handle(channel: string, listener: (...args: unknown[]) => unknown): void {
     handlers.set(channel, listener);
   }
+  const firstMessages = createFirstMessageDeliveries({
+    upload: (message) => uploadMessageFiles(message.conversationId, message.text, message.files),
+    async send(message, text) {
+      let session = await getOrCreateStartedSession(message.conversationId);
+      const command = await sendMessageOrSteering(session.id, text, message.images, message.skills, message.clientMessageId);
+      if (command.type !== "steering") session = await getSession(session.id);
+      return { session, command };
+    },
+    // A failed upload happens before any message is sent.
+    failure: (error, stage) => ({ error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: stage === "upload" ? "rejected" : inputDeliveryFailure(error) }),
+  });
   handle("hosts:list", () => listHosts());
   handle("hosts:save", (input) => saveHost(input as import("../shared/hosts").HostInput));
   handle("hosts:delete", (id) => deleteHost(assertString(id, "id")));
@@ -393,7 +406,8 @@ addWorkspaceSourceToCatalog,
     return saveAuthorizedTextFile(value, await authorizedFileRoots(value.path, value.sessionId));
   });
   // Creation returns before the worker starts so navigation shows the session
-  // immediately; the first message follows through desktop:send-conversation-message.
+  // immediately. The first message is delivered here in the background, under
+  // this request's host, so it does not depend on the page that submitted it.
   handle("desktop:create-conversation", async (input) => {
     const conversationInput = assertCreateConversationInput(input);
     let session: Awaited<ReturnType<typeof createSession>>;
@@ -409,18 +423,20 @@ addWorkspaceSourceToCatalog,
     } catch (error) {
       return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error), deliveryState: inputDeliveryFailure(error) };
     }
+    // The session exists: its first message goes out even if a catalog step below fails.
+    if (conversationInput.message) firstMessages.start({ ...conversationInput.message, conversationId: session.id });
     try {
       await setCatalogSessionTitle(session.id, conversationInput.title?.trim() || "New session");
       if (conversationInput.workspaceId && session.workspace_position === undefined) {
         await setCatalogSessionPosition(session.id, -Date.now());
       }
-      await selectCatalogSession(session.id);
-      return { state: await getCatalogDesktopState(), session };
+      return { state: await selectCatalogSession(session.id), session };
     } catch (error) {
-      // The session exists, so this failure is never a clean rejection.
-      return { state: await getCatalogDesktopState(), error: errorMessage(error), errorCode: requestErrorCode(error) };
+      return { state: await getCatalogDesktopState(), session, error: errorMessage(error), errorCode: requestErrorCode(error) };
     }
   });
+  handle("desktop:wait-first-message", (clientMessageId) => firstMessages.wait(assertNonEmptyString(clientMessageId, "clientMessageId")));
+  handle("desktop:retry-first-message", (input) => firstMessages.retry(assertFirstMessageInput(input)));
   handle("desktop:start-conversation-session", async (conversationIdValue) => {
     const conversationId = assertString(conversationIdValue, "conversationId");
 

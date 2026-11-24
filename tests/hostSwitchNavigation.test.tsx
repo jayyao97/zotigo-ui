@@ -319,7 +319,7 @@ for (const override of [false, true]) test(`new sessions default to full access 
   const client = hostClient();
   let submitted: Parameters<typeof client.api.createConversation>[0] | undefined;
   client.api.createConversation = async input => { submitted = input; return { state: emptyState, session: { id: "new", state: "created", live: true, working: false, created_at: "2026-01-01T00:00:00Z" } }; };
-  client.api.sendConversationMessage = async () => ({ command: { id: "cmd", sequence: 1, type: "message", created_at: "2026-01-01T00:00:00Z" } });
+  client.api.waitFirstMessage = async id => ({ command: { id, sequence: 1, type: "message", created_at: "2026-01-01T00:00:00Z" } });
   const root = await mountHostShell(client.api);
   try {
     assert.equal(document.querySelector(".approval-policy-trigger")?.textContent, "Full access");
@@ -351,10 +351,11 @@ for (const timelineHasPrompt of [false, true]) test(`a new session appears in na
   const created: DesktopState = { ...initial, selectedConversationId: session.id,
     conversations: [{ id: session.id, project_id: "project", workspace_id: "workspace", title: "hello", created_at: time, updated_at: time }],
     bindings: [{ conversation_id: session.id, daemon_session_id: session.id, created_at: time }] };
-  client.api.createConversation = async () => ({ state: created, session });
-  let sent: Parameters<typeof client.api.sendConversationMessage>[0] | undefined;
+  let sent: NonNullable<Parameters<typeof client.api.createConversation>[0]["message"]> | undefined;
+  client.api.createConversation = async input => { sent = input.message; return { state: created, session }; };
   let deliver!: () => void;
-  client.api.sendConversationMessage = input => { sent = input; return new Promise(resolve => { deliver = () => resolve({ session, command: { id: "cmd", sequence: 1, type: "message", created_at: time } }); }); };
+  const waited: string[] = [];
+  client.api.waitFirstMessage = id => { waited.push(id); return new Promise(resolve => { deliver = () => resolve({ session, command: { id, sequence: 1, type: "message", created_at: time } }); }); };
   client.api.getSession = async () => session;
   // The daemon may already show the accepted prompt, under its client message id, before the send request returns.
   client.api.listSessionItems = async () => ({ items: timelineHasPrompt && sent?.clientMessageId
@@ -370,7 +371,8 @@ for (const timelineHasPrompt of [false, true]) test(`a new session appears in na
     await act(async () => editor.dispatch({ changes: { from: 0, insert: "hello" } }));
     await act(async () => document.querySelector("form.new-chat-composer")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     await flush();
-    assert.equal(sent?.conversationId, session.id, "the first message targets the created session");
+    assert.equal(sent?.text, "hello", "the first message travels with the create request");
+    assert.deepEqual(waited, [sent?.clientMessageId], "the page only waits for the backend's delivery");
     assert.ok(document.querySelector(`[data-workspace-id="workspace"] [data-session-id="${session.id}"]`), "navigation shows the session while delivery is pending");
     assert.equal(prompts(), 1, "the submitted prompt is shown exactly once");
     assert.doesNotMatch(body(), /No display items|Loading display history/, "the pending prompt replaces the empty timeline note");
@@ -400,7 +402,7 @@ for (const stage of ["rejected", "create", "send"] as const) test(`a failed new 
     ? { state: created, session }
     : { state: initial, error: "create exploded", deliveryState: stage === "rejected" ? "rejected" : undefined };
   let sent = false;
-  client.api.sendConversationMessage = async () => { sent = true; return { error: "send exploded" }; };
+  client.api.waitFirstMessage = async () => { sent = true; return { error: "send exploded" }; };
   client.api.listQueuedInputs = async () => [];
   client.api.getSession = async () => session;
   client.api.listSessionItems = async () => ({ items: [], next_cursor: "", prev_cursor: "", has_more: false });
@@ -539,48 +541,52 @@ async function chooseHost(name: string) {
   await flush();
 }
 
-test("a first message interrupted by a host switch is never sent elsewhere and is recoverable on its host", async () => {
+test("a first message accepted on one host is delivered there even if the page switches hosts", async () => {
   const restore = installDom();
   const fixture = newSessionFixture();
   const { client } = fixture;
   const session = fixture.sessionFor("dev-session");
   let devState: DesktopState | null = null;
   let releaseCreate!: () => void;
-  const createdOn: string[] = [];
-  client.api.createConversation = async () => {
-    createdOn.push(client.activeHost());
+  const accepted: Array<{ host: string; clientMessageId?: string }> = [];
+  // The backend owns delivery: once it accepts the create request, the message reaches dev on its own.
+  client.api.createConversation = async input => {
+    accepted.push({ host: client.activeHost(), clientMessageId: input.message?.clientMessageId });
     await new Promise<void>(resolve => { releaseCreate = resolve; });
     devState = { ...emptyState, selectedConversationId: session.id, conversations: [fixture.conversationFor(session.id, "hello", null)],
       bindings: [{ conversation_id: session.id, daemon_session_id: session.id, created_at: fixture.time }] };
     return { state: devState, session };
   };
-  // Remounting on dev must see the session the delayed create made there.
   const hostState = () => client.activeHost() === "dev" && devState ? devState : emptyState;
   client.api.getDesktopState = async () => hostState();
   client.api.selectProject = async () => ({ ...hostState(), selectedConversationId: null });
   client.api.selectConversation = async id => ({ ...hostState(), selectedConversationId: id });
-  const sends: Array<{ host: string; conversationId: string }> = [];
-  client.api.sendConversationMessage = async input => { sends.push({ host: client.activeHost(), conversationId: input.conversationId }); return { command: fixture.command(input.clientMessageId!) }; };
+  const firstMessageCalls: Array<{ host: string; id: string }> = [];
+  client.api.waitFirstMessage = async id => { firstMessageCalls.push({ host: client.activeHost(), id }); return { command: fixture.command(id) }; };
+  client.api.retryFirstMessage = async input => { firstMessageCalls.push({ host: client.activeHost(), id: input.clientMessageId }); return { command: fixture.command(input.clientMessageId) }; };
+  const listItems = client.api.listSessionItems;
+  client.api.listSessionItems = async (id, ...rest) => {
+    const id0 = accepted[0]?.clientMessageId;
+    return client.activeHost() === "dev" && id === session.id && id0 ? { items: [fixture.promptItem(id0)], next_cursor: "", prev_cursor: "", has_more: false } : listItems(id, ...rest);
+  };
   const root = await mountHostShell(client.api);
   try {
     await chooseHost("dev");
     await fixture.submit();
-    assert.deepEqual(createdOn, ["dev"]);
+    assert.equal(accepted.length, 1);
+    assert.equal(accepted[0].host, "dev");
+    assert.ok(accepted[0].clientMessageId, "the first message travels with the create request");
     await chooseHost("Local");
     await act(async () => releaseCreate());
     await flush();
-    assert.deepEqual(sends, [], "the first message is not sent after its host is gone");
     assert.equal(fixture.prompts(), 0, "the dev prompt does not appear on local");
+    assert.ok(firstMessageCalls.every(call => call.host === "dev"), "local never waits for or retries the dev message");
     await chooseHost("dev");
     await fixture.openSession(session.id);
-    assert.equal(fixture.prompts(), 1, "dev shows the unsent first message in its session");
-    assert.match(fixture.body(), /host changed/i);
-    const restoreButton = fixture.buttonIn(/Restore/);
-    assert.ok(restoreButton);
-    await act(async () => click(restoreButton));
-    await flush();
-    assert.match(fixture.composer(), /hello/, "the draft returns to the dev session's composer");
-    assert.deepEqual(sends, []);
+    assert.equal(fixture.prompts(), 1, "the dev session shows its first message exactly once");
+    assert.doesNotMatch(fixture.body(), /host changed|Could not confirm|not sent/i);
+    assert.equal(fixture.buttonIn(/Retry|Restore/), undefined);
+    assert.ok(firstMessageCalls.every(call => call.host === "dev" && call.id === accepted[0].clientMessageId));
   } finally {
     await act(async () => root.unmount());
     restore();
@@ -614,17 +620,15 @@ for (const outcome of ["refused", "delivered"] as const) test(`a session selecte
     return { state: { ...created, selectedConversationId: selected }, session };
   };
   const sends: string[] = [];
-  client.api.sendConversationMessage = async input => {
-    sends.push(input.conversationId);
-    return outcome === "refused" ? { error: "refused", deliveryState: "rejected" } : { command: fixture.command(input.clientMessageId!) };
-  };
+  client.api.createConversation = (create => async input => { if (input.message) sends.push(input.message.clientMessageId); return create(input); })(client.api.createConversation);
+  client.api.waitFirstMessage = async id => outcome === "refused" ? { error: "refused", deliveryState: "rejected" } : { command: fixture.command(id) };
   const root = await mountHostShell(client.api);
   try {
     await fixture.submit();
     await fixture.openSession(other.id);
     await act(async () => releaseCreate());
     await flush();
-    assert.deepEqual(sends, [session.id], "delivery targets the created session");
+    assert.equal(sends.length, 1, "the first message travels with the create request, so it targets the created session");
     assert.ok(document.querySelector(`[data-session-id="${other.id}"].selected`), "the user's navigation choice is kept");
     assert.equal(fixture.prompts(), 0, "the created session's prompt is not shown in another session");
     assert.doesNotMatch(document.body.textContent ?? "", /refused/, "the failure does not surface in another session");
@@ -657,8 +661,10 @@ for (const order of ["event-first", "timeout-then-event", "timeout-then-retry", 
   client.api.createConversation = async () => ({ session, state: { ...emptyState, selectedConversationId: session.id,
     conversations: [fixture.conversationFor(session.id, "hello", null)], bindings: [{ conversation_id: session.id, daemon_session_id: session.id, created_at: fixture.time }] } });
   const sends: string[] = [];
-  const responses: Array<(result: Awaited<ReturnType<typeof client.api.sendConversationMessage>>) => void> = [];
-  client.api.sendConversationMessage = input => { sends.push(input.clientMessageId!); return new Promise(resolve => { responses.push(resolve); }); };
+  const responses: Array<(result: Awaited<ReturnType<typeof client.api.waitFirstMessage>>) => void> = [];
+  const respond = () => new Promise<Awaited<ReturnType<typeof client.api.waitFirstMessage>>>(resolve => { responses.push(resolve); });
+  client.api.waitFirstMessage = id => { sends.push(id); return respond(); };
+  client.api.retryFirstMessage = input => { assert.equal(input.conversationId, session.id); sends.push(input.clientMessageId); return respond(); };
   const timeout = { error: "request timed out", deliveryState: "unknown" as const };
   const root = await mountHostShell(client.api);
   try {

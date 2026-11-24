@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { SendConversationMessageInput } from "../../shared/clientTypes";
+import type { FirstMessageInput } from "../../shared/clientTypes";
 import type { DisplayItem } from "../../shared/zotigod";
 import type { ComposerDraft } from "./appTypes";
 
@@ -18,8 +18,8 @@ export type NewPromptSubmission = {
   item: DisplayItem;
   /** Submitted composer draft, kept until delivery is confirmed. */
   draft: ComposerDraft | null;
-  /** First-message request; a retry resends it with the same client message id. */
-  message?: SendConversationMessageInput;
+  /** First message as handed to the backend; a retry resends it with the same client message id. */
+  message?: FirstMessageInput & { conversationId: string };
   /**
    * An earlier attempt ended without a confirmed outcome, so the daemon may hold the
    * message. A later refusal or blocked retry cannot prove it missing; only its

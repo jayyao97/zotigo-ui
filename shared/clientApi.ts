@@ -108,6 +108,8 @@ export function createClientApi(transport: ClientTransport): ClientApi {
     saveTextFile: (input) => invoke("desktop:save-text-file", input),
     downloadImage: (url) => invoke("desktop:download-image", url),
     createConversation: (input) => invoke("desktop:create-conversation", input),
+    waitFirstMessage: (clientMessageId) => invoke("desktop:wait-first-message", clientMessageId),
+    retryFirstMessage: (input) => invoke("desktop:retry-first-message", input),
     startConversationSession: (conversationId) => invoke("desktop:start-conversation-session", conversationId),
     sendConversationMessage: (input) => invoke("desktop:send-conversation-message", input),
     listQueuedInputs: (id) => invoke("sessions:queue-list", id),
