@@ -160,7 +160,7 @@ addWorkspaceSourceToCatalog,
     async send(message, text) {
       let session = await getOrCreateStartedSession(message.conversationId);
       const command = await sendMessageOrSteering(session.id, text, message.images, message.skills, message.clientMessageId);
-      if (command.type !== "steering") session = await getSession(session.id);
+      if (command.type !== "steering") session = await refreshSentSession(session);
       return { session, command };
     },
     // A failed upload happens before any message is sent.
@@ -587,8 +587,20 @@ async function revealRegisteredPath(requestedPath: string): Promise<void> {
     if (command.type === "steering") {
       return { session, command };
     }
-    session = await getSession(session.id);
-    return { session, command };
+    return { session: await refreshSentSession(session), command };
+  }
+
+  /**
+   * Reads a session's state after the daemon accepted a message. The command is
+   * already confirmed, so a failed read keeps the earlier state instead of turning
+   * the delivery into an error that would invite a resend.
+   */
+  async function refreshSentSession(session: ZotigoSession): Promise<ZotigoSession> {
+    try {
+      return await getSession(session.id);
+    } catch {
+      return session;
+    }
   }
 
   async function getOrCreateStartedSession(

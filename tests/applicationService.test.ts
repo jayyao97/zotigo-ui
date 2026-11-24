@@ -550,12 +550,13 @@ test("a catalog failure after creation is not reported as a rejected create", as
 });
 
 // A daemon double for first-message delivery. Responses to /messages can be held or failed.
-async function firstMessageDaemon(options: { failFirstSend?: boolean } = {}) {
+async function firstMessageDaemon(options: { failFirstSend?: boolean; forbidRefreshAfterSend?: boolean } = {}) {
   const session = { id: "new", state: "created", approval_policy: "auto", created_at: "2026-01-01", workspace_position: -1 };
   const projection = { runtime: session, organization: null, availability: "available" };
   const counts = { snapshot: 0, uploads: 0, start: 0 };
   const messages: Array<{ client_message_id?: string; text?: string }> = [];
   let release: () => void = () => {};
+  let refreshPending = false;
   const sendHeld = new Promise<void>(resolve => { release = resolve; });
   const daemon = createServer(async (request, response) => {
     const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk);
@@ -566,9 +567,17 @@ async function firstMessageDaemon(options: { failFirstSend?: boolean } = {}) {
     if (url === "/sessions/new/start") { counts.start++; return reply({ ...session, state: "running" }); }
     if (url === "/sessions/new/messages") {
       messages.push(JSON.parse(Buffer.concat(chunks).toString()));
+      refreshPending = Boolean(options.forbidRefreshAfterSend);
       await sendHeld;
       if (options.failFirstSend && messages.length === 1) return reply(null, 500);
       return reply({ id: messages.at(-1)!.client_message_id, sequence: 1, type: "message", created_at: "2026-01-01" });
+    }
+    // Only the read that follows an accepted message is refused.
+    if (url === "/sessions/new" && refreshPending) {
+      refreshPending = false;
+      response.writeHead(403, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ code: "forbidden", message: "refresh denied" }));
+      return;
     }
     switch (url) {
       case "/sessions": return reply(session);
@@ -612,6 +621,29 @@ test("creation returns before its first message is delivered, reading the catalo
     const foreign = await withConnection(elsewhere, () => service.invoke("desktop:wait-first-message", [firstMessage.clientMessageId])) as Invoked;
     assert.equal(foreign.value?.deliveryState, "unknown");
     assert.equal(daemon.messages.length, 1);
+  } finally {
+    service.dispose();
+    await daemon.close();
+  }
+});
+
+test("an accepted send stays confirmed when the follow-up session refresh fails", async () => {
+  const daemon = await firstMessageDaemon({ forbidRefreshAfterSend: true });
+  daemon.release();
+  const service = createApplicationService(platform(), () => {}, createSelectionStore({ projectId: null, workspaceId: null, sessionId: null }));
+  const host = { id: "dev", name: "dev", baseUrl: daemon.url, token: "" };
+  try {
+    await withConnection(host, () => service.invoke("desktop:create-conversation", [{ projectId: null, workspaceId: "workspace", message: firstMessage }]));
+    const outcome = await withConnection(host, () => service.invoke("desktop:wait-first-message", [firstMessage.clientMessageId])) as Invoked;
+    assert.equal(outcome.value?.error, undefined, "the refresh is not part of delivery");
+    assert.equal(outcome.value?.deliveryState, undefined);
+    assert.equal(outcome.value?.command?.id, firstMessage.clientMessageId, "the accepted command is kept");
+    assert.equal(outcome.value?.session?.id, "new");
+    // A later message to an existing session follows the same rule.
+    const sent = await withConnection(host, () => service.invoke("desktop:send-conversation-message", [{ conversationId: "new", clientMessageId: "optimistic-prompt-2", text: "again" }])) as Invoked;
+    assert.equal(sent.value?.error, undefined);
+    assert.equal(sent.value?.command?.id, "optimistic-prompt-2");
+    assert.equal(daemon.messages.length, 2);
   } finally {
     service.dispose();
     await daemon.close();
