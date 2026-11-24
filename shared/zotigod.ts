@@ -568,6 +568,7 @@ export interface QueuedInput extends SessionCommandResponse {
   state: "queued" | "paused" | "sending";
   revision: number;
   editable: boolean;
+  cancellable?: boolean;
 }
 
 export interface SessionSearchHit { id: string; sequence: number }

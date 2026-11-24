@@ -152,7 +152,7 @@ export function InputQueue({
             <IconButton
               icon={Trash}
               label={t("inputQueue.deleteQueuedMessage")}
-              disabled={busy || !item.editable}
+              disabled={busy || !(item.cancellable ?? item.editable)}
               onPress={() =>
                 void change(() =>
                   client.changeQueuedInput(sessionId, item.id, item.revision),
