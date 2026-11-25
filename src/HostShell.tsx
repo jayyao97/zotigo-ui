@@ -7,8 +7,8 @@ import { useDefaultSendMode } from "./sendMode";
 import { ModelFavoritesProvider } from "./modelFavorites";
 import { ToastProvider } from "./Toast";
 import { bindClientGeneration } from "../shared/bindClientGeneration";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Check, ChevronDown, LogOut, Server, Settings, X } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Server, Settings, X } from "lucide-react";
 import App, { discardHostVolatileState } from "./App";
 import { DirectoryBrowser } from "./DirectoryBrowser";
 import { ClientContext, useClient } from "./ClientContext";
@@ -20,7 +20,7 @@ import type { HostProfile } from "../shared/hosts";
 import type { SourceCandidate } from "../shared/clientTypes";
 import { copyText } from "./clipboard";
 
-export const HostContext = createContext<{ profiles: HostProfile[]; selected: string; busy: boolean; switchHost(id: string): void; settings(): void } | null>(null);
+const HostContext = createContext<{ profiles: HostProfile[]; selected: string; busy: boolean; switchHost(id: string): void; settings(): void } | null>(null);
 
 export function HostMenu() {
   useLocale();
@@ -41,49 +41,6 @@ export function HostMenu() {
       <div className="search-palette-heading">{t("hostShell.hosts")}</div>
       {hosts.profiles.map((host) => <button key={host.id} onClick={() => { setOpen(false); hosts.switchHost(host.id); }}><Server size={15} /><span>{host.name}</span>{host.id === hosts.selected && <Check size={14} />}</button>)}
       <button onClick={() => { setOpen(false); hosts.settings(); }}><Settings size={15} /><span>{t("hostShell.settings")}</span></button>
-    </div>}
-  </div>;
-}
-
-/**
- * The sidebar footer: who is using Zotigo and the connection state, opening a
- * menu of account-level actions. Settings is the first; more can follow.
- */
-export function AccountMenu({ status, onSignOut }: { status: string; onSignOut?: () => void }) {
-  useLocale();
-  const hosts = useContext(HostContext);
-  const [open, setOpen] = useState(false);
-  const container = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    menu.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-    const close = (event: globalThis.MouseEvent) => { if (!container.current?.contains(event.target as Node)) setOpen(false); };
-    document.addEventListener("click", close); return () => document.removeEventListener("click", close);
-  }, [open]);
-  const close = (refocus: boolean) => { setOpen(false); if (refocus) trigger.current?.focus(); };
-  const choose = (action: () => void) => { close(false); action(); };
-  const moveFocus = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") { event.preventDefault(); close(true); return; }
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    event.preventDefault();
-    const items = [...(menu.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
-    const index = items.indexOf(document.activeElement as HTMLButtonElement);
-    items[(index + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
-  };
-  const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘," : "Ctrl+,";
-  return <div className="account-menu" ref={container}>
-    <button ref={trigger} type="button" className="account-menu-trigger" aria-haspopup="menu" aria-expanded={open} aria-label={t("hostShell.accountMenu")} onClick={() => setOpen(!open)}>
-      <span className="account-menu-avatar"><img className="user-chip" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" /></span>
-      <span className="account-menu-identity"><strong>{t("app.zotigo")}</strong><span>{status}</span></span>
-    </button>
-    {open && <div className="account-menu-popover" role="menu" ref={menu} aria-label={t("hostShell.accountMenu")} onKeyDown={moveFocus}>
-      {hosts && <button type="button" role="menuitem" onClick={() => choose(hosts.settings)}><Settings size={15} /><span>{t("hostShell.settings")}</span><kbd>{shortcut}</kbd></button>}
-      {onSignOut && <>
-        <div className="account-menu-separator" role="separator" />
-        <button type="button" role="menuitem" onClick={() => choose(onSignOut)}><LogOut size={15} /><span>{t("app.signOut")}</span></button>
-      </>}
     </div>}
   </div>;
 }
@@ -230,7 +187,7 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ToastProvider key={selected}><ModelFavoritesProvider host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App onSessionQuerySupport={onSessionQuerySupport} activityChannelMode={activityChannelMode} onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} openSessionRequest={openSessionRequest} />
+          <App onSessionQuerySupport={onSessionQuerySupport} onOpenSettings={() => setSurface("settings")} activityChannelMode={activityChannelMode} onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} openSessionRequest={openSessionRequest} />
         </div>
         {surface === "settings" && <SettingsPage
           activityFilterSupported={querySupport?.host === selected ? querySupport.supported : undefined} activityChannelMode={activityChannelMode} onActivityChannelModeChange={setActivityChannelMode}

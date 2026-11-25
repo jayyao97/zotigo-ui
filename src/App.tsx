@@ -44,7 +44,8 @@ import { SidebarCollapse } from "./SidebarCollapse";
 import { MarkdownImageContext } from "./MarkdownImage";
 import { useSessionSidePanel, type SessionSidePanels } from "./useSessionSidePanel";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
-import { AccountMenu, HostMenu } from "./HostShell";
+import { HostMenu } from "./HostShell";
+import { AccountMenu } from "./sidebar/AccountMenu";
 import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
@@ -289,7 +290,7 @@ function stickyHeaderHeight(element: Element, scroller: Element): number {
   return covered;
 }
 
-export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false, openSessionRequest }: { openSessionRequest?: { id: string; nonce: number }; onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
+export default function App({ onConfigureModels, onOpenSettings, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false, openSessionRequest }: { openSessionRequest?: { id: string; nonce: number }; onConfigureModels?: () => void; onOpenSettings?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   useLocale();
   const [queueRefresh, setQueueRefresh] = useState(0);
   const submitModeRef = useRef<SendMode | null>(null);
@@ -3418,7 +3419,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         </div>
 
         <div className="sidebar-footer">
-          <AccountMenu status={connectionLabel(connectionState)} onSignOut={signOut ? () => void signOut().catch((error) => setMessage(errorMessage(error))) : undefined} />
+          <AccountMenu status={connectionLabel(connectionState)} onOpenSettings={onOpenSettings} onSignOut={signOut ? () => void signOut().catch((error) => setMessage(errorMessage(error))) : undefined} />
         </div>
       </aside>
 
