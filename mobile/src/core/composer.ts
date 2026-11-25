@@ -30,6 +30,12 @@ export interface Attempt {
   images: MessageImageInput[];
   steer: boolean;
   mode?: "queue";
+  /**
+   * An earlier try ended without a known outcome, so the daemon may hold the
+   * message. A later refusal cannot prove it missing (Desktop's rule); only
+   * its durable copy settles it.
+   */
+  mayHaveArrived?: true;
 }
 export interface ComposerState {
   draft: Draft;
@@ -99,6 +105,10 @@ export class ComposerStore {
     } finally {
       active.delete(this.key);
     }
+  }
+  /** Whether a send for this conversation is in flight. */
+  sending() {
+    return !!submissions.get(this.storage)?.has(this.key);
   }
   async read(): Promise<ComposerState> {
     // A reopened page must not edit a draft still owned by the outgoing request.
@@ -193,4 +203,19 @@ export async function prepareAttachments(
     await store.transition(current, next);
     publish(next);
   }
+}
+
+/**
+ * The composer state after a send attempt failed. A definite refusal restores
+ * the draft for a new send, unless an earlier try with the same ID may have
+ * arrived; anything else keeps the attempt, marked, for a retry with the
+ * same ID.
+ */
+export function failedSendState(
+  draft: Draft,
+  attempt: Attempt,
+  outcome: "rejected" | "unknown",
+): ComposerState {
+  if (outcome === "rejected" && !attempt.mayHaveArrived) return { draft };
+  return { draft, attempt: { ...attempt, mayHaveArrived: true } };
 }

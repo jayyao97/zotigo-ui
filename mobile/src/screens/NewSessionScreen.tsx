@@ -21,7 +21,10 @@ import {
   emptyDraft,
   submissionAttempt,
   prepareAttachments,
+  failedSendState,
 } from "../core/composer";
+import { ApiError } from "../core/client";
+import { inputDeliveryOutcome } from "@zotigo/shared/inputDelivery";
 import { finishInBackground } from "../platform/backgroundTask";
 import { storage } from "../platform/storage";
 import { compatibleReasoningEffort } from "@zotigo/shared/modelSelection";
@@ -313,19 +316,22 @@ export function NewSessionScreen() {
     setBusy(true);
     setError("");
     try {
+      // Leaving the app while this runs must not lose the answer: without it
+      // the next Create would make a second session.
       const session = createdSession
         ? { id: createdSession }
-        : await client.createSession({
-            workspaceId: workspace?.id,
-            agent,
-            profile: agent === "zotigo" ? profile || undefined : undefined,
-            model: agent === "codex" ? model : undefined,
-            reasoningEffort: agent === "codex" ? effort : undefined,
-            approvalPolicy: policy,
-          });
+        : await finishInBackground("create-session", () =>
+            client.createSession({
+              workspaceId: workspace?.id,
+              agent,
+              profile: agent === "zotigo" ? profile || undefined : undefined,
+              model: agent === "codex" ? model : undefined,
+              reasoningEffort: agent === "codex" ? effort : undefined,
+              approvalPolicy: policy,
+            }),
+          );
       setCreatedSession(session.id);
       void storage.set(lastWorkspaceKey, workspace?.id ?? "").catch(() => {});
-      if (!mounted.current || client.signal.aborted) return;
       const composer = new ComposerStore(
         storage,
         client.connection.id,
@@ -338,6 +344,13 @@ export function NewSessionScreen() {
         files,
         images,
       };
+      // The device was switched or the screen closed while the session was
+      // created: nothing is sent, and the message waits as that conversation's
+      // draft instead of being lost (Desktop keeps it the same way).
+      if (!mounted.current || client.signal.aborted) {
+        await composer.write({ draft });
+        return;
+      }
       const pending = { current: { draft } };
       await prepareAttachments(
         client,
@@ -354,10 +367,11 @@ export function NewSessionScreen() {
       };
       const attempt = submissionAttempt({ draft }, randomUUID(), false);
       await composer.write({ draft, attempt });
+      let sendError: unknown;
       try {
         // Leaving the app right after Create must not cut the first message off.
-        await finishInBackground("send-message", async () => {
-          await client.send(
+        await finishInBackground("send-message", () =>
+          client.send(
             session.id,
             {
               text: attempt.text,
@@ -366,13 +380,30 @@ export function NewSessionScreen() {
               client_message_id: attempt.client_message_id,
             },
             false,
-          );
-          await composer.write({ draft: emptyDraft() });
-        });
+          ),
+        );
       } catch (e) {
+        sendError = e;
+      }
+      if (sendError === undefined) {
+        // Accepted: a failure to clear the local copy must not report the
+        // message as uncertain. At worst the conversation offers a retry,
+        // which the daemon answers without sending twice.
+        await composer.write({ draft: emptyDraft() }).catch(() => {});
+      } else {
+        const next = failedSendState(
+          draft,
+          attempt,
+          sendError instanceof ApiError
+            ? inputDeliveryOutcome(sendError.status, sendError.code)
+            : "unknown",
+        );
+        await composer.write(next).catch(() => {});
         Alert.alert(
           t("mobile.sessionCreated"),
-          t("mobile.createdNeedsAttention", { error: errorText(e) }),
+          next.attempt
+            ? t("mobile.createdNeedsAttention", { error: errorText(sendError) })
+            : `${t("conversationTimeline.messageWasNotSent")}. ${errorText(sendError)}`,
         );
       }
       completed.current = true;
