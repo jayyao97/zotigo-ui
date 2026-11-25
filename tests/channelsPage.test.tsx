@@ -696,3 +696,111 @@ test("a session that cannot be opened reports through a toast, not the configura
     await act(async () => root.unmount());
   } finally { restore(); }
 });
+
+test("connection Save includes progress detail and bind aliases picked from Workspaces and Sessions", async () => {
+  const restore = installDom();
+  try {
+    const configured: ChannelConnection = { ...connection("connection-1", "Bot One"), progress_detail: "brief", bind_aliases: [{ name: "old", target: "workspace-gone" }] };
+    let savedInput: ChannelConnectionInput | undefined;
+    const api = {
+      listChannelConnections: async () => [configured],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+      updateChannelConnection: async (_id: string, input: ChannelConnectionInput) => {
+        savedInput = input;
+        return { ...configured, ...input };
+      },
+    } as unknown as ClientApi;
+    const sessionCatalog = [{ id: "sess_oncall", project_id: project.id, workspace_id: workspace.id, title: "Oncall triage", created_at: "", updated_at: "" }];
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} sessionCatalog={sessionCatalog} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+
+    const detail = [...document.querySelectorAll<HTMLSelectElement>("select")].find((select) => select.parentElement?.textContent?.startsWith("Progress detail"))!;
+    assert.deepEqual([...detail.options].map((option) => option.value), ["brief", "detailed", "full"]);
+    await act(async () => changeSelect(detail, "full"));
+    assert.match(document.body.textContent ?? "", /\/bind/);
+    // A saved alias whose target is gone still shows its ID.
+    assert.match(document.querySelector(".channels-alias-row .searchable-select-trigger")!.textContent ?? "", /workspace-gone/);
+    await act(async () => click(button(document, "Add alias")));
+    const rows = document.querySelectorAll(".channels-alias-row");
+    assert.equal(rows.length, 2);
+    const name = rows[1].querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      name.focus();
+      // Bypass React's value tracker; its legacy change polyfill notices on keydown.
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(name, "oncall");
+      name.dispatchEvent(new window.KeyboardEvent("keydown", { key: "x", bubbles: true }));
+    });
+    await act(async () => click(rows[1].querySelector(".searchable-select-trigger")!));
+    const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+    assert.deepEqual(options.map((option) => option.querySelector("strong")?.textContent), ["Workspace One", "Oncall triage"]);
+    await act(async () => click(options[1]));
+    await act(async () => click(rows[0].querySelector(".channels-alias-remove")!));
+    // An untouched extra row is dropped instead of failing the save.
+    await act(async () => click(button(document, "Add alias")));
+    await act(async () => click(button(document.querySelector("#root .channels-form-actions")!, "Save")));
+    await flush();
+    assert.equal(savedInput?.progress_detail, "full");
+    assert.deepEqual(savedInput?.bind_aliases, [{ name: "oncall", target: "sess_oncall" }]);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
+test("an older daemon hides progress detail and group commands", async () => {
+  const restore = installDom();
+  try {
+    let savedInput: ChannelConnectionInput | undefined;
+    const api = {
+      listChannelConnections: async () => [connection("connection-1", "Bot One")],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+      updateChannelConnection: async (_id: string, input: ChannelConnectionInput) => {
+        savedInput = input;
+        return { ...connection("connection-1", "Bot One"), ...input };
+      },
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    assert.doesNotMatch(document.body.textContent ?? "", /Progress detail|Group commands/);
+    await act(async () => click(button(document.querySelector("#root .channels-form-actions")!, "Save")));
+    await flush();
+    assert.ok(savedInput);
+    assert.equal("progress_detail" in savedInput, false);
+    assert.equal("bind_aliases" in savedInput, false);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
+test("group progress detail follows the connection unless overridden", async () => {
+  const restore = installDom();
+  try {
+    const connected = conversation({ id: "group-connected", workspace_id: workspace.id, enabled: true });
+    let savedInput: ChannelConversationInput | undefined;
+    const api = {
+      listChannelConnections: async () => [{ ...connection("connection-1", "Bot One"), progress_detail: "detailed", bind_aliases: [] }],
+      listChannelGroups: async () => [{ ...groupRuntime, chat_id: connected.chat_id, name: "Connected group", available: true, conversation_id: connected.id, workspace_id: workspace.id, enabled: true, allowed_sender_ids: ["owner-1"] } satisfies ChannelGroup],
+      listChannelConversations: async () => [connected],
+      getProfiles: async () => ({ default_profile: "default-profile", profiles: [] }),
+      updateChannelConversation: async (_id: string, input: ChannelConversationInput) => {
+        savedInput = input;
+        return { ...connected, ...input };
+      },
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    await act(async () => click(document.querySelector('[aria-label="Configure Connected group"]')!));
+    await flush();
+    const detail = [...document.querySelectorAll<HTMLSelectElement>("select")].find((select) => select.parentElement?.textContent?.startsWith("Progress detail"))!;
+    assert.equal(detail.value, "");
+    assert.match(detail.options[0].textContent ?? "", /Follow the connection \(Detailed/);
+    await act(async () => changeSelect(detail, "full"));
+    const save = [...document.querySelectorAll<HTMLButtonElement>("#root .channels-actions button")].find((value) => value.textContent?.includes("Save"))!;
+    await act(async () => click(save));
+    await flush();
+    assert.equal(savedInput?.progress_detail, "full");
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});

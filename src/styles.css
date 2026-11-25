@@ -5207,7 +5207,7 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .channels-card h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .channels-card > header .channels-help { max-width: 190px; }
 .channels-card > code { overflow: hidden; margin-bottom: 16px; color: var(--text-dim); font-size: 12px; text-overflow: ellipsis; }
-.channels-card > label, .channels-card > fieldset, .channels-card > .channels-actions, .channels-card > .channels-capability, .channels-card > .channels-override, .channels-card > .channels-trigger, .channels-card > .channels-runtime-setting, .channels-card > .channels-member-field, .channels-card > code { grid-column: 2; }
+.channels-card > label, .channels-card > fieldset, .channels-card > .channels-actions, .channels-card > .channels-capability, .channels-card > .channels-override, .channels-card > .channels-trigger, .channels-card > .channels-runtime-setting, .channels-card > .channels-member-field, .channels-card > code, .channels-card > .channels-command-help, .channels-card > .channels-alias-field { grid-column: 2; }
 .channels-card label { display: grid; gap: 6px; margin-bottom: 18px; color: var(--text-muted); font-size: 12px; font-weight: 500; }
 .channels-card > label small, .channels-runtime-setting > small, .channels-member-field > small, .channels-form-actions small { color: var(--text-dim); font-size: 12px; font-weight: 400; line-height: 1.45; }
 .channels-runtime-setting { display: grid; justify-items: start; gap: 6px; margin-bottom: 18px; color: var(--text-muted); font-size: 12px; }
@@ -5241,6 +5241,23 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 .channels-member-picker .channels-member-option:hover { background: var(--surface-row); }
 .channels-member-option input { width: 15px; height: 15px; min-height: 15px; flex: 0 0 15px; margin: 0; padding: 0; border: 1px solid var(--border-heavy); border-radius: var(--radius-xs); appearance: none; background: transparent center / 11px no-repeat; cursor: pointer; }
 .channels-member-option input:checked { border-color: var(--gray-100); background-color: var(--gray-100); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230d0d0d' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
+.channels-command-help { margin: 0 0 18px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 9px; background: rgb(255 255 255 / .025); color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.channels-alias-field { display: grid; gap: 8px; margin-bottom: 18px; color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.channels-alias-field > small { color: var(--text-dim); font-weight: 400; line-height: 1.45; }
+.channels-alias-row { display: grid; grid-template-columns: minmax(96px, 150px) minmax(0, 1fr) 30px; align-items: center; gap: 8px; }
+.channels-alias-remove, .channels-alias-add { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; cursor: pointer; }
+.channels-alias-remove:hover:not(:disabled), .channels-alias-add:hover:not(:disabled) { background: var(--surface-row); color: var(--text); }
+.channels-alias-remove:disabled, .channels-alias-add:disabled { opacity: .45; cursor: default; }
+.channels-alias-remove { width: 30px; padding: 0; }
+.channels-alias-remove svg, .channels-alias-add svg { flex: 0 0 auto; }
+.channels-alias-add { justify-self: start; padding: 0 9px 0 6px; font-weight: 400; }
+/* The picker matches the channel fields; its menu ignores the card's label and input styles. */
+.channels-card .searchable-select-trigger { min-height: 34px; border-color: var(--border); border-radius: 8px; background: var(--surface); }
+.channels-card .searchable-select-trigger:hover:not(:disabled), .channels-card .searchable-select-trigger[aria-expanded="true"] { border-color: var(--border-heavy); }
+.channels-card .searchable-select .searchable-select-search { margin: 0; color: var(--text-dim); font-size: 13px; font-weight: 400; }
+.channels-card .searchable-select .searchable-select-search input:not([type="checkbox"]),
+.channels-card .searchable-select .searchable-select-search input:not([type="checkbox"]):focus { min-height: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
+@media (max-width: 700px) { .channels-alias-row { grid-template-columns: minmax(0, 1fr) 30px; } .channels-alias-row > .searchable-select { grid-column: 1; grid-row: 2; } }
 .channels-actions { display: flex; align-items: center; gap: 9px; padding-top: 1px; }
 .channels-form-actions { flex-wrap: wrap; padding-top: 3px; }
 .channels-form-actions small { flex-basis: 100%; }

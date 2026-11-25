@@ -10,7 +10,7 @@ import type {
   MessageImageInput,
 } from "../shared/zotigod";
 
-import type { ChannelConnectionInput, ChannelConversationInput, ChannelOverrideMode, ChannelProgressMode, ChannelSessionStrategy } from "../shared/channels";
+import { channelProgressDetails, type ChannelConnectionInput, type ChannelConversationInput, type ChannelOverrideMode, type ChannelProgressDetail, type ChannelProgressMode, type ChannelSessionStrategy } from "../shared/channels";
 
 export function assertString(value: unknown, name: string): string {
   if (typeof value !== "string") {
@@ -336,7 +336,17 @@ export function assertChannelConnectionInput(value: unknown): ChannelConnectionI
 		approval_policy: assertChannelApprovalPolicy(input.approval_policy),
 		review_all_tools: assertBoolean(input.review_all_tools, "review_all_tools"),
 		progress_mode: assertChannelProgressMode(input.progress_mode, "progress_mode"),
+		progress_detail: input.progress_detail === undefined ? undefined : assertChannelProgressDetail(input.progress_detail, "progress_detail"),
+		bind_aliases: input.bind_aliases === undefined ? undefined : assertArray(input.bind_aliases, "bind_aliases").map((alias, index) => {
+			const record = assertRecord(alias, `bind_aliases[${index}]`);
+			return { name: assertString(record.name, `bind_aliases[${index}].name`), target: assertString(record.target, `bind_aliases[${index}].target`) };
+		}),
 	};
+}
+
+function assertChannelProgressDetail(value: unknown, name: string): ChannelProgressDetail {
+	if (typeof value !== "string" || !(channelProgressDetails as readonly string[]).includes(value)) throw new Error(`${name} must be brief, detailed, or full`);
+	return value as ChannelProgressDetail;
 }
 
 function assertChannelProgressMode(value: unknown, name: string): ChannelProgressMode {
@@ -374,6 +384,7 @@ export function assertChannelConversationInput(value: unknown): ChannelConversat
 		approval_instructions: assertString(input.approval_instructions, "approval_instructions"),
 		approval_policy: assertChannelApprovalPolicy(input.approval_policy),
 		review_all_tools: input.review_all_tools === undefined ? undefined : assertBoolean(input.review_all_tools, "review_all_tools"),
+		progress_detail: input.progress_detail === undefined || input.progress_detail === "" ? input.progress_detail : assertChannelProgressDetail(input.progress_detail, "progress_detail"),
 	};
 }
 

@@ -5,7 +5,7 @@ import { after, before, test } from "node:test";
 import { listChannelConnections, listChannelConversations, listChannelGroupMembers, listChannelGroups, setDaemonBaseUrl, UnsupportedChannelsError, updateChannelConversation, ZotigodRequestError } from "../backend/zotigod";
 
 let server: http.Server;
-let mode: "valid" | "legacy" | "malformed" | "missing" = "valid";
+let mode: "valid" | "legacy" | "malformed" | "missing" | "detail" = "valid";
 const timestamp = new Date(0).toISOString();
 
 before(async () => {
@@ -17,12 +17,16 @@ before(async () => {
       return;
     }
     if (request.url === "/channels/connections") {
-      response.end(JSON.stringify({ code: "ok", data: { connections: [connection()] } }));
+      const value: Record<string, unknown> = connection();
+      if (mode === "detail") Object.assign(value, { progress_detail: "detailed", bind_aliases: [{ name: "oncall", target: "workspace_1" }] });
+      if (mode === "malformed") value.progress_detail = "verbose";
+      response.end(JSON.stringify({ code: "ok", data: { connections: [value] } }));
       return;
     }
     if (request.url === "/channels/conversations?connection_id=connection-1") {
       const value = conversation();
       if (mode === "malformed") value.allowed_sender_ids = "owner-1";
+      if (mode === "detail") value.progress_detail = "full";
       if (mode === "legacy") {
         delete value.chat_mode;
         delete value.session_strategy;
@@ -84,6 +88,21 @@ test("Channel group mode is parsed at runtime", async () => {
 test("Channel group members are parsed at runtime", async () => {
   mode = "valid";
   assert.deepEqual(await listChannelGroupMembers("connection-1", "chat-1"), [{ id: "owner-1", display_name: "Owner" }]);
+});
+
+test("progress detail and bind aliases are parsed when the daemon reports them", async () => {
+  mode = "valid";
+  const [legacy] = await listChannelConnections();
+  assert.equal(legacy?.progress_detail, undefined, "an older daemon reports no level, so the UI hides it");
+  assert.equal(legacy?.bind_aliases, undefined);
+  assert.equal((await listChannelConversations("connection-1"))[0]?.progress_detail, "");
+  mode = "detail";
+  const [current] = await listChannelConnections();
+  assert.equal(current?.progress_detail, "detailed");
+  assert.deepEqual(current?.bind_aliases, [{ name: "oncall", target: "workspace_1" }]);
+  assert.equal((await listChannelConversations("connection-1"))[0]?.progress_detail, "full");
+  mode = "malformed";
+  await assert.rejects(() => listChannelConnections(), /progress_detail/);
 });
 
 test("malformed Channels payloads fail before reaching the UI", async () => {
