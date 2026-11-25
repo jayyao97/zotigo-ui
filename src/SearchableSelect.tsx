@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 
 export interface SearchableOption {
@@ -9,6 +9,14 @@ export interface SearchableOption {
   icon?: ReactNode;
   /** Extra text the search matches, such as a remote URL. */
   keywords?: string[];
+  /** Heading of the group the option starts or continues; options of a group are adjacent. */
+  group?: string;
+  /**
+   * Nesting under the option above, such as a Session under its Workspace.
+   * Browsing shows the tree instead of the detail; a search shows matches flat
+   * with their detail, since a match may appear without its parent.
+   */
+  depth?: number;
 }
 
 /**
@@ -124,16 +132,26 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
           }} />
       </label>
       <div className="searchable-select-options" id={listId} role="listbox" aria-label={ariaLabel} ref={list}>
-        {rows.map((option, index) => <div key={option.value} id={`${listId}-${index}`} data-row={index} role="option"
-          aria-selected={option.value === value} className={index === active ? "is-active" : undefined}
-          onPointerMove={() => { if (active !== index) { followActive.current = false; setActive(index); } }} onPointerDown={event => event.preventDefault()} onClick={() => choose(option.value)}>
-          {option.icon}
-          <span className="searchable-select-option-main">
-            <strong>{option.label}</strong>
-            {option.detail && <small>{option.detail}</small>}
-          </span>
-          <span className="searchable-select-check">{option.value === value && <Check size={14} strokeWidth={2} />}</span>
-        </div>)}
+        {rows.map((option, index) => {
+          const tree = !query.trim() && option.group !== undefined;
+          const depth = tree ? option.depth ?? 0 : 0;
+          const detail = tree ? undefined : option.detail;
+          return <Fragment key={option.value}>
+            {option.group !== undefined && option.group !== rows[index - 1]?.group && <div className="searchable-select-group" role="presentation">{option.group}</div>}
+            <div id={`${listId}-${index}`} data-row={index} role="option"
+              aria-selected={option.value === value} aria-label={detail || !option.detail ? undefined : `${option.label}, ${option.detail}`}
+              className={index === active ? "is-active" : undefined} style={depth ? { paddingLeft: 8 + depth * 18 } : undefined}
+              onPointerMove={() => { if (active !== index) { followActive.current = false; setActive(index); } }} onPointerDown={event => event.preventDefault()} onClick={() => choose(option.value)}>
+              {/* Rows are a three-column grid; keep the icon column without an icon. */}
+              {option.icon ?? <span aria-hidden="true" />}
+              <span className="searchable-select-option-main">
+                <strong>{option.label}</strong>
+                {detail && <small>{detail}</small>}
+              </span>
+              <span className="searchable-select-check">{option.value === value && <Check size={14} strokeWidth={2} />}</span>
+            </div>
+          </Fragment>;
+        })}
         {rows.length === 0 && <p>{emptyText}</p>}
       </div>
     </div>}

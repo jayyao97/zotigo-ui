@@ -103,15 +103,25 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
   // Daemons report progress detail on every connection. With none to look at,
   // show the settings: an older daemon ignores them, and they hide once saved.
   const supportsGroupCommands = creatingConnection || !selectedConnection ? connections.length === 0 || connections.some((value) => value.progress_detail) : Boolean(selectedConnection?.progress_detail);
+  // Projects head the groups, each Workspace lists its Sessions beneath it, as in the sidebar.
   const bindTargetOptions = useMemo<SearchableOption[]>(() => {
     const projectNames = new Map(projects.map((project) => [project.id, project.name]));
-    return [
-      ...readyWorkspaces.map((workspace) => ({ value: workspace.id, label: workspace.title, detail: t("channelsPage.bindTargetWorkspace", { project: projectNames.get(workspace.project_id) ?? "" }), keywords: [workspace.id], icon: <Folder size={14} aria-hidden="true" /> })),
-      ...sessionCatalog.filter((session) => session.workspace_id && workspaceById.has(session.workspace_id)).map((session) => ({ value: session.id, label: session.title.trim() || t("app.newSession"), detail: t("channelsPage.bindTargetSession", { workspace: workspaceById.get(session.workspace_id!)?.title ?? "" }), keywords: [session.id], icon: <MessageSquare size={14} aria-hidden="true" /> })),
-    ];
-  }, [projects, readyWorkspaces, sessionCatalog, workspaceById]);
+    const projectOrder = new Map(projects.map((project, index) => [project.id, index]));
+    const sessionsByWorkspace = new Map<string, typeof sessionCatalog>();
+    for (const session of sessionCatalog) {
+      if (session.workspace_id) sessionsByWorkspace.set(session.workspace_id, [...(sessionsByWorkspace.get(session.workspace_id) ?? []), session]);
+    }
+    const workspaces = [...readyWorkspaces].sort((left, right) => (projectOrder.get(left.project_id) ?? projects.length) - (projectOrder.get(right.project_id) ?? projects.length));
+    return workspaces.flatMap((workspace) => {
+      const project = projectNames.get(workspace.project_id) ?? "";
+      return [
+        { value: workspace.id, label: workspace.title, detail: t("channelsPage.bindTargetWorkspace", { project }), keywords: [workspace.id], icon: <Folder size={14} aria-hidden="true" />, group: project },
+        ...(sessionsByWorkspace.get(workspace.id) ?? []).map((session) => ({ value: session.id, label: session.title.trim() || t("app.newSession"), detail: t("channelsPage.bindTargetSession", { workspace: workspace.title }), keywords: [session.id, workspace.title], icon: <MessageSquare size={14} aria-hidden="true" />, group: project, depth: 1 })),
+      ];
+    });
+  }, [projects, readyWorkspaces, sessionCatalog]);
   const bindTargetOptionsFor = (target: string): SearchableOption[] => !target || bindTargetOptions.some((option) => option.value === target) ? bindTargetOptions
-    : [{ value: target, label: target, detail: t("channelsPage.bindTargetMissing") }, ...bindTargetOptions];
+    : [{ value: target, label: target, detail: t("channelsPage.bindTargetMissing"), icon: <CircleAlert size={14} aria-hidden="true" /> }, ...bindTargetOptions];
   const bindAliases = connectionDraft.bind_aliases ?? [];
   const setBindAliases = (aliases: NonNullable<ChannelConnectionInput["bind_aliases"]>) => setConnectionDraft({ ...connectionDraft, bind_aliases: aliases });
   const selectedWorkspace = groupDraft?.workspace_id ? workspaceById.get(groupDraft.workspace_id) : undefined;
