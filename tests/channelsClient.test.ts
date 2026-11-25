@@ -101,8 +101,9 @@ test("progress detail and bind aliases are parsed when the daemon reports them",
   assert.equal(current?.progress_detail, "detailed");
   assert.deepEqual(current?.bind_aliases, [{ name: "oncall", target: "workspace_1" }]);
   assert.equal((await listChannelConversations("connection-1"))[0]?.progress_detail, "full");
+  // A level from a newer daemon shows as the default rather than failing the list.
   mode = "malformed";
-  await assert.rejects(() => listChannelConnections(), /progress_detail/);
+  assert.equal((await listChannelConnections())[0]?.progress_detail, "brief");
 });
 
 test("malformed Channels payloads fail before reaching the UI", async () => {

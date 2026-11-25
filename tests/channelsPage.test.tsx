@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, ChannelConversationInput, ChannelGroup } from "../shared/channels";
 import type { ClientApi, DesktopProject, DesktopWorkspace } from "../shared/clientTypes";
 import type { AgentCatalogEntry, ZotigoSession } from "../shared/zotigod";
-import { ChannelsPage } from "../src/channels/ChannelsPage";
+import { ChannelsPage, completeBindAliases } from "../src/channels/ChannelsPage";
 import { ClientContext } from "../src/ClientContext";
 import { ToastProvider } from "../src/Toast";
 
@@ -801,6 +801,31 @@ test("group progress detail follows the connection unless overridden", async () 
     await act(async () => click(save));
     await flush();
     assert.equal(savedInput?.progress_detail, "full");
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
+test("only complete bind aliases are saved, trimmed", () => {
+  assert.deepEqual(completeBindAliases([
+    { name: " oncall ", target: "workspace_1" },
+    { name: "draft", target: "" },
+    { name: "  ", target: "sess_1" },
+  ]), [{ name: "oncall", target: "workspace_1" }]);
+});
+
+test("a daemon with no connections yet offers group commands for the first one", async () => {
+  const restore = installDom();
+  try {
+    const api = {
+      listChannelConnections: async () => [],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    assert.match(document.body.textContent ?? "", /Progress detail/);
+    assert.match(document.body.textContent ?? "", /Group commands/);
     await act(async () => root.unmount());
   } finally { restore(); }
 });

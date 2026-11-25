@@ -19,6 +19,9 @@ import { compatibleReasoningEffort, RuntimeSettingsPicker } from "../conversatio
 import { SearchableSelect, type SearchableOption } from "../SearchableSelect";
 
 const defaultApprovalInstructions = "Only auto-approve actions necessary for the request that are reversible and confined to the bound workspace. Request owner approval for destructive changes, credential access, external publishing or messaging, permission changes, and ambiguity with material impact.";
+// Saves only aliases with both a name and a target; a half-filled row is a draft.
+export const completeBindAliases = (aliases: NonNullable<ChannelConnectionInput["bind_aliases"]>) =>
+  aliases.map((alias) => ({ name: alias.name.trim(), target: alias.target.trim() })).filter((alias) => alias.name && alias.target);
 const emptyConnection = (): ChannelConnectionInput => ({ provider: "feishu", name: t("channelsPage.feishu"), app_id: "", app_secret: "", enabled: false, allow_chat_ids: [], agent_instructions: "", approval_instructions: defaultApprovalInstructions, approval_policy: "auto", review_all_tools: true, progress_mode: "auto", progress_detail: "brief", bind_aliases: [] });
 const connectionInput = (connection: ChannelConnection): ChannelConnectionInput => ({ provider: "feishu", name: connection.name, app_id: connection.app_id, enabled: connection.enabled, allow_chat_ids: [], agent_instructions: connection.agent_instructions, approval_instructions: connection.approval_instructions, approval_policy: connection.approval_policy || "auto", review_all_tools: connection.review_all_tools, progress_mode: connection.progress_mode,
   // Only daemons that report these settings can store them.
@@ -97,7 +100,9 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
   const sessionTitleById = useMemo(() => new Map(sessionCatalog.map((value) => [value.id, value.title])), [sessionCatalog]);
   // Older daemons neither report nor store progress detail and bind aliases, and
   // silently ignore them on save; only a daemon that reports them can keep them.
-  const supportsGroupCommands = creatingConnection ? connections.some((value) => value.progress_detail) : Boolean(selectedConnection?.progress_detail);
+  // Daemons report progress detail on every connection. With none to look at,
+  // show the settings: an older daemon ignores them, and they hide once saved.
+  const supportsGroupCommands = creatingConnection || !selectedConnection ? connections.length === 0 || connections.some((value) => value.progress_detail) : Boolean(selectedConnection?.progress_detail);
   const bindTargetOptions = useMemo<SearchableOption[]>(() => {
     const projectNames = new Map(projects.map((project) => [project.id, project.name]));
     return [
@@ -361,7 +366,7 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
             <label className="channels-check"><input type="checkbox" role="switch" checked={connectionDraft.review_all_tools} onChange={(event) => setConnectionDraft({ ...connectionDraft, review_all_tools: event.target.checked })} />{t("channelsPage.enableAutomaticApprovalReviewInAutoMode")}</label>
             <p className="channels-help">{t("channelsPage.zotigoReviewsOtherwiseSafeToolCallsCodexAutomatically")}</p>
             <div className="channels-capability"><CheckCircle2 size={15} /><span>{t("channelsPage.cotExecutionDisplaySupported")}</span><small>{t("channelsPage.theFinalAnswerIsSentSeparatelyInThe")}</small></div>
-            <div className="channels-actions channels-form-actions"><button className="primary" disabled={busy} onClick={() => run(async () => { const input = { ...connectionDraft, allow_chat_ids: [], ...(connectionDraft.bind_aliases ? { bind_aliases: connectionDraft.bind_aliases.filter((alias) => alias.name.trim() || alias.target) } : {}) }; if (!input.app_secret) delete input.app_secret; const saved = !creatingConnection && selectedConnection ? await api.updateChannelConnection(selectedConnection.id, input) : await api.createChannelConnection(input); await load(saved.id, true); setStatus(t("channelsPage.connectionSaved"), "success"); })}><Save size={14} />{t("app.save")}</button>{!creatingConnection && selectedConnection && <button disabled={busy} onClick={() => { setStatus(""); setDeleteTarget(selectedConnection); }}><Trash2 size={14} />{t("app.delete")}</button>}<small>{t("channelsPage.savesTheConnectionPromptAndApprovalSettingsAbove")}</small></div>
+            <div className="channels-actions channels-form-actions"><button className="primary" disabled={busy} onClick={() => run(async () => { const input = { ...connectionDraft, allow_chat_ids: [], ...(connectionDraft.bind_aliases ? { bind_aliases: completeBindAliases(connectionDraft.bind_aliases) } : {}) }; if (!input.app_secret) delete input.app_secret; const saved = !creatingConnection && selectedConnection ? await api.updateChannelConnection(selectedConnection.id, input) : await api.createChannelConnection(input); await load(saved.id, true); setStatus(t("channelsPage.connectionSaved"), "success"); })}><Save size={14} />{t("app.save")}</button>{!creatingConnection && selectedConnection && <button disabled={busy} onClick={() => { setStatus(""); setDeleteTarget(selectedConnection); }}><Trash2 size={14} />{t("app.delete")}</button>}<small>{t("channelsPage.savesTheConnectionPromptAndApprovalSettingsAbove")}</small></div>
           </section>
         </div>}
         {selectedGroup && groupConversation && groupDraft && <div className="channels-grid">

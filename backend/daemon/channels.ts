@@ -68,7 +68,7 @@ function parseChannelConnection(value: unknown, context: string): ChannelConnect
     approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`), review_all_tools: expectBoolean(record.review_all_tools, `${context} review_all_tools`),
     approval_policy: parseChannelApprovalPolicy(record.approval_policy),
     cot_available: expectBoolean(record.cot_available, `${context} cot_available`), progress_mode: progressMode,
-    progress_detail: record.progress_detail === undefined ? undefined : parseChannelProgressDetail(record.progress_detail, `${context} progress_detail`),
+    progress_detail: parseChannelProgressDetail(record.progress_detail),
     bind_aliases: record.bind_aliases == null ? undefined : expectArray(record.bind_aliases, `${context} bind_aliases`).map((alias, index) => parseChannelBindAlias(alias, `${context} bind_aliases[${index}]`)),
     created_at: expectString(record.created_at, `${context} created_at`), updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
@@ -87,17 +87,24 @@ function parseChannelGroup(value: unknown, context: string): ChannelGroup {
 		sender_policy: parseChannelSenderPolicy(record.sender_policy, `${context} sender_policy`),
     agent: parseChannelAgent(record.agent, `${context} agent`), profile_name: expectOptionalString(record.profile_name, `${context} profile_name`) ?? "",
     model: expectOptionalString(record.model, `${context} model`) ?? "", reasoning_effort: expectOptionalString(record.reasoning_effort, `${context} reasoning_effort`) ?? "",
-    progress_detail: parseChannelProgressDetailOverride(record.progress_detail, `${context} progress_detail`),
+    progress_detail: parseChannelProgressDetailOverride(record.progress_detail),
   };
 }
 
-function parseChannelProgressDetail(value: unknown, context: string): ChannelProgressDetail {
-  if (typeof value === "string" && (channelProgressDetails as readonly string[]).includes(value)) return value as ChannelProgressDetail;
-  throw new Error(`invalid ${context}`);
+const isChannelProgressDetail = (value: unknown): value is ChannelProgressDetail =>
+  typeof value === "string" && (channelProgressDetails as readonly string[]).includes(value);
+
+// Daemons without progress detail omit the field, which hides the setting. A
+// level this client does not know yet shows as the default instead of
+// failing the whole list.
+function parseChannelProgressDetail(value: unknown): ChannelProgressDetail | undefined {
+  if (value == null) return undefined;
+  return isChannelProgressDetail(value) ? value : "brief";
 }
 
-function parseChannelProgressDetailOverride(value: unknown, context: string): ChannelProgressDetail | "" {
-  return value === undefined || value === "" ? "" : parseChannelProgressDetail(value, context);
+// A group without its own level, or with one this client does not know, inherits.
+function parseChannelProgressDetailOverride(value: unknown): ChannelProgressDetail | "" {
+  return isChannelProgressDetail(value) ? value : "";
 }
 
 function parseChannelBindAlias(value: unknown, context: string): ChannelBindAlias {
@@ -128,7 +135,7 @@ function parseChannelConversation(value: unknown, context: string): ChannelConve
     agent_instructions_mode: agentMode, agent_instructions: expectString(record.agent_instructions, `${context} agent_instructions`),
     approval_instructions_mode: approvalMode, approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`),
     approval_policy: parseChannelApprovalPolicy(record.approval_policy),
-    review_all_tools: reviewAllTools, progress_detail: parseChannelProgressDetailOverride(record.progress_detail, `${context} progress_detail`), last_activity_at: expectString(record.last_activity_at, `${context} last_activity_at`),
+    review_all_tools: reviewAllTools, progress_detail: parseChannelProgressDetailOverride(record.progress_detail), last_activity_at: expectString(record.last_activity_at, `${context} last_activity_at`),
     created_at: expectString(record.created_at, `${context} created_at`), updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
 }
