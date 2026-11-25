@@ -984,6 +984,7 @@ export const en = {
   "channelsPage.bindTargetSession": "Session · {workspace}",
   "channelsPage.bindTargetOtherProject": "Other",
   "channelsPage.bindTargetNotReady": "Workspace {workspace} is not ready",
+  "channelsPage.bindTargetNoChannelTools": "Codex Session without Channel tools; cannot be bound",
   "channelsPage.bindTargetMissing": "Not found on this host",
   "channelsPage.executionDisplay": "Execution display",
   "channelsPage.cotWithCardFallback": "COT, with card fallback",

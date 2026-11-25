@@ -63,6 +63,12 @@ interface ChannelsPageProps {
   onOpenSession: (id: string, leaveChannels?: boolean) => Promise<void>;
 }
 
+// A Codex Session that started before it had the Channel tools cannot serve a
+// group; the daemon rejects binding it.
+function lacksChannelTools(session: ZotigoSession | undefined): boolean {
+  return session?.agent === "codex" && session.channel_tools_eligible !== true;
+}
+
 export function ChannelsPage({ favorites, hostName, projects, workspaces, agents = [], sessions = [], sessionCatalog = [], navigationRoot, navigationButtonRef, navigationOpen, sessionVisible, selectedSessionId, onOpenNavigation, onShowConfiguration, onBack, onOpenSession }: ChannelsPageProps) {
   useLocale();
   const { api } = useClient();
@@ -112,12 +118,13 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
   // show the settings: an older daemon ignores them, and they hide once saved.
   const supportsGroupCommands = creatingConnection || !selectedConnection ? connections.length === 0 || connections.some((value) => value.progress_detail) : Boolean(selectedConnection?.progress_detail);
   // Projects head the groups, each Workspace lists its Sessions beneath it, as in the sidebar.
+  const runtimeSessionById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions]);
   const bindTargetOptions = useMemo<SearchableOption[]>(() => {
     const projectNames = new Map(projects.map((project) => [project.id, project.name]));
     const projectOrder = new Map(projects.map((project, index) => [project.id, index]));
     const sessionsByWorkspace = new Map<string, typeof sessionCatalog>();
     for (const session of sessionCatalog) {
-      if (!session.workspace_id) continue;
+      if (!session.workspace_id || lacksChannelTools(runtimeSessionById.get(session.id))) continue;
       const list = sessionsByWorkspace.get(session.workspace_id);
       if (list) list.push(session); else sessionsByWorkspace.set(session.workspace_id, [session]);
     }
@@ -129,12 +136,15 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
         ...(sessionsByWorkspace.get(workspace.id) ?? []).map((session) => ({ value: session.id, label: session.title.trim() || t("app.newSession"), detail: t("channelsPage.bindTargetSession", { workspace: workspace.title }), keywords: [session.id, workspace.title], icon: <MessageSquare size={14} aria-hidden="true" />, group: project, depth: 1 })),
       ];
     });
-  }, [projects, readyWorkspaces, sessionCatalog]);
-  // A target outside the list is either gone or in a Workspace that is not ready.
+  }, [projects, readyWorkspaces, runtimeSessionById, sessionCatalog]);
+  // A target outside the list is gone, in a Workspace that is not ready, or a
+  // Codex Session without the Channel tools; saved aliases still show it.
   const unlistedBindTarget = (target: string): SearchableOption => {
     const session = sessionCatalog.find((value) => value.id === target);
     const workspace = workspaceById.get(session?.workspace_id ?? target);
-    return { value: target, label: session?.title.trim() || workspace?.title || target, detail: workspace ? t("channelsPage.bindTargetNotReady", { workspace: workspace.title }) : t("channelsPage.bindTargetMissing"), keywords: [target], icon: <CircleAlert size={14} aria-hidden="true" /> };
+    const detail = session && lacksChannelTools(runtimeSessionById.get(session.id)) ? t("channelsPage.bindTargetNoChannelTools")
+      : workspace ? t("channelsPage.bindTargetNotReady", { workspace: workspace.title }) : t("channelsPage.bindTargetMissing");
+    return { value: target, label: session?.title.trim() || workspace?.title || target, detail, keywords: [target], icon: <CircleAlert size={14} aria-hidden="true" /> };
   };
   const bindTargetOptionsFor = (target: string): SearchableOption[] => !target || bindTargetOptions.some((option) => option.value === target) ? bindTargetOptions
     : [unlistedBindTarget(target), ...bindTargetOptions];
@@ -149,7 +159,7 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
     && (session.id === groupConversation?.session_id || sessionWorkspaceById.get(session.id) === selectedWorkspace.id)
     && session.approval_policy !== "manual"
     && (session.id === groupConversation?.session_id || (!session.working && (session.state === "created" || session.state === "offline" || session.state === "running")))
-    && (session.id === groupConversation?.session_id || session.agent !== "codex" || session.channel_tools_eligible === true)
+    && (session.id === groupConversation?.session_id || !lacksChannelTools(session))
     && (!boundSessionIds.has(session.id) || session.id === groupConversation?.session_id)), [boundSessionIds, groupConversation?.session_id, sessionWorkspaceById, sessions, selectedWorkspace]);
   const codexModels: AgentModel[] = agents.find((agent) => agent.id === "codex")?.models ?? [];
   const runtimeValid = groupDraft?.agent !== "codex" || Boolean(groupDraft.model && groupDraft.reasoning_effort);

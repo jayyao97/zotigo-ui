@@ -883,3 +883,33 @@ test("an alias target in a Workspace that is not ready says so instead of missin
     await act(async () => root.unmount());
   } finally { restore(); }
 });
+
+test("alias targets leave out Codex Sessions without Channel tools but keep a saved one visible", async () => {
+  const restore = installDom();
+  try {
+    const configured: ChannelConnection = { ...connection("connection-1", "Bot One"), progress_detail: "brief", bind_aliases: [{ name: "legacy", target: "sess_legacy" }] };
+    const api = {
+      listChannelConnections: async () => [configured],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+    } as unknown as ClientApi;
+    const codex: ZotigoSession = { id: "sess_codex", state: "offline", live: false, agent: "codex", model: "gpt-channel", reasoning_effort: "high", channel_tools_eligible: true, created_at: "", working: false };
+    const sessions: ZotigoSession[] = [codex, { ...codex, id: "sess_legacy", channel_tools_eligible: false }, { ...codex, id: "sess_zotigo", agent: "zotigo", channel_tools_eligible: undefined }];
+    const sessionCatalog = [
+      { id: "sess_codex", project_id: project.id, workspace_id: workspace.id, title: "Codex ready", created_at: "", updated_at: "" },
+      { id: "sess_legacy", project_id: project.id, workspace_id: workspace.id, title: "Codex legacy", created_at: "", updated_at: "" },
+      { id: "sess_zotigo", project_id: project.id, workspace_id: workspace.id, title: "Zotigo", created_at: "", updated_at: "" },
+    ];
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} sessions={sessions} sessionCatalog={sessionCatalog} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    const trigger = document.querySelector<HTMLElement>(".channels-alias-row .searchable-select-trigger")!;
+    // The saved alias keeps its title and says why it cannot be bound.
+    assert.match(trigger.textContent ?? "", /Codex legacy.*without Channel tools/);
+    await act(async () => click(trigger));
+    const labels = [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.querySelector("strong")?.textContent);
+    // Shown first as the current choice, then the selectable targets without it.
+    assert.deepEqual(labels, ["Codex legacy", "Workspace One", "Codex ready", "Zotigo"]);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
