@@ -963,6 +963,8 @@ export const en = {
   "channelsPage.progressDetail.detailed": "Detailed: tool arguments and interim replies",
   "channelsPage.progressDetail.full": "Full: also the model's thinking",
   "channelsPage.progressDetailHelp": "Detailed and Full send commands, file paths and model output to the chat, where every member can read them. Tool results and file contents are never sent.",
+  "channelsPage.progressDetailUnrecognized": "Current: {level} (unknown to this client, kept as is)",
+  "channelsPage.groupCommandsUnsupported": "The connection is saved, but this zotigod version does not support group commands, so the aliases and progress detail were not kept. Update zotigod to use them.",
   "channelsPage.progressDetailInherit": "Follow the connection ({level})",
   "channelsPage.groupProgressDetailHelp": "Overrides the connection's level for this group.",
   "channelsPage.groupCommands": "Group commands",

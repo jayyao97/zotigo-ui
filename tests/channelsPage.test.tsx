@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, ChannelConversationInput, ChannelGroup } from "../shared/channels";
 import type { ClientApi, DesktopProject, DesktopWorkspace } from "../shared/clientTypes";
 import type { AgentCatalogEntry, ZotigoSession } from "../shared/zotigod";
-import { ChannelsPage, completeBindAliases } from "../src/channels/ChannelsPage";
+import { ChannelsPage, completeBindAliases, droppedGroupCommandSettings } from "../src/channels/ChannelsPage";
 import { ClientContext } from "../src/ClientContext";
 import { ToastProvider } from "../src/Toast";
 
@@ -828,4 +828,37 @@ test("a daemon with no connections yet offers group commands for the first one",
     assert.match(document.body.textContent ?? "", /Group commands/);
     await act(async () => root.unmount());
   } finally { restore(); }
+});
+
+test("a progress level unknown to this client is shown and left unchanged on save", async () => {
+  const restore = installDom();
+  try {
+    const configured: ChannelConnection = { ...connection("connection-1", "Bot One"), progress_detail: "brief", progress_detail_unrecognized: "verbose", bind_aliases: [] };
+    let savedInput: ChannelConnectionInput | undefined;
+    const api = {
+      listChannelConnections: async () => [configured],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+      updateChannelConnection: async (_id: string, input: ChannelConnectionInput) => { savedInput = input; return configured; },
+    } as unknown as ClientApi;
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[]} workspaces={[]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    const detail = [...document.querySelectorAll<HTMLSelectElement>("select")].find((select) => select.parentElement?.textContent?.startsWith("Progress detail"))!;
+    assert.match(detail.selectedOptions[0]?.textContent ?? "", /verbose/);
+    await act(async () => click(button(document.querySelector("#root .channels-form-actions")!, "Save")));
+    await flush();
+    assert.ok(savedInput);
+    assert.equal("progress_detail" in savedInput, false, "the daemon keeps the level it reported");
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});
+
+test("saving group command settings to an older daemon reports that they were not kept", () => {
+  const legacy = connection("connection-1", "Bot One");
+  const base = { provider: "feishu", name: "Bot", app_id: "app", enabled: true, allow_chat_ids: [], agent_instructions: "", approval_instructions: "", review_all_tools: true, progress_mode: "auto" } as ChannelConnectionInput;
+  assert.equal(droppedGroupCommandSettings({ ...base, bind_aliases: [{ name: "oncall", target: "workspace_1" }] }, legacy), true);
+  assert.equal(droppedGroupCommandSettings({ ...base, progress_detail: "full", bind_aliases: [] }, legacy), true);
+  assert.equal(droppedGroupCommandSettings({ ...base, progress_detail: "brief", bind_aliases: [] }, legacy), false, "defaults lose nothing");
+  assert.equal(droppedGroupCommandSettings({ ...base, bind_aliases: [{ name: "oncall", target: "workspace_1" }] }, { ...legacy, progress_detail: "brief" }), false);
 });

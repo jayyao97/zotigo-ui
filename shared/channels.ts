@@ -33,6 +33,8 @@ export interface ChannelConnection {
   progress_mode: ChannelProgressMode;
   /** Absent when the daemon predates progress detail and bind aliases. */
   progress_detail?: ChannelProgressDetail;
+  /** A level from a newer daemon this client does not know; progress_detail is then brief. */
+  progress_detail_unrecognized?: string;
   bind_aliases?: ChannelBindAlias[];
   created_at: string;
   updated_at: string;
@@ -110,6 +112,8 @@ export interface ChannelConversation {
   review_all_tools?: boolean | null;
   /** Empty inherits the connection level. */
   progress_detail?: ChannelProgressDetail | "";
+  /** A level from a newer daemon this client does not know; progress_detail is then empty. */
+  progress_detail_unrecognized?: string;
   last_activity_at: string;
   created_at: string;
   updated_at: string;

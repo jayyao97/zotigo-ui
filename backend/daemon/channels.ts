@@ -68,7 +68,7 @@ function parseChannelConnection(value: unknown, context: string): ChannelConnect
     approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`), review_all_tools: expectBoolean(record.review_all_tools, `${context} review_all_tools`),
     approval_policy: parseChannelApprovalPolicy(record.approval_policy),
     cot_available: expectBoolean(record.cot_available, `${context} cot_available`), progress_mode: progressMode,
-    progress_detail: parseChannelProgressDetail(record.progress_detail),
+    progress_detail: parseChannelProgressDetail(record.progress_detail), progress_detail_unrecognized: unrecognizedProgressDetail(record.progress_detail),
     bind_aliases: record.bind_aliases == null ? undefined : expectArray(record.bind_aliases, `${context} bind_aliases`).map((alias, index) => parseChannelBindAlias(alias, `${context} bind_aliases[${index}]`)),
     created_at: expectString(record.created_at, `${context} created_at`), updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
@@ -107,6 +107,11 @@ function parseChannelProgressDetailOverride(value: unknown): ChannelProgressDeta
   return isChannelProgressDetail(value) ? value : "";
 }
 
+// Kept so the page can show the level and leave it unchanged on save.
+function unrecognizedProgressDetail(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" && !isChannelProgressDetail(value) ? value : undefined;
+}
+
 function parseChannelBindAlias(value: unknown, context: string): ChannelBindAlias {
   const record = expectRecord(value, context);
   return { name: expectString(record.name, `${context} name`), target: expectString(record.target, `${context} target`) };
@@ -135,7 +140,7 @@ function parseChannelConversation(value: unknown, context: string): ChannelConve
     agent_instructions_mode: agentMode, agent_instructions: expectString(record.agent_instructions, `${context} agent_instructions`),
     approval_instructions_mode: approvalMode, approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`),
     approval_policy: parseChannelApprovalPolicy(record.approval_policy),
-    review_all_tools: reviewAllTools, progress_detail: parseChannelProgressDetailOverride(record.progress_detail), last_activity_at: expectString(record.last_activity_at, `${context} last_activity_at`),
+    review_all_tools: reviewAllTools, progress_detail: parseChannelProgressDetailOverride(record.progress_detail), progress_detail_unrecognized: unrecognizedProgressDetail(record.progress_detail), last_activity_at: expectString(record.last_activity_at, `${context} last_activity_at`),
     created_at: expectString(record.created_at, `${context} created_at`), updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
 }

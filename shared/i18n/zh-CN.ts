@@ -962,6 +962,8 @@ export const zhCN: Record<MessageKey, Message> = {
   "channelsPage.progressDetail.detailed": "详细：加上工具参数和中间回复",
   "channelsPage.progressDetail.full": "完整：再加上模型思考",
   "channelsPage.progressDetailHelp": "“详细”和“完整”会把命令、文件路径和模型输出发到群里，所有群成员都能看到。工具结果和文件内容在任何档位都不会发送。",
+  "channelsPage.progressDetailUnrecognized": "当前：{level}（此客户端不认识，保持不变）",
+  "channelsPage.groupCommandsUnsupported": "连接已保存，但此 zotigod 版本不支持群内指令，别名和过程详细程度没有保存。请更新 zotigod 后再设置。",
   "channelsPage.progressDetailInherit": "跟随连接（{level}）",
   "channelsPage.groupProgressDetailHelp": "为这个群单独设置，覆盖连接的档位。",
   "channelsPage.groupCommands": "群内指令",
