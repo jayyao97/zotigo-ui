@@ -5023,7 +5023,6 @@ html[data-platform="web"] .settings-page { height: 100dvh; }
 }
 
 .settings-sidebar-chrome { height: var(--toolbar); }
-.settings-host-picker { margin-bottom: 24px; }
 html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 
 .settings-back,
@@ -5081,6 +5080,14 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 }
 
 .settings-section + .settings-section { margin-top: 44px; }
+.settings-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 36px; }
+.settings-page-header > div { min-width: 0; }
+.settings-content .settings-page-header h1 { margin: 0; }
+.settings-page-header p { margin: 8px 0 0; overflow: hidden; color: var(--text-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.settings-page-header-select { margin-top: 2px; }
+.settings-machine-actions { margin-bottom: 44px; }
+.settings-section-note { margin: 10px 2px 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.settings-section-note.error { color: var(--red); }
 .settings-section h2 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
 
 .settings-card {
@@ -5107,6 +5114,7 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
 
 .settings-favorite-fields select,
 .settings-row select,
+.settings-page-header-select,
 .settings-secondary-button {
   flex: 0 0 auto;
   min-height: 32px;
@@ -5118,7 +5126,7 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
   font-size: 12px;
 }
 
-.settings-row select { max-width: 190px; padding: 0 30px 0 10px; }
+.settings-row select, .settings-page-header-select { max-width: 190px; padding: 0 30px 0 10px; }
 .settings-secondary-button { display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; cursor: pointer; }
 .settings-secondary-button:hover { background: var(--gray-600); }
 
@@ -5276,6 +5284,7 @@ html[data-platform="web"] .settings-sidebar-chrome { height: 12px; }
   .settings-sidebar .settings-nav-item { width: auto; }
   .settings-content { width: calc(100% - 28px); padding: 28px 0 56px; }
   .settings-content h1 { margin-bottom: 28px; }
+  .settings-page-header { flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
   .settings-row { align-items: flex-start; flex-direction: column; gap: 12px; }
   .channels-detail > header { min-height: 58px; padding-inline: 16px; }
   .channels-detail-scroll { padding: 10px 16px 56px; }
@@ -5744,6 +5753,7 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
 .model-settings-help { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
 .model-settings > p { margin: 10px 0 16px; }
 .model-settings > .settings-card { margin-top: 20px; }
+.model-settings + .settings-section { margin-top: 44px; }
 .model-settings-form { padding: 20px; }
 .model-settings-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .model-settings-form label { display: grid; gap: 7px; margin-bottom: 16px; font-size: 13px; }

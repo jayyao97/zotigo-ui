@@ -7,6 +7,7 @@ import type { ClientApi } from "../shared/clientTypes";
 import type { HostProfile } from "../shared/hosts";
 import { ModelSettings } from "./ModelSettings";
 import { UpdateSettings } from "./UpdateSettings";
+import { SettingsPageHeader } from "./SettingsPageHeader";
 import { t } from "../shared/i18n/index";
 import type { TranslationLanguage } from "./translationLanguage";
 import type { SendMode } from "./sendMode";
@@ -110,13 +111,14 @@ export function SettingsPage({
       <section className="settings-main">
         <div className="settings-content">
           {page === "updates" ? <UpdateSettings api={updateApi} hosts={hosts}/> : page === "usage" ? <UsageSettings hostId={activeHost} hostName={hostName} onOpenSession={onOpenSession} /> : page === "models" ? <>
-            <label className="settings-row settings-host-picker"><span><strong>{t("settings.targetHost")}</strong><small>{hosts.find(host => host.id === modelHost)?.baseUrl}</small></span>
-              <select aria-label={t("settings.targetHost")} value={modelHost} disabled={modelEditing} onChange={event => setModelHost(event.target.value)}>
+            {/* Outside the per-host remount, so switching hosts keeps focus on the picker. */}
+            <SettingsPageHeader title={t("models.title")} subtitle={t("models.host", { host: targetHostName })}>
+              <select className="settings-page-header-select" aria-label={t("settings.targetHost")} title={hosts.find(host => host.id === modelHost)?.baseUrl} value={modelHost} disabled={modelEditing} onChange={event => setModelHost(event.target.value)}>
                 {hosts.map(host => <option key={host.id} value={host.id}>{host.id === "local" ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : host.name}</option>)}
               </select>
-            </label>
+            </SettingsPageHeader>
             {hosts.some(host => host.id === modelHost) && <Fragment key={modelHost}>
-              <ModelSettings hostId={modelHost} hostName={targetHostName} onEditingChange={setModelEditing} onSaved={() => setProfileRevision(revision => revision + 1)} />
+              <ModelSettings hostId={modelHost} onEditingChange={setModelEditing} onSaved={() => setProfileRevision(revision => revision + 1)} />
               {modelHost === activeHost
                 ? <FavoriteModelSettings profileRevision={profileRevision} hostName={targetHostName} onCodexRefresh={onCodexRefresh} />
                 : <ModelFavoritesProvider host={modelHost}>
