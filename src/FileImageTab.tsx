@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { ImageFileSnapshot } from "../shared/clientTypes";
 import { ImagePreview } from "./ImagePreview";
 import { FilePath } from "./FilePath";
+import { copyText } from "./clipboard";
 
 export function FileImageTab({ file, workspaceRoot, onRefresh, refreshError }: { file: ImageFileSnapshot; workspaceRoot?: string; onRefresh: () => void; refreshError?: string }) {
   useLocale();
@@ -15,7 +16,7 @@ export function FileImageTab({ file, workspaceRoot, onRefresh, refreshError }: {
       <header className="file-editor-header">
         <FilePath path={file.path} workspaceRoot={workspaceRoot} />
         <span className="file-image-size">{formatFileSize(file.sizeBytes)}</span>
-        <button type="button" className="file-editor-icon-button" title={t("app.copyPath")} aria-label={t("fileEditorTab.copyFilePath")} onClick={() => void navigator.clipboard.writeText(file.path)}><Copy size={14} /></button>
+        <button type="button" className="file-editor-icon-button" title={t("app.copyPath")} aria-label={t("fileEditorTab.copyFilePath")} onClick={() => void copyText(file.path)}><Copy size={14} /></button>
         <button type="button" className="file-editor-icon-button" title={t("fileImageTab.openFullPreview")} aria-label={t("fileImageTab.openFullImagePreview")} onClick={() => setExpanded(true)}><Maximize2 size={14} /></button>
         <button type="button" className="file-editor-icon-button" title={t("fileEditorTab.refreshFile")} aria-label={t("fileEditorTab.refreshFile")} onClick={onRefresh}><RefreshCw size={14} /></button>
       </header>

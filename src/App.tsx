@@ -229,6 +229,7 @@ import type { FirstMessageInput } from "../shared/clientTypes";
 import { CreateWorkspaceSourcesField } from "./workspace/CreateWorkspaceSourcesField";
 import { CreateWorkspaceDialog } from "./workspace/CreateWorkspaceDialog";
 import { CreateProjectDialog } from "./project/CreateProjectDialog";
+import { copyText } from "./clipboard";
 
 type HostVolatileState = {
   desktopState: DesktopState;
@@ -296,7 +297,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   // IDs are what Feishu commands such as /bind accept.
   const copyId = async (id: string) => {
     try {
-      await navigator.clipboard.writeText(id);
+      await copyText(id);
       toast(t("app.copiedId", { id }));
     } catch (error) {
       toast(errorMessage(error), "error");

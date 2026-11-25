@@ -66,14 +66,14 @@ import { markdownUrlTransform } from "../markdownUrlTransform";
 import { defaultThinkingDisclosureOpen, latestReasoningItemId, type ThinkingDisplayMode } from "../thinkingDisplay";
 import { initialStreamingTextState, planStreamingTextUpdate } from "../streamingText";
 import { sessionTurnActions } from "../../shared/sessionFork";
+import { copyText } from "../clipboard";
 
 export function TurnActions({ text, disabled, title, onFork }: { text: string; disabled: boolean; title: string; onFork: () => void }) {
   useLocale();
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   return <div className="turn-actions">
     <button type="button" aria-label={t("conversationTimeline.copyResponse")} disabled={!text} title={copyStatus ?? t("conversationTimeline.copyResponse")} onClick={() => {
-      if (!navigator.clipboard) { setCopyStatus(t("conversationTimeline.clipboardUnavailable")); return; }
-      void navigator.clipboard.writeText(text).then(() => setCopyStatus(t("markdownCodeBlock.copied")), () => setCopyStatus(t("conversationTimeline.couldNotCopyResponse")));
+      void copyText(text).then(() => setCopyStatus(t("markdownCodeBlock.copied")), () => setCopyStatus(t("conversationTimeline.couldNotCopyResponse")));
     }}><Copy size={16} strokeWidth={1.8} /></button>
     <button type="button" aria-label={t("conversationTimeline.forkFromThisTurn")} title={title} disabled={disabled} onClick={onFork}><GitBranch size={16} strokeWidth={1.8} /></button>
     {copyStatus && <span role="status">{copyStatus}</span>}
@@ -1208,8 +1208,7 @@ export function UserMessage({ messageId, createdAt, text, skills = [], kicker, c
           {timestamp && <time className="user-message-time" dateTime={createdAt} title={timestamp.full}>{timestamp.label}</time>}
           {copyStatus && <span role="status">{copyStatus}</span>}
           {text && <button type="button" aria-label={t("conversationTimeline.copyMessage")} title={copyStatus ?? t("conversationTimeline.copyMessage")} onClick={() => {
-            if (!navigator.clipboard) { setCopyStatus(t("conversationTimeline.clipboardUnavailable")); return; }
-            void navigator.clipboard.writeText(text).then(() => setCopyStatus(t("markdownCodeBlock.copied")), () => setCopyStatus(t("conversationTimeline.couldNotCopyMessage")));
+            void copyText(text).then(() => setCopyStatus(t("markdownCodeBlock.copied")), () => setCopyStatus(t("conversationTimeline.couldNotCopyMessage")));
           }}><Copy size={16} strokeWidth={1.8} /></button>}
         </div>}
         {collapsible && (
@@ -1336,7 +1335,7 @@ function ToolDisclosure({
               className="tool-copy-button"
               aria-label={t("conversationTimeline.copyToolResult")}
               title={t("conversationTimeline.copyResult")}
-              onClick={() => void navigator.clipboard.writeText(detail)}
+              onClick={() => void copyText(detail)}
             >
               <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
             </button>
@@ -1373,7 +1372,7 @@ function ShellCommandPreview({ command }: { command: string }) {
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         ><ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" /></button>
-        <button type="button" className="tool-copy-button" aria-label={t("conversationTimeline.copyCommand")} title={t("conversationTimeline.copyCommand")} onClick={() => void navigator.clipboard.writeText(command)}>
+        <button type="button" className="tool-copy-button" aria-label={t("conversationTimeline.copyCommand")} title={t("conversationTimeline.copyCommand")} onClick={() => void copyText(command)}>
           <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </div>

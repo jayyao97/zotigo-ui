@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Code2, Copy, Network, RefreshCw } from "lucide-react";
 import { PreviewImage } from "./ImagePreview";
 import { renderMermaid } from "./renderMermaid";
+import { copyText } from "./clipboard";
 
 export function MermaidCodeBlock({ code }: { code: string }) {
   useLocale();
@@ -51,7 +52,7 @@ export function MermaidCodeBlock({ code }: { code: string }) {
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(code);
+      await copyText(code);
       setCopyError(false); setCopied(true);
       if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
       copyTimer.current = window.setTimeout(() => setCopied(false), 1600);

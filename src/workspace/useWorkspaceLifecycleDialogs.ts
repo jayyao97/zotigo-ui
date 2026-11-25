@@ -3,6 +3,7 @@ import { t } from "../../shared/i18n/index";
 import type { ClientApi, DesktopProject, DesktopState, DesktopWorkspace } from "../../shared/clientTypes";
 import type { ProjectDeletePreview, WorkspaceArchivePreview } from "../../shared/zotigod";
 import { errorMessage } from "../app/appHelpers";
+import { copyText } from "../clipboard";
 
 export interface WorkspaceLifecycleDialogsArgs {
   client: Pick<ClientApi, "previewWorkspaceArchive" | "archiveWorkspace" | "previewProjectDelete" | "deleteProject" | "previewWorkspaceDelete" | "deleteWorkspace">;
@@ -199,7 +200,7 @@ export function useWorkspaceLifecycleDialogs({
 
   async function copyWorkspacePath(pathValue: string) {
     try {
-      await navigator.clipboard.writeText(pathValue);
+      await copyText(pathValue);
       setCopiedWorkspacePath(pathValue);
     } catch (error) {
       setWorkspaceLifecycleError(errorMessage(error));
