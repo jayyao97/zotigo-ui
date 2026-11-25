@@ -862,3 +862,24 @@ test("saving group command settings to an older daemon reports that they were no
   assert.equal(droppedGroupCommandSettings({ ...base, progress_detail: "brief", bind_aliases: [] }, legacy), false, "defaults lose nothing");
   assert.equal(droppedGroupCommandSettings({ ...base, bind_aliases: [{ name: "oncall", target: "workspace_1" }] }, { ...legacy, progress_detail: "brief" }), false);
 });
+
+test("an alias target in a Workspace that is not ready says so instead of missing", async () => {
+  const restore = installDom();
+  try {
+    const provisioning: DesktopWorkspace = { ...workspace, id: "workspace-2", title: "Provisioning", status: "provisioning" } as DesktopWorkspace;
+    const configured: ChannelConnection = { ...connection("connection-1", "Bot One"), progress_detail: "brief", bind_aliases: [{ name: "later", target: "sess_later" }, { name: "gone", target: "sess_gone" }] };
+    const api = {
+      listChannelConnections: async () => [configured],
+      listChannelGroups: async () => [],
+      listChannelConversations: async () => [],
+    } as unknown as ClientApi;
+    const sessionCatalog = [{ id: "sess_later", project_id: project.id, workspace_id: provisioning.id, title: "Later", created_at: "", updated_at: "" }];
+    const root = createRoot(document.querySelector("#root")!);
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace, provisioning]} sessionCatalog={sessionCatalog} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
+    await flush();
+    const triggers = [...document.querySelectorAll(".channels-alias-row .searchable-select-trigger")].map((node) => node.textContent);
+    assert.match(triggers[0] ?? "", /Later.*Provisioning is not ready/);
+    assert.match(triggers[1] ?? "", /sess_gone.*Not found on this host/);
+    await act(async () => root.unmount());
+  } finally { restore(); }
+});

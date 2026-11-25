@@ -62,8 +62,14 @@ test("browsing shows a few nested options per parent and reveals the rest", asyn
     // Enter on the reveal row shows the rest and keeps the list open.
     for (let step = 0; step < 1; step++) await key("ArrowDown");
     assert.equal(document.querySelector('[role="option"].is-active strong')?.textContent, "2 more");
+    const descendant = () => document.querySelector('[role="combobox"]')!.getAttribute("aria-activedescendant");
+    const before = descendant();
     await key("Enter");
     assert.deepEqual(labels(), ["WS", "s1", "s2", "s3", "s4", "s5", "Docs"]);
+    // The first revealed option takes the place, under a new id screen readers announce.
+    assert.equal(document.querySelector('[role="option"].is-active strong')?.textContent, "s3");
+    assert.notEqual(descendant(), before);
+    assert.equal(document.getElementById(descendant()!)?.querySelector("strong")?.textContent, "s3");
     // Reopening starts collapsed again.
     await key("Escape");
     await act(async () => trigger().click());

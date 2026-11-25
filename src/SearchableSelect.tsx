@@ -56,6 +56,14 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
   const followActive = useRef(true);
   const selected = options.find(option => option.value === value);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  // Ids follow the option, not its position, so the active descendant changes,
+  // and is announced, when revealing options puts another one in that place.
+  const optionIds = useRef(new Map<string, string>());
+  const optionId = (optionValue: string) => {
+    let id = optionIds.current.get(optionValue);
+    if (!id) { id = `${listId}-${optionIds.current.size}`; optionIds.current.set(optionValue, id); }
+    return id;
+  };
   const rows = useMemo<Row[]>(() => {
     const search = query.trim().toLocaleLowerCase();
     if (search) return options.filter(option => [option.label, option.detail ?? "", ...(option.keywords ?? [])].some(text => text.toLocaleLowerCase().includes(search)));
@@ -130,12 +138,21 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
 
   const close = (focus = true) => { setOpen(false); if (focus) trigger.current?.focus(); };
   const choose = (next: string) => { onChange(next); close(); };
-  // The reveal row keeps the list open; the first newly shown option takes its place.
+  // The reveal row keeps the list open and moves to the first option it shows.
+  const revealedFrom = useRef<Set<string> | null>(null);
   const pick = (row: Row) => {
     const more = row.more;
-    if (more) setExpanded(current => new Set(current).add(more.parent));
-    else choose(row.value);
+    if (!more) { choose(row.value); return; }
+    revealedFrom.current = new Set(rows.map(shown => shown.value));
+    setExpanded(current => new Set(current).add(more.parent));
   };
+  useEffect(() => {
+    const before = revealedFrom.current;
+    if (!before) return;
+    revealedFrom.current = null;
+    const first = rows.findIndex(row => !before.has(row.value));
+    if (first >= 0) { followActive.current = true; setActive(first); }
+  }, [rows]);
 
   return <div className="searchable-select" ref={root}>
     <button ref={trigger} type="button" className="searchable-select-trigger" disabled={disabled} aria-haspopup="listbox" aria-expanded={open}
@@ -151,7 +168,7 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
       <label className="searchable-select-search">
         <Search size={14} strokeWidth={1.8} aria-hidden="true" />
         <input autoFocus value={query} placeholder={searchPlaceholder} aria-label={searchPlaceholder}
-          role="combobox" aria-expanded="true" aria-controls={listId} aria-activedescendant={rows[active] ? `${listId}-${active}` : undefined}
+          role="combobox" aria-expanded="true" aria-controls={listId} aria-activedescendant={rows[active] ? optionId(rows[active].value) : undefined}
           onChange={event => setQuery(event.target.value)}
           onKeyDown={event => {
             // Enter and Escape belong to the input method while composing.
@@ -173,7 +190,7 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
           const detail = tree ? undefined : option.detail;
           return <Fragment key={option.value}>
             {option.group !== undefined && option.group !== rows[index - 1]?.group && <div className="searchable-select-group" role="presentation">{option.group}</div>}
-            <div id={`${listId}-${index}`} data-row={index} role="option"
+            <div id={optionId(option.value)} data-row={index} role="option"
               aria-selected={option.value === value} aria-label={detail || !option.detail ? undefined : `${option.label}, ${option.detail}`}
               className={[index === active ? "is-active" : "", option.more ? "searchable-select-more" : ""].filter(Boolean).join(" ") || undefined}
               style={depth ? { paddingLeft: 8 + depth * 18 } : undefined}

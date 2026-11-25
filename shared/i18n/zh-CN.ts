@@ -981,6 +981,8 @@ export const zhCN: Record<MessageKey, Message> = {
   "channelsPage.removeBindAlias": "删除别名 {name}",
   "channelsPage.bindTargetWorkspace": "Workspace · {project}",
   "channelsPage.bindTargetSession": "Session · {workspace}",
+  "channelsPage.bindTargetOtherProject": "其他",
+  "channelsPage.bindTargetNotReady": "Workspace {workspace} 尚未就绪",
   "channelsPage.bindTargetMissing": "此主机上找不到",
   "channelsPage.executionDisplay": "执行过程展示",
   "channelsPage.cotWithCardFallback": "COT，失败时回退为卡片",
