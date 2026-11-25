@@ -638,7 +638,6 @@ export const zhCN: Record<MessageKey, Message> = {
   "workspace.deselectMatches": "取消选择搜索结果",
   "workspace.selectedSourceCount": "已选 {count} 个来源（包含筛选隐藏项）",
   "workspace.noMatchingSources": "没有匹配的来源。",
-  "workspace.selectedOutsideSearch": "{name}（已选 · 不在搜索结果中）",
   "app.selectAll": "全选",
   "app.deselectAll": "取消全选",
   "app.availableSourcesAreSelectedByDefaultUncheckAnything": "默认选中可用来源，请取消此工作区不需要的来源。",

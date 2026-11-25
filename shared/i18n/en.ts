@@ -639,7 +639,6 @@ export const en = {
   "workspace.deselectMatches": "Deselect results",
   "workspace.selectedSourceCount": "{count} sources selected (including hidden results)",
   "workspace.noMatchingSources": "No matching sources.",
-  "workspace.selectedOutsideSearch": "{name} (selected · outside search results)",
   "app.selectAll": "Select all",
   "app.deselectAll": "Deselect all",
   "app.availableSourcesAreSelectedByDefaultUncheckAnything": "Available Sources are selected by default. Uncheck anything this Workspace does not need.",

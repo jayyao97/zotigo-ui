@@ -132,7 +132,7 @@ import {
 } from "../shared/sessionDisplay";
 import type { ActiveSessionState, AgentCatalogEntry, AgentKind, ApprovalDecisionInput, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, SessionPage, WorkspaceFileOpenResult } from "../shared/clientTypes";
-import { workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
+import { workspaceHasRepository } from "../shared/workspaceSourceSelection";
 import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
 import { RecentSessions } from "./RecentSessions";
 import { SidebarSection } from "./SidebarSection";
@@ -355,7 +355,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const { removeSourceTarget, setRemoveSourceTarget, confirmRemoveSource } = useRemoveSourceDialog({ client, applyDesktopState, setMessage, setIsBusy });
   const {
     createWorkspaceProject, newWorkspaceTitle, newWorkspaceBranch, setNewWorkspaceBranch,
-    workspaceSourceQuery, setWorkspaceSourceQuery, addWorkspaceSourceQuery, setAddWorkspaceSourceQuery,
+    workspaceSourceQuery, setWorkspaceSourceQuery,
     workspaceRepositories, setWorkspaceRepositories, workspaceFolderModes, setWorkspaceFolderModes,
     workspaceSourcesTarget, workspaceSources, workspaceSourcesLoading, workspaceSourcesLoadError,
     workspaceSourceId, workspaceSourceBaseRef, setWorkspaceSourceBaseRef, workspaceSourceMode, setWorkspaceSourceMode,
@@ -4073,9 +4073,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         const availableFolders = desktopState.folders.filter((source) => source.project_id === workspaceSourcesTarget.project_id && !boundIds.has(source.id));
         const selectedRepository = availableRepositories.find((source) => source.id === workspaceSourceId);
         const selectedFolder = availableFolders.find((source) => source.id === workspaceSourceId);
-        const matchingRepositories = availableRepositories.filter(source => workspaceSourceMatches(source, addWorkspaceSourceQuery));
-        const matchingFolders = availableFolders.filter(source => workspaceSourceMatches(source, addWorkspaceSourceQuery));
-        const selectedSource = selectedRepository ?? selectedFolder;
         return <WorkspaceSourcesDialog
           target={workspaceSourcesTarget}
           isBusy={isBusy}
@@ -4095,16 +4092,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               loading={workspaceSourcesLoading}
               availableRepositories={availableRepositories}
               availableFolders={availableFolders}
-              matchingRepositories={matchingRepositories}
-              matchingFolders={matchingFolders}
-              selectedSource={selectedSource}
               selectedRepository={selectedRepository}
               selectedFolder={selectedFolder}
-              query={addWorkspaceSourceQuery}
               sourceId={workspaceSourceId}
               baseRef={workspaceSourceBaseRef}
               mode={workspaceSourceMode}
-              onQueryChange={setAddWorkspaceSourceQuery}
               onSelectSource={selectWorkspaceSource}
               onBaseRefChange={setWorkspaceSourceBaseRef}
               onModeChange={setWorkspaceSourceMode}

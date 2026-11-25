@@ -27,8 +27,6 @@ export interface WorkspaceSourceDrafts {
   setNewWorkspaceBranch: Dispatch<SetStateAction<string>>;
   workspaceSourceQuery: string;
   setWorkspaceSourceQuery: Dispatch<SetStateAction<string>>;
-  addWorkspaceSourceQuery: string;
-  setAddWorkspaceSourceQuery: Dispatch<SetStateAction<string>>;
   workspaceRepositories: WorkspaceRepositoryDraft[];
   setWorkspaceRepositories: Dispatch<SetStateAction<WorkspaceRepositoryDraft[]>>;
   workspaceFolderModes: Record<string, "" | FolderSourceMode>;
@@ -71,7 +69,6 @@ export function useWorkspaceSourceDrafts({
   const [newWorkspaceTitle, setNewWorkspaceTitle] = useState("");
   const [newWorkspaceBranch, setNewWorkspaceBranch] = useState("");
   const [workspaceSourceQuery, setWorkspaceSourceQuery] = useState("");
-  const [addWorkspaceSourceQuery, setAddWorkspaceSourceQuery] = useState("");
   const [workspaceRepositories, setWorkspaceRepositories] = useState<WorkspaceRepositoryDraft[]>([]);
   const [workspaceFolderModes, setWorkspaceFolderModes] = useState<Record<string, "" | FolderSourceMode>>({});
   const [workspaceSourcesTarget, setWorkspaceSourcesTarget] = useState<DesktopWorkspace | null>(null);
@@ -202,7 +199,6 @@ export function useWorkspaceSourceDrafts({
     setWorkspaceSourcesTarget(workspace);
     setWorkspaceSources(loadedSources ?? []);
     setWorkspaceSourceId("");
-    setAddWorkspaceSourceQuery("");
     setWorkspaceSourceBaseRef("HEAD");
     if (loadedSources) {
       workspaceSourcesRequestRef.current++;
@@ -286,7 +282,7 @@ export function useWorkspaceSourceDrafts({
 
   return {
     createWorkspaceProject, newWorkspaceTitle, newWorkspaceBranch, setNewWorkspaceBranch,
-    workspaceSourceQuery, setWorkspaceSourceQuery, addWorkspaceSourceQuery, setAddWorkspaceSourceQuery,
+    workspaceSourceQuery, setWorkspaceSourceQuery,
     workspaceRepositories, setWorkspaceRepositories, workspaceFolderModes, setWorkspaceFolderModes,
     workspaceSourcesTarget, workspaceSources, workspaceSourcesLoading, workspaceSourcesLoadError,
     workspaceSourceId, workspaceSourceBaseRef, setWorkspaceSourceBaseRef, workspaceSourceMode, setWorkspaceSourceMode,
