@@ -775,6 +775,7 @@ export const en = {
   "fileVideoTab.thisVideoCouldNotBePlayedItsEncoding": "This video could not be played. Its encoding may not be supported by this browser.",
   "hostShell.switchHost": "Switch host",
   "hostShell.hosts": "Hosts",
+  "hostShell.accountMenu": "Account menu",
   "hostShell.settings": "Settings",
   "hostShell.couldNotConnectToHost": "Could not connect to host.",
   "hostShell.sessionSyncIsUnavailableOnThisClient": "Session sync is unavailable on this client.",

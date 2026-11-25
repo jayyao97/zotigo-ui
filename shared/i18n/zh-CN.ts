@@ -774,6 +774,7 @@ export const zhCN: Record<MessageKey, Message> = {
   "fileVideoTab.thisVideoCouldNotBePlayedItsEncoding": "无法播放此视频，当前浏览器可能不支持其编码格式。",
   "hostShell.switchHost": "切换连接",
   "hostShell.hosts": "连接",
+  "hostShell.accountMenu": "账户菜单",
   "hostShell.settings": "设置",
   "hostShell.couldNotConnectToHost": "无法连接主机。",
   "hostShell.sessionSyncIsUnavailableOnThisClient": "当前客户端不支持会话同步。",

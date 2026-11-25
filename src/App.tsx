@@ -44,7 +44,7 @@ import { SidebarCollapse } from "./SidebarCollapse";
 import { MarkdownImageContext } from "./MarkdownImage";
 import { useSessionSidePanel, type SessionSidePanels } from "./useSessionSidePanel";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
-import { HostMenu } from "./HostShell";
+import { AccountMenu, HostMenu } from "./HostShell";
 import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
@@ -3418,12 +3418,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         </div>
 
         <div className="sidebar-footer">
-          <img className="user-chip" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" />
-          <div>
-            <strong>{t("app.zotigo")}</strong>
-            <span>{connectionLabel(connectionState)}</span>
-          </div>
-          {signOut && <button type="button" onClick={() => void signOut().catch((error) => setMessage(errorMessage(error)))}>{t("app.signOut")}</button>}
+          <AccountMenu status={connectionLabel(connectionState)} onSignOut={signOut ? () => void signOut().catch((error) => setMessage(errorMessage(error))) : undefined} />
         </div>
       </aside>
 
