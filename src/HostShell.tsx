@@ -75,7 +75,7 @@ export function AccountMenu({ status, onSignOut }: { status: string; onSignOut?:
   const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘," : "Ctrl+,";
   return <div className="account-menu" ref={container}>
     <button ref={trigger} type="button" className="account-menu-trigger" aria-haspopup="menu" aria-expanded={open} aria-label={t("hostShell.accountMenu")} onClick={() => setOpen(!open)}>
-      <img className="user-chip" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" />
+      <span className="account-menu-avatar"><img className="user-chip" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" /></span>
       <span className="account-menu-identity"><strong>{t("app.zotigo")}</strong><span>{status}</span></span>
     </button>
     {open && <div className="account-menu-popover" role="menu" ref={menu} aria-label={t("hostShell.accountMenu")} onKeyDown={moveFocus}>
