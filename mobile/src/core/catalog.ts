@@ -1,9 +1,11 @@
+import { workspaceSourceMatches } from "@zotigo/shared/workspaceSourceSelection";
 import { t } from "@zotigo/shared/i18n/index";
 import { orderSidebarItems } from "@zotigo/shared/sidebarOrdering";
 import type {
   CatalogProject,
   CatalogWorkspace,
   CatalogSessionProjection,
+  CatalogSource,
 } from "@zotigo/shared/zotigod";
 import { sessionActivity } from "./relativeTime";
 
@@ -419,4 +421,24 @@ export function stickyCatalogRows(
     end = boundary;
   }
   return result;
+}
+
+/**
+ * Project sources a search keeps, matching name, local path or remote URL like
+ * Desktop's source picker. Sources already chosen stay listed so a search
+ * never hides what will be added.
+ */
+export function filterSources<T extends CatalogSource>(
+  sources: T[],
+  query: string,
+  chosen: (source: T) => boolean = () => false,
+): T[] {
+  return sources.filter(
+    (source) =>
+      chosen(source) ||
+      workspaceSourceMatches(
+        { name: pathLabel(source.canonical_path), source_path: source.canonical_path, remote_url: source.remote_url },
+        query,
+      ),
+  );
 }

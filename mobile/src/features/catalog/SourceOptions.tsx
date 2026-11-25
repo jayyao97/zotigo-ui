@@ -186,3 +186,30 @@ export function SourceOptions({
     </View>
   );
 }
+
+/** Above this many sources a list offers search; fewer are easy to scan. */
+const searchFrom = 6;
+
+/** The search field for a list of project sources, when the list is long. */
+export function SourceSearch({
+  count,
+  value,
+  onChange,
+}: {
+  count: number;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (count < searchFrom && !value) return null;
+  return (
+    <TextField
+      label={t("workspace.searchSources")}
+      value={value}
+      onChangeText={onChange}
+      autoCapitalize="none"
+      autoCorrect={false}
+      clearButtonMode="while-editing"
+      returnKeyType="search"
+    />
+  );
+}

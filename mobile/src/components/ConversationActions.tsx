@@ -13,6 +13,7 @@ import Play from "lucide-react-native/icons/play";
 import Archive from "lucide-react-native/icons/archive";
 import { useLocale } from "../platform/i18n";
 import { Action, ListGroup, ListRow, Section, TextField, space, styles } from "./ui";
+import { CopyIdRow } from "./CopyIdRow";
 
 /**
  * Body of the conversation "…" sheet: rename, quick actions, read-only
@@ -124,6 +125,7 @@ export function ConversationActions({
             <Detail label={t("mobileUi.directory")} value={session.working_directory} />
           ) : null}
           <Detail label={t("mobileUi.sessionId")} value={id} />
+          <CopyIdRow title={t("app.copySessionId")} id={id} />
         </ListGroup>
       </Section>
       <ListGroup>
