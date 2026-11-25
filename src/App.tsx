@@ -293,6 +293,15 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const [queueRefresh, setQueueRefresh] = useState(0);
   const submitModeRef = useRef<SendMode | null>(null);
   const toast = useToast();
+  // IDs are what Feishu commands such as /bind accept.
+  const copyId = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      toast(t("app.copiedId", { id }));
+    } catch (error) {
+      toast(errorMessage(error), "error");
+    }
+  };
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
@@ -3014,6 +3023,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                     setWorkspaceMenuId(null);
                     void copyWorkspacePath(workspace.root_path);
                   }}
+                  onCopyId={() => {
+                    setWorkspaceMenuId(null);
+                    void copyId(workspace.id);
+                  }}
                   onRename={() => openRenameWorkspaceDialog(workspace)}
                   onArchive={() => void openArchiveWorkspaceDialog(workspace)}
                   onDelete={() => void openDeleteWorkspaceDialog(workspace)}
@@ -3433,6 +3446,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           onFork={() => {
             setConversationContextMenu(null);
             void forkConversation(contextMenuConversation.id);
+          }}
+          onCopyId={() => {
+            setConversationContextMenu(null);
+            const binding = desktopState.bindings.find((value) => value.conversation_id === contextMenuConversation.id);
+            void copyId(binding?.daemon_session_id ?? contextMenuConversation.id);
           }}
           onRename={() => {
             setConversationContextMenu(null);

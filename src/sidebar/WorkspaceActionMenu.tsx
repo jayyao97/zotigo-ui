@@ -1,5 +1,5 @@
 import type { Ref } from "react";
-import { Archive, Copy, FolderOpen, FolderPlus, Pin, SquarePen, Trash2 } from "lucide-react";
+import { Archive, Copy, FolderOpen, FolderPlus, Hash, Pin, SquarePen, Trash2 } from "lucide-react";
 import { t } from "../../shared/i18n/index";
 
 export function WorkspaceActionMenu({
@@ -12,6 +12,7 @@ export function WorkspaceActionMenu({
   onAddRepository,
   onBrowseFiles,
   onCopyPath,
+  onCopyId,
   onRename,
   onArchive,
   onDelete,
@@ -25,6 +26,7 @@ export function WorkspaceActionMenu({
   onAddRepository: () => void;
   onBrowseFiles: () => void;
   onCopyPath: () => void;
+  onCopyId: () => void;
   onRename: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -56,6 +58,10 @@ export function WorkspaceActionMenu({
                   >
                     <Copy size={13} strokeWidth={1.8} />
                     <span>{kind === "web" ? t("app.copyServerPath") : t("app.copyAbsolutePath")}</span>
+                  </button>
+                  <button type="button" role="menuitem" onClick={onCopyId}>
+                    <Hash size={13} strokeWidth={1.8} />
+                    <span>{t("app.copyWorkspaceId")}</span>
                   </button>
                   <div className="workspace-action-menu-separator" role="separator" />
                   <button type="button" role="menuitem" onClick={onRename}>
