@@ -3446,8 +3446,8 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
           }}
           onCopyId={() => {
             setConversationContextMenu(null);
-            const binding = desktopState.bindings.find((value) => value.conversation_id === contextMenuConversation.id);
-            void copyId(binding?.daemon_session_id ?? contextMenuConversation.id);
+            // Catalog conversations are keyed by their daemon Session ID.
+            void copyId(contextMenuConversation.id);
           }}
           onRename={() => {
             setConversationContextMenu(null);

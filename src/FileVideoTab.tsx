@@ -4,9 +4,10 @@ import { Copy, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { VideoFileSnapshot } from "../shared/clientTypes";
 import { FilePath } from "./FilePath";
-import { copyText } from "./clipboard";
+import { useCopyText } from "./clipboard";
 
 export function FileVideoTab({ active = true, file, workspaceRoot, onRefresh, refreshError }: { active?: boolean; file: VideoFileSnapshot; workspaceRoot?: string; onRefresh: () => void; refreshError?: string }) {
+  const copy = useCopyText();
   useLocale();
   const video = useRef<HTMLVideoElement>(null);
   useEffect(() => { if (!active) video.current?.pause(); }, [active]);
@@ -23,7 +24,7 @@ export function FileVideoTab({ active = true, file, workspaceRoot, onRefresh, re
     <header className="file-editor-header">
         <FilePath path={file.path} workspaceRoot={workspaceRoot} />
       <span className="file-image-size">{(file.sizeBytes / (1024 * 1024)).toFixed(1)} {t("fileVideoTab.mb")}</span>
-      <button type="button" className="file-editor-icon-button" aria-label={t("fileEditorTab.copyFilePath")} title={t("app.copyPath")} onClick={() => void copyText(file.path)}><Copy size={14} /></button>
+      <button type="button" className="file-editor-icon-button" aria-label={t("fileEditorTab.copyFilePath")} title={t("app.copyPath")} onClick={() => copy(file.path)}><Copy size={14} /></button>
       <button type="button" className="file-editor-icon-button" aria-label={t("fileEditorTab.refreshFile")} title={t("fileEditorTab.refreshFile")} onClick={onRefresh}><RefreshCw size={14} /></button>
     </header>
     {refreshError && <div className="file-editor-banner error" role="alert">{refreshError}</div>}

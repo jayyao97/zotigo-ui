@@ -4,14 +4,14 @@ import { JSDOM } from "jsdom";
 
 import { copyText } from "../src/clipboard";
 
-function installDom(clipboard?: { writeText(text: string): Promise<void> }) {
+function installDom(clipboard?: { writeText(text: string): Promise<void> }, copySucceeds = true) {
   const dom = new JSDOM("<!doctype html><html><body><button id=origin>Copy</button></body></html>", { url: "http://zotigo.example:18944/" });
   if (clipboard) Object.defineProperty(dom.window.navigator, "clipboard", { value: clipboard });
   const copied: string[] = [];
   dom.window.document.execCommand = ((command: string) => {
     const active = dom.window.document.activeElement as HTMLTextAreaElement;
     if (command === "copy" && active?.tagName === "TEXTAREA") copied.push(active.value.slice(active.selectionStart, active.selectionEnd));
-    return command === "copy";
+    return command === "copy" && copySucceeds;
   }) as typeof dom.window.document.execCommand;
   const replacements = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement };
   const previous = Object.fromEntries(Object.keys(replacements).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -52,5 +52,13 @@ test("copyText falls back when the Clipboard API rejects", async () => {
   try {
     await copyText("sess_2");
     assert.deepEqual(copied, ["sess_2"]);
+  } finally { restore(); }
+});
+
+test("copyText rejects when the browser copies nothing", async () => {
+  const { dom, restore } = installDom(undefined, false);
+  try {
+    await assert.rejects(copyText("sess_3"), /Clipboard unavailable/);
+    assert.equal(dom.window.document.querySelector("textarea"), null);
   } finally { restore(); }
 });

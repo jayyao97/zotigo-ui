@@ -1,4 +1,6 @@
+import { useCallback } from "react";
 import { t } from "../shared/i18n/index";
+import { useToast } from "./Toast";
 
 /**
  * Copies text to the clipboard. Browsers expose the Clipboard API only in
@@ -25,9 +27,17 @@ export async function copyText(text: string): Promise<void> {
     textarea.focus({ preventScroll: true });
     textarea.select();
     textarea.setSelectionRange(0, text.length);
-    if (!document.execCommand("copy")) throw new Error(t("conversationTimeline.clipboardUnavailable"));
+    if (!document.execCommand("copy")) throw new Error(t("clipboard.unavailable"));
   } finally {
     textarea.remove();
     active?.focus?.({ preventScroll: true });
   }
+}
+
+/** copyText for buttons with no status of their own: failures show a toast. */
+export function useCopyText() {
+  const toast = useToast();
+  return useCallback((text: string) => {
+    void copyText(text).catch(() => toast(t("clipboard.unavailable"), "error"));
+  }, [toast]);
 }

@@ -66,7 +66,7 @@ import { markdownUrlTransform } from "../markdownUrlTransform";
 import { defaultThinkingDisclosureOpen, latestReasoningItemId, type ThinkingDisplayMode } from "../thinkingDisplay";
 import { initialStreamingTextState, planStreamingTextUpdate } from "../streamingText";
 import { sessionTurnActions } from "../../shared/sessionFork";
-import { copyText } from "../clipboard";
+import { copyText, useCopyText } from "../clipboard";
 
 export function TurnActions({ text, disabled, title, onFork }: { text: string; disabled: boolean; title: string; onFork: () => void }) {
   useLocale();
@@ -1286,6 +1286,7 @@ function ToolDisclosure({
   running?: boolean;
 }) {
   useLocale();
+  const copy = useCopyText();
   const detailRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const wasRunningRef = useRef(running);
@@ -1335,7 +1336,7 @@ function ToolDisclosure({
               className="tool-copy-button"
               aria-label={t("conversationTimeline.copyToolResult")}
               title={t("conversationTimeline.copyResult")}
-              onClick={() => void copyText(detail)}
+              onClick={() => copy(detail)}
             >
               <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
             </button>
@@ -1357,6 +1358,7 @@ function ToolDisclosure({
 
 function ShellCommandPreview({ command }: { command: string }) {
   useLocale();
+  const copy = useCopyText();
   const [expanded, setExpanded] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
   return <div className="shell-command-preview">
@@ -1372,7 +1374,7 @@ function ShellCommandPreview({ command }: { command: string }) {
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         ><ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" /></button>
-        <button type="button" className="tool-copy-button" aria-label={t("conversationTimeline.copyCommand")} title={t("conversationTimeline.copyCommand")} onClick={() => void copyText(command)}>
+        <button type="button" className="tool-copy-button" aria-label={t("conversationTimeline.copyCommand")} title={t("conversationTimeline.copyCommand")} onClick={() => copy(command)}>
           <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </div>
