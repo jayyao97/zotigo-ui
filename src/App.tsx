@@ -45,6 +45,7 @@ import { MarkdownImageContext } from "./MarkdownImage";
 import { useSessionSidePanel, type SessionSidePanels } from "./useSessionSidePanel";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { HostMenu } from "./HostShell";
+import { AccountMenu } from "./sidebar/AccountMenu";
 import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { SearchPalette } from "./SearchPalette";
 import { useClient } from "./ClientContext";
@@ -132,7 +133,7 @@ import {
 } from "../shared/sessionDisplay";
 import type { ActiveSessionState, AgentCatalogEntry, AgentKind, ApprovalDecisionInput, DisplayDelta, DisplayItem, RuntimeProfile, SkillSummary, ZotigoSession } from "../shared/zotigod";
 import type { DaemonSessionBinding, DesktopActionResult, DesktopConversation, DesktopProject, DesktopState, DesktopWorkspace, SessionPage, WorkspaceFileOpenResult } from "../shared/clientTypes";
-import { workspaceHasRepository, workspaceSourceMatches } from "../shared/workspaceSourceSelection";
+import { workspaceHasRepository } from "../shared/workspaceSourceSelection";
 import { attachmentSizeError, modelImageTypes } from "../shared/messageFiles";
 import { RecentSessions } from "./RecentSessions";
 import { SidebarSection } from "./SidebarSection";
@@ -229,6 +230,7 @@ import type { FirstMessageInput } from "../shared/clientTypes";
 import { CreateWorkspaceSourcesField } from "./workspace/CreateWorkspaceSourcesField";
 import { CreateWorkspaceDialog } from "./workspace/CreateWorkspaceDialog";
 import { CreateProjectDialog } from "./project/CreateProjectDialog";
+import { copyText } from "./clipboard";
 
 type HostVolatileState = {
   desktopState: DesktopState;
@@ -288,11 +290,20 @@ function stickyHeaderHeight(element: Element, scroller: Element): number {
   return covered;
 }
 
-export default function App({ onConfigureModels, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false, openSessionRequest }: { openSessionRequest?: { id: string; nonce: number }; onConfigureModels?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
+export default function App({ onConfigureModels, onOpenSettings, defaultSendMode = "steering", surfaceActive = true, activityChannelMode = "pinned", onSessionQuerySupport, clientScope, hostName, thinkingDisplay, translationLanguage, translationProfile, refreshedCodex, catalogSyncRevision = 0, openNewSessionOnMount = false, openSessionRequest }: { openSessionRequest?: { id: string; nonce: number }; onConfigureModels?: () => void; onOpenSettings?: () => void; defaultSendMode?: SendMode; surfaceActive?: boolean; activityChannelMode?: ChannelActivityMode; onSessionQuerySupport?: (supported: boolean) => void; catalogSyncRevision?: number; refreshedCodex?: AgentCatalogEntry; clientScope: string; hostName: string; thinkingDisplay: ThinkingDisplayMode; translationLanguage: "zh-CN" | "en"; translationProfile: string; openNewSessionOnMount?: boolean }) {
   useLocale();
   const [queueRefresh, setQueueRefresh] = useState(0);
   const submitModeRef = useRef<SendMode | null>(null);
   const toast = useToast();
+  // IDs are what Feishu commands such as /bind accept.
+  const copyId = async (id: string) => {
+    try {
+      await copyText(id);
+      toast(t("app.copiedId", { id }));
+    } catch (error) {
+      toast(errorMessage(error), "error");
+    }
+  };
   const restoredHostState = volatileStateByHost.get(clientScope);
   const volatileStateGenerationRef = useRef(volatileStateGeneration);
   const { api: client, kind, remote, signOut } = useClient();
@@ -355,7 +366,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
   const { removeSourceTarget, setRemoveSourceTarget, confirmRemoveSource } = useRemoveSourceDialog({ client, applyDesktopState, setMessage, setIsBusy });
   const {
     createWorkspaceProject, newWorkspaceTitle, newWorkspaceBranch, setNewWorkspaceBranch,
-    workspaceSourceQuery, setWorkspaceSourceQuery, addWorkspaceSourceQuery, setAddWorkspaceSourceQuery,
+    workspaceSourceQuery, setWorkspaceSourceQuery,
     workspaceRepositories, setWorkspaceRepositories, workspaceFolderModes, setWorkspaceFolderModes,
     workspaceSourcesTarget, workspaceSources, workspaceSourcesLoading, workspaceSourcesLoadError,
     workspaceSourceId, workspaceSourceBaseRef, setWorkspaceSourceBaseRef, workspaceSourceMode, setWorkspaceSourceMode,
@@ -3014,6 +3025,10 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
                     setWorkspaceMenuId(null);
                     void copyWorkspacePath(workspace.root_path);
                   }}
+                  onCopyId={() => {
+                    setWorkspaceMenuId(null);
+                    void copyId(workspace.id);
+                  }}
                   onRename={() => openRenameWorkspaceDialog(workspace)}
                   onArchive={() => void openArchiveWorkspaceDialog(workspace)}
                   onDelete={() => void openDeleteWorkspaceDialog(workspace)}
@@ -3404,12 +3419,7 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         </div>
 
         <div className="sidebar-footer">
-          <img className="user-chip" src="./brand/zotigo-sprite.png" alt="" aria-hidden="true" />
-          <div>
-            <strong>{t("app.zotigo")}</strong>
-            <span>{connectionLabel(connectionState)}</span>
-          </div>
-          {signOut && <button type="button" onClick={() => void signOut().catch((error) => setMessage(errorMessage(error)))}>{t("app.signOut")}</button>}
+          <AccountMenu status={connectionLabel(connectionState)} onOpenSettings={onOpenSettings} onSignOut={signOut ? () => void signOut().catch((error) => setMessage(errorMessage(error))) : undefined} />
         </div>
       </aside>
 
@@ -3433,6 +3443,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
           onFork={() => {
             setConversationContextMenu(null);
             void forkConversation(contextMenuConversation.id);
+          }}
+          onCopyId={() => {
+            setConversationContextMenu(null);
+            // Catalog conversations are keyed by their daemon Session ID.
+            void copyId(contextMenuConversation.id);
           }}
           onRename={() => {
             setConversationContextMenu(null);
@@ -4073,9 +4088,6 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
         const availableFolders = desktopState.folders.filter((source) => source.project_id === workspaceSourcesTarget.project_id && !boundIds.has(source.id));
         const selectedRepository = availableRepositories.find((source) => source.id === workspaceSourceId);
         const selectedFolder = availableFolders.find((source) => source.id === workspaceSourceId);
-        const matchingRepositories = availableRepositories.filter(source => workspaceSourceMatches(source, addWorkspaceSourceQuery));
-        const matchingFolders = availableFolders.filter(source => workspaceSourceMatches(source, addWorkspaceSourceQuery));
-        const selectedSource = selectedRepository ?? selectedFolder;
         return <WorkspaceSourcesDialog
           target={workspaceSourcesTarget}
           isBusy={isBusy}
@@ -4095,16 +4107,11 @@ export default function App({ onConfigureModels, defaultSendMode = "steering", s
               loading={workspaceSourcesLoading}
               availableRepositories={availableRepositories}
               availableFolders={availableFolders}
-              matchingRepositories={matchingRepositories}
-              matchingFolders={matchingFolders}
-              selectedSource={selectedSource}
               selectedRepository={selectedRepository}
               selectedFolder={selectedFolder}
-              query={addWorkspaceSourceQuery}
               sourceId={workspaceSourceId}
               baseRef={workspaceSourceBaseRef}
               mode={workspaceSourceMode}
-              onQueryChange={setAddWorkspaceSourceQuery}
               onSelectSource={selectWorkspaceSource}
               onBaseRefChange={setWorkspaceSourceBaseRef}
               onModeChange={setWorkspaceSourceMode}

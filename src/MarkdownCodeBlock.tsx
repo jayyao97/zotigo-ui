@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Check, Code2, Copy, WrapText } from "lucide-react";
 import { MermaidCodeBlock } from "./MermaidCodeBlock";
+import { copyText } from "./clipboard";
 
 type CodeElementProps = {
   children?: ReactNode;
@@ -105,7 +106,7 @@ function HighlightedCodeBlock({ children }: ComponentPropsWithoutRef<"pre">) {
   if (!codeElement) return <pre>{children}</pre>;
 
   async function copyCode() {
-    await navigator.clipboard.writeText(code);
+    await copyText(code);
     setCopied(true);
     if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
     copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1600);

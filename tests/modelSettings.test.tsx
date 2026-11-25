@@ -19,8 +19,8 @@ test("model settings retain keys by default, explicitly clear them, test drafts 
   const root=createRoot(document.getElementById("root")!);
   const click=async(text:string)=>{const button=[...document.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent===text);assert.ok(button,`missing ${text}`);await act(async()=>button.click());};
   try {
-    await act(async()=>root.render(<ClientContext.Provider value={{api,kind:"web"}}><ModelSettings hostName="test-host" hostId="selected-host"/></ClientContext.Provider>));
-    assert.match(document.body.textContent!,/test-host/);
+    await act(async()=>root.render(<ClientContext.Provider value={{api,kind:"web"}}><ModelSettings hostId="selected-host"/></ClientContext.Provider>));
+    // The host name is shown by the settings page header around this panel.
     await click("Edit");
     assert.equal(document.querySelector<HTMLSelectElement>("form select")!.value,"deepseek");
     assert.equal(document.querySelector<HTMLInputElement>("form input")!.value,"gpt-5.6-sol");
@@ -68,7 +68,7 @@ test("model settings display and preserve saved thinking levels, including max a
         getModelSettings: async () => settings,
         updateModelSettings: async (change: ModelSettingsChange) => { changes.push(change); return settings; },
       } as unknown as ClientApi;
-      await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ModelSettings hostName="test-host" /></ClientContext.Provider>));
+      await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ModelSettings /></ClientContext.Provider>));
       await click("Edit");
       const select = document.querySelector<HTMLSelectElement>("details select")!;
       assert.equal(select.value, level);
@@ -99,7 +99,7 @@ test("model settings show the actual load failure and allow retry", async () => 
   } } as unknown as ClientApi;
   const root = createRoot(document.getElementById("root")!);
   try {
-    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ModelSettings hostName="test" /></ClientContext.Provider>));
+    await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ModelSettings /></ClientContext.Provider>));
     assert.match(document.body.textContent!, /invalid configuration field types/);
     assert.doesNotMatch(document.body.textContent!, /update the daemon/);
     fail = false;

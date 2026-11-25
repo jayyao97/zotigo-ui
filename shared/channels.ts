@@ -5,6 +5,12 @@ export type ChannelProgressMode = "auto" | "cot" | "interactive_card";
 export type ChannelSessionStrategy = "topic" | "shared";
 export type ChannelChatMode = "group" | "topic";
 export type ChannelSenderPolicy = "owners" | "all" | "selected";
+/** How much of a run the chat sees: tool kinds, plus arguments and interim text, plus thinking. */
+export type ChannelProgressDetail = "brief" | "detailed" | "full";
+export const channelProgressDetails: readonly ChannelProgressDetail[] = ["brief", "detailed", "full"];
+
+/** Lets an owner run "/bind <name>" in a group instead of pasting a Session or Workspace ID. */
+export interface ChannelBindAlias { name: string; target: string }
 
 export interface ChannelConnection {
   approval_policy?: "auto" | "bypass_permissions" | "";
@@ -25,6 +31,11 @@ export interface ChannelConnection {
   review_all_tools: boolean;
   cot_available: boolean;
   progress_mode: ChannelProgressMode;
+  /** Absent when the daemon predates progress detail and bind aliases. */
+  progress_detail?: ChannelProgressDetail;
+  /** A level from a newer daemon this client does not know; progress_detail is then brief. */
+  progress_detail_unrecognized?: string;
+  bind_aliases?: ChannelBindAlias[];
   created_at: string;
   updated_at: string;
 }
@@ -43,6 +54,8 @@ export interface ChannelConnectionInput {
   approval_instructions: string;
   review_all_tools: boolean;
   progress_mode: ChannelProgressMode;
+  progress_detail?: ChannelProgressDetail;
+  bind_aliases?: ChannelBindAlias[];
 }
 
 export interface ChannelSender { id: string; display_name?: string }
@@ -66,6 +79,8 @@ export interface ChannelGroup {
   profile_name: string;
   model: string;
   reasoning_effort: string;
+  /** Empty inherits the connection level. */
+  progress_detail?: ChannelProgressDetail | "";
 }
 
 export interface ChannelConversation {
@@ -95,6 +110,10 @@ export interface ChannelConversation {
   approval_instructions_mode: ChannelOverrideMode;
   approval_instructions: string;
   review_all_tools?: boolean | null;
+  /** Empty inherits the connection level. */
+  progress_detail?: ChannelProgressDetail | "";
+  /** A level from a newer daemon this client does not know; progress_detail is then empty. */
+  progress_detail_unrecognized?: string;
   last_activity_at: string;
   created_at: string;
   updated_at: string;
@@ -118,6 +137,7 @@ export interface ChannelConversationInput {
   approval_instructions_mode: ChannelOverrideMode;
   approval_instructions: string;
   review_all_tools?: boolean;
+  progress_detail?: ChannelProgressDetail | "";
 }
 
 export interface ChannelMessage {

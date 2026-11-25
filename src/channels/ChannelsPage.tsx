@@ -2,11 +2,11 @@ import { stateLabel } from "../../shared/i18n/display";
 import { useLocale } from "../i18n";
 import { t } from "../../shared/i18n/index";
 import type { ModelFavoritesControl } from "../modelFavorites";
-import { ArrowLeft, ArrowUpRight, Bot, CheckCircle2, CircleAlert, MessageSquare, PanelLeft, Plus, RefreshCw, Save, Settings2, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Bot, CheckCircle2, CircleAlert, Folder, MessageSquare, PanelLeft, Plus, RefreshCw, Save, Settings2, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
-import { canConfigureChannelGroup, channelGroupName, type ChannelConnection, type ChannelConnectionInput, type ChannelConversation, type ChannelConversationInput, type ChannelGroup, type ChannelSender } from "../../shared/channels";
+import { canConfigureChannelGroup, channelGroupName, channelProgressDetails, type ChannelConnection, type ChannelConnectionInput, type ChannelConversation, type ChannelConversationInput, type ChannelGroup, type ChannelSender } from "../../shared/channels";
 import type { DesktopConversation, DesktopProject, DesktopWorkspace } from "../../shared/clientTypes";
 import type { AgentCatalogEntry, AgentModel, RuntimeProfile, ZotigoSession } from "../../shared/zotigod";
 import { useClient } from "../ClientContext";
@@ -16,11 +16,25 @@ import { ProjectDisclosureIcon } from "../SidebarDisclosureIcons";
 import { SidebarCollapse } from "../SidebarCollapse";
 import { WorkspaceSessionList } from "../WorkspaceSessionList";
 import { compatibleReasoningEffort, RuntimeSettingsPicker } from "../conversation/ConversationComposer";
+import { SearchableSelect, type SearchableOption } from "../SearchableSelect";
 
 const defaultApprovalInstructions = "Only auto-approve actions necessary for the request that are reversible and confined to the bound workspace. Request owner approval for destructive changes, credential access, external publishing or messaging, permission changes, and ambiguity with material impact.";
-const emptyConnection = (): ChannelConnectionInput => ({ provider: "feishu", name: t("channelsPage.feishu"), app_id: "", app_secret: "", enabled: false, allow_chat_ids: [], agent_instructions: "", approval_instructions: defaultApprovalInstructions, approval_policy: "auto", review_all_tools: true, progress_mode: "auto" });
-const connectionInput = (connection: ChannelConnection): ChannelConnectionInput => ({ provider: "feishu", name: connection.name, app_id: connection.app_id, enabled: connection.enabled, allow_chat_ids: [], agent_instructions: connection.agent_instructions, approval_instructions: connection.approval_instructions, approval_policy: connection.approval_policy || "auto", review_all_tools: connection.review_all_tools, progress_mode: connection.progress_mode });
-const conversationInput = (conversation: ChannelConversation): ChannelConversationInput => ({ display_name: channelGroupName([conversation], conversation.chat_id), session_strategy: conversation.session_strategy, session_id: conversation.session_id ?? "", workspace_id: conversation.workspace_id ?? "", enabled: conversation.enabled, sender_policy: conversation.sender_policy ?? "selected", allowed_sender_ids: conversation.allowed_sender_ids, agent: conversation.agent, profile_name: conversation.profile_name, model: conversation.model, reasoning_effort: conversation.reasoning_effort, agent_instructions_mode: conversation.agent_instructions_mode, agent_instructions: conversation.agent_instructions, approval_instructions_mode: conversation.approval_instructions_mode, approval_instructions: conversation.approval_instructions, approval_policy: conversation.approval_policy || "", review_all_tools: conversation.review_all_tools ?? undefined });
+// Saves only aliases with both a name and a target; a half-filled row is a draft.
+export const completeBindAliases = (aliases: NonNullable<ChannelConnectionInput["bind_aliases"]>) =>
+  aliases.map((alias) => ({ name: alias.name.trim(), target: alias.target.trim() })).filter((alias) => alias.name && alias.target);
+const emptyConnection = (): ChannelConnectionInput => ({ provider: "feishu", name: t("channelsPage.feishu"), app_id: "", app_secret: "", enabled: false, allow_chat_ids: [], agent_instructions: "", approval_instructions: defaultApprovalInstructions, approval_policy: "auto", review_all_tools: true, progress_mode: "auto", progress_detail: "brief", bind_aliases: [] });
+const connectionInput = (connection: ChannelConnection): ChannelConnectionInput => ({ provider: "feishu", name: connection.name, app_id: connection.app_id, enabled: connection.enabled, allow_chat_ids: [], agent_instructions: connection.agent_instructions, approval_instructions: connection.approval_instructions, approval_policy: connection.approval_policy || "auto", review_all_tools: connection.review_all_tools, progress_mode: connection.progress_mode,
+  // Only daemons that report these settings can store them. A level this
+  // client does not know is left out, so the daemon keeps it.
+  ...(connection.progress_detail ? { ...(connection.progress_detail_unrecognized ? {} : { progress_detail: connection.progress_detail }), bind_aliases: connection.bind_aliases ?? [] } : {}) });
+const conversationInput = (conversation: ChannelConversation): ChannelConversationInput => ({ display_name: channelGroupName([conversation], conversation.chat_id), session_strategy: conversation.session_strategy, session_id: conversation.session_id ?? "", workspace_id: conversation.workspace_id ?? "", enabled: conversation.enabled, sender_policy: conversation.sender_policy ?? "selected", allowed_sender_ids: conversation.allowed_sender_ids, agent: conversation.agent, profile_name: conversation.profile_name, model: conversation.model, reasoning_effort: conversation.reasoning_effort, agent_instructions_mode: conversation.agent_instructions_mode, agent_instructions: conversation.agent_instructions, approval_instructions_mode: conversation.approval_instructions_mode, approval_instructions: conversation.approval_instructions, approval_policy: conversation.approval_policy || "", review_all_tools: conversation.review_all_tools ?? undefined, progress_detail: conversation.progress_detail_unrecognized ? undefined : conversation.progress_detail ?? "" });
+// The select value standing for a level this client does not know, left unchanged on save.
+const unrecognizedLevel = "__unrecognized";
+
+// An older daemon saves the rest of the connection and ignores these settings.
+export function droppedGroupCommandSettings(input: ChannelConnectionInput, saved: ChannelConnection): boolean {
+  return saved.progress_detail === undefined && ((input.bind_aliases?.length ?? 0) > 0 || (input.progress_detail !== undefined && input.progress_detail !== "brief"));
+}
 
 function assertRuntimeSaved(input: ChannelConversationInput, saved: ChannelConversation) {
   if (saved.session_strategy !== input.session_strategy) throw new Error(t("channelsPage.thisZotigodVersionDoesNotSupportSharedChannel"));
@@ -47,6 +61,12 @@ interface ChannelsPageProps {
   onShowConfiguration: () => void;
   onBack: () => void;
   onOpenSession: (id: string, leaveChannels?: boolean) => Promise<void>;
+}
+
+// A Codex Session that started before it had the Channel tools cannot serve a
+// group; the daemon rejects binding it.
+function lacksChannelTools(session: ZotigoSession | undefined): boolean {
+  return session?.agent === "codex" && session.channel_tools_eligible !== true;
 }
 
 export function ChannelsPage({ favorites, hostName, projects, workspaces, agents = [], sessions = [], sessionCatalog = [], navigationRoot, navigationButtonRef, navigationOpen, sessionVisible, selectedSessionId, onOpenNavigation, onShowConfiguration, onBack, onOpenSession }: ChannelsPageProps) {
@@ -92,6 +112,45 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
   const visibleWorkspaces = useMemo(() => readyWorkspaces.filter((value) => value.project_id === groupProjectId), [readyWorkspaces, groupProjectId]);
   const workspaceById = useMemo(() => new Map(workspaces.map((value) => [value.id, value])), [workspaces]);
   const sessionTitleById = useMemo(() => new Map(sessionCatalog.map((value) => [value.id, value.title])), [sessionCatalog]);
+  // Older daemons neither report nor store progress detail and bind aliases, and
+  // silently ignore them on save; only a daemon that reports them can keep them.
+  // Daemons report progress detail on every connection. With none to look at,
+  // show the settings: an older daemon ignores them, and they hide once saved.
+  const supportsGroupCommands = creatingConnection || !selectedConnection ? connections.length === 0 || connections.some((value) => value.progress_detail) : Boolean(selectedConnection?.progress_detail);
+  // Projects head the groups, each Workspace lists its Sessions beneath it, as in the sidebar.
+  const runtimeSessionById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions]);
+  const bindTargetOptions = useMemo<SearchableOption[]>(() => {
+    const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+    const projectOrder = new Map(projects.map((project, index) => [project.id, index]));
+    const sessionsByWorkspace = new Map<string, typeof sessionCatalog>();
+    for (const session of sessionCatalog) {
+      if (!session.workspace_id || lacksChannelTools(runtimeSessionById.get(session.id))) continue;
+      const list = sessionsByWorkspace.get(session.workspace_id);
+      if (list) list.push(session); else sessionsByWorkspace.set(session.workspace_id, [session]);
+    }
+    const workspaces = [...readyWorkspaces].sort((left, right) => (projectOrder.get(left.project_id) ?? projects.length) - (projectOrder.get(right.project_id) ?? projects.length));
+    return workspaces.flatMap((workspace) => {
+      const project = projectNames.get(workspace.project_id) || t("channelsPage.bindTargetOtherProject");
+      return [
+        { value: workspace.id, label: workspace.title, detail: t("channelsPage.bindTargetWorkspace", { project }), keywords: [workspace.id], icon: <Folder size={14} aria-hidden="true" />, group: project },
+        ...(sessionsByWorkspace.get(workspace.id) ?? []).map((session) => ({ value: session.id, label: session.title.trim() || t("app.newSession"), detail: t("channelsPage.bindTargetSession", { workspace: workspace.title }), keywords: [session.id, workspace.title], icon: <MessageSquare size={14} aria-hidden="true" />, group: project, depth: 1 })),
+      ];
+    });
+  }, [projects, readyWorkspaces, runtimeSessionById, sessionCatalog]);
+  // A target outside the list is gone, in a Workspace that is not ready, or a
+  // Codex Session without the Channel tools; saved aliases still show it.
+  const unlistedBindTarget = (target: string): SearchableOption => {
+    const session = sessionCatalog.find((value) => value.id === target);
+    const workspace = workspaceById.get(session?.workspace_id ?? target);
+    const detail = session && lacksChannelTools(runtimeSessionById.get(session.id)) ? t("channelsPage.bindTargetNoChannelTools")
+      : workspace ? t("channelsPage.bindTargetNotReady", { workspace: workspace.title }) : t("channelsPage.bindTargetMissing");
+    return { value: target, label: session?.title.trim() || workspace?.title || target, detail, keywords: [target], icon: <CircleAlert size={14} aria-hidden="true" /> };
+  };
+  const bindTargetOptionsFor = (target: string): SearchableOption[] => !target || bindTargetOptions.some((option) => option.value === target) ? bindTargetOptions
+    : [unlistedBindTarget(target), ...bindTargetOptions];
+  const connectionUnrecognized = creatingConnection ? undefined : selectedConnection?.progress_detail_unrecognized;
+  const bindAliases = connectionDraft.bind_aliases ?? [];
+  const setBindAliases = (aliases: NonNullable<ChannelConnectionInput["bind_aliases"]>) => setConnectionDraft({ ...connectionDraft, bind_aliases: aliases });
   const selectedWorkspace = groupDraft?.workspace_id ? workspaceById.get(groupDraft.workspace_id) : undefined;
   // Ownership comes from the catalog, not the cwd: a Workspace session may
   // run in a subdirectory such as code/backend.
@@ -100,7 +159,7 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
     && (session.id === groupConversation?.session_id || sessionWorkspaceById.get(session.id) === selectedWorkspace.id)
     && session.approval_policy !== "manual"
     && (session.id === groupConversation?.session_id || (!session.working && (session.state === "created" || session.state === "offline" || session.state === "running")))
-    && (session.id === groupConversation?.session_id || session.agent !== "codex" || session.channel_tools_eligible === true)
+    && (session.id === groupConversation?.session_id || !lacksChannelTools(session))
     && (!boundSessionIds.has(session.id) || session.id === groupConversation?.session_id)), [boundSessionIds, groupConversation?.session_id, sessionWorkspaceById, sessions, selectedWorkspace]);
   const codexModels: AgentModel[] = agents.find((agent) => agent.id === "codex")?.models ?? [];
   const runtimeValid = groupDraft?.agent !== "codex" || Boolean(groupDraft.model && groupDraft.reasoning_effort);
@@ -321,8 +380,22 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
             <label>{t("channelsPage.appSecret")}<input type="password" value={connectionDraft.app_secret ?? ""} placeholder={!creatingConnection && selectedConnection?.has_secret ? t("channelsPage.savedLeaveBlankToKeep") : t("channelsPage.requiredToEnable")} autoComplete="new-password" onChange={(event) => setConnectionDraft({ ...connectionDraft, app_secret: event.target.value })} /></label>
             {!creatingConnection && <label>{t("channelsPage.applicationOwner")}<input readOnly value={ownerSenderIDs.join(", ")} placeholder={selectedConnection?.status === "starting" ? t("channelsPage.resolvingFromFeishu") : t("directoryBrowser.unavailable")} /><small>{t("channelsPage.resolvedFromTheFeishuApplicationOwnerWhenThe")}</small></label>}
             <label>{t("channelsPage.executionDisplay")}<select value={connectionDraft.progress_mode} onChange={(event) => setConnectionDraft({ ...connectionDraft, progress_mode: event.target.value as ChannelConnectionInput["progress_mode"] })}><option value="auto">{t("channelsPage.cotWithCardFallback")}</option><option value="cot">{t("channelsPage.requireCot")}</option><option value="interactive_card">{t("channelsPage.interactiveCard")}</option></select><small>{t("channelsPage.autoFallsBackOnlyWhenFeishuRejectsCot")}</small></label>
+            {supportsGroupCommands && <label>{t("channelsPage.progressDetail")}<select value={connectionDraft.progress_detail ?? (connectionUnrecognized ? unrecognizedLevel : "brief")} onChange={(event) => setConnectionDraft({ ...connectionDraft, progress_detail: event.target.value === unrecognizedLevel ? undefined : event.target.value as NonNullable<ChannelConnectionInput["progress_detail"]> })}>{connectionUnrecognized && <option value={unrecognizedLevel}>{t("channelsPage.progressDetailUnrecognized", { level: connectionUnrecognized })}</option>}{channelProgressDetails.map((level) => <option key={level} value={level}>{t(`channelsPage.progressDetail.${level}`)}</option>)}</select><small>{t("channelsPage.progressDetailHelp")}</small></label>}
             <label className="channels-check"><input type="checkbox" role="switch" checked={connectionDraft.enabled} onChange={(event) => setConnectionDraft({ ...connectionDraft, enabled: event.target.checked })} />{t("channelsPage.enableLongConnection")}</label>
           </section>
+          {supportsGroupCommands && <section className="channels-card"><header><h2>{t("channelsPage.groupCommands")}</h2><p className="channels-help">{t("channelsPage.groupCommandsHelp")}</p></header>
+            <p className="channels-command-help">{t("channelsPage.bindCommands")}</p>
+            <div className="channels-alias-field"><span>{t("channelsPage.bindAliases")}</span>
+              {bindAliases.map((alias, index) => <div className="channels-alias-row" key={index}>
+                <input aria-label={t("channelsPage.bindAliasName")} placeholder={t("channelsPage.bindAliasName")} value={alias.name} onChange={(event) => setBindAliases(bindAliases.map((value, position) => position === index ? { ...value, name: event.target.value } : value))} />
+                <SearchableSelect value={alias.target} options={bindTargetOptionsFor(alias.target)} nestedLimit={5} moreText={(count) => t("channelsPage.moreBindTargetSessions", { count })} disabled={busy} ariaLabel={t("channelsPage.bindAliasTarget")} placeholder={t("channelsPage.chooseBindTarget")} searchPlaceholder={t("channelsPage.searchBindTargets")} emptyText={t("channelsPage.noMatchingBindTargets")}
+                  onChange={(target) => setBindAliases(bindAliases.map((value, position) => position === index ? { ...value, target } : value))} />
+                <button type="button" className="channels-alias-remove" disabled={busy} aria-label={t("channelsPage.removeBindAlias", { name: alias.name || String(index + 1) })} title={t("channelsPage.removeBindAlias", { name: alias.name || String(index + 1) })} onClick={() => setBindAliases(bindAliases.filter((_, position) => position !== index))}><X size={14} /></button>
+              </div>)}
+              <button type="button" className="channels-alias-add" disabled={busy} onClick={() => setBindAliases([...bindAliases, { name: "", target: "" }])}><Plus size={14} />{t("channelsPage.addBindAlias")}</button>
+              <small>{t("channelsPage.bindAliasesHelp")}</small>
+            </div>
+          </section>}
           <section className="channels-card"><header><h2>{t("channelsPage.promptAndApproval")}</h2><p className="channels-help">{t("channelsPage.theseOwnerInstructionsAreAppendedAfterZotigoS")}</p></header>
             <label>{t("channelsPage.permissions")}<select value={connectionDraft.approval_policy || "auto"} onChange={(event) => setConnectionDraft({ ...connectionDraft, approval_policy: event.target.value as "auto" | "bypass_permissions" })}><option value="auto">{t("channelsPage.auto")}</option><option value="bypass_permissions">{t("channelsPage.fullAccess")}</option></select><small>{t("channelsPage.fullAccessSkipsToolApprovalAppliesWhenThe")}</small></label>
             <label>{t("channelsPage.systemPromptAdditions")}<textarea rows={7} value={connectionDraft.agent_instructions} onChange={(event) => setConnectionDraft({ ...connectionDraft, agent_instructions: event.target.value })} /></label>
@@ -330,7 +403,7 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
             <label className="channels-check"><input type="checkbox" role="switch" checked={connectionDraft.review_all_tools} onChange={(event) => setConnectionDraft({ ...connectionDraft, review_all_tools: event.target.checked })} />{t("channelsPage.enableAutomaticApprovalReviewInAutoMode")}</label>
             <p className="channels-help">{t("channelsPage.zotigoReviewsOtherwiseSafeToolCallsCodexAutomatically")}</p>
             <div className="channels-capability"><CheckCircle2 size={15} /><span>{t("channelsPage.cotExecutionDisplaySupported")}</span><small>{t("channelsPage.theFinalAnswerIsSentSeparatelyInThe")}</small></div>
-            <div className="channels-actions channels-form-actions"><button className="primary" disabled={busy} onClick={() => run(async () => { const input = { ...connectionDraft, allow_chat_ids: [] }; if (!input.app_secret) delete input.app_secret; const saved = !creatingConnection && selectedConnection ? await api.updateChannelConnection(selectedConnection.id, input) : await api.createChannelConnection(input); await load(saved.id, true); setStatus(t("channelsPage.connectionSaved"), "success"); })}><Save size={14} />{t("app.save")}</button>{!creatingConnection && selectedConnection && <button disabled={busy} onClick={() => { setStatus(""); setDeleteTarget(selectedConnection); }}><Trash2 size={14} />{t("app.delete")}</button>}<small>{t("channelsPage.savesTheConnectionPromptAndApprovalSettingsAbove")}</small></div>
+            <div className="channels-actions channels-form-actions"><button className="primary" disabled={busy} onClick={() => run(async () => { const input = { ...connectionDraft, allow_chat_ids: [], ...(connectionDraft.bind_aliases ? { bind_aliases: completeBindAliases(connectionDraft.bind_aliases) } : {}) }; if (!input.app_secret) delete input.app_secret; const saved = !creatingConnection && selectedConnection ? await api.updateChannelConnection(selectedConnection.id, input) : await api.createChannelConnection(input); await load(saved.id, true); if (droppedGroupCommandSettings(input, saved)) throw new Error(t("channelsPage.groupCommandsUnsupported")); setStatus(t("channelsPage.connectionSaved"), "success"); })}><Save size={14} />{t("app.save")}</button>{!creatingConnection && selectedConnection && <button disabled={busy} onClick={() => { setStatus(""); setDeleteTarget(selectedConnection); }}><Trash2 size={14} />{t("app.delete")}</button>}<small>{t("channelsPage.savesTheConnectionPromptAndApprovalSettingsAbove")}</small></div>
           </section>
         </div>}
         {selectedGroup && groupConversation && groupDraft && <div className="channels-grid">
@@ -368,6 +441,7 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
             <label>{t("channelsPage.whoCanTrigger")}<select value={groupDraft.sender_policy} onChange={(event) => setGroupDraft({ ...groupDraft, sender_policy: event.target.value as ChannelConversationInput["sender_policy"], allowed_sender_ids: event.target.value === "selected" ? groupDraft.allowed_sender_ids : [] })}><option value="owners">{t("channelsPage.applicationOwnerOnly")}</option><option value="all">{t("channelsPage.allGroupMembers")}</option><option value="selected">{t("channelsPage.selectedGroupMembers")}</option></select><small>{t("channelsPage.thisPolicyAppliesImmediatelyToExistingChannelSessions")}</small></label>
             {groupDraft.sender_policy === "selected" && <div className="channels-member-field"><span>{t("channelsPage.groupMembers")}</span><div className="channels-member-picker">{selectableGroupMembers.map((member) => { const selected = groupDraft.allowed_sender_ids.includes(member.id); return <label className="channels-member-option" key={member.id}><input type="checkbox" disabled={groupMembersLoading || Boolean(groupMembersError)} checked={selected} onChange={() => setGroupDraft({ ...groupDraft, allowed_sender_ids: selected ? groupDraft.allowed_sender_ids.filter((id) => id !== member.id) : [...groupDraft.allowed_sender_ids, member.id] })} /><span>{member.display_name || member.id}</span></label>; })}</div><small>{groupMembersLoading ? t("channelsPage.loadingMembersFromFeishu") : groupMembersError ? t("channelsPage.existingSelectionsArePreservedGrantImChatMembers", { p0: groupMembersError }) : t("channelsPage.selectOneOrMoreMembers")}</small></div>}
             <div className="channels-trigger"><strong>{t("channelsPage.trigger")}</strong><span>{t("channelsPage.mentionRequired")}</span><small>{groupDraft.session_strategy === "shared" ? t("channelsPage.everyAcceptedGroupMessageRequiresAMentionAnd") : t("channelsPage.aTopLevelMentionStartsASessionTopic")}</small></div>
+            {selectedConnection?.progress_detail && <label>{t("channelsPage.progressDetail")}<select value={groupDraft.progress_detail ?? (groupConversation?.progress_detail_unrecognized ? unrecognizedLevel : "")} onChange={(event) => setGroupDraft({ ...groupDraft, progress_detail: event.target.value === unrecognizedLevel ? undefined : event.target.value as ChannelConversationInput["progress_detail"] })}>{groupConversation?.progress_detail_unrecognized && <option value={unrecognizedLevel}>{t("channelsPage.progressDetailUnrecognized", { level: groupConversation.progress_detail_unrecognized })}</option>}<option value="">{t("channelsPage.progressDetailInherit", { level: selectedConnection.progress_detail_unrecognized ?? t(`channelsPage.progressDetail.${selectedConnection.progress_detail}`) })}</option>{channelProgressDetails.map((level) => <option key={level} value={level}>{t(`channelsPage.progressDetail.${level}`)}</option>)}</select><small>{t("channelsPage.groupProgressDetailHelp")}{(groupDraft.progress_detail && groupDraft.progress_detail !== "brief") || (groupDraft.progress_detail === undefined && groupConversation?.progress_detail_unrecognized) ? ` ${t("channelsPage.progressDetailHelp")}` : ""}</small></label>}
           </section>
           <section className="channels-card"><header><h2>{t("channelsPage.promptAndApproval")}</h2><p className="channels-help">{t("channelsPage.useConnectionDefaultsOrReplaceTheOwnerAdditions")}</p></header>
             <label>{t("channelsPage.permissions")}<select value={groupDraft.approval_policy || ""} onChange={(event) => setGroupDraft({ ...groupDraft, approval_policy: event.target.value as "" | "auto" | "bypass_permissions" })}><option value="">{t("channelsPage.inheritConnection")}</option><option value="auto">{t("channelsPage.auto")}</option><option value="bypass_permissions">{t("channelsPage.fullAccess")}</option></select><small>{t("channelsPage.fullAccessSkipsToolApprovalChangesApplyTo")}</small></label>

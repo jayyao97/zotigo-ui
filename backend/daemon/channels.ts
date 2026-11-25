@@ -1,5 +1,5 @@
 import type { AgentKind } from "../../shared/zotigod";
-import type { ChannelConnection, ChannelConnectionInput, ChannelConversation, ChannelConversationInput, ChannelGroup, ChannelMessage } from "../../shared/channels";
+import { channelProgressDetails, type ChannelBindAlias, type ChannelConnection, type ChannelConnectionInput, type ChannelConversation, type ChannelConversationInput, type ChannelGroup, type ChannelMessage, type ChannelProgressDetail } from "../../shared/channels";
 import { expectRecord, expectArray, expectStringList, expectBoolean, expectString, expectOptionalNumber, expectOptionalString, expectOptionalBoolean } from "./validation";
 import { ZotigodRequestError, UnsupportedChannelsError, jsonRequest, requestJSON } from "./http";
 
@@ -68,6 +68,8 @@ function parseChannelConnection(value: unknown, context: string): ChannelConnect
     approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`), review_all_tools: expectBoolean(record.review_all_tools, `${context} review_all_tools`),
     approval_policy: parseChannelApprovalPolicy(record.approval_policy),
     cot_available: expectBoolean(record.cot_available, `${context} cot_available`), progress_mode: progressMode,
+    progress_detail: parseChannelProgressDetail(record.progress_detail), progress_detail_unrecognized: unrecognizedProgressDetail(record.progress_detail),
+    bind_aliases: record.bind_aliases == null ? undefined : expectArray(record.bind_aliases, `${context} bind_aliases`).map((alias, index) => parseChannelBindAlias(alias, `${context} bind_aliases[${index}]`)),
     created_at: expectString(record.created_at, `${context} created_at`), updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
 }
@@ -85,7 +87,34 @@ function parseChannelGroup(value: unknown, context: string): ChannelGroup {
 		sender_policy: parseChannelSenderPolicy(record.sender_policy, `${context} sender_policy`),
     agent: parseChannelAgent(record.agent, `${context} agent`), profile_name: expectOptionalString(record.profile_name, `${context} profile_name`) ?? "",
     model: expectOptionalString(record.model, `${context} model`) ?? "", reasoning_effort: expectOptionalString(record.reasoning_effort, `${context} reasoning_effort`) ?? "",
+    progress_detail: parseChannelProgressDetailOverride(record.progress_detail),
   };
+}
+
+const isChannelProgressDetail = (value: unknown): value is ChannelProgressDetail =>
+  typeof value === "string" && (channelProgressDetails as readonly string[]).includes(value);
+
+// Daemons without progress detail omit the field, which hides the setting. A
+// level this client does not know yet shows as the default instead of
+// failing the whole list.
+function parseChannelProgressDetail(value: unknown): ChannelProgressDetail | undefined {
+  if (value == null) return undefined;
+  return isChannelProgressDetail(value) ? value : "brief";
+}
+
+// A group without its own level, or with one this client does not know, inherits.
+function parseChannelProgressDetailOverride(value: unknown): ChannelProgressDetail | "" {
+  return isChannelProgressDetail(value) ? value : "";
+}
+
+// Kept so the page can show the level and leave it unchanged on save.
+function unrecognizedProgressDetail(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" && !isChannelProgressDetail(value) ? value : undefined;
+}
+
+function parseChannelBindAlias(value: unknown, context: string): ChannelBindAlias {
+  const record = expectRecord(value, context);
+  return { name: expectString(record.name, `${context} name`), target: expectString(record.target, `${context} target`) };
 }
 
 function parseChannelConversation(value: unknown, context: string): ChannelConversation {
@@ -111,7 +140,7 @@ function parseChannelConversation(value: unknown, context: string): ChannelConve
     agent_instructions_mode: agentMode, agent_instructions: expectString(record.agent_instructions, `${context} agent_instructions`),
     approval_instructions_mode: approvalMode, approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`),
     approval_policy: parseChannelApprovalPolicy(record.approval_policy),
-    review_all_tools: reviewAllTools, last_activity_at: expectString(record.last_activity_at, `${context} last_activity_at`),
+    review_all_tools: reviewAllTools, progress_detail: parseChannelProgressDetailOverride(record.progress_detail), progress_detail_unrecognized: unrecognizedProgressDetail(record.progress_detail), last_activity_at: expectString(record.last_activity_at, `${context} last_activity_at`),
     created_at: expectString(record.created_at, `${context} created_at`), updated_at: expectString(record.updated_at, `${context} updated_at`),
   };
 }

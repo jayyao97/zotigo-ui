@@ -9,6 +9,7 @@ import { CodeEditor } from "./CodeEditor";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import { markdownUrlTransform } from "./markdownUrlTransform";
 import { FilePath } from "./FilePath";
+import { useCopyText } from "./clipboard";
 
 export type FileEditorMode = "preview" | "source";
 export type FileSaveStatus = "clean" | "dirty" | "saving" | "error";
@@ -47,6 +48,7 @@ export function FileEditorTab({
   onSave: () => void;
 }) {
   useLocale();
+  const copy = useCopyText();
   const markdown = /\.(?:md|markdown|mdown|mkd)$/i.test(file.path);
   const preview = markdown && mode === "preview";
   return (
@@ -73,7 +75,7 @@ export function FileEditorTab({
           className="file-editor-icon-button"
           title={t("app.copyPath")}
           aria-label={t("fileEditorTab.copyFilePath")}
-          onClick={() => void navigator.clipboard.writeText(file.path)}
+          onClick={() => copy(file.path)}
         >
           <Copy size={14} />
         </button>

@@ -6,7 +6,7 @@ import type { ModelProfile, ModelSettings as Settings, ModelSettingsChange } fro
 
 const blankProfile = (): ModelProfile => ({name:"",provider:"openai",model:"",base_url:"",thinking_level:"",context_window:0,max_output_tokens:null,mode:"",has_api_key:false});
 
-export function ModelSettings({hostName, hostId, onEditingChange, onSaved}: {hostName:string; hostId?: string; onEditingChange?: (editing: boolean) => void; onSaved?: () => void}) {
+export function ModelSettings({hostId, onEditingChange, onSaved}: {hostId?: string; onEditingChange?: (editing: boolean) => void; onSaved?: () => void}) {
   const locale = useLocale();
   const {api}=useClient();
   const [settings,setSettings]=useState<Settings>();
@@ -65,8 +65,6 @@ export function ModelSettings({hostName, hostId, onEditingChange, onSaved}: {hos
   const outputDefault = savedProfile?.default_max_output_tokens ?? settings?.defaults?.max_output_tokens;
   const formatTokens = (value?: number) => value === undefined ? t("models.defaultUnknown") : value.toLocaleString(locale);
   return <div className="model-settings">
-    <h1>{t("models.title")}</h1>
-    <p><strong>{t("models.host",{host:hostName})}</strong></p>
     <p className="model-settings-help">{t("models.help")}</p>
     <p className="model-settings-help">{t("models.codex")}</p>
     {loading && <p role="status">{t("models.loading")}</p>}

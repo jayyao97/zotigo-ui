@@ -5,6 +5,7 @@ import type { UpdateAction, UpdateChannel, UpdateStatus } from "../shared/update
 import type { ClientApi } from "../shared/clientTypes";
 import type { HostProfile } from "../shared/hosts";
 
+import { SettingsPageHeader } from "./SettingsPageHeader";
 import { runningUpdates, subscribeUpdates, markUpdate, machineJob, updateMachine, updateMachines, type UpdateMachine } from "./machineUpdates";
 
 export function UpdateSettings({ hosts, api }: { hosts: HostProfile[]; api: ClientApi }) {
@@ -15,12 +16,11 @@ export function UpdateSettings({ hosts, api }: { hosts: HostProfile[]; api: Clie
   const machineName = (machine: UpdateMachine) => machine.includeClient ? t(kind === "desktop" ? "settings.thisComputer" : "settings.servingHost") : machine.host!.id === "local" ? t("updates.defaultDaemon") : machine.host!.name;
   useEffect(() => { if (current && current.id !== selected) setSelected(current.id); }, [current?.id, selected]);
   return <>
-    <label className="settings-row settings-host-picker"><span><strong>{t("updates.target")}</strong><small>{current?.host?.baseUrl}</small></span>
-      <select aria-label={t("updates.target")} value={current?.id ?? ""} onChange={event => setSelected(event.target.value)}>
+    <SettingsPageHeader title={t("updates.title")} subtitle={current?.host?.baseUrl}>
+      <select className="settings-page-header-select" aria-label={t("updates.target")} title={t("updates.target")} value={current?.id ?? ""} onChange={event => setSelected(event.target.value)}>
         {machines.map(machine => <option key={machine.id} value={machine.id}>{machineName(machine)}</option>)}
       </select>
-    </label>
-    <h1>{t("updates.title")}</h1>
+    </SettingsPageHeader>
     {machines.map(machine => <div key={machine.id} hidden={machine.id !== current?.id}>
       <MachineUpdates api={api} machine={machine} name={machineName(machine)}/>
     </div>)}
@@ -39,11 +39,15 @@ function MachineUpdates({api,machine,name}: {api:ClientApi;machine:UpdateMachine
   const hasUpdate = targets.some(target => cards[target]?.status?.target || cards[target]?.status?.phase === "ready");
   const confirmRestart = () => kind !== "desktop" || window.dispatchEvent(new Event("zotigo:before-update",{cancelable:true})) || window.confirm(t("updates.unsaved"));
   return <>
-    <div className="settings-row"><span><strong>{t("updates.machineHelp")}</strong>{targets.length > 1 && <small>{t("updates.partialHelp")}</small>}</span>
-      <button className="settings-secondary-button" disabled={!available || !hasUpdate || job?.running} onClick={()=>void updateMachine(api,machine,confirmRestart)}>{t(job?.running ? "updates.updatingAll" : "updates.all")}</button>
+    <div className="settings-machine-actions">
+      <div className="settings-card">
+        <div className="settings-row"><span><strong>{t("updates.machineHelp")}</strong>{targets.length > 1 && <small>{t("updates.partialHelp")}</small>}</span>
+          <button className="settings-secondary-button" disabled={!available || !hasUpdate || job?.running} onClick={()=>void updateMachine(api,machine,confirmRestart)}>{t(job?.running ? "updates.updatingAll" : "updates.all")}</button>
+        </div>
+      </div>
+      {job?.error && <p className="settings-section-note error" role="alert">{job.error}</p>}
+      {job?.completed && <p className="settings-section-note" role="status">{t("updates.allCompleted")}</p>}
     </div>
-    {job?.error && <p role="alert">{job.error}</p>}
-    {job?.completed && <p role="status">{t("updates.allCompleted")}</p>}
     {machine.host && <UpdateCard api={api} target="daemon" hostId={machine.host.id} machineId={machine.id} title={t("updates.daemon",{host:name})} onState={report}/>}
     {machine.includeClient && <UpdateCard api={api} target="client" machineId={machine.id} title={t(kind === "desktop" ? "updates.desktop" : "updates.web")} onState={report}/>}
   </>;
@@ -147,6 +151,7 @@ function UpdateCard({ api, target, title, hostId, machineId, onState }: { api: C
   const canCancel = status?.phase === "waiting" && target === "daemon";
   const action: UpdateAction = canCancel ? "cancel" : status?.phase === "ready" ? "apply" : status?.target ? "prepare" : status ? "check" : "status";
   const buttonText = canCancel ? t("updates.cancel") : active ? t(`updates.phase.${status!.phase}`) : status?.phase === "ready" || status?.target ? t("updates.now") : t("updates.check");
+  const actionButton = <button className="settings-secondary-button" disabled={busy || (updating && !canCancel) || (!!active && !canCancel)} onClick={() => void perform(action)}>{buttonText}</button>;
   return <section className="settings-section">
     <h2>{title}</h2>
     <div className="settings-card">
@@ -161,11 +166,12 @@ function UpdateCard({ api, target, title, hostId, machineId, onState }: { api: C
           <small>{status.target ? t("updates.available", { version: status.target.version }) : status.checked_at ? t("updates.latest") : t("updates.unchecked")}</small>
           {target === "daemon" && <small>{t("updates.daemonHelp")}</small>}
         </span>
+        {actionButton}
         </div>
       </>}
-      <div className="settings-row"><button className="settings-secondary-button" disabled={busy || (updating && !canCancel) || (!!active && !canCancel)} onClick={() => void perform(action)}>{buttonText}</button></div>
+      {!status && <div className="settings-row"><span><strong>{t("updates.unchecked")}</strong></span>{actionButton}</div>}
     </div>
-    {(error || status?.error) && <p role="alert">{error || status?.error}</p>}
-    {!status && error && <p>{t("updates.statusUnavailable")}</p>}
+    {(error || status?.error) && <p className="settings-section-note error" role="alert">{error || status?.error}</p>}
+    {!status && error && <p className="settings-section-note">{t("updates.statusUnavailable")}</p>}
   </section>;
 }

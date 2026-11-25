@@ -18,6 +18,7 @@ import { parseThinkingDisplayMode, thinkingDisplayStorageKey, type ThinkingDispl
 import type { AgentCatalogEntry } from "../shared/zotigod";
 import type { HostProfile } from "../shared/hosts";
 import type { SourceCandidate } from "../shared/clientTypes";
+import { copyText } from "./clipboard";
 
 const HostContext = createContext<{ profiles: HostProfile[]; selected: string; busy: boolean; switchHost(id: string): void; settings(): void } | null>(null);
 
@@ -115,7 +116,7 @@ export function HostShell() {
   }, [api, parent.kind]);
   const client = useMemo(() => bindClientGeneration({ ...api,
     chooseSourceFolders: () => new Promise<SourceCandidate[]>((resolve) => { pickerResult.current?.([]); pickerResult.current = resolve; setPicker(true); }),
-    revealPath: selected === "local" ? api.revealPath : async (value: string) => { await navigator.clipboard.writeText(value); },
+    revealPath: selected === "local" ? api.revealPath : async (value: string) => { await copyText(value); },
     getDaemonConfig: async () => { const config = await api.getDaemonConfig(); const url = new URL(config.baseUrl); url.searchParams.set("zotigoHost", selected); return { ...config, baseUrl: url.toString() }; },
   }, () => generationRef.current === generation), [api, selected, generation]);
   useEffect(() => {
@@ -186,7 +187,7 @@ export function HostShell() {
     <ClientContext.Provider value={{ ...parent, api: client, remote: selected !== "local" }}>
       {ready ? <ToastProvider key={selected}><ModelFavoritesProvider host={selected}>
         <div style={{ display: surface === "workbench" ? "contents" : "none" }} inert={busy || surface !== "workbench"}>
-          <App onSessionQuerySupport={onSessionQuerySupport} activityChannelMode={activityChannelMode} onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} openSessionRequest={openSessionRequest} />
+          <App onSessionQuerySupport={onSessionQuerySupport} onOpenSettings={() => setSurface("settings")} activityChannelMode={activityChannelMode} onConfigureModels={() => { setModelSetup(true); setSurface("settings"); }} defaultSendMode={defaultSendMode} surfaceActive={surface === "workbench" && !busy} catalogSyncRevision={catalogSyncRevision} refreshedCodex={refreshedCodex?.host === selected ? refreshedCodex.catalog : undefined} key={`${selected}:${generation}`} clientScope={selected} hostName={profiles.find((host) => host.id === selected)?.name ?? selected} thinkingDisplay={thinkingDisplay} translationLanguage={translationLanguage} translationProfile={translationProfile} openNewSessionOnMount={generation === newSessionGeneration} openSessionRequest={openSessionRequest} />
         </div>
         {surface === "settings" && <SettingsPage
           activityFilterSupported={querySupport?.host === selected ? querySupport.supported : undefined} activityChannelMode={activityChannelMode} onActivityChannelModeChange={setActivityChannelMode}

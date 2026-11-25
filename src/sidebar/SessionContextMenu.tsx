@@ -1,4 +1,4 @@
-import { Archive, Check, Circle, GitBranch, Pin, SquarePen } from "lucide-react";
+import { Archive, Check, Circle, GitBranch, Hash, Pin, SquarePen } from "lucide-react";
 import { t } from "../../shared/i18n/index";
 
 export function SessionContextMenu({
@@ -10,6 +10,7 @@ export function SessionContextMenu({
   onToggleRead,
   onTogglePinned,
   onFork,
+  onCopyId,
   onRename,
   onArchive,
 }: {
@@ -21,6 +22,7 @@ export function SessionContextMenu({
   onToggleRead: () => void;
   onTogglePinned: () => void;
   onFork: () => void;
+  onCopyId: () => void;
   onRename: () => void;
   onArchive: () => void;
 }) {
@@ -48,6 +50,10 @@ export function SessionContextMenu({
       >
         <Pin size={14} strokeWidth={1.8} />
         <span>{pinned ? t("app.unpin") : t("app.pin")}</span>
+      </button>
+      <button type="button" role="menuitem" onClick={onCopyId}>
+        <Hash size={14} strokeWidth={1.8} />
+        <span>{t("app.copySessionId")}</span>
       </button>
       <div className="workspace-action-menu-separator" />
       <button type="button" role="menuitem" disabled={isBusy} onClick={onFork}>
