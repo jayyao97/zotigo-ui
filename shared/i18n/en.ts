@@ -962,7 +962,7 @@ export const en = {
   "channelsPage.groupProgressDetailHelp": "Overrides the connection's level for this group.",
   "channelsPage.groupCommands": "Group commands",
   "channelsPage.groupCommandsHelp": "Owners bind a group from Feishu without opening this page.",
-  "channelsPage.bindCommands": "Mention the bot in a group and send /bind followed by an alias, Workspace ID or Session ID. A Workspace gives each topic its own session; a Session is shared by the whole group. /bind alone shows the current binding and /unbind removes it. Only application owners can use these commands; until a group is bound, other members' messages are ignored.",
+  "channelsPage.bindCommands": "Mention the bot in a group and send /bind followed by an alias, Workspace ID or Session ID. A Workspace gives each topic its own session; a Session is shared by the whole group. /bind alone shows the current binding and /unbind removes it. In a bound group, /model shows or switches the model: in a topic or a shared group it changes that session; as a new message in a topic group it changes the model for new topics. Only application owners can use these commands; until a group is bound, other members' messages are ignored.",
   "channelsPage.bindAliases": "Aliases",
   "channelsPage.bindAliasesHelp": "One word each, matched without regard to case, for example /bind oncall. Saved with the connection.",
   "channelsPage.bindAliasName": "Alias",

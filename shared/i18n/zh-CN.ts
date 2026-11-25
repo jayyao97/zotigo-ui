@@ -961,7 +961,7 @@ export const zhCN: Record<MessageKey, Message> = {
   "channelsPage.groupProgressDetailHelp": "为这个群单独设置，覆盖连接的档位。",
   "channelsPage.groupCommands": "群内指令",
   "channelsPage.groupCommandsHelp": "所有者可以直接在飞书群里绑定，不必打开此页面。",
-  "channelsPage.bindCommands": "在群里 @机器人，发送 /bind 加别名、Workspace ID 或 Session ID。绑定 Workspace 时每个话题新建会话；绑定 Session 时全群共用这一个会话。只发 /bind 会回复当前绑定，/unbind 解除绑定。仅应用所有者可以使用这些指令；群绑定之前，其他成员的消息一律忽略。",
+  "channelsPage.bindCommands": "在群里 @机器人，发送 /bind 加别名、Workspace ID 或 Session ID。绑定 Workspace 时每个话题新建会话；绑定 Session 时全群共用这一个会话。只发 /bind 会回复当前绑定，/unbind 解除绑定。绑定后可用 /model 查看或切换模型：在话题里或共享会话的群里切换的是该会话；在话题群里作为新消息发送时，切换的是之后新话题使用的模型。仅应用所有者可以使用这些指令；群绑定之前，其他成员的消息一律忽略。",
   "channelsPage.bindAliases": "别名",
   "channelsPage.bindAliasesHelp": "每个别名是一个词，不区分大小写，例如 /bind oncall。随连接一起保存。",
   "channelsPage.bindAliasName": "别名",
