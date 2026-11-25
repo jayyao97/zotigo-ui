@@ -39,3 +39,41 @@ test("grouped options browse as a tree and search flat with their detail", async
     dom.window.close();
   }
 });
+
+test("browsing shows a few nested options per parent and reveals the rest", async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: "https://zotigo.test", pretendToBeVisual: true });
+  const globals = { window: dom.window, document: dom.window.document, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true };
+  const previous = Object.fromEntries(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { value, configurable: true });
+  const options: SearchableOption[] = [
+    { value: "workspace_a", label: "WS", group: "Repro" },
+    ...[1, 2, 3, 4, 5].map(n => ({ value: `sess_${n}`, label: `s${n}`, detail: "Session · WS", group: "Repro", depth: 1 })),
+    { value: "workspace_b", label: "Docs", group: "Repro" },
+  ];
+  const root = createRoot(document.getElementById("root")!);
+  const labels = () => [...document.querySelectorAll('[role="option"] strong')].map(node => node.textContent);
+  const trigger = () => document.querySelector<HTMLButtonElement>(".searchable-select-trigger")!;
+  const key = async (name: string) => act(async () => { document.querySelector('[role="combobox"]')!.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: name, bubbles: true })); });
+  try {
+    // The current choice stays visible even past the limit.
+    await act(async () => root.render(<SearchableSelect value="sess_5" options={options} nestedLimit={2} moreText={count => `${count} more`} placeholder="Choose" searchPlaceholder="Search" emptyText="No matches" ariaLabel="Target" onChange={() => {}} />));
+    await act(async () => trigger().click());
+    assert.deepEqual(labels(), ["WS", "s1", "s2", "s5", "2 more", "Docs"]);
+    // Enter on the reveal row shows the rest and keeps the list open.
+    for (let step = 0; step < 1; step++) await key("ArrowDown");
+    assert.equal(document.querySelector('[role="option"].is-active strong')?.textContent, "2 more");
+    await key("Enter");
+    assert.deepEqual(labels(), ["WS", "s1", "s2", "s3", "s4", "s5", "Docs"]);
+    // Reopening starts collapsed again.
+    await key("Escape");
+    await act(async () => trigger().click());
+    assert.deepEqual(labels(), ["WS", "s1", "s2", "s5", "2 more", "Docs"]);
+    await act(async () => root.unmount());
+  } finally {
+    for (const [key, descriptor] of Object.entries(previous)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete (globalThis as Record<string, unknown>)[key];
+    }
+    dom.window.close();
+  }
+});

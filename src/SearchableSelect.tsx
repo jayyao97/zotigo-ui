@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown, MoreHorizontal, Search } from "lucide-react";
 
 export interface SearchableOption {
   value: string;
@@ -25,9 +25,19 @@ export interface SearchableOption {
  * follows the combobox pattern: the field keeps focus and arrows move the
  * active option.
  */
-export function SearchableSelect({ value, options, placeholder, searchPlaceholder, emptyText, ariaLabel, disabled = false, onChange }: {
+/** A row of the open list: an option, or the row that reveals an option's hidden children. */
+type Row = SearchableOption & { more?: { parent: string; hidden: number } };
+
+export function SearchableSelect({ value, options, placeholder, searchPlaceholder, emptyText, ariaLabel, disabled = false, nestedLimit, moreText, onChange }: {
   value: string;
   options: SearchableOption[];
+  /**
+   * Browsing shows this many nested options under each parent, then a row that
+   * reveals the rest; a search always shows every match. The current choice
+   * stays visible.
+   */
+  nestedLimit?: number;
+  moreText?: (hidden: number) => string;
   placeholder: string;
   searchPlaceholder: string;
   emptyText: string;
@@ -45,10 +55,27 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
   // Keyboard moves and opening scroll the active row into view; hovering does not.
   const followActive = useRef(true);
   const selected = options.find(option => option.value === value);
-  const rows = useMemo(() => {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const rows = useMemo<Row[]>(() => {
     const search = query.trim().toLocaleLowerCase();
-    return search ? options.filter(option => [option.label, option.detail ?? "", ...(option.keywords ?? [])].some(text => text.toLocaleLowerCase().includes(search))) : options;
-  }, [options, query]);
+    if (search) return options.filter(option => [option.label, option.detail ?? "", ...(option.keywords ?? [])].some(text => text.toLocaleLowerCase().includes(search)));
+    if (nestedLimit === undefined) return options;
+    const result: Row[] = [];
+    let parent: SearchableOption | undefined;
+    let shown = 0;
+    let hidden = 0;
+    const closeParent = () => {
+      if (parent && hidden) result.push({ value: `\u0000more:${parent.value}`, label: moreText?.(hidden) ?? `+${hidden}`, group: parent.group, depth: 1, more: { parent: parent.value, hidden } });
+    };
+    for (const option of options) {
+      if (!option.depth) { closeParent(); parent = option; shown = 0; hidden = 0; result.push(option); continue; }
+      if (parent && !expanded.has(parent.value) && shown >= nestedLimit && option.value !== value) { hidden++; continue; }
+      shown++;
+      result.push(option);
+    }
+    closeParent();
+    return result;
+  }, [options, query, nestedLimit, moreText, expanded, value]);
   const selectedIndex = rows.findIndex(option => option.value === value);
   // A reload can shorten the list while it is open.
   useEffect(() => { if (active >= rows.length) setActive(Math.max(0, rows.length - 1)); }, [active, rows.length]);
@@ -63,6 +90,8 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
   }, [open]);
   // Open at the current choice; a new query starts from the first match.
   useEffect(() => { if (open) { followActive.current = true; setActive(query ? 0 : Math.max(0, selectedIndex)); } }, [open, query]);
+  // Each opening starts collapsed again.
+  useEffect(() => { if (!open) setExpanded(new Set()); }, [open]);
   useEffect(() => {
     if (open && followActive.current) list.current?.querySelector(`[data-row="${active}"]`)?.scrollIntoView?.({ block: "nearest" });
   }, [open, active]);
@@ -101,6 +130,12 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
 
   const close = (focus = true) => { setOpen(false); if (focus) trigger.current?.focus(); };
   const choose = (next: string) => { onChange(next); close(); };
+  // The reveal row keeps the list open; the first newly shown option takes its place.
+  const pick = (row: Row) => {
+    const more = row.more;
+    if (more) setExpanded(current => new Set(current).add(more.parent));
+    else choose(row.value);
+  };
 
   return <div className="searchable-select" ref={root}>
     <button ref={trigger} type="button" className="searchable-select-trigger" disabled={disabled} aria-haspopup="listbox" aria-expanded={open}
@@ -127,7 +162,7 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
               if (rows.length) { followActive.current = true; setActive(index => (index + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length); }
             } else if (event.key === "Enter") {
               event.preventDefault();
-              if (rows[active]) choose(rows[active].value);
+              if (rows[active]) pick(rows[active]);
             } else if (event.key === "Tab") close(false);
           }} />
       </label>
@@ -140,10 +175,11 @@ export function SearchableSelect({ value, options, placeholder, searchPlaceholde
             {option.group !== undefined && option.group !== rows[index - 1]?.group && <div className="searchable-select-group" role="presentation">{option.group}</div>}
             <div id={`${listId}-${index}`} data-row={index} role="option"
               aria-selected={option.value === value} aria-label={detail || !option.detail ? undefined : `${option.label}, ${option.detail}`}
-              className={index === active ? "is-active" : undefined} style={depth ? { paddingLeft: 8 + depth * 18 } : undefined}
-              onPointerMove={() => { if (active !== index) { followActive.current = false; setActive(index); } }} onPointerDown={event => event.preventDefault()} onClick={() => choose(option.value)}>
+              className={[index === active ? "is-active" : "", option.more ? "searchable-select-more" : ""].filter(Boolean).join(" ") || undefined}
+              style={depth ? { paddingLeft: 8 + depth * 18 } : undefined}
+              onPointerMove={() => { if (active !== index) { followActive.current = false; setActive(index); } }} onPointerDown={event => event.preventDefault()} onClick={() => pick(option)}>
               {/* Rows are a three-column grid; keep the icon column without an icon. */}
-              {option.icon ?? <span aria-hidden="true" />}
+              {option.more ? <MoreHorizontal size={14} aria-hidden="true" /> : option.icon ?? <span aria-hidden="true" />}
               <span className="searchable-select-option-main">
                 <strong>{option.label}</strong>
                 {detail && <small>{detail}</small>}
