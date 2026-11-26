@@ -23,6 +23,18 @@ daemon 和远程 daemon 之间切换。
 Desktop 和 Web 共用同一套 React 界面和应用服务。[`mobile/`](mobile/README.md) 中的
 iOS 应用使用相同的 daemon API 和共享类型。
 
+<p align="center">
+  <img src="docs/images/desktop-conversation.png" alt="macOS 上的 Zotigo Desktop：侧边栏列出项目、工作区和会话；会话中显示计划、代码块、Mermaid 图和表格" width="820" />
+</p>
+
+<p align="center">
+  <img src="docs/images/iphone-home.png" alt="iPhone 上的 Zotigo：设备选择、置顶和最近的会话，以及项目" width="240" />
+  &nbsp;
+  <img src="docs/images/iphone-conversation.png" alt="iPhone 上的一段会话，包含计划、图片和代码块" width="240" />
+</p>
+
+<p align="center"><sub>截图中的内容均为虚构的演示数据。iPhone 截图来自应用的网页预览。</sub></p>
+
 ## 我该从哪个仓库安装？
 
 | 你需要 | 安装来源 | 安装内容 |

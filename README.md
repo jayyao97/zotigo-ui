@@ -24,6 +24,18 @@ Desktop and Web share the same React interface and application services. The
 iOS app in [`mobile/`](mobile/README.md) uses the same daemon API and shared
 types.
 
+<p align="center">
+  <img src="docs/images/desktop-conversation.png" alt="Zotigo Desktop on macOS: the sidebar lists projects, Workspaces and sessions; the conversation shows a plan, a code block, a Mermaid diagram and a table" width="820" />
+</p>
+
+<p align="center">
+  <img src="docs/images/iphone-home.png" alt="Zotigo on iPhone: the device picker, pinned and recent sessions, and projects" width="240" />
+  &nbsp;
+  <img src="docs/images/iphone-conversation.png" alt="A conversation on iPhone with a plan, an image and a code block" width="240" />
+</p>
+
+<p align="center"><sub>Screenshots use invented demo data. The iPhone screens are from the app's web preview.</sub></p>
+
 ## Which repository do I install from?
 
 | You want | Install from | What gets installed |
