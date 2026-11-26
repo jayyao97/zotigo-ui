@@ -211,6 +211,7 @@ import { useWorkspaceSourceDrafts } from "./workspace/useWorkspaceSourceDrafts";
 import { RenameProjectDialog } from "./project/RenameProjectDialog";
 import { RenameConversationDialog } from "./sidebar/RenameConversationDialog";
 import { SessionContextMenu } from "./sidebar/SessionContextMenu";
+import { MarkdownLinkMenu, markdownLinkMenuTarget, type LinkMenuState } from "./MarkdownLinkMenu";
 import { SessionEnvironmentList } from "./inspector/SessionEnvironmentList";
 import { SubagentSummaryButton } from "./inspector/SubagentSummaryButton";
 import { SessionDetailList } from "./inspector/SessionDetailList";
@@ -295,6 +296,11 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
   const [queueRefresh, setQueueRefresh] = useState(0);
   const submitModeRef = useRef<SendMode | null>(null);
   const toast = useToast();
+  const [linkMenu, setLinkMenu] = useState<LinkMenuState | null>(null);
+  const closeLinkMenu = useCallback(() => setLinkMenu(null), []);
+  const copyLink = (text: string) => {
+    void copyText(text).then(() => toast(t("markdownLink.copied")), (error) => toast(errorMessage(error), "error"));
+  };
   // IDs are what Feishu commands such as /bind accept.
   const copyId = async (id: string) => {
     try {
@@ -3291,6 +3297,12 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
       className={`app-frame ${isSidebarResizing ? "resizing-sidebar" : ""} ${channelsOpen ? "channels-mode" : ""} ${repositoriesOpen ? "repositories-mode" : ""} ${webNavigationOpen ? "web-navigation-open" : ""} ${sidePanelSurface && sidePanelOpen ? "has-subagent-panel" : ""} ${sidePanelSurface && sidePanelExpanded ? "side-panel-expanded" : ""} ${sidePanelSurface && isSidePanelResizing ? "resizing-side-panel" : ""}`}
       style={{ "--preferred-sidebar-width": `${sidebarWidth}px`, "--side-panel-width": `${sidePanelWidth}px` } as React.CSSProperties}
       onClickCapture={(event) => void handleMarkdownLinkClick(event)}
+      onContextMenu={(event) => {
+        const target = markdownLinkMenuTarget(event);
+        if (!target) return;
+        event.preventDefault();
+        setLinkMenu(target);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Escape" && detailsOpen) setDetailsOpen(false);
         if (event.key === "Escape" && webNavigationOpen && !(event.target as Element).closest("dialog")) {
@@ -3423,6 +3435,7 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
         </div>
       </aside>
 
+      {linkMenu && <MarkdownLinkMenu menu={linkMenu} onClose={closeLinkMenu} onCopy={copyLink} />}
       {conversationContextMenu && contextMenuConversation && (
         <SessionContextMenu
           x={conversationContextMenu.x}

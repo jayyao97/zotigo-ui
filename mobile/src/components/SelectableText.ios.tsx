@@ -13,7 +13,8 @@ export type SelectableTextProps = {
   lineHeight?: number;
   textColor: string;
   linkColor: string;
-  onLink: (url: string) => boolean;
+  /** `menu` is a long press: offer the link's actions rather than opening it. */
+  onLink: (url: string, menu?: boolean) => boolean;
   onAction?: (action: SelectionAction) => void;
   onSelecting?: () => void;
 };
@@ -30,7 +31,7 @@ const NativeText = requireNativeView<
     onMeasure: (
       e: NativeSyntheticEvent<{ height: number; width: number }>,
     ) => void;
-    onLink: (e: NativeSyntheticEvent<{ url: string }>) => void;
+    onLink: (e: NativeSyntheticEvent<{ url: string; menu?: boolean }>) => void;
     onAction: (e: NativeSyntheticEvent<SelectionAction>) => void;
     onSelecting: () => void;
   }
@@ -68,7 +69,7 @@ export function SelectableText({
         maxWidth: "100%",
       }}
       onMeasure={(e) => setSize(e.nativeEvent)}
-      onLink={(e) => onLink(e.nativeEvent.url)}
+      onLink={(e) => onLink(e.nativeEvent.url, !!e.nativeEvent.menu)}
       onAction={(e) => onAction?.(e.nativeEvent)}
       onSelecting={() => onSelecting?.()}
     />

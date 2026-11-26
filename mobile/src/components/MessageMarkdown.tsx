@@ -157,7 +157,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   sessionId: string;
   user?: boolean;
   highlight?: string;
-  onLink: (url: string) => boolean;
+  onLink: (url: string, menu?: boolean) => boolean;
   onSelection?: (action: SelectionAction) => void;
   onSelecting?: () => void;
 }) {

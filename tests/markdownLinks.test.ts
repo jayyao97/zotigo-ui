@@ -19,3 +19,14 @@ test("rejects unsafe and malformed link protocols", () => {
   assert.throws(() => parseMarkdownLink("custom://host/path"), /Unsupported link protocol/);
   assert.throws(() => parseMarkdownLink("bad%ZZpath"), /invalid URL encoding/);
 });
+
+test("copying a link gives its address, or a file link's readable path", async () => {
+  const { markdownLinkCopyText } = await import("../shared/markdownLinks");
+  assert.equal(markdownLinkCopyText(" https://example.com/a?b=1 "), "https://example.com/a?b=1");
+  assert.equal(markdownLinkCopyText("mailto:test@example.com"), "mailto:test@example.com");
+  assert.equal(markdownLinkCopyText("notes/My%20Plan.md"), "notes/My Plan.md");
+  assert.equal(markdownLinkCopyText("/workspace/main.go#L18C3"), "/workspace/main.go:18:3");
+  assert.equal(markdownLinkCopyText("./main.go:42"), "./main.go:42");
+  assert.equal(markdownLinkCopyText("#details"), undefined);
+  assert.equal(markdownLinkCopyText("javascript:alert(1)"), undefined);
+});

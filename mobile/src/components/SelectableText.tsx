@@ -16,6 +16,7 @@ export function SelectableText({
         <Text
           key={index}
           onPress={run.link ? () => onLink(run.link!) : undefined}
+          onLongPress={run.link ? () => onLink(run.link!, true) : undefined}
           style={{
             fontWeight: run.bold ? "600" : "400",
             fontStyle: run.italic ? "italic" : "normal",
