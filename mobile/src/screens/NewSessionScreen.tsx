@@ -349,6 +349,8 @@ export function NewSessionScreen() {
       // draft instead of being lost (Desktop keeps it the same way).
       if (!mounted.current || client.signal.aborted) {
         await composer.write({ draft });
+        // Saved there: leaving this screen discards nothing.
+        completed.current = true;
         return;
       }
       const pending = { current: { draft } };
@@ -403,7 +405,7 @@ export function NewSessionScreen() {
           t("mobile.sessionCreated"),
           next.attempt
             ? t("mobile.createdNeedsAttention", { error: errorText(sendError) })
-            : `${t("conversationTimeline.messageWasNotSent")}. ${errorText(sendError)}`,
+            : t("mobile.firstMessageRejected", { error: errorText(sendError) }),
         );
       }
       completed.current = true;

@@ -215,7 +215,11 @@ export function failedSendState(
   draft: Draft,
   attempt: Attempt,
   outcome: "rejected" | "unknown",
+  /** This was a retry of a saved attempt; an earlier try may have arrived. */
+  retry = false,
 ): ComposerState {
-  if (outcome === "rejected" && !attempt.mayHaveArrived) return { draft };
+  // A saved attempt is written before its first try, so after the app is
+  // killed mid-send it has no mark yet: any retry counts as possibly arrived.
+  if (outcome === "rejected" && !attempt.mayHaveArrived && !retry) return { draft };
   return { draft, attempt: { ...attempt, mayHaveArrived: true } };
 }

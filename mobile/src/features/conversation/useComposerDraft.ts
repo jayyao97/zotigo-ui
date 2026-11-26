@@ -189,6 +189,7 @@ export function useComposerDraft({
         if (alive.current) setSaved(value);
       });
       const current = draftRef.current;
+      const retry = !!current.attempt;
       const attempt = submissionAttempt(
         current,
         promptId,
@@ -219,6 +220,7 @@ export function useComposerDraft({
           current.draft,
           attempt,
           e instanceof ApiError ? inputDeliveryOutcome(e.status, e.code) : "unknown",
+          retry,
         );
         if (next.attempt) {
           if (alive.current)
@@ -236,7 +238,10 @@ export function useComposerDraft({
         }
         const persisted = composer.transition(draftRef, next);
         if (alive.current) setSaved(next);
-        await persisted;
+        // The send error is what the user needs; a save failure is reported apart.
+        await persisted.catch((saveError) => {
+          if (alive.current) onError(t("mobile.draftSaveFailed", { error: errorText(saveError) }));
+        });
         if (attempt.mode === "queue" && e instanceof ApiError && [404, 405].includes(e.status))
           throw new Error(
             t("mobile.thisDaemonDoesNotSupportQueuedMessagesYetUpdateTheDaemonOrSwitchToSteer"),

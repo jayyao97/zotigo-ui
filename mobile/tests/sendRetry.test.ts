@@ -16,3 +16,10 @@ test("a refused send gets its draft back only if no earlier try may have arrived
   assert.equal(retried.attempt?.client_message_id, "m1");
   assert.equal(retried.attempt?.mayHaveArrived, true);
 });
+
+test("a retry of a saved attempt never gives the draft back, even without a mark", () => {
+  // Saved before the first try; the app was killed before it could be marked.
+  const retried = failedSendState(draft, attempt, "rejected", true);
+  assert.equal(retried.attempt?.client_message_id, "m1");
+  assert.equal(retried.attempt?.mayHaveArrived, true);
+});
