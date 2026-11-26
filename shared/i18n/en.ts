@@ -173,6 +173,7 @@ export const en = {
   "mobile.archiveSummary": "{title}\n{path}\n{count} worktrees\n{changes}",
   "mobile.draftSaveFailed": "Draft could not be saved: {error}",
   "mobile.createdNeedsAttention": "Your message needs attention. Open the conversation to retry with the same request ID. {error}",
+  "mobile.firstMessageRejected": "The message was not sent and is kept as a draft in the conversation. {error}",
   "mobile.historyPosition": "Message {sequence} · {index} / {total}",
   "mobile.accessChanged": "Access changed to {policy}",
   "mobile.turnFailed": "This turn failed. Please try again.",

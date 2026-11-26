@@ -14,6 +14,7 @@ import { ApiError, type DaemonClient } from "../../core/client";
 import {
   ComposerStore,
   emptyDraft,
+  failedSendState,
   prepareAttachments,
   submissionAttempt,
   type ComposerState,
@@ -105,7 +106,16 @@ export function useComposerDraft({
         : previews,
     );
     for (const id of durable) promptAnchors.current.delete(id);
-  }, [items]);
+    // The daemon gives the accepted message the client message ID: once it is
+    // in the conversation, an uncertain attempt is settled and the composer
+    // is free again. Never while a send is still running.
+    const attempt = draftRef.current.attempt;
+    if (loadedRef.current && attempt && durable.has(attempt.client_message_id) && !composer.sending()) {
+      const settled = { draft: emptyDraft() };
+      void composer.transition(draftRef, settled).catch(() => {});
+      setSaved(settled);
+    }
+  }, [items, composer, loaded]);
   const update = useCallback(
     (patch: Partial<Draft>) => {
       if (!loadedRef.current) return;
@@ -179,6 +189,7 @@ export function useComposerDraft({
         if (alive.current) setSaved(value);
       });
       const current = draftRef.current;
+      const retry = !!current.attempt;
       const attempt = submissionAttempt(
         current,
         promptId,
@@ -192,8 +203,9 @@ export function useComposerDraft({
       revision.current++;
       await composer.write(pending); // Persist exact payload/id before dispatch so a timeout is retryable.
       prepared = true;
+      let command;
       try {
-        const command = await client.send(
+        command = await client.send(
           id,
           {
             text: attempt.text,
@@ -203,64 +215,70 @@ export function useComposerDraft({
           },
           attempt.mode ?? attempt.steer,
         );
-        // Finish persistence even after navigation. Reopened pages wait for this
-        // submission before taking ownership of the draft.
-        if (alive.current) {
-          const acknowledged = acknowledgeOptimisticPrompt(
-            preview,
-            command,
-            timeline.snapshot().items,
-          );
-          const anchor = promptAnchors.current.get(promptId);
-          promptAnchors.current.delete(promptId);
-          if (anchor && acknowledged) promptAnchors.current.set(command.id, anchor);
-          setPromptPreviews((previews) => [
-            ...previews.filter((item) => item.id !== promptId),
-            ...(acknowledged
-              ? [
-                  {
-                    ...acknowledged,
-                    queuedPreview: preview.queuedPreview,
-                    queueConfirmed: preview.queuedPreview,
-                  },
-                ]
-              : []),
-          ]);
-          setQueueRevision((value) => value + 1);
-        }
-        const empty = { draft: emptyDraft() };
-        const persisted = composer.transition(draftRef, empty);
-        if (alive.current) setSaved(empty);
-        await persisted;
       } catch (e) {
-        if (alive.current)
-          setPromptPreviews((previews) =>
-            previews.map((item) =>
-              item.id === promptId
-                ? { ...item, delivery: { state: "failed", error: t("mobile.deliveryUnknown") } }
-                : item,
-            ),
-          );
-        // Only a definite refusal restores the draft for a new send; anything
-        // that may have been admitted keeps the same ID (same rule as Desktop).
-        if (
-          e instanceof ApiError &&
-          inputDeliveryOutcome(e.status, e.code) === "rejected"
-        ) {
+        const next = failedSendState(
+          current.draft,
+          attempt,
+          e instanceof ApiError ? inputDeliveryOutcome(e.status, e.code) : "unknown",
+          retry,
+        );
+        if (next.attempt) {
+          if (alive.current)
+            setPromptPreviews((previews) =>
+              previews.map((item) =>
+                item.id === promptId
+                  ? { ...item, delivery: { state: "failed", error: t("mobile.deliveryUnknown") } }
+                  : item,
+              ),
+            );
+        } else {
           if (alive.current)
             setPromptPreviews((previews) => previews.filter((item) => item.id !== promptId));
           promptAnchors.current.delete(promptId);
-          const restored = { draft: current.draft };
-          const persisted = composer.transition(draftRef, restored);
-          if (alive.current) setSaved(restored);
-          await persisted;
         }
+        const persisted = composer.transition(draftRef, next);
+        if (alive.current) setSaved(next);
+        // The send error is what the user needs; a save failure is reported apart.
+        await persisted.catch((saveError) => {
+          if (alive.current) onError(t("mobile.draftSaveFailed", { error: errorText(saveError) }));
+        });
         if (attempt.mode === "queue" && e instanceof ApiError && [404, 405].includes(e.status))
           throw new Error(
             t("mobile.thisDaemonDoesNotSupportQueuedMessagesYetUpdateTheDaemonOrSwitchToSteer"),
           );
         throw e;
       }
+      // Accepted. What follows is local bookkeeping: if it fails, the message
+      // is still delivered and must not be reported as uncertain.
+      if (alive.current) {
+        const acknowledged = acknowledgeOptimisticPrompt(
+          preview,
+          command,
+          timeline.snapshot().items,
+        );
+        const anchor = promptAnchors.current.get(promptId);
+        promptAnchors.current.delete(promptId);
+        if (anchor && acknowledged) promptAnchors.current.set(command.id, anchor);
+        setPromptPreviews((previews) => [
+          ...previews.filter((item) => item.id !== promptId),
+          ...(acknowledged
+            ? [
+                {
+                  ...acknowledged,
+                  queuedPreview: preview.queuedPreview,
+                  queueConfirmed: preview.queuedPreview,
+                },
+              ]
+            : []),
+        ]);
+        setQueueRevision((value) => value + 1);
+      }
+      const empty = { draft: emptyDraft() };
+      const persisted = composer.transition(draftRef, empty);
+      if (alive.current) setSaved(empty);
+      await persisted.catch((e) => {
+        if (alive.current) onError(t("mobile.draftSaveFailed", { error: errorText(e) }));
+      });
     } catch (e) {
       if (!prepared && alive.current)
         setPromptPreviews((previews) => previews.filter((item) => item.id !== promptId));

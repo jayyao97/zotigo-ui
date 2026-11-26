@@ -31,7 +31,8 @@ import type { Routes } from "../../navigation";
 import { useDaemon } from "../../platform/context";
 import { useLocale } from "../../platform/i18n";
 import { SheetHeader, useCatalogLoad, useMutation } from "./hooks";
-import { SourceOptions } from "./SourceOptions";
+import { SourceOptions, SourceSearch } from "./SourceOptions";
+import { filterSources } from "../../core/catalog";
 
 type Nav = NativeStackNavigationProp<Routes>;
 
@@ -49,12 +50,14 @@ function WorkspaceForm({
   const mutation = useMutation();
   const [title, setTitle] = useState("");
   const [selected, setSelected] = useState<Record<string, CatalogWorkspaceSourceInput>>({});
+  const [query, setQuery] = useState("");
+  const shown = filterSources(project.sources, query, (source) => !!selected[source.id]);
   return (
     <SafeAreaView style={styles.screen}>
       <FlatList
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: space.lg, gap: space.md }}
-        data={project.sources}
+        data={shown}
         keyExtractor={(s) => s.id}
         renderItem={({ item }) => (
           <SourceOptions
@@ -86,7 +89,11 @@ function WorkspaceForm({
               autoFocus
             />
             <Notice text={t("mobile.chooseSourcesToIncludeOrCreateAnEmptyWorkspace")} />
+            <SourceSearch count={project.sources.length} value={query} onChange={setQuery} />
           </View>
+        }
+        ListEmptyComponent={
+          query ? <Notice text={t("workspace.noMatchingSources")} /> : null
         }
         ListFooterComponent={
           <View style={{ gap: space.sm, marginTop: space.sm }}>

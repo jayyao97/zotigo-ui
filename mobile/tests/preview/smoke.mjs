@@ -121,6 +121,12 @@ try {
   assert.ok(await evaluate(`document.body.innerText.includes(${JSON.stringify(day)} + ' · ')`), 'period summary names the tapped day ' + day);
   await back();
   checks.push('Usage shows totals and the year chart; tapping a day narrows period details to it');
+  // Channels show the progress detail Desktop configures, in the app's words.
+  await click('Channels'); await bodyIncludes('Development bot');
+  await bodyIncludes('Detailed: tool arguments and interim replies');
+  await click('Mobile client review'); await bodyIncludes('Follow the connection (Detailed: tool arguments and interim replies)');
+  await shot('02c-channel-progress'); await back(); await back();
+  checks.push('Channels show the connection progress detail and a group following it');
   await click('Files'); await click('README.md'); await wait(`document.querySelector('[aria-label="File content"]')?.value.includes('export function connect')`, 'file opens in the editor');
   await click('Parent directory'); await bodyIncludes('preview.png'); await shot('02a-files'); await back();
   await back();
@@ -155,6 +161,14 @@ try {
   await click('Expand iOS client · feature/mobile'); await shot('02c-tree-expanded');
   checks.push('Project and workspace branches collapse independently and retain nested state');
   await click('Zotigo Mobile options'); await bodyIncludes('iOS client · feature/mobile'); await shot('03-project');
+  // A long source list can be searched by name, path or remote URL (as on Desktop).
+  await click('New workspace'); await bodyIncludes('Search name, remote URL or local path');
+  await input('Search name, remote URL or local path', 'zotigo/docs');
+  await wait(`document.body.innerText.includes('/workspace/docs') && !document.body.innerText.includes('/workspace/design')`, 'search keeps the matching source only');
+  await input('Search name, remote URL or local path', 'no-such-source');
+  await bodyIncludes('No matching sources.'); await shot('03a-source-search');
+  await click('Cancel'); await bodyIncludes('iOS client · feature/mobile');
+  checks.push('New workspace searches project sources by remote URL and reports no match');
   await click('iOS client · feature/mobile'); await bodyIncludes('Home: Multi-host mobile architecture'); await shot('04-workspace'); checks.push('Project and workspace navigation retain scoped session list');
   await click('Home: Multi-host mobile architecture');
   await wait(`__ZOTIGO_PREVIEW__.snapshot('home').activeStreams === 1`);
@@ -220,7 +234,13 @@ try {
   await click('Conversation details'); await wait(`${saveDisabled} === 'true'`, 'Save disabled for an unchanged title');
   await input('Rename conversation', 'Work: renamed in smoke'); await wait(`${saveDisabled} !== 'true'`, 'Save enabled for an edit');
   await click('Save'); await wait(`${saveDisabled} === 'true'`, 'Save disabled again once saved');
-  await bodyIncludes('Work: renamed in smoke'); await click('Dismiss sheet');
+  await bodyIncludes('Work: renamed in smoke');
+  // The Session ID copies from the same sheet (Desktop: sidebar menu).
+  await evaluate(`navigator.clipboard.writeText = async (text) => { window.__copied = text; }; true`);
+  await click('Copy Session ID'); await wait(`window.__copied === 'session-shared'`, 'the session ID is copied');
+  await bodyIncludes('Copied session-shared');
+  await click('Dismiss sheet');
+  checks.push('The conversation sheet copies its Session ID');
   checks.push('Rename offers Save only while the title differs from what is saved');
   const streamedMarkdown = '![Streaming image](/sessions/session-shared/images/preview)\n\n```ts\nconst stable = true;\n```\n\nStreaming stability check: ';
   await evaluate('__ZOTIGO_PREVIEW__.appendMarkdown("work", ' + JSON.stringify(streamedMarkdown) + ')');

@@ -5,10 +5,12 @@ import {
   connectionPermissions,
   conversationPermissions,
   channelPermissionLabel,
+  channelProgressDetailLabel,
 } from "../core/channelPermissions";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
+import Activity from "lucide-react-native/icons/activity";
 import MessageSquare from "lucide-react-native/icons/message-square";
 import Radio from "lucide-react-native/icons/radio";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
@@ -159,6 +161,12 @@ export function ChannelsScreen({
     </BottomSheet>
   );
   const refresh = () => void run(() => (selected ? open(selected) : load()));
+  const selectedProgress = selected
+    ? channelProgressDetailLabel(
+        connections.find((value) => value.id === selected.connection_id),
+        selected,
+      )
+    : undefined;
   const selectedTitle = selected
     ? selected.display_name || selected.chat_name || selected.chat_id
     : undefined;
@@ -220,6 +228,9 @@ export function ChannelsScreen({
                   }
                   onPress={() => setPermissionTarget({ kind: "conversation", id: selected.id })}
                 />
+                {selectedProgress && (
+                  <ListRow icon={Activity} title={t("channelsPage.progressDetail")} subtitle={selectedProgress} chevron={false} />
+                )}
                 <ListRow
                   icon={SquareArrowOutUpRight}
                   title={t("mobile.openLinkedSession")}
@@ -293,7 +304,13 @@ export function ChannelsScreen({
                     key={connection.id}
                     icon={Radio}
                     title={connection.name}
-                    subtitle={`${connection.enabled ? connection.status : t("channelsPage.disabled")}${connection.last_error ? " · " + connection.last_error : ""}`}
+                    subtitle={[
+                      connection.enabled ? connection.status : t("channelsPage.disabled"),
+                      channelProgressDetailLabel(connection),
+                      connection.last_error,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                     value={channelPermissionLabel(connection.approval_policy)}
                     onPress={() => setPermissionTarget({ kind: "connection", id: connection.id })}
                   />

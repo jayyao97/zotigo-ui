@@ -173,6 +173,7 @@ export const zhCN: Record<MessageKey, Message> = {
   "mobile.archiveSummary": "{title}\n{path}\n{count} 个工作树\n{changes}",
   "mobile.draftSaveFailed": "无法保存草稿：{error}",
   "mobile.createdNeedsAttention": "消息需要处理，请打开会话并使用原请求 ID 重试。{error}",
+  "mobile.firstMessageRejected": "消息未发送，已保存为该会话的草稿。{error}",
   "mobile.historyPosition": "消息 {sequence} · {index} / {total}",
   "mobile.accessChanged": "权限已更改为{policy}",
   "mobile.turnFailed": "本轮执行失败，请重试。",

@@ -241,6 +241,17 @@ function makeHost(work: boolean): HostState {
           created_at: now,
           updated_at: now,
         },
+        // Enough sources that the source lists offer search.
+        ...["daemon", "docs", "design", "website", "scripts", "notes"].map((name) => ({
+          id: `source-${name}`,
+          project_id: "project-mobile",
+          kind: name === "notes" ? ("folder" as const) : ("git" as const),
+          canonical_path: `${work ? "/work" : "/workspace"}/${name}`,
+          ...(name === "notes" ? {} : { remote_url: `git@github.com:zotigo/${name}.git` }),
+          source_key: name,
+          created_at: now,
+          updated_at: now,
+        })),
       ],
     },
     {
@@ -926,6 +937,8 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
           approval_instructions: "",
           review_all_tools: false,
           progress_mode: "auto",
+          progress_detail: "detailed",
+          bind_aliases: [{ name: "mobile", target: "session-shared" }],
           name: "Development bot",
           provider: "feishu",
           enabled: true,
@@ -960,6 +973,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
           agent: "codex",
           session_strategy: "topic",
           session_id: "session-shared",
+          progress_detail: "",
         },
       ],
     });

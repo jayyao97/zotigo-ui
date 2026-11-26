@@ -24,13 +24,14 @@ import {
   space,
   styles,
 } from "../../components/ui";
-import { pathLabel, sessionId, visibleSessions } from "../../core/catalog";
+import { filterSources, pathLabel, sessionId, visibleSessions } from "../../core/catalog";
 import type { Routes } from "../../navigation";
 import { useDaemon } from "../../platform/context";
 import { useLocale } from "../../platform/i18n";
 import { SessionRow } from "./HomeScreen";
 import { Footer, SheetHeader, useCatalogLoad, useMutation } from "./hooks";
-import { SourceOptions } from "./SourceOptions";
+import { SourceOptions, SourceSearch } from "./SourceOptions";
+import { CopyIdRow } from "../../components/CopyIdRow";
 
 type Nav = NativeStackNavigationProp<Routes>;
 
@@ -54,8 +55,10 @@ function AttachSourceForm({
   const load = useCatalogLoad(
     useCallback(() => daemon.project(projectId), [daemon, projectId]),
   );
-  const available =
+  const [query, setQuery] = useState("");
+  const unused =
     load.data?.sources.filter((source) => !existing.includes(source.id)) ?? [];
+  const available = filterSources(unused, query, (source) => selected?.source_id === source.id);
   return (
     <SafeAreaView style={styles.screen}>
       <FlatList
@@ -64,19 +67,24 @@ function AttachSourceForm({
         data={available}
         keyExtractor={(source) => source.id}
         ListHeaderComponent={
-          <SheetHeader
-            title={t("mobile.addWorkspaceSource")}
-            action={t("app.cancel")}
-            disabled={mutation.busy}
-            onAction={close}
-          />
+          <View style={{ gap: space.md }}>
+            <SheetHeader
+              title={t("mobile.addWorkspaceSource")}
+              action={t("app.cancel")}
+              disabled={mutation.busy}
+              onAction={close}
+            />
+            <SourceSearch count={unused.length} value={query} onChange={setQuery} />
+          </View>
         }
         ListEmptyComponent={
           <Notice
             text={
               load.loading
                 ? t("mobile.loadingSources")
-                : t("mobile.noUnusedSourcesAddASourceToTheProjectFirst")
+                : unused.length
+                  ? t("workspace.noMatchingSources")
+                  : t("mobile.noUnusedSourcesAddASourceToTheProjectFirst")
             }
           />
         }
@@ -210,6 +218,7 @@ export function WorkspaceScreen() {
                   setPanel("manage");
                 }}
               />
+              <CopyIdRow title={t("app.copyWorkspaceId")} id={params.id} />
             </ListGroup>
             <Text style={[styles.sectionTitle, { marginTop: space.sm }]}>{t("mobile.conversations")}</Text>
           </View>
