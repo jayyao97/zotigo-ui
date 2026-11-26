@@ -1,6 +1,6 @@
 # Contributing
 
-Use the Node and pnpm versions in the README. Run `pnpm install --frozen-lockfile`, work on a feature branch, and keep changes focused on one behavior or module boundary.
+Use Node.js 22.12 or newer and the pnpm version in `package.json`. Run `pnpm install --frozen-lockfile`, work on a feature branch, and keep changes focused on one behavior or module boundary.
 
 Put reusable interaction logic in the shared React client and application behavior in `backend/`. Use the platform adapters only for transport, authentication and genuinely native operations. Keep daemon calls on public APIs and preserve renderer isolation. Do not duplicate a feature into a separate Web UI when the existing component can serve both clients.
 
@@ -14,6 +14,10 @@ git diff --check
 ```
 
 Add behavior-focused regression coverage for bugs. Transport changes need both IPC and JSON semantics considered; event streams need disconnect, reconnect and concurrent-client coverage. UI changes need real interaction checks, not only screenshots or builds. Test against disposable projects and report which platforms and scenarios were actually exercised.
+
+The GitHub workflow runs installation tests, unit tests, type checking and builds on Linux and macOS. It does not replace real Desktop and browser checks. For changes that touch these flows, exercise them with a disposable project: session creation and streaming, approval/stop/steering, file open/edit/save/reload, image preview/download/upload, workspace lifecycle, and browser login/logout/reconnection. Do not use real project deletion as a smoke test.
+
+User-facing documentation is bilingual. `README.md` and the guides in `docs/` that have a `docs/zh-CN/` counterpart are English first; update the Chinese version (`README.zh-CN.md`, `docs/zh-CN/`) in the same change.
 
 Do not commit credentials, local preferences, logs, conversation exports, personal machine paths, generated builds or extracted third-party app assets. Check the ownership and licensing of new dependencies and assets before including them. Do not copy proprietary font files or source code to reproduce a visual style.
 

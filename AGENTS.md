@@ -34,6 +34,7 @@ Keep the exact contract aligned with `zotigo/docs/zotigod-api.md`. Do not call i
 - Share React components across Desktop and Web. Folder picking uses `DirectoryBrowser` and the selected daemon, including Local. Other OS integration belongs in Electron; Web authentication and browser transport belong in the Web adapter.
 - Manage user-facing renderer copy through typed keys in `shared/i18n/`; include English and Chinese, accessibility labels, and full-sentence interpolation. Follow `docs/localization.md`. Keep protocol values and user/model content unchanged.
 - Prefer React local state until there is a concrete need for more state management.
+- When a change alters user-visible behavior, update `README.md` / `docs/usage.md` / `docs/installation.md` in the same change. User docs are English first with a Simplified Chinese copy (`README.zh-CN.md`, `docs/zh-CN/`); keep both in sync. Developer references stay English only.
 - Avoid speculative abstractions, broad cleanup, auth, code signing, real workers, browser-use, and computer-use unless explicitly requested.
 - Daemon process management and updates already exist in a narrow form; do not extend them unless explicitly requested. `electron/daemonManager.ts` lets Desktop build (`go build`) and start a loopback `zotigod` from a Zotigo source checkout when none is healthy (`ZOTIGO_DESKTOP_MANAGE_DAEMON=0` disables it); Web never starts a daemon. `backend/clientUpdates.ts` runs the installed `zotigo-update` helper for the client, and daemon updates go through `/updates`.
 
