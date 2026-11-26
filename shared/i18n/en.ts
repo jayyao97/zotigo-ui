@@ -836,6 +836,7 @@ export const en = {
   "markdownCodeBlock.disableWordWrap": "Disable word wrap",
   "markdownCodeBlock.enableWordWrap": "Enable word wrap",
   "markdownCodeBlock.copied": "Copied",
+  "markdownLink.title": "Link",
   "markdownLink.open": "Open link",
   "markdownLink.copy": "Copy link",
   "markdownLink.copied": "Link copied",

@@ -12,9 +12,12 @@ export type LinkMenuState = { x: number; y: number; href: string; copy: string; 
  */
 export function markdownLinkMenuTarget(event: Pick<ReactMouseEvent, "target" | "clientX" | "clientY">): LinkMenuState | null {
   if (!(event.target instanceof Element)) return null;
-  // Text the user selected inside a link is theirs to copy with the system menu.
-  if (window.getSelection()?.toString()) return null;
+  // A linked image keeps its own menu (save or copy the image).
+  if (event.target.closest("img, .image-preview-trigger")) return null;
   const anchor = event.target.closest<HTMLAnchorElement>(".markdown-copy a");
+  // Text the user selected within this link is theirs to copy with the system menu.
+  const selection = window.getSelection();
+  if (anchor && selection && !selection.isCollapsed && selection.rangeCount && selection.getRangeAt(0).intersectsNode(anchor)) return null;
   const href = anchor?.getAttribute("href");
   const copy = href ? markdownLinkCopyText(href) : undefined;
   if (!anchor || !href || !copy) return null;
@@ -49,21 +52,27 @@ export function MarkdownLinkMenu({ menu, onClose, onCopy }: {
       if (!(event.target instanceof Node) || !ref.current?.contains(event.target)) onClose();
     };
     const closeOnKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+      if (event.key !== "Escape") return;
+      event.preventDefault(); event.stopPropagation(); onClose();
+      if (menu.anchor.isConnected) menu.anchor.focus({ preventScroll: true });
+    };
+    // Only a scroll that moves the link away: streaming output elsewhere also scrolls.
+    const closeOnScroll = (event: Event) => {
+      if (event.target === document || (event.target instanceof Node && event.target.contains(menu.anchor))) onClose();
     };
     document.addEventListener("pointerdown", closeOutside, true);
-    document.addEventListener("scroll", onClose, true);
+    document.addEventListener("scroll", closeOnScroll, true);
     window.addEventListener("keydown", closeOnKey, true);
     window.addEventListener("blur", onClose);
     window.addEventListener("resize", onClose);
     return () => {
       document.removeEventListener("pointerdown", closeOutside, true);
-      document.removeEventListener("scroll", onClose, true);
+      document.removeEventListener("scroll", closeOnScroll, true);
       window.removeEventListener("keydown", closeOnKey, true);
       window.removeEventListener("blur", onClose);
       window.removeEventListener("resize", onClose);
     };
-  }, [onClose]);
+  }, [menu, onClose]);
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();

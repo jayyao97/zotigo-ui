@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { MarkdownLinkMenu, markdownLinkMenuTarget, type LinkMenuState } from "../src/MarkdownLinkMenu";
 
 function installDom() {
-  const dom = new JSDOM("<!doctype html><html><body><div class=markdown-copy><p><a id=web href='https://example.com/docs'>docs</a> <a id=file href='notes/My%20Plan.md#L12'>plan</a> <a id=anchor href='#top'>top</a></p></div><div id=root></div></body></html>", { pretendToBeVisual: true });
+  const dom = new JSDOM("<!doctype html><html><body><div class=markdown-copy><p><a id=web href='https://example.com/docs'>docs</a> <a id=file href='notes/My%20Plan.md#L12'>plan</a> <a id=anchor href='#top'>top</a> <a href='https://example.com/big'><button class=image-preview-trigger><img id=img src='x.png'></button></a></p><div id=scroller style='overflow:auto'><p id=other>other</p></div></div><div id=root></div></body></html>", { pretendToBeVisual: true });
   const replacements = { window: dom.window, document: dom.window.document, Node: dom.window.Node, Element: dom.window.Element, HTMLElement: dom.window.HTMLElement, navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true };
   const previous = Object.fromEntries(Object.keys(replacements).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries(replacements)) Object.defineProperty(globalThis, key, { configurable: true, value, writable: true });
@@ -29,6 +29,13 @@ test("right-clicking a Markdown link offers it; anchors and other text keep the 
     assert.equal(markdownLinkMenuTarget(at("file"))?.copy, "notes/My Plan.md:12");
     assert.equal(markdownLinkMenuTarget(at("anchor")), null);
     assert.equal(markdownLinkMenuTarget(at("root")), null);
+    assert.equal(markdownLinkMenuTarget(at("img")), null, "a linked image keeps its image menu");
+    // Text selected elsewhere does not matter; a selection covering the link does.
+    window.getSelection()!.selectAllChildren(document.getElementById("other")!);
+    assert.equal(markdownLinkMenuTarget(at("web"))?.copy, "https://example.com/docs");
+    window.getSelection()!.selectAllChildren(document.getElementById("web")!);
+    assert.equal(markdownLinkMenuTarget(at("web")), null);
+    window.getSelection()!.removeAllRanges();
   } finally { restore(); }
 });
 
@@ -50,8 +57,14 @@ test("the link menu opens the link like a click and copies it", async () => {
     assert.deepEqual(copied, ["https://example.com/docs"]);
     assert.equal(opened, 1);
     assert.equal(closed, 2);
-    await act(async () => { window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" })); });
+    // A scroll elsewhere (streaming output) leaves the menu open; one moving the link closes it.
+    await act(async () => { document.getElementById("scroller")!.dispatchEvent(new window.Event("scroll")); });
+    assert.equal(closed, 2);
+    await act(async () => { document.querySelector(".markdown-copy")!.dispatchEvent(new window.Event("scroll")); });
     assert.equal(closed, 3);
+    await act(async () => { window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" })); });
+    assert.equal(closed, 4);
+    assert.equal(document.activeElement, link, "Escape returns focus to the link");
     await act(async () => root.unmount());
   } finally { restore(); }
 });

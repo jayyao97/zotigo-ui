@@ -24,8 +24,8 @@ test("a long press offers Open and Copy, copying a file link's readable path", (
   assert.ok(file.prompt);
   assert.deepEqual(file.actions, ["open", "copy", "cancel"]);
   assert.equal(file.copy, "notes/My Plan.md:12");
-  assert.equal(file.title, "notes/My Plan.md:12");
-  // Nothing to copy for an in-page anchor: a long press opens it like a tap.
-  assert.deepEqual(linkActions("#message-abc", true), { prompt: false });
+  assert.equal(file.message, "notes/My Plan.md:12");
+  // Nothing to copy for an in-page anchor: a long press does nothing.
+  assert.deepEqual(linkActions("#message-abc", true), { prompt: false, ignore: true });
   assert.throws(() => linkActions("javascript:alert(1)", true));
 });

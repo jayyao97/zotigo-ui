@@ -835,6 +835,7 @@ export const zhCN: Record<MessageKey, Message> = {
   "markdownCodeBlock.disableWordWrap": "关闭自动换行",
   "markdownCodeBlock.enableWordWrap": "开启自动换行",
   "markdownCodeBlock.copied": "已复制",
+  "markdownLink.title": "链接",
   "markdownLink.open": "打开链接",
   "markdownLink.copy": "复制链接",
   "markdownLink.copied": "已复制链接",

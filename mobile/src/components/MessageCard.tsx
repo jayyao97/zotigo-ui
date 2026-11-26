@@ -317,7 +317,7 @@ export const MessageCard = memo(function MessageCard({
       };
       const choice = linkActions(href, menu);
       if (!choice.prompt) {
-        open();
+        if (!choice.ignore) open();
         return false;
       }
       const copyText = choice.copy;
