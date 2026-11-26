@@ -2,146 +2,197 @@
   <img src="public/brand/zotigo-app.png" alt="Zotigo" width="112" height="112" />
 </p>
 
-# Zotigo Desktop and Web
+<h1 align="center">Zotigo Desktop and Web</h1>
 
-Electron and browser clients for managing `zotigod` sessions, using the same React interface and application services.
+<p align="center">
+  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-## Scope
+<p align="center">
+  <a href="https://github.com/jayyao97/zotigo">zotigo</a>: agent, daemon and terminal client
+  ·
+  <strong>zotigo-ui</strong>: Desktop, Web and iOS apps
+</p>
 
-Both clients provide a UI for zotigod:
+Desktop (Electron), Web and iOS clients for [Zotigo](https://github.com/jayyao97/zotigo),
+a coding agent that runs its sessions in a local service called `zotigod`. The
+clients manage projects and Workspaces, run Zotigo or Codex sessions, show tool
+calls and approvals as they stream, and edit files on the daemon's machine. They
+can switch between the local daemon and remote ones.
 
-- Manage Projects, Sources, and Workspaces through public catalog APIs.
-- Create and organize Zotigo or Codex sessions.
-- Stream session events with polling fallback and render tools, approvals, Markdown, and images.
-- Open and safely edit text files rooted in registered Sources and Workspaces.
-- Desktop development can build and launch a local `zotigod` when one is not already available. Web requires a separately running daemon. Saved remote hosts are supported by both clients.
+Desktop and Web share the same React interface and application services. The
+iOS app in [`mobile/`](mobile/README.md) uses the same daemon API and shared
+types.
 
-The renderer never calls zotigod directly and does not use internal worker endpoints. Desktop uses a narrow preload API; Web uses authenticated, same-origin HTTP and event streams. Source installation and Desktop packaging are described in [installation](docs/installation.md). Auto-update, Developer ID signing and notarization are not configured. Critical Desktop and Web flows have been exercised locally end to end; this is not a production security certification or a guarantee for every deployment.
+## Which repository do I install from?
 
-### Daemon recovery dependency
+| You want | Install from | What gets installed |
+| --- | --- | --- |
+| Desktop app or Web UI | This repository | The UI **and** a matching `zotigod`. The `zotigo` terminal command is not included. |
+| Terminal (TUI) | [zotigo](https://github.com/jayyao97/zotigo#install) | `zotigod` and the `zotigo` command. |
+| Both | Both installers, with the same `--prefix` (the default) | One shared daemon used by every client. |
 
-Client validation exposed a daemon recovery bug that can replay an already executed message after an unacknowledged command. The fix is tracked in [Zotigo #77](https://github.com/jayyao97/zotigo/pull/77), commit `bb1841a3829a1dc683b4653dd0b814c4ec10d77b`. Deploy a daemon version containing that fix to address this recovery case. Building these clients does not upgrade a separately running daemon; the client snapshot does not include the core fix.
+The agent, the daemon, model configuration and the daemon API are documented in
+the [zotigo repository](https://github.com/jayyao97/zotigo).
 
-## Shared client architecture
+## Install
 
-| Directory | Responsibility |
-| --- | --- |
-| `src/` | Shared React UI, conversation rendering, editor, image viewer and interaction state |
-| `shared/` | Daemon DTOs, client types, typed operation mapping and pure helpers |
-| `backend/` | Public daemon API client, application operations, authorized local files and catalog mapping |
-| `electron/` | Native window, preload/IPC, native dialogs and OS integration |
-| `web/`, `src/web/` | Web server authentication, HTTP/SSE transport, login and server-path selection |
+The installer builds the client from source and installs the matching `zotigod`
+as a user service, so this one command is all a UI user needs. Linux and macOS
+are supported; Git, curl, tar and `sha256sum` or `shasum` are required. Go, Node
+and pnpm are downloaded into the install prefix if suitable versions are missing.
 
-See [docs/architecture.md](docs/architecture.md) for the process model, the dependency rule between these directories, and why each layer exists.
+```sh
+# Desktop app + daemon
+curl -fsSL https://raw.githubusercontent.com/jayyao97/zotigo-ui/master/install.sh | sh
 
-Desktop and Web share catalog data through zotigod. Browser selection is scoped to a tab and survives reload when session storage is available. It does not change Desktop's selected conversation. Both clients share a daemon-backed source picker and workspace file panel. Browser image downloads use the authenticated image endpoint.
+# Web server + daemon (for example on a development server)
+curl -fsSL https://raw.githubusercontent.com/jayyao97/zotigo-ui/master/install.sh |
+  sh -s -- --component web
+```
 
-## Search and remote hosts
+- Each run installs one client. For both Desktop and Web, run it twice; the
+  daemon is shared.
+- The `zotigo` terminal client is not included. Install it from the
+  [zotigo repository](https://github.com/jayyao97/zotigo#install) if you want it.
+- By default the newest stable `vX.Y.Z` tag is built. Development builds are
+  tagged `vX.Y.Z-dev.N`; select one with `--version`, for example
+  `sh -s -- --version v0.0.4-dev.57`.
+- The daemon version is pinned by [`daemon-version`](daemon-version).
+- On macOS the daemon build needs a persistent code-signing identity. Desktop
+  builds are not Developer ID signed or notarized.
 
-Connection settings support adding, editing, testing and removing saved hosts. Renaming keeps the connection identity; changing the address or token replaces it, so other Web tabs must reload and select the updated host before continuing. Changes to an active connection’s address or token first switch this client to Local. The built-in Local connection remains application-managed.
+Desktop appears as `~/Applications/Zotigo.app` on macOS or in the Linux
+applications menu. Web listens on `http://127.0.0.1:8080`; sign in with the token
+in `~/.zotigo/web/access-token`.
 
-Click the sidebar search icon or press **Cmd+K** (macOS) / **Ctrl+K** to search recent sessions by title, project or workspace. Use the arrow keys and Enter to open a result, or Escape to close. The palette searches the currently selected host and includes shortcuts for creating sessions and projects.
+[Installation](docs/installation.md) covers all options, services, upgrades,
+logs, LAN and HTTPS setups, and uninstalling.
 
-Open the host menu at the top left, then **Host settings**. Add a name, daemon origin (for example `http://dev:8766`) and its daemon token, then **Test**. Select the saved host from the same menu. The address is the daemon's reachable address, not `0.0.0.0` or the Web UI URL. Remote daemons must include the directory-browsing and `/files/capabilities` APIs from the paired daemon revision; an older daemon produces an upgrade message.
+## First steps
 
-Projects, source inspection, workspace creation, sessions, events, images and text-file editing use the selected daemon. When adding project folders, browse the selected daemon’s directories using the shared picker: enter a directory, return to its parent, select several folders, or use the current folder. This also applies to Local and Desktop; no native folder dialog is used. Remote files have the same text-editor limits: preview up to 5 MiB, edit up to 1 MiB, and reject saves after an external modification. Open the top-right side panel and choose **Files**, or press **Cmd/Ctrl+P**. The expandable workspace tree stays beside file tabs; Markdown opens in preview with a source-editing toggle and autosave. Project paths, workspace **Browse files**, Artifacts/Notes, and Markdown directory links open this panel too. Resize, expand, or hide the panel without closing files. Open files and drafts survive conversation switches within the same host; tabs are not persisted across app reloads. Session details are available from the top-right details button. Directory reads are bounded at 1,000 entries with a visible truncation notice. The filename filter applies to loaded entries; expand subfolders or refresh manually to update listings. Binary files remain unsupported in the text editor. Switching checks the connection, asks before discarding drafts/unsaved edits, and clears the previous host's view. It does not stop work already running on either daemon.
+1. Add a model in **Settings → Models** (⌘, / Ctrl+,), or edit
+   `~/.zotigo/config.yaml` on the daemon host as described in the
+   [daemon configuration guide](https://github.com/jayyao97/zotigo/blob/master/docs/configuration.md).
+   Codex sessions use your Codex login instead.
+2. Create a project and add source folders from the daemon's file system.
+3. Start a session, from the project or a Workspace.
 
-Desktop remembers its host on that device; Web remembers it per browser tab. Conversation selection and ordering are separated by host. Saved profiles are shared by authenticated users of the same Web backend, but switching one tab does not switch another. Profiles and daemon tokens live in an owner-only `hosts.json` beside backend preferences (Web: `ZOTIGO_WEB_DATA_DIR`, default `~/.zotigo/web`; Desktop: Electron's user-data directory). Profile-list responses never return the token. To change an endpoint or credential, add a replacement profile, switch to it, and remove the old one. The built-in Local profile continues to use the startup environment.
+## Features
 
-The browser connects to its Web backend; that backend connects to the selected daemon. Desktop connects through its main process. Both use HTTP(S) with Bearer authentication; no SSH credentials or tunnel manager are involved. Use HTTPS for connections outside a trusted network. Plain HTTP does not encrypt the daemon token. Web login and daemon authentication remain separate.
+- Projects, Sources and Workspaces from the daemon's catalog, with pinning,
+  ordering and unread state.
+- Zotigo and Codex sessions, with streamed tool calls, approvals, subagents,
+  Markdown, Mermaid and images. Messages can steer a running turn or be queued.
+- A files panel for browsing and editing text files, Markdown preview, and
+  image and video viewers.
+- Remote hosts: save several daemons and switch between them.
+- Channels: connect a Feishu/Lark bot to a Workspace or session.
+- Settings for models, token usage, in-app updates (stable or development
+  channel) and interface language (English and 简体中文).
+- Search palette, find in conversation, and translation of selected text.
 
-Existing preferences need no migration. A rollback ignores the additional host-selection fields and leaves `hosts.json` in place; older clients cannot use saved remote profiles. Upgrade the daemon before selecting it in the new UI. Separately managed daemons are not upgraded by saving or testing a host.
+[Using Desktop and Web](docs/usage.md) explains hosts, the files panel, Codex
+sessions, Settings and all keyboard shortcuts. The most used ones:
+
+| macOS | Windows / Linux | Action |
+| --- | --- | --- |
+| ⌘K | Ctrl+K | Search sessions and Workspaces |
+| ⌘P | Ctrl+P | Open the files panel |
+| ⌘F | Ctrl+F | Find in conversation |
+| ⌘, | Ctrl+, | Settings |
+
+## Security
+
+Access to these clients is access to the operating-system account that runs the
+daemon: agents can run commands and modify files there. Web binds to loopback by
+default. For access from other machines, put HTTPS in front of it and keep
+zotigod off untrusted networks. Read [SECURITY.md](SECURITY.md) and the
+[Web server configuration](docs/installation.md#web-server-configuration) before
+exposing either.
 
 ## Development
 
-Use Node.js 22.12 or newer and pnpm 10.30.3 (the version declared in `package.json`). Install dependencies:
+Requires Node.js 22.12 or newer and pnpm 10.30.3 (the `packageManager` in
+`package.json`).
 
-```bash
+```sh
 pnpm install --frozen-lockfile
+pnpm dev                # Desktop with Vite on http://127.0.0.1:5173
 ```
 
-Run the desktop app in development:
+Desktop connects to `http://127.0.0.1:8766` (override with `ZOTIGOD_URL`). If no
+daemon is healthy at a loopback URL, development Desktop builds `zotigod` from
+the source checkout in `ZOTIGOD_WORKDIR` (default `../zotigo`; Go required) and
+starts it. Set `ZOTIGO_DESKTOP_MANAGE_DAEMON=0` to require an already running
+daemon. If port 5173 is busy, run Vite on another loopback port and set
+`ZOTIGO_DESKTOP_DEV_SERVER_URL`.
 
-```bash
-pnpm dev
+```sh
+pnpm build && pnpm start:desktop   # built renderer, loaded the way a packaged app loads it
+pnpm build && pnpm start:web       # Web server; needs a running daemon
+pnpm package:desktop               # native app in build/desktop/
 ```
 
-To run the built renderer without Vite:
+Web never starts a daemon. Its environment variables are listed in
+[Web server configuration](docs/installation.md#web-server-configuration). To
+test an unpublished installer with a local daemon checkout:
 
-```bash
-pnpm build
-pnpm start:desktop
+```sh
+sh install.sh --source "$PWD" --daemon-source ../zotigo --component web --no-service --prefix /tmp/zotigo-test
 ```
 
-This uses the same `file://` renderer loading path as a packaged application. It is not an installer or a code-signed release.
+Before submitting changes:
 
-The renderer dev server runs at:
-
-```text
-http://127.0.0.1:5173
-```
-
-By default the app connects to:
-
-```text
-http://127.0.0.1:8766
-```
-
-You can override the initial daemon URL with:
-
-```bash
-ZOTIGOD_URL=http://127.0.0.1:8766 pnpm dev
-```
-
-For isolated UI testing when port 5173 is occupied, start Vite on another loopback port and set `ZOTIGO_DESKTOP_DEV_SERVER_URL` for the Electron process. Remote origins are rejected because the renderer receives the privileged preload API.
-
-Set `ZOTIGO_DESKTOP_MANAGE_DAEMON=0` to require an already running daemon. If using the development daemon builder, `ZOTIGOD_WORKDIR` identifies the Zotigo core source checkout; a Go toolchain is required to build it.
-
-## Run Web locally
-
-Start zotigod on the same machine first, then:
-
-```bash
-pnpm build
-pnpm start:web
-```
-
-Open the URL printed by the server (default `http://127.0.0.1:8080`) and enter the generated access token from `~/.zotigo/web/access-token` (or `ZOTIGO_WEB_DATA_DIR/access-token`). The token is stored in an owner-only file, not printed to logs, and reused across restarts. Remove the file while the server is stopped to generate a new token on the next start. A successful login creates an HttpOnly, SameSite=Strict cookie that expires after 12 hours. Logout revokes that browser session; server restart invalidates all browser sessions.
-
-| Environment variable | Default / purpose |
-| --- | --- |
-| `ZOTIGOD_URL` | `http://127.0.0.1:8766`; initial Local host (Web requires this initial endpoint to be loopback) |
-| `ZOTIGOD_AUTH_TOKEN_FILE` | Unset; file containing the Local daemon's Bearer token |
-| `ZOTIGO_WEB_HOST` | `127.0.0.1` |
-| `ZOTIGO_WEB_PORT` | `8080` |
-| `ZOTIGO_WEB_ORIGIN` | `http://127.0.0.1:<port>`; exact browser origin, without a path |
-| `ZOTIGO_WEB_TOKEN` | Overrides the persisted access-token; an explicit token must contain at least 24 characters |
-| `ZOTIGO_WEB_DATA_DIR` | `~/.zotigo/web`; Web preferences, separate from Desktop preferences |
-| `ZOTIGO_WEB_ALLOW_HTTP` | Unset; `1` allows an HTTP origin on a non-loopback bind (see Remote access) |
-
-Keep tokens out of source files, shell history, screenshots and shared logs. A token grants access to the entire configured workspace service, not a restricted project or account. See [security and deployment boundaries](SECURITY.md) before allowing access from another machine.
-
-### Remote access
-
-Use an HTTPS reverse proxy with authentication at the Web application and a network boundary appropriate to your environment. Set `ZOTIGO_WEB_ORIGIN` to the browser's HTTPS origin. Forward the matching `Host` header, disable response buffering for `/api/events`, allow long-lived event connections, and configure request limits to accommodate image uploads (up to 30 MiB JSON). Keep the Web backend port and zotigod inaccessible to untrusted networks; TLS must terminate before credentials cross the network.
-
-Setting a non-loopback Web bind address requires an explicit origin. HTTPS is the default requirement; trusted LAN deployments can explicitly set `ZOTIGO_WEB_ALLOW_HTTP=1` with an HTTP origin. This sends login credentials and cookies without encryption; see [LAN configuration](docs/installation.md#lan-access). This guard does not configure TLS or a firewall for you. Never expose zotigod itself as the browser endpoint. File paths refer to the selected daemon machine; the default Local host uses the Web server machine.
-
-## Checks
-
-```bash
+```sh
 pnpm test
 pnpm typecheck
 pnpm build
 git diff --check
 ```
 
-The GitHub workflow runs installation, tests, type checking and builds on Linux and macOS. It does not replace actual Desktop/browser E2E checks. Test with a disposable project: session creation and streaming, approval/stop/steering, file open/edit/save/reload, image preview/download/upload, workspace lifecycle, and browser login/logout/reconnection. Do not use real project deletion as a smoke test.
+CI runs these plus the installer tests and Desktop packaging on Linux and macOS.
+It does not replace testing the real Desktop and browser flows; see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-See [contributing](CONTRIBUTING.md) for change boundaries.
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| `src/` | Shared React UI: conversation rendering, editor, files panel, settings |
+| `shared/` | `@zotigo/shared`: daemon DTOs, client types, operation mapping, i18n catalogs |
+| `backend/` | Public daemon API client, application operations, local files, updates |
+| `electron/` | Desktop main process, preload/IPC, native dialogs, development daemon manager |
+| `web/`, `src/web/` | Web server authentication, HTTP/SSE transport, login |
+| `mobile/` | React Native/Expo app for iPhone and iPad |
+| `tests/` | Node tests, including the layering rule |
+| `scripts/` | Desktop packaging, installer helpers and tests, license notices |
+| `resources/`, `public/` | Icons and brand assets |
+| `install.sh`, `daemon-version`, `update.json` | Source installer, paired daemon revision, update manifest |
+
+The renderer never calls zotigod directly. Desktop goes through a narrow preload
+API and Web through authenticated same-origin HTTP; both reach the same
+application service in `backend/`. [Architecture](docs/architecture.md) explains
+the layers and the dependency rule that `tests/layering.test.ts` enforces.
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Installation](docs/installation.md) ([中文](docs/zh-CN/installation.md)) | Installer options, services, Web configuration, LAN and HTTPS, upgrades, logs |
+| [Using Desktop and Web](docs/usage.md) ([中文](docs/zh-CN/usage.md)) | Hosts, search, files panel, Codex, Channels, Settings, shortcuts |
+| [Architecture](docs/architecture.md) | Process model and layers |
+| [Localization](docs/localization.md) | Adding and translating UI text |
+| [Mobile](mobile/README.md), [Mobile architecture](docs/mobile-architecture.md) | iOS app development |
+| [Performance diagnostics](docs/performance-diagnostics.md) | Opt-in Desktop performance recording |
+
+User guides are available in English and Chinese. Developer references are in
+English only.
 
 ## License
 
-Zotigo Desktop and Web are licensed under [Apache-2.0](LICENSE). Third-party dependencies retain their own licenses; see [production dependency notices](THIRD_PARTY_NOTICES.md). The maintainer confirms the UI styles were independently authored with other applications used only as visual references; no proprietary font assets are distributed here. Packaged Desktop distributions must additionally retain the license files shipped with their exact Electron/Chromium runtime.
-
-Imported Codex screenshot messages display image thumbnails above the original request. The generated attachment envelope is hidden only when its file paths match the recorded images. Local attachments are fetched through the selected daemon's authenticated image API; they are not read from the browser or Desktop machine. The paired daemon revision supports existing imports. If the original temporary file has been deleted, the thumbnail shows an unavailable/retry state.
+[Apache-2.0](LICENSE). Third-party dependencies keep their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The UI styles were written
+independently, with other applications used only as visual references, and no
+proprietary font assets are distributed. Packaged Desktop distributions must also
+keep the license files shipped with their Electron/Chromium runtime.
