@@ -4120,6 +4120,12 @@ label.managed-repository-row:hover { background: rgb(255 255 255 / 0.025); }
   z-index: 90;
 }
 
+.markdown-link-menu {
+  position: fixed;
+  right: auto;
+  z-index: 90;
+}
+
 .new-chat-project-group-label { display: flex; align-items: center; gap: 8px; min-height: 30px; color: var(--text-dim); padding: 0 10px; font-size: 11px; font-weight: 600; }
 
 .project-overview { display: grid; width: min(780px, calc(100vw - 96px)); gap: 14px; margin: 30px auto 80px; }
@@ -5512,7 +5518,7 @@ html[data-platform="web"] .web-login form { margin-block: auto; }
   html[data-platform="web"] .sidebar-session-title > span.scrolling { animation: none; }
   html[data-platform="web"] .sidebar-default-navigation { overflow-y: auto; overscroll-behavior-y: contain; }
   html[data-platform="web"] .sidebar-default-navigation > .sidebar-section { flex: 0 0 auto; overflow: visible; }
-  html[data-platform="web"] :is(.workspace-action-menu, .project-action-menu, .session-context-menu) button { min-height: 44px; }
+  html[data-platform="web"] :is(.workspace-action-menu, .project-action-menu, .session-context-menu, .markdown-link-menu) button { min-height: 44px; }
 }
 
 @media (max-width: 600px) {

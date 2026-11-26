@@ -137,7 +137,9 @@ final class SelectableTextView: ExpoView, UITextViewDelegate {
   }
 
   func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
-    onLink(["url": URL.absoluteString])
+    // A long press asks for the link's actions (open, copy) instead of the
+    // system preview, which cannot open file links or copy a file path.
+    onLink(["url": URL.absoluteString, "menu": interaction == .presentActions])
     return false
   }
 

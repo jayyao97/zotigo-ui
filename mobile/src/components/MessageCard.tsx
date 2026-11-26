@@ -4,6 +4,7 @@ import { useLocale } from "../platform/i18n";
 import { messageTimestamp } from "@zotigo/shared/messageTimestamp";
 import { highlightParts } from "../core/conversationSearch";
 import { parseMarkdownLink } from "@zotigo/shared/markdownLinks";
+import { linkActions } from "../core/linkActions";
 import { SelectableText } from "./SelectableText";
 import { eventLabel } from "../core/eventLabel";
 import { toolDetail } from "../core/toolDetail";
@@ -302,23 +303,41 @@ export const MessageCard = memo(function MessageCard({
   useLocale();
   const client = useDaemon();
   const [copied, setCopied] = useState(false);
-  function link(href: string) {
+  function link(href: string, menu = false) {
     try {
       const target = parseMarkdownLink(href);
-      if (target.kind === "anchor" && target.anchor.startsWith("message-")) {
-        onLocateMessage?.(decodeURIComponent(target.anchor.slice(8)));
-      } else if (target.kind === "external") {
-        Alert.alert(t("mobile.openExternalLink"), target.url, [
-          { text: t("app.cancel"), style: "cancel" },
-          {
-            text: "Open",
-            onPress: () =>
-              void Linking.openURL(target.url).catch((e) =>
-                Alert.alert(t("mobile.cannotOpenLink"), errorText(e)),
-              ),
-          },
-        ]);
-      } else if (target.kind === "local") openFile(target.path);
+      const open = () => {
+        if (target.kind === "anchor" && target.anchor.startsWith("message-")) {
+          onLocateMessage?.(decodeURIComponent(target.anchor.slice(8)));
+        } else if (target.kind === "external") {
+          void Linking.openURL(target.url).catch((e) =>
+            Alert.alert(t("mobile.cannotOpenLink"), errorText(e)),
+          );
+        } else if (target.kind === "local") openFile(target.path);
+      };
+      const choice = linkActions(href, menu);
+      if (!choice.prompt) {
+        if (!choice.ignore) open();
+        return false;
+      }
+      const copyText = choice.copy;
+      Alert.alert(
+        choice.title,
+        choice.message,
+        choice.actions.map((action) =>
+          action === "open"
+            ? { text: t("markdownLink.open"), onPress: open }
+            : action === "copy" && copyText
+              ? {
+                  text: t("markdownLink.copy"),
+                  onPress: () =>
+                    void Clipboard.setStringAsync(copyText).catch((e) =>
+                      Alert.alert(t("mobile.copyFailed"), errorText(e)),
+                    ),
+                }
+              : { text: t("app.cancel"), style: "cancel" as const },
+        ),
+      );
     } catch (e) {
       Alert.alert(t("mobile.cannotOpenLink"), errorText(e));
     }

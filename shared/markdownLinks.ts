@@ -51,3 +51,21 @@ function decodeLinkPath(value: string): string {
     throw new Error("Link contains invalid URL encoding.");
   }
 }
+
+/**
+ * What "Copy link" puts on the clipboard: the address for a web or mail link,
+ * and for a file link its path as written, decoded, with any line and column
+ * (`notes/My Plan.md:12`). Undefined for an in-page anchor, which means
+ * nothing outside the conversation, and for a link this app would not open.
+ */
+export function markdownLinkCopyText(href: string): string | undefined {
+  let link: MarkdownLink;
+  try {
+    link = parseMarkdownLink(href);
+  } catch {
+    return undefined;
+  }
+  if (link.kind === "external") return link.url;
+  if (link.kind === "anchor") return undefined;
+  return link.line ? `${link.path}:${link.line}${link.column ? `:${link.column}` : ""}` : link.path;
+}
