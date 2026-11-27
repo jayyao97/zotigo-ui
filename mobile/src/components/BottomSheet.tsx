@@ -124,7 +124,8 @@ export function BottomSheet({
             borderBottomLeftRadius: wide && !anchored ? 26 : 0,
             borderBottomRightRadius: wide && !anchored ? 26 : 0,
             maxHeight: "75%",
-            backgroundColor: colors.surface,
+            // Page background, so ListGroup cards and fields stand out the same way they do on screens.
+            backgroundColor: colors.background,
             borderTopLeftRadius: 26,
             borderTopRightRadius: 26,
             borderWidth: 1,
