@@ -164,3 +164,5 @@ guide. Desktop quits and relaunches itself when an update is applied.
 | ⌘S | Ctrl+S | Save the file in the editor |
 | ⌘Enter | Ctrl+Enter | Send in the other mode (steering or queue) |
 | Esc | Esc | Close the palette or Settings |
+
+The Feishu Channel connection settings on Desktop, Web and mobile accept a trusted COT hostname. Clear the field to use the default, `fsopen.bytedance.net`.

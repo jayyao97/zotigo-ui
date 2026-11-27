@@ -67,6 +67,7 @@ function parseChannelConnection(value: unknown, context: string): ChannelConnect
     owner_sender_ids: parseChannelStringList(record.owner_sender_ids, `${context} owner_sender_ids`), agent_instructions: expectString(record.agent_instructions, `${context} agent_instructions`),
     approval_instructions: expectString(record.approval_instructions, `${context} approval_instructions`), review_all_tools: expectBoolean(record.review_all_tools, `${context} review_all_tools`),
     approval_policy: parseChannelApprovalPolicy(record.approval_policy),
+    cot_domain: expectOptionalString(record.cot_domain, `${context} cot_domain`),
     cot_available: expectBoolean(record.cot_available, `${context} cot_available`), progress_mode: progressMode,
     progress_detail: parseChannelProgressDetail(record.progress_detail), progress_detail_unrecognized: unrecognizedProgressDetail(record.progress_detail),
     bind_aliases: record.bind_aliases == null ? undefined : expectArray(record.bind_aliases, `${context} bind_aliases`).map((alias, index) => parseChannelBindAlias(alias, `${context} bind_aliases[${index}]`)),

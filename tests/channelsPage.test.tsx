@@ -144,7 +144,7 @@ test("connection deletion requires confirmation and preserves a binding conflict
 test("connection Save follows and includes prompt settings", async () => {
   const restore = installDom();
   try {
-    const configured = { ...connection("connection-1", "Bot One"), agent_instructions: "Use connection vocabulary.", approval_instructions: "Review connection actions." };
+    let configured = { ...connection("connection-1", "Bot One"), cot_domain: "first.example.org", agent_instructions: "Use connection vocabulary.", approval_instructions: "Review connection actions." };
     let savedInput: ChannelConnectionInput | undefined;
     const api = {
       listChannelConnections: async () => [configured],
@@ -152,7 +152,8 @@ test("connection Save follows and includes prompt settings", async () => {
       listChannelConversations: async () => [],
       updateChannelConnection: async (_id: string, input: ChannelConnectionInput) => {
         savedInput = input;
-        return { ...configured, ...input };
+        configured = { ...configured, ...input, cot_domain: input.cot_domain ?? configured.cot_domain };
+        return configured;
       },
     } as unknown as ClientApi;
     const root = createRoot(document.querySelector("#root")!);
@@ -164,12 +165,26 @@ test("connection Save follows and includes prompt settings", async () => {
     assert.ok(prompt.compareDocumentPosition(actions) & window.Node.DOCUMENT_POSITION_FOLLOWING);
     const permissions = [...document.querySelectorAll<HTMLSelectElement>("select")].find((select) => select.parentElement?.textContent?.startsWith("Permissions"))!;
     assert.equal(permissions.value, "auto");
+    configured = { ...configured, cot_domain: "mobile.example.org" };
     await act(async () => changeSelect(permissions, "bypass_permissions"));
     await act(async () => click(button(actions, "Save")));
     await flush();
     assert.equal(savedInput?.approval_policy, "bypass_permissions");
     assert.equal(savedInput?.agent_instructions, "Use connection vocabulary.");
     assert.equal(savedInput?.approval_instructions, "Review connection actions.");
+    assert.equal(savedInput?.cot_domain, undefined);
+    const domain = document.querySelector<HTMLInputElement>('input[placeholder="fsopen.bytedance.net"]')!;
+    assert.equal(domain.value, "mobile.example.org");
+    await act(async () => {
+      Object.assign(domain, { attachEvent() {}, detachEvent() {} });
+      domain.focus();
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(domain, "");
+      domain.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Backspace", bubbles: true }));
+      domain.blur();
+    });
+    await act(async () => click(button(actions, "Save")));
+    await flush();
+    assert.equal(savedInput?.cot_domain, "");
     assert.match(actions.textContent ?? "", /connection, prompt, and approval/);
     await act(async () => root.unmount());
   } finally { restore(); }
@@ -345,6 +360,7 @@ test("new connection survives the initial bot navigation load", async () => {
     await act(async () => root.render(<ClientContext.Provider value={{ api, kind: "web" }}><ChannelsPage favorites={{ items: [] }} hostName="Local" projects={[project]} workspaces={[workspace]} navigationRoot={document.querySelector("#navigation")!} navigationButtonRef={createRef<HTMLButtonElement>()} navigationOpen sessionVisible={false} onOpenNavigation={() => {}} onShowConfiguration={() => {}} onBack={() => {}} onOpenSession={async () => {}} /></ClientContext.Provider>));
 
     const navigation = document.querySelector("#navigation")!;
+    assert.ok(document.querySelector('input[placeholder="fsopen.bytedance.net"]'), "first connection can set its domain");
     await act(async () => click(navigation.querySelector('[aria-label="New connection"]')!));
     assert.match(document.querySelector("#root")!.textContent ?? "", /New Feishu connection/);
     await act(async () => { resolveConnections([connection("connection-1", "Bot One")]); await pendingConnections; });
@@ -352,6 +368,7 @@ test("new connection survives the initial bot navigation load", async () => {
 
     assert.match(document.querySelector("#root")!.textContent ?? "", /New Feishu connection/);
     assert.match(navigation.textContent ?? "", /Bot One[\s\S]*Connected group[\s\S]*Snapshot E2E/);
+    assert.equal(document.querySelector('input[placeholder="fsopen.bytedance.net"]'), null, "known older daemon hides the field on creation");
     assert.equal(button(navigation, "Bot One").getAttribute("aria-pressed"), "true");
     await act(async () => root.unmount());
   } finally { restore(); }

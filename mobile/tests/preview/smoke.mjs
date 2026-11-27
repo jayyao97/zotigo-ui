@@ -124,6 +124,10 @@ try {
   // Channels show the progress detail Desktop configures, in the app's words.
   await click('Channels'); await bodyIncludes('Development bot');
   await bodyIncludes('Detailed: tool arguments and interim replies');
+  await click('Feishu COT domain');
+  await wait(`${visibleButtons}.find(e => e.textContent.trim() === 'Save')?.getAttribute('aria-disabled') === 'true'`, 'unchanged COT domain cannot overwrite another device');
+  await input('Feishu COT domain', 'cot.example.org');
+  await shot('02d-channel-domain'); await click('Save'); await bodyIncludes('cot.example.org');
   await click('Mobile client review'); await bodyIncludes('Follow the connection (Detailed: tool arguments and interim replies)');
   await shot('02c-channel-progress'); await back(); await back();
   checks.push('Channels show the connection progress detail and a group following it');

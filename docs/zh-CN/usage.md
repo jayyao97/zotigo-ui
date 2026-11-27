@@ -129,3 +129,5 @@ daemon 维护，所以客户端关闭后它仍然可以工作。字段级别的�
 | ⌘S | Ctrl+S | 保存编辑器中的文件 |
 | ⌘Enter | Ctrl+Enter | 用另一种模式发送（立即引导或加入下一轮队列） |
 | Esc | Esc | 关闭搜索面板或设置 |
+
+桌面端、Web 和移动端均可在飞书 Channel 连接设置中填写受信任的 COT 域名，留空使用默认域名 `fsopen.bytedance.net`。

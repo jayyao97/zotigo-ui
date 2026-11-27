@@ -990,6 +990,8 @@ export const zhCN: Record<MessageKey, Message> = {
   "channelsPage.bindTargetNotReady": "Workspace {workspace} 尚未就绪",
   "channelsPage.bindTargetNoChannelTools": "Codex Session 缺少 Channel 工具，无法绑定",
   "channelsPage.bindTargetMissing": "此主机上找不到",
+  "channelsPage.cotDomain": "飞书 COT 域名",
+  "channelsPage.cotDomainUnsupported": "当前 daemon 不支持自定义 COT 域名，请升级 daemon。",
   "channelsPage.executionDisplay": "执行过程展示",
   "channelsPage.cotWithCardFallback": "COT，失败时回退为卡片",
   "channelsPage.requireCot": "仅使用 COT",

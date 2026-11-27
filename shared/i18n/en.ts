@@ -991,6 +991,8 @@ export const en = {
   "channelsPage.bindTargetNotReady": "Workspace {workspace} is not ready",
   "channelsPage.bindTargetNoChannelTools": "Codex Session without Channel tools; cannot be bound",
   "channelsPage.bindTargetMissing": "Not found on this host",
+  "channelsPage.cotDomain": "Feishu COT domain",
+  "channelsPage.cotDomainUnsupported": "Update the daemon to set a custom COT domain.",
   "channelsPage.executionDisplay": "Execution display",
   "channelsPage.cotWithCardFallback": "COT, with card fallback",
   "channelsPage.requireCot": "Require COT",

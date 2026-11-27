@@ -1,3 +1,4 @@
+import { defaultFeishuCOTDomain } from "@zotigo/shared/channels";
 import { t } from "@zotigo/shared/i18n/index";
 import { useLocale } from "../platform/i18n";
 import { BottomSheet, ChoiceRow } from "../components/BottomSheet";
@@ -25,6 +26,8 @@ import type {
 import { useDaemon } from "../platform/context";
 import type { Routes } from "../navigation";
 import {
+  Action,
+  TextField,
   IconButton,
   ListGroup,
   ListRow,
@@ -49,6 +52,7 @@ export function ChannelsScreen({
     kind: "connection" | "conversation";
     id: string;
   }>();
+  const [domainEdit, setDomainEdit] = useState<{ id: string; initial: string; value: string }>();
   const [selected, setSelected] = useState<ChannelConversation>();
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
   const [error, setError] = useState("");
@@ -290,6 +294,21 @@ export function ChannelsScreen({
       ListHeaderComponent={
         <View style={{ gap: space.md, paddingBottom: space.sm }}>
           {permissionSheet}
+          <BottomSheet visible={!!domainEdit} disabled={busy} title={t("channelsPage.cotDomain")} onClose={() => setDomainEdit(undefined)}>
+            <Notice text={error} error />
+            <TextField label={t("channelsPage.cotDomain")} placeholder={defaultFeishuCOTDomain}
+              value={domainEdit?.value ?? ""} onChangeText={value => setDomainEdit(edit => edit && { ...edit, value })} />
+            <Action label={t("app.save")} primary disabled={busy || !domainEdit || domainEdit.value.trim() === domainEdit.initial} onPress={() => void run(async () => {
+              if (!domainEdit) return;
+              const latest = (await client.connections()).find(item => item.id === domainEdit.id);
+              if (!latest) throw new Error(t("mobile.connectionUnavailableRefreshAndTryAgain"));
+              await client.updateConnection(latest.id, {
+                ...connectionPermissions(latest, latest.approval_policy || "auto"), cot_domain: domainEdit.value.trim(),
+              });
+              await load();
+              if (alive.current) setDomainEdit(undefined);
+            })} />
+          </BottomSheet>
           {status}
           <Section
             title={t("settingsPage.connections")}
@@ -299,9 +318,8 @@ export function ChannelsScreen({
           >
             {!!connections.length && (
               <ListGroup>
-                {connections.map((connection) => (
-                  <ListRow
-                    key={connection.id}
+                {connections.flatMap((connection) => [
+                  <ListRow key={connection.id}
                     icon={Radio}
                     title={connection.name}
                     subtitle={[
@@ -313,8 +331,11 @@ export function ChannelsScreen({
                       .join(" · ")}
                     value={channelPermissionLabel(connection.approval_policy)}
                     onPress={() => setPermissionTarget({ kind: "connection", id: connection.id })}
-                  />
-                ))}
+                  />,
+                  connection.cot_domain !== undefined && <ListRow key={connection.id + "-domain"} title={t("channelsPage.cotDomain")}
+                    value={connection.cot_domain || defaultFeishuCOTDomain}
+                    onPress={() => { setError(""); setDomainEdit({ id: connection.id, initial: connection.cot_domain ?? "", value: connection.cot_domain ?? "" }); }} />,
+                ])}
               </ListGroup>
             )}
             {!busy && !error && connections.length === 0 && (
