@@ -1,7 +1,7 @@
 import { t } from "@zotigo/shared/i18n/index";
 import { stateLabel } from "@zotigo/shared/i18n/display";
 import type { ZotigoSession } from "@zotigo/shared/zotigod";
-import { Alert, Text, View } from "react-native";
+import { Alert, Platform, Text, TextInput, View } from "react-native";
 import Pin from "lucide-react-native/icons/pin";
 import PinOff from "lucide-react-native/icons/pin-off";
 import FolderOpen from "lucide-react-native/icons/folder-open";
@@ -12,7 +12,7 @@ import MailOpen from "lucide-react-native/icons/mail-open";
 import Play from "lucide-react-native/icons/play";
 import Archive from "lucide-react-native/icons/archive";
 import { useLocale } from "../platform/i18n";
-import { Action, ListGroup, ListRow, Section, TextField, space, styles } from "./ui";
+import { Action, ListGroup, ListRow, Section, colors, space, styles, type } from "./ui";
 import { CopyIdRow } from "./CopyIdRow";
 
 /**
@@ -61,26 +61,32 @@ export function ConversationActions({
 }) {
   useLocale();
   const unread = session?.read_state?.unread;
+  const dirty = !!title.trim() && title.trim() !== savedTitle;
   return (
     <View style={{ gap: space.lg }}>
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space.sm }}>
-        <View style={{ flex: 1 }}>
-          <TextField
-            label={t("mobileUi.renameTitle")}
-            value={title}
-            onChangeText={onTitle}
-            returnKeyType="done"
-            onSubmitEditing={onRename}
-          />
-        </View>
-        <View style={{ alignSelf: "flex-end" }}>
-          <Action
-            label={t("app.save")}
-            disabled={busy || !title.trim() || title.trim() === savedTitle}
-            onPress={onRename}
-          />
-        </View>
-      </View>
+      <Section title={t("mobileUi.renameTitle")}>
+        <ListGroup>
+          <View style={{ flexDirection: "row", alignItems: "center", minHeight: 52, paddingLeft: space.lg, paddingRight: space.xs }}>
+            <TextInput
+              accessibilityLabel={t("mobileUi.renameTitle")}
+              value={title}
+              onChangeText={onTitle}
+              returnKeyType="done"
+              onSubmitEditing={onRename}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholderTextColor={colors.faint}
+              style={{ flex: 1, color: colors.text, ...type.body, paddingVertical: space.md }}
+            />
+            {dirty && (
+              // Action pins itself to flex-start; the wrapper lets the row center it vertically.
+              <View>
+                <Action secondary label={t("app.save")} disabled={busy} onPress={onRename} />
+              </View>
+            )}
+          </View>
+        </ListGroup>
+      </Section>
       <ListGroup>
         <ListRow
           icon={pinned ? PinOff : Pin}
@@ -150,11 +156,14 @@ export function ConversationActions({
   );
 }
 
+const mono = Platform.OS === "ios" ? "Menlo" : "monospace";
+
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md, gap: 2 }}>
-      <Text style={styles.muted}>{label}</Text>
-      <Text selectable style={[styles.text, { fontSize: 14 }]}>{value}</Text>
+    <View style={{ paddingHorizontal: space.lg, paddingVertical: 10, gap: 2 }}>
+      <Text style={{ color: colors.text, ...type.body }}>{label}</Text>
+      {/* Paths and IDs wrap fully instead of being clipped by the row. */}
+      <Text selectable style={[styles.muted, { fontFamily: mono, fontSize: 12 }]}>{value}</Text>
     </View>
   );
 }
