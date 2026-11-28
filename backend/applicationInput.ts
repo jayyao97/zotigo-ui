@@ -335,6 +335,7 @@ export function assertChannelConnectionInput(value: unknown): ChannelConnectionI
 		approval_instructions: assertString(input.approval_instructions, "approval_instructions"),
 		approval_policy: assertChannelApprovalPolicy(input.approval_policy),
 		review_all_tools: assertBoolean(input.review_all_tools, "review_all_tools"),
+		cot_domain: input.cot_domain === undefined ? undefined : assertString(input.cot_domain, "cot_domain"),
 		progress_mode: assertChannelProgressMode(input.progress_mode, "progress_mode"),
 		progress_detail: input.progress_detail === undefined ? undefined : assertChannelProgressDetail(input.progress_detail, "progress_detail"),
 		bind_aliases: input.bind_aliases === undefined ? undefined : assertArray(input.bind_aliases, "bind_aliases").map((alias, index) => {

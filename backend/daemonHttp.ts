@@ -1,4 +1,5 @@
 import { currentHost } from "./hosts";
+import { hostRequestHeaders } from "../shared/hostHeaders";
 import fs from "node:fs";
 import { Agent, type Dispatcher } from "undici";
 
@@ -10,13 +11,12 @@ export const repositoryRequestDispatcher = new Agent({ headersTimeout: 0 });
 
 // Credentials belong to the configured endpoint, never a renderer-selected URL.
 export function daemonHeaders(url: string, initial?: HeadersInit): Headers {
-  const headers = new Headers(initial);
   const host = currentHost();
   if (host) {
     if (new URL(url).origin !== new URL(host.baseUrl).origin) throw new Error("Daemon credentials do not match this endpoint.");
-    if (host.token) headers.set("Authorization", `Bearer ${host.token}`);
-    return headers;
+    return hostRequestHeaders(host, initial);
   }
+  const headers = new Headers(initial);
   const tokenFile = process.env.ZOTIGOD_AUTH_TOKEN_FILE;
   if (tokenFile) {
     const endpoint = new URL(process.env.ZOTIGOD_URL ?? "http://127.0.0.1:8766");

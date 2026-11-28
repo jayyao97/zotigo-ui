@@ -195,3 +195,27 @@ test("device rename and token rotation keep draft identity; registry write failu
     /new device ID/,
   );
 });
+
+test("mobile gateway credentials survive reconnect and cover health and SSE for only the saved host", async () => {
+  const storage = memory(), secrets = memory();
+  const store = new HostStore(storage, secrets);
+  const headers = [{ name: "CF-Access-Client-Id", value: "fixture-id" }, { name: "CF-Access-Client-Secret", value: "fixture-secret" }];
+  await store.save(connection, connection.token, headers);
+  assert.ok(![...storage.values.values()].join("").includes("fixture-"));
+  const saved = await store.connection(connection);
+  const paths: string[] = [];
+  const client = new DaemonClient(saved, async (url, init) => {
+    paths.push(new URL(url).pathname);
+    assert.equal(new URL(url).origin, connection.baseUrl);
+    assert.equal(init?.redirect, "error");
+    const sent = new Headers(init?.headers);
+    for (const header of headers) assert.equal(sent.get(header.name), header.value);
+    assert.equal(sent.get("Authorization"), "Bearer " + connection.token);
+    return Response.json({ code: "ok", data: { status: "ok", protocol_version: "1" } });
+  });
+  await client.health();
+  await client.stream("s", 0, client.signal);
+  assert.deepEqual(paths, ["/health", "/sessions/s/events"]);
+  await store.save(connection, connection.token, []);
+  assert.deepEqual((await store.connection(connection)).headers, []);
+});

@@ -5019,6 +5019,8 @@ label.managed-repository-row:hover { background: rgb(255 255 255 / 0.025); }
 .host-settings-row strong, .host-settings-row small { display: block; overflow-wrap: anywhere; }
 .host-settings label { display: grid; gap: 6px; margin: 14px 0; font-size: 13px; }
 .host-settings input, .host-settings textarea { padding: 10px; border: 1px solid var(--border-heavy); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; width: 100%; }
+.host-header-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 8px; margin: 12px 0; }
+.host-header-row label { margin: 0; }
 .host-settings .host-token-clear { display: flex; align-items: center; }
 .host-settings .host-token-clear input { width: auto; }
 .host-settings button { display: inline-flex; gap: 6px; align-items: center; padding: 8px 12px; border: 1px solid var(--border-heavy); border-radius: 8px; color: var(--text); background: var(--surface-row); cursor: pointer; }

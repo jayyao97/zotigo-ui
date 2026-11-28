@@ -1,5 +1,7 @@
 import type { AgentKind } from "./zotigod";
 
+export const defaultFeishuCOTDomain = "fsopen.bytedance.net";
+
 export type ChannelOverrideMode = "inherit" | "replace";
 export type ChannelProgressMode = "auto" | "cot" | "interactive_card";
 export type ChannelSessionStrategy = "topic" | "shared";
@@ -30,6 +32,7 @@ export interface ChannelConnection {
   approval_instructions: string;
   review_all_tools: boolean;
   cot_available: boolean;
+  cot_domain?: string;
   progress_mode: ChannelProgressMode;
   /** Absent when the daemon predates progress detail and bind aliases. */
   progress_detail?: ChannelProgressDetail;
@@ -53,6 +56,7 @@ export interface ChannelConnectionInput {
   agent_instructions: string;
   approval_instructions: string;
   review_all_tools: boolean;
+  cot_domain?: string;
   progress_mode: ChannelProgressMode;
   progress_detail?: ChannelProgressDetail;
   bind_aliases?: ChannelBindAlias[];

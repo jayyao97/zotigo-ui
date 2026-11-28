@@ -87,6 +87,21 @@ try {
   await click('Settings'); await bodyIncludes('Model profiles'); await shot('02-settings');
   await click('Home Mac Studio'); await bodyIncludes('Choose where you want to work.');
   await click('Edit Work Linux'); await bodyIncludes('Remove device'); await shot('02a-edit-device');
+  await click('Add HTTP header');
+  await input('Header name', 'CF-Access-Client-Id');
+  await input('Header value', 'fixture-client');
+  await click('Save device');
+  await click('Edit Work Linux');
+  await wait(`document.querySelector('[aria-label="Header name"]')?.value === 'cf-access-client-id'`, 'saved gateway header');
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Header value"]').value`), '');
+  await click('Add HTTP header');
+  await shot('02a-gateway-headers');
+  await click('Cancel');
+  await click('Edit Work Linux');
+  await click('Remove header');
+  await click('Save device');
+  await click('Edit Work Linux');
+  checks.push('Saved gateway headers can be edited and removed without revealing their stored values');
   // A half-typed address must leave the form usable and explain itself on save.
   await input('Daemon address', 'not a url'); await bodyIncludes('Save device');
   await click('Save device'); await wait(`[...document.querySelectorAll('[role="alert"]')].some(e => e.getClientRects().length && e.textContent.trim())`, 'invalid address is reported');
@@ -124,6 +139,10 @@ try {
   // Channels show the progress detail Desktop configures, in the app's words.
   await click('Channels'); await bodyIncludes('Development bot');
   await bodyIncludes('Detailed: tool arguments and interim replies');
+  await click('Feishu COT domain');
+  await wait(`${visibleButtons}.find(e => e.textContent.trim() === 'Save')?.getAttribute('aria-disabled') === 'true'`, 'unchanged COT domain cannot overwrite another device');
+  await input('Feishu COT domain', 'cot.example.org');
+  await shot('02d-channel-domain'); await click('Save'); await bodyIncludes('cot.example.org');
   await click('Mobile client review'); await bodyIncludes('Follow the connection (Detailed: tool arguments and interim replies)');
   await shot('02c-channel-progress'); await back(); await back();
   checks.push('Channels show the connection progress detail and a group following it');

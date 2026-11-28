@@ -25,6 +25,7 @@ type Fault =
 type HostState = {
   repositories?: import("@zotigo/shared/clientTypes").ManagedRepository[];
   cancelledNotifications?: Set<string>;
+  cotDomain?: string;
   channelPolicies?: Record<string, string>;
   fault: Fault;
   pins: { kind: string; id: string }[];
@@ -913,6 +914,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
       "/channels/conversations/channel-room",
     ].includes(path)
   ) {
+    if (path === "/channels/connections/channel-1" && typeof body.cot_domain === "string") host.cotDomain = body.cot_domain;
     host.channelPolicies ??= {};
     host.channelPolicies[path] = String(body.approval_policy ?? "");
     return envelope({
@@ -937,6 +939,7 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
           approval_instructions: "",
           review_all_tools: false,
           progress_mode: "auto",
+          cot_domain: host.cotDomain ?? "",
           progress_detail: "detailed",
           bind_aliases: [{ name: "mobile", target: "session-shared" }],
           name: "Development bot",

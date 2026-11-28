@@ -16,7 +16,7 @@ test("connection settings edit existing profiles and guard deletion with a succe
   const root = createRoot(document.getElementById("root")!);
   let profiles: HostProfile[] = [
     { id: "local", name: "Local", baseUrl: "http://127.0.0.1:8766", hasToken: false },
-    { id: "remote", name: "Remote", baseUrl: "https://remote.example", hasToken: true },
+    { id: "remote", name: "Remote", baseUrl: "https://remote.example", hasToken: true, headerNames: ["cf-access-client-id", "cf-access-client-secret"] },
   ];
   const saved: HostInput[] = [];
   const deleted: string[] = [];
@@ -50,7 +50,11 @@ test("connection settings edit existing profiles and guard deletion with a succe
     assert.equal(inputs[1].value, "https://remote.example");
     assert.equal(inputs[2].value, "");
     assert.match(inputs[2].placeholder, /keep/);
+    const values = document.querySelectorAll<HTMLInputElement>(".host-header-row input[type=password]");
+    assert.equal(values.length, 2);
+    assert.ok([...values].every(input => input.value === "" && input.placeholder.includes("keep")));
     await submit();
+    assert.deepEqual(saved[0].headers, profiles[1].headerNames?.map(name => ({ name })));
     assert.equal(saved[0].id, "remote");
     assert.equal(saved[0].token, undefined);
     assert.equal(switchCount, 0, "unchanged credentials do not switch hosts");

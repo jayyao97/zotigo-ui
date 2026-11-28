@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowUpRight, Bot, CheckCircle2, CircleAlert, Folder, Messag
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
-import { canConfigureChannelGroup, channelGroupName, channelProgressDetails, type ChannelConnection, type ChannelConnectionInput, type ChannelConversation, type ChannelConversationInput, type ChannelGroup, type ChannelSender } from "../../shared/channels";
+import { defaultFeishuCOTDomain, canConfigureChannelGroup, channelGroupName, channelProgressDetails, type ChannelConnection, type ChannelConnectionInput, type ChannelConversation, type ChannelConversationInput, type ChannelGroup, type ChannelSender } from "../../shared/channels";
 import type { DesktopConversation, DesktopProject, DesktopWorkspace } from "../../shared/clientTypes";
 import type { AgentCatalogEntry, AgentModel, RuntimeProfile, ZotigoSession } from "../../shared/zotigod";
 import { useClient } from "../ClientContext";
@@ -23,7 +23,7 @@ const defaultApprovalInstructions = "Only auto-approve actions necessary for the
 export const completeBindAliases = (aliases: NonNullable<ChannelConnectionInput["bind_aliases"]>) =>
   aliases.map((alias) => ({ name: alias.name.trim(), target: alias.target.trim() })).filter((alias) => alias.name && alias.target);
 const emptyConnection = (): ChannelConnectionInput => ({ provider: "feishu", name: t("channelsPage.feishu"), app_id: "", app_secret: "", enabled: false, allow_chat_ids: [], agent_instructions: "", approval_instructions: defaultApprovalInstructions, approval_policy: "auto", review_all_tools: true, progress_mode: "auto", progress_detail: "brief", bind_aliases: [] });
-const connectionInput = (connection: ChannelConnection): ChannelConnectionInput => ({ provider: "feishu", name: connection.name, app_id: connection.app_id, enabled: connection.enabled, allow_chat_ids: [], agent_instructions: connection.agent_instructions, approval_instructions: connection.approval_instructions, approval_policy: connection.approval_policy || "auto", review_all_tools: connection.review_all_tools, progress_mode: connection.progress_mode,
+const connectionInput = (connection: ChannelConnection): ChannelConnectionInput => ({ provider: "feishu", name: connection.name, app_id: connection.app_id, enabled: connection.enabled, allow_chat_ids: [], agent_instructions: connection.agent_instructions, approval_instructions: connection.approval_instructions, approval_policy: connection.approval_policy || "auto", review_all_tools: connection.review_all_tools, progress_mode: connection.progress_mode, cot_domain: connection.cot_domain,
   // Only daemons that report these settings can store them. A level this
   // client does not know is left out, so the daemon keeps it.
   ...(connection.progress_detail ? { ...(connection.progress_detail_unrecognized ? {} : { progress_detail: connection.progress_detail }), bind_aliases: connection.bind_aliases ?? [] } : {}) });
@@ -116,6 +116,9 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
   // silently ignore them on save; only a daemon that reports them can keep them.
   // Daemons report progress detail on every connection. With none to look at,
   // show the settings: an older daemon ignores them, and they hide once saved.
+  const editingConnection = creatingConnection ? undefined : selectedConnection;
+  const supportsCOTDomain = editingConnection ? editingConnection.cot_domain !== undefined
+    : connections.length === 0 || connections.some(connection => connection.cot_domain !== undefined);
   const supportsGroupCommands = creatingConnection || !selectedConnection ? connections.length === 0 || connections.some((value) => value.progress_detail) : Boolean(selectedConnection?.progress_detail);
   // Projects head the groups, each Workspace lists its Sessions beneath it, as in the sidebar.
   const runtimeSessionById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions]);
@@ -305,6 +308,20 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
     setGroupDraft(conversationInput(saved));
     setGroupProjectId(saved.workspace_id ? workspaceById.get(saved.workspace_id)?.project_id ?? "" : "");
   };
+  const saveConnection = async () => {
+    const input = { ...connectionDraft, allow_chat_ids: [] };
+    if (input.bind_aliases) input.bind_aliases = completeBindAliases(input.bind_aliases);
+    if (!input.app_secret) delete input.app_secret;
+    // Omission preserves a domain changed on another device while this form was open.
+    if (!supportsCOTDomain || input.cot_domain?.trim() === editingConnection?.cot_domain) delete input.cot_domain;
+    const saved = editingConnection
+      ? await api.updateChannelConnection(editingConnection.id, input)
+      : await api.createChannelConnection(input);
+    await load(saved.id, true);
+    if (input.cot_domain?.trim() && saved.cot_domain === undefined) throw new Error(t("channelsPage.cotDomainUnsupported"));
+    if (droppedGroupCommandSettings(input, saved)) throw new Error(t("channelsPage.groupCommandsUnsupported"));
+    setStatus(t("channelsPage.connectionSaved"), "success");
+  };
   const saveGroup = async () => {
     if (!selectedGroup || !groupConversation || !groupDraft) return;
     const input = { ...groupDraft, display_name: selectedGroup.name || selectedGroup.chat_id, session_id: groupDraft.session_strategy === "shared" ? groupDraft.session_id : "", enabled: true };
@@ -379,6 +396,7 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
             <label>{t("channelsPage.appId")}<input value={connectionDraft.app_id} onChange={(event) => setConnectionDraft({ ...connectionDraft, app_id: event.target.value })} /></label>
             <label>{t("channelsPage.appSecret")}<input type="password" value={connectionDraft.app_secret ?? ""} placeholder={!creatingConnection && selectedConnection?.has_secret ? t("channelsPage.savedLeaveBlankToKeep") : t("channelsPage.requiredToEnable")} autoComplete="new-password" onChange={(event) => setConnectionDraft({ ...connectionDraft, app_secret: event.target.value })} /></label>
             {!creatingConnection && <label>{t("channelsPage.applicationOwner")}<input readOnly value={ownerSenderIDs.join(", ")} placeholder={selectedConnection?.status === "starting" ? t("channelsPage.resolvingFromFeishu") : t("directoryBrowser.unavailable")} /><small>{t("channelsPage.resolvedFromTheFeishuApplicationOwnerWhenThe")}</small></label>}
+            {supportsCOTDomain && <label>{t("channelsPage.cotDomain")}<input autoCapitalize="none" spellCheck={false} placeholder={defaultFeishuCOTDomain} value={connectionDraft.cot_domain ?? ""} onChange={event => setConnectionDraft({ ...connectionDraft, cot_domain: event.target.value })} /></label>}
             <label>{t("channelsPage.executionDisplay")}<select value={connectionDraft.progress_mode} onChange={(event) => setConnectionDraft({ ...connectionDraft, progress_mode: event.target.value as ChannelConnectionInput["progress_mode"] })}><option value="auto">{t("channelsPage.cotWithCardFallback")}</option><option value="cot">{t("channelsPage.requireCot")}</option><option value="interactive_card">{t("channelsPage.interactiveCard")}</option></select><small>{t("channelsPage.autoFallsBackOnlyWhenFeishuRejectsCot")}</small></label>
             {supportsGroupCommands && <label>{t("channelsPage.progressDetail")}<select value={connectionDraft.progress_detail ?? (connectionUnrecognized ? unrecognizedLevel : "brief")} onChange={(event) => setConnectionDraft({ ...connectionDraft, progress_detail: event.target.value === unrecognizedLevel ? undefined : event.target.value as NonNullable<ChannelConnectionInput["progress_detail"]> })}>{connectionUnrecognized && <option value={unrecognizedLevel}>{t("channelsPage.progressDetailUnrecognized", { level: connectionUnrecognized })}</option>}{channelProgressDetails.map((level) => <option key={level} value={level}>{t(`channelsPage.progressDetail.${level}`)}</option>)}</select><small>{t("channelsPage.progressDetailHelp")}</small></label>}
             <label className="channels-check"><input type="checkbox" role="switch" checked={connectionDraft.enabled} onChange={(event) => setConnectionDraft({ ...connectionDraft, enabled: event.target.checked })} />{t("channelsPage.enableLongConnection")}</label>
@@ -403,7 +421,7 @@ export function ChannelsPage({ favorites, hostName, projects, workspaces, agents
             <label className="channels-check"><input type="checkbox" role="switch" checked={connectionDraft.review_all_tools} onChange={(event) => setConnectionDraft({ ...connectionDraft, review_all_tools: event.target.checked })} />{t("channelsPage.enableAutomaticApprovalReviewInAutoMode")}</label>
             <p className="channels-help">{t("channelsPage.zotigoReviewsOtherwiseSafeToolCallsCodexAutomatically")}</p>
             <div className="channels-capability"><CheckCircle2 size={15} /><span>{t("channelsPage.cotExecutionDisplaySupported")}</span><small>{t("channelsPage.theFinalAnswerIsSentSeparatelyInThe")}</small></div>
-            <div className="channels-actions channels-form-actions"><button className="primary" disabled={busy} onClick={() => run(async () => { const input = { ...connectionDraft, allow_chat_ids: [], ...(connectionDraft.bind_aliases ? { bind_aliases: completeBindAliases(connectionDraft.bind_aliases) } : {}) }; if (!input.app_secret) delete input.app_secret; const saved = !creatingConnection && selectedConnection ? await api.updateChannelConnection(selectedConnection.id, input) : await api.createChannelConnection(input); await load(saved.id, true); if (droppedGroupCommandSettings(input, saved)) throw new Error(t("channelsPage.groupCommandsUnsupported")); setStatus(t("channelsPage.connectionSaved"), "success"); })}><Save size={14} />{t("app.save")}</button>{!creatingConnection && selectedConnection && <button disabled={busy} onClick={() => { setStatus(""); setDeleteTarget(selectedConnection); }}><Trash2 size={14} />{t("app.delete")}</button>}<small>{t("channelsPage.savesTheConnectionPromptAndApprovalSettingsAbove")}</small></div>
+            <div className="channels-actions channels-form-actions"><button className="primary" disabled={busy} onClick={() => run(saveConnection)}><Save size={14} />{t("app.save")}</button>{!creatingConnection && selectedConnection && <button disabled={busy} onClick={() => { setStatus(""); setDeleteTarget(selectedConnection); }}><Trash2 size={14} />{t("app.delete")}</button>}<small>{t("channelsPage.savesTheConnectionPromptAndApprovalSettingsAbove")}</small></div>
           </section>
         </div>}
         {selectedGroup && groupConversation && groupDraft && <div className="channels-grid">

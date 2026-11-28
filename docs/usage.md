@@ -22,6 +22,8 @@ save remote hosts.
    token, then click **Test**.
 4. Pick the saved host from the host menu.
 
+Use **Add HTTP header** for each gateway credential. For a daemon behind Cloudflare Access, enter `CF-Access-Client-Id` and `CF-Access-Client-Secret` from a service token allowed by the application's Service Auth policy. Keep the daemon token in its own field. Mobile has the same controls under **Devices**. Header values are stored alongside the daemon token and are masked when editing. To change the daemon origin, re-enter the values or remove those headers.
+
 The address must be the daemon's reachable address, not `0.0.0.0` and not the
 Web UI URL. A remote daemon must be recent enough to offer directory browsing
 and `/files/capabilities`; an older one shows an upgrade message. Use
@@ -46,7 +48,7 @@ for Web, Electron's user-data directory for Desktop. Profile lists never return
 the token. On a Web server, saved hosts are shared by every signed-in user of
 that server, but switching in one tab does not switch another.
 
-Renaming a host keeps its identity. Changing the address or token replaces it,
+Renaming a host keeps its identity. Changing the address, token or HTTP headers replaces it,
 so other Web tabs must reload and reselect it. If you change the address or
 token of the active connection, the client first switches to Local. The Local
 host itself is configured by the startup environment and cannot be edited here.
@@ -164,3 +166,5 @@ guide. Desktop quits and relaunches itself when an update is applied.
 | ⌘S | Ctrl+S | Save the file in the editor |
 | ⌘Enter | Ctrl+Enter | Send in the other mode (steering or queue) |
 | Esc | Esc | Close the palette or Settings |
+
+The Feishu Channel connection settings on Desktop, Web and mobile accept a trusted COT hostname. Clear the field to use the default, `fsopen.bytedance.net`.
