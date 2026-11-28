@@ -47,6 +47,7 @@ export function CompletionNotifications({ sessionId }: { sessionId: string }) {
       const state = (item.state ?? "pending") === "pending" && Date.parse(item.expires_at) <= Date.now() ? "expired" : item.state ?? "pending";
       return <Section key={item.id} title={item.title}>
         <Text style={styles.muted}>{t(`completionTriggers.${state}`)}</Text>
+        {item.watch_session_id && <Text selectable style={styles.muted}>{t("completionTriggers.watching", { p0: item.watch_session_id })}</Text>}
         <Text selectable style={styles.text}>{item.on_fire}</Text>
         <Notice text={t("completionTriggers.expires", { p0: new Date(item.expires_at).toLocaleString(getLocale()) })} />
         {state === "pending" && <><Action label={t("completionTriggers.cancelAction")} secondary disabled={busy} onPress={() => void cancel(item.id)} /><Notice text={t("completionTriggers.cancelHelp")} /></>}

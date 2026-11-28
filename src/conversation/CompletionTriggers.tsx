@@ -56,6 +56,7 @@ export function CompletionTriggers({ client, sessionId, active, triggerId, focus
         const state = (item.state ?? "pending") === "pending" && Date.parse(item.expires_at) <= Date.now() ? "expired" : item.state ?? "pending";
         return <article key={item.id} ref={item.id === triggerId ? focused : undefined} className={`completion-card ${item.id === triggerId ? "selected" : ""}`}>
           <header><strong>{item.title}</strong><span className={`completion-state ${state}`}>{t(`completionTriggers.${state}`)}</span></header>
+          {item.watch_session_id && <p>{t("completionTriggers.watching", { p0: item.watch_session_id })}</p>}
           <div className="completion-followup"><span>{t("completionTriggers.followup")}</span><p>{item.on_fire}</p></div>
           <footer><small title={t("completionTriggers.expires", { p0: new Date(item.expires_at).toLocaleString(getLocale()) })}><Clock3 size={12} />{t("completionTriggers.expires", { p0: new Date(item.expires_at).toLocaleString(getLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) })}</small>
           {state === "pending" && <button type="button" className="completion-cancel" title={t("completionTriggers.cancelHelp")} disabled={busy} aria-label={t("completionTriggers.cancel", { p0: item.title })} onClick={() => void cancel(item.id)}>{t("completionTriggers.cancelAction")}</button>}</footer>

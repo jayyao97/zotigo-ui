@@ -48,6 +48,7 @@ export function parseDisplayItem(value: unknown, context: string): DisplayItem {
   return {
     context_usage: parseOptionalContextUsage(record.context_usage, `${context} context_usage`),
     retry: record.retry == null ? undefined : parseRequestRetry(record.retry, context),
+    ...(record.followup_question_id === undefined ? {} : { followup_question_id: expectOptionalString(record.followup_question_id, `${context} followup_question_id`) }),
     ...(record.before_input_id === undefined ? {} : { before_input_id: expectOptionalString(record.before_input_id, `${context} before_input_id`) }),
     id: expectString(record.id, `${context} id`),
     sequence: expectNumber(record.sequence, `${context} sequence`),
@@ -295,6 +296,7 @@ function parseDisplayInteraction(value: unknown, context: string): DisplayIntera
     requester: record.requester === undefined || record.requester === null ? undefined : parseInteractionRequester(record.requester, `${context} requester`),
     questions: parseOptionalArray(record.questions, `${context} questions`, parseInteractionQuestion),
     answers,
+    reply_as_message: expectOptionalBoolean(record.reply_as_message, `${context} reply_as_message`),
     is_blocking: expectOptionalBoolean(record.is_blocking, `${context} is_blocking`),
     auto_resolve_ms: record.auto_resolve_ms === undefined ? undefined : expectNumber(record.auto_resolve_ms, `${context} auto_resolve_ms`),
   };

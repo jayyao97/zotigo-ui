@@ -13,13 +13,23 @@ test("model settings retain keys by default, explicitly clear them, test drafts 
   const globals={window:dom.window,document:dom.window.document,IS_REACT_ACT_ENVIRONMENT:true};
   const previous=Object.fromEntries(Object.keys(globals).map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   for(const [key,value] of Object.entries(globals))Object.defineProperty(globalThis,key,{value,configurable:true});
-  const settings:Settings={revision:"revision-1",defaults:{context_window:200000,max_output_tokens:120000},default_profile:"gpt-5.6-sol",profiles:[{name:"gpt-5.6-sol",provider:"deepseek",model:"example",base_url:"",thinking_level:"",context_window:0,max_output_tokens:null,mode:"",has_api_key:true}]};
+  const settings:Settings={web_search:{provider:"deepseek",has_tavily_key:true,has_deepseek_key:true},revision:"revision-1",defaults:{context_window:200000,max_output_tokens:120000},default_profile:"gpt-5.6-sol",profiles:[{name:"gpt-5.6-sol",provider:"deepseek",model:"example",base_url:"",thinking_level:"",context_window:0,max_output_tokens:null,mode:"",has_api_key:true}]};
   const changes:ModelSettingsChange[]=[];let tested=0;let fail=false;
   const api={getModelSettings:async(host?:string)=>{assert.equal(host,"selected-host");return settings;},updateModelSettings:async(change:ModelSettingsChange,host?:string)=>{assert.equal(host,"selected-host");changes.push(change);if(fail)throw new Error("conflict");return settings;},testModelSettings:async(_change:ModelSettingsChange,host?:string)=>{assert.equal(host,"selected-host");tested++;return {ok:true};}} as unknown as ClientApi;
   const root=createRoot(document.getElementById("root")!);
   const click=async(text:string)=>{const button=[...document.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent===text);assert.ok(button,`missing ${text}`);await act(async()=>button.click());};
   try {
     await act(async()=>root.render(<ClientContext.Provider value={{api,kind:"web"}}><ModelSettings hostId="selected-host"/></ClientContext.Provider>));
+    const search = document.querySelector<HTMLSelectElement>("form select")!;
+    assert.equal(search.value,"deepseek");
+    assert.equal(document.querySelector<HTMLInputElement>('input[type=password]')!.value,"");
+    const clearDeepSeek = [...document.querySelectorAll("label")].find(label => label.textContent === "Clear saved DeepSeek API key")?.querySelector("input");
+    assert.ok(clearDeepSeek);
+    await act(async()=>clearDeepSeek.click());
+    await act(async()=>{ search.value="tavily"; search.dispatchEvent(new dom.window.Event("change",{bubbles:true})); });
+    await click("Save");
+    assert.deepEqual(changes.shift(),{revision:"revision-1",action:"web_search",web_search:{provider:"tavily",deepseek_key:""}});
+    assert.equal(document.querySelector<HTMLButtonElement>('form button[type="submit"]')!.disabled, true, "a successful save resets the draft even if the host returns the same revision");
     // The host name is shown by the settings page header around this panel.
     await click("Edit");
     assert.equal(document.querySelector<HTMLSelectElement>("form select")!.value,"deepseek");

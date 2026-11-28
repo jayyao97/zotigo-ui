@@ -1,4 +1,4 @@
-import type { ModelSettings, ModelSettingsChange } from "@zotigo/shared/modelSettings";
+import type { ModelSettings, SettingsUpdate } from "@zotigo/shared/modelSettings";
 import { pickedImageInput } from "../../src/core/imageInput";
 import { attachmentPng } from "./attachment";
 import type {
@@ -399,7 +399,22 @@ function makeHost(work: boolean): HostState {
                 },
               ],
             }),
-            display(7, "turn_completed", { turn: { id: "complete" } }),
+            ...(i === 1 ? [display(7, "interaction_request", {
+              interaction: {
+                id: "codex-question-trip",
+                kind: "user_input",
+                turn_id: "complete",
+                status: "pending",
+                reply_as_message: true,
+                questions: [{
+                  id: "q1",
+                  question: "如果现在能瞬间到一个地方待半天，你想去哪儿？",
+                  is_other: true,
+                  options: [{ label: "海边听浪" }, { label: "山里散步" }, { label: "老街吃小吃" }],
+                }],
+              },
+            })] : []),
+            ...(i === 1 ? [] : [display(8, "turn_completed", { turn: { id: "complete" } })]),
           ]
         : history(work),
       pinned: i === 0,
@@ -564,7 +579,7 @@ const agents = {
 };
 
 const modelSettings: Record<string, ModelSettings> = Object.fromEntries(["home", "work"].map(host => [host, {
-  revision: "1", default_profile: "balanced", defaults: { context_window: 200000, max_output_tokens: 32000 },
+  revision: "1", web_search: { provider: "tavily", has_tavily_key: true, has_deepseek_key: false }, default_profile: "balanced", defaults: { context_window: 200000, max_output_tokens: 32000 },
   profiles: ["balanced", "review"].map(name => ({ name, provider: "openai", model: "gpt-5.3-codex", base_url: "", thinking_level: name === "review" ? "high" : "", context_window: 0, max_output_tokens: null, mode: "", has_api_key: true })),
 }]));
 
@@ -626,9 +641,20 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
   if (path === "/config/models") {
     const settings = modelSettings[key];
     if (method === "GET") return envelope(settings);
-    const change = body as unknown as ModelSettingsChange;
+    const change = body as unknown as SettingsUpdate;
     if (change.revision !== settings.revision) return failure("Revision changed", 409, "conflict");
-    if (change.action === "default") settings.default_profile = change.profile.name;
+    if (change.action === "web_search") {
+      const search = settings.web_search!;
+      if (change.web_search.provider === search.provider && change.web_search.tavily_key === undefined && change.web_search.deepseek_key === undefined) return envelope(settings);
+      for (const id of ["tavily", "deepseek"] as const) {
+        if (change.web_search.provider === id && !(change.web_search[`${id}_key`] ?? search[`has_${id}_key`])) {
+          return failure("The selected provider needs an API key.", 400, "search_api_key_required");
+        }
+      }
+      search.provider = change.web_search.provider;
+      if (change.web_search.tavily_key !== undefined) search.has_tavily_key = !!change.web_search.tavily_key;
+      if (change.web_search.deepseek_key !== undefined) search.has_deepseek_key = !!change.web_search.deepseek_key;
+    } else if (change.action === "default") settings.default_profile = change.profile.name;
     else if (change.action === "delete") settings.profiles = settings.profiles.filter(p => p.name !== change.profile.name);
     else {
       const profile = { ...change.profile, has_api_key: change.api_key === undefined ? change.profile.has_api_key : !!change.api_key };
@@ -1248,16 +1274,16 @@ export const fixtureFetch: Fetch = async (input, init = {}) => {
         }),
       });
     if (action.startsWith("interactions/")) {
+      const question = session.items.find(item => item.type === "interaction_request" && item.interaction?.id === action.slice("interactions/".length))?.interaction;
+      if (!question) return new Response(null, {status: 404});
       const response = {
-        id: "question-preview",
-        kind: "user_input" as const,
-        turn_id: "active-turn",
+        ...question,
         status: "resolved" as const,
         answers: body.answers as Record<string, string[]>,
       };
       publish(host, id, {
         type: "item",
-        item: display(session.items.length + 1, "interaction_response", {
+        item: display((session.items.at(-1)?.sequence ?? 0) + 1, "interaction_response", {
           interaction: response,
         }),
       });

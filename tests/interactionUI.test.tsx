@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { JSDOM } from "jsdom";
 import { PendingInteractionNotice } from "../src/conversation/PendingInteractionNotice";
 import { SessionTimeline, UserInputItem } from "../src/conversation/ConversationTimeline";
-import { visibleDisplayItems } from "../shared/sessionDisplay";
+import { hasUnresolvedTurnItems, visibleDisplayItems } from "../shared/sessionDisplay";
 import type { DisplayItem } from "../shared/zotigod";
 
 const turn: DisplayItem = { id: "turn", sequence: 1, type: "turn_started", turn: { id: "turn" }, created_at: "now" };
@@ -98,4 +98,47 @@ test("search windows use authoritative interaction history and incomplete histor
   const ended = render([turn, request, { ...turn, id: "end", sequence: 5, type: "turn_completed" }]);
   assert.match(ended, /Question closed/);
   assert.doesNotMatch(ended, /<form/);
+});
+
+test("async questions close with their own turn and keep searchable history", (t) => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { matchMedia: () => ({ matches: false }) } });
+  t.after(() => {
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+  });
+  const request = question("card");
+  request.interaction = { ...request.interaction!, reply_as_message: true, item_id: "call" };
+  const fallback: DisplayItem = { id: "call", sequence: 2, type: "assistant_message", created_at: "now", content: [{ type: "text", text: "Question Markdown" }] };
+  const history = [turn, fallback, request];
+  const notice = (items: DisplayItem[]) => renderToStaticMarkup(<PendingInteractionNotice items={items} onOpen={() => {}} />);
+  const render = (items: DisplayItem[], window = items, searchTarget?: string | number) => renderToStaticMarkup(<SessionTimeline binding={{conversation_id:"s",daemon_session_id:"s",created_at:"now"}}
+    session={{id:"s",state:"running",live:true,working:true,created_at:"now"}} items={window} searchTarget={searchTarget} interactionHistory={items} itemsAuthoritative
+    itemsLoading={false} itemsError={null} message={null} daemonUrl="" streamingItemIds={new Set()} smoothStreaming={false}
+    submittingApprovalIds={new Set()} submittingInteractionIds={new Set()} onSubmitApproval={async()=>{}} onSubmitInteraction={async()=>{}} />);
+  assert.match(render(history), /Submit answer/);
+  assert.match(notice(history), /1 pending question/);
+  assert.doesNotMatch(render(history), /Question Markdown/);
+  assert.match(render(history, history, fallback.id), /data-message-id="call"/);
+  for (const type of ["turn_completed", "turn_interrupted", "turn_failed"] as const) {
+    const ended = [...history, {...turn, type, id:"end", sequence:4}];
+    assert.equal(notice(ended), "");
+    assert.doesNotMatch(render(ended), /Question Markdown/);
+    assert.doesNotMatch(render(ended), /Submit answer|input type="radio"/);
+    assert.doesNotMatch(render(ended, [request]), /Submit answer|Which approach/);
+    const answer: DisplayItem = { ...request, id:"reply", sequence:5, type:"interaction_response", interaction:{...request.interaction,status:"resolved"} };
+    assert.match(render([...ended, answer]), /Answered question/);
+    assert.doesNotMatch(render([...ended, answer]), /Question Markdown/);
+    assert.match(render([...ended, answer], [...ended, answer], fallback.sequence), /data-message-id="call"/);
+    const searched = render(ended, ended, fallback.id);
+    assert.match(searched, /Question Markdown/);
+    assert.doesNotMatch(searched, /Submit answer|input type="radio"/);
+  }
+  const raw = { ...fallback, followup_question_id: "card" };
+  assert.deepEqual(visibleDisplayItems([raw]), []);
+  assert.doesNotMatch(render(history, [raw]), /Question Markdown/);
+  const newTurn = {...turn, sequence:5, turn:{id:"other"}};
+  assert.equal(notice([newTurn, request]), "");
+  assert.equal(hasUnresolvedTurnItems([request]), true);
+  assert.equal(hasUnresolvedTurnItems([newTurn, request]), false);
 });

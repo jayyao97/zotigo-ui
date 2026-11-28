@@ -41,7 +41,7 @@ async function wait(expression, description = expression) {
   while (Date.now() < deadline) { if (await evaluate(expression)) return; await delay(100); }
   throw new Error('Timed out: ' + description);
 }
-const visibleButtons = `[...document.querySelectorAll('[role="button"],[role="link"],button,a')].filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden')`;
+const visibleButtons = `[...document.querySelectorAll('[role="button"],[role="link"],[role="radio"],button,a')].filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden')`;
 async function click(label) {
   const predicate = `e.getAttribute('aria-label') === ${JSON.stringify(label)} || e.textContent.trim().startsWith(${JSON.stringify(label)})`;
   await wait(`${visibleButtons}.some(e => ${predicate})`, 'button ' + label);
@@ -127,6 +127,22 @@ try {
   for (const row of ['Model profiles', 'Favorite models', 'Runtime status']) {
     await click(row);
     await wait(`[...document.querySelectorAll('[role="heading"]')].some(e => e.getClientRects().length && e.textContent.trim() === ${JSON.stringify(row)})`, 'screen titled ' + row);
+    if (row === "Model profiles") {
+      await bodyIncludes("Web search");
+      await click("Search provider"); await click("DeepSeek"); await click("Save");
+      await bodyIncludes("Enter a DeepSeek API key or set DEEPSEEK_API_KEY on this host.");
+      await input("DeepSeek API key", "fixture-search-key"); await click("Save");
+      await bodyIncludes("Clear saved DeepSeek API key");
+      await input("Tavily API key", "   "); await click("Save");
+      await wait(`document.querySelector('[aria-label="Tavily API key"]')?.value === ''`, "same-revision save cleared the password field");
+      await bodyIncludes("Clear saved Tavily API key");
+      await evaluate("document.querySelector('[aria-label=\"Clear saved DeepSeek API key\"]').click()");
+      await click("Search provider"); await click("Tavily"); await click("Save");
+      await wait("!document.querySelector('[aria-label=\"Clear saved DeepSeek API key\"]')", "inactive DeepSeek credential was cleared");
+      await bodyIncludes("Clear saved Tavily API key");
+      checks.push("Changing the search provider can clear the previous provider’s credential and keep the selected one");
+      await shot("02b-search-settings");
+    }
     await back();
   }
   // Usage reads the same daemon endpoints as Desktop; a tap on a day narrows the period below.
@@ -158,6 +174,15 @@ try {
   assert.ok(recent.rows.at(-1).startsWith('Show '), 'Recent is a short preview with a way to see more');
   assert.equal(await evaluate(`${visibleButtons}.some(e => e.getAttribute('aria-label') === 'New project')`), true, 'New project is reachable from Home');
   checks.push('Home lists recent conversations across projects first, with location, age and a bounded preview');
+  await click('Review daemon API contracts');
+  await bodyIncludes('如果现在能瞬间到一个地方待半天，你想去哪儿？');
+  await click('海边听浪');
+  await shot('02e-async-question');
+  await click('Submit answer');
+  await bodyIncludes('Answered question');
+  await wait(`!${visibleButtons}.some(e => e.textContent.trim() === 'Submit answer')`);
+  await back();
+  checks.push('Async question can be answered during its turn');
   // A new conversation offers the same attachment sources as a conversation.
   await click('New conversation');
   await click('Attach');
@@ -249,10 +274,10 @@ try {
   assert.equal(await evaluate(`document.querySelector('[aria-label="Message"]').value`), '');
   assert.equal(await evaluate(`__ZOTIGO_PREVIEW__.snapshot('home').activeStreams`), 0);
   await shot('11-work-conversation'); checks.push('Same session ID on Work has no Home submission/draft and Home stream remains closed');
-  const saveDisabled = `${visibleButtons}.find(e => e.textContent.trim() === 'Save')?.getAttribute('aria-disabled')`;
-  await click('Conversation details'); await wait(`${saveDisabled} === 'true'`, 'Save disabled for an unchanged title');
-  await input('Rename conversation', 'Work: renamed in smoke'); await wait(`${saveDisabled} !== 'true'`, 'Save enabled for an edit');
-  await click('Save'); await wait(`${saveDisabled} === 'true'`, 'Save disabled again once saved');
+  const canSaveTitle = `${visibleButtons}.some(e => e.textContent.trim() === 'Save' && e.getAttribute('aria-disabled') !== 'true' && !e.disabled)`;
+  await click('Conversation details'); await wait(`!!document.querySelector('[aria-label="Rename conversation"]') && !${canSaveTitle}`, 'unchanged title cannot be saved');
+  await input('Rename conversation', 'Work: renamed in smoke'); await wait(canSaveTitle, 'Save enabled for an edit');
+  await click('Save'); await wait(`!${canSaveTitle}`, 'saved title cannot be submitted again');
   await bodyIncludes('Work: renamed in smoke');
   // The Session ID copies from the same sheet (Desktop: sidebar menu).
   await evaluate(`navigator.clipboard.writeText = async (text) => { window.__copied = text; }; true`);

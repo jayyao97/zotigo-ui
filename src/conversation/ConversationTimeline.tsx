@@ -86,6 +86,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   binding,
   session,
   items,
+  searchTarget,
   itemsAuthoritative,
   interactionHistory = items,
   itemsLoading,
@@ -111,6 +112,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   binding: DaemonSessionBinding | null;
   session: ZotigoSession | null;
   items: DisplayItem[];
+  searchTarget?: number | string;
   itemsAuthoritative: boolean;
   interactionHistory?: DisplayItem[];
   itemsLoading: boolean;
@@ -142,16 +144,16 @@ export const SessionTimeline = memo(function SessionTimeline({
   );
   const orderedItems = useMemo(() => orderLateTurnItems(displayItems), [displayItems]);
   const turnActions = useMemo(() => sessionTurnActions(orderedItems), [orderedItems]);
-  const visibleItems = useMemo(() => visibleDisplayItems(orderedItems), [orderedItems]);
   const recordedActiveTurn = latestActiveTurn(items);
   const activeTurn = itemsAuthoritative && (session?.state === "starting" || session?.state === "running")
     ? recordedActiveTurn
     : null;
   const openTurn = itemsAuthoritative && session && sessionAllowsActiveTurn(session.state) ? recordedActiveTurn : null;
   const pendingRequests = useMemo(
-    () => pendingHumanRequestIDs(itemsAuthoritative ? interactionHistory : []),
-    [interactionHistory, itemsAuthoritative],
+    () => pendingHumanRequestIDs(itemsAuthoritative ? interactionHistory : [], session?.state),
+    [interactionHistory, itemsAuthoritative, session?.state],
   );
+  const visibleItems = useMemo(() => visibleDisplayItems(orderedItems, pendingRequests.interactions, searchTarget), [orderedItems, pendingRequests, searchTarget]);
   const pendingApprovalIds = session?.state === "paused" ? pendingRequests.approvals : new Set<string>();
   const sessionActiveTool = currentSessionActiveTool(session, items);
   const activeToolCall = activeTurn
@@ -704,19 +706,19 @@ export function UserInputItem({ item, pending, submitting, onSubmit }: {
       void onSubmit(interaction.id, buildInteractionAnswers(questions, answers));
     }}>
       <div className="approval-card-heading"><strong>{requester}</strong></div>
-      <p className="interaction-mode">{pending === undefined ? t("interaction.stateUnavailable") : interaction.is_blocking ? t("interaction.waitingForAnswer") : t("interaction.answerWhileWorking")}</p>
+      <p className="interaction-mode">{pending === undefined ? t("interaction.stateUnavailable") : interaction.reply_as_message ? t("interaction.replyAsMessage") : interaction.is_blocking ? t("interaction.waitingForAnswer") : t("interaction.answerWhileWorking")}</p>
       {questions.map((question) => (
         <fieldset key={question.id} disabled={submitting || pending !== true}>
           <legend>{question.header && <span>{question.header}</span>}{question.question}</legend>
           {(question.options ?? []).map((option) => (
             <label className="interaction-option" key={option.label}>
-              <input type="radio" name={question.id} checked={!answers[question.id]?.otherSelected && answers[question.id]?.selected === option.label} onChange={() => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], selected: option.label, otherSelected: false } })); }} />
+              <input type="radio" name={`${interaction.id}-${question.id}`} checked={!answers[question.id]?.otherSelected && answers[question.id]?.selected === option.label} onChange={() => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], selected: option.label, otherSelected: false } })); }} />
               <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
             </label>
           ))}
           {question.is_other && (question.options?.length ?? 0) > 0 && (
             <label className="interaction-option">
-              <input type="radio" name={question.id} checked={answers[question.id]?.otherSelected === true} onChange={() => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], otherSelected: true } })); }} />
+              <input type="radio" name={`${interaction.id}-${question.id}`} checked={answers[question.id]?.otherSelected === true} onChange={() => { setConfirmUnanswered(false); setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], otherSelected: true } })); }} />
               <span><strong>{t("conversationTimeline.noneOfTheAbove")}</strong></span>
             </label>
           )}

@@ -345,7 +345,7 @@ export interface ClientApi {
   getProfiles(workingDirectory?: string, scope?: "global", hostId?: string): Promise<ProfilesResponse>;
   getModelSettings(hostId?: string): Promise<import("./modelSettings").ModelSettings>;
   updateComponent(target: "client" | "daemon", action: import("./updates").UpdateAction, channel?: import("./updates").UpdateChannel, hostId?: string): Promise<import("./updates").UpdateStatus>;
-  updateModelSettings(change: import("./modelSettings").ModelSettingsChange, hostId?: string): Promise<import("./modelSettings").ModelSettings>;
+  updateModelSettings(change: import("./modelSettings").SettingsUpdate, hostId?: string): Promise<import("./modelSettings").ModelSettings>;
   testModelSettings(change: import("./modelSettings").ModelSettingsChange, hostId?: string): Promise<import("./modelSettings").ModelTestResult>;
   listSkills(sessionId?: string, forceReload?: boolean): Promise<SkillsResponse>;
   getAgents(hostId?: string): Promise<AgentCatalogResponse>;
@@ -407,7 +407,7 @@ export interface ClientApi {
   startConversationSession(conversationId: string): Promise<DesktopActionResult>;
   sendConversationMessage(input: SendConversationMessageInput): Promise<DesktopActionResult>;
   listQueuedInputs(id: string): Promise<import("./zotigod").QueuedInput[] | null>;
-  listCompletionTriggers(id: string, targetId?: string): Promise<{ id: string; title: string; on_fire: string; expires_at: string; state?: "pending" | "fired" | "cancelled" | "expired" }[] | null>;
+  listCompletionTriggers(id: string, targetId?: string): Promise<{ id: string; title: string; on_fire: string; watch_session_id?: string; expires_at: string; state?: "pending" | "fired" | "cancelled" | "expired" }[] | null>;
   cancelCompletionTrigger(id: string, triggerId: string): Promise<void>;
   editQueuedInput(id: string, itemId: string, revision: number, text: string, imageIndices?: number[]): Promise<void>;
   deleteQueuedInput(id: string, itemId: string, revision: number): Promise<void>;

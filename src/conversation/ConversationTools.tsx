@@ -24,7 +24,7 @@ type Props = {
   translationProfile: string;
   items: DisplayItem[];
   search: (query: string) => Promise<SessionSearchResponse>;
-  showHit: (hit: SessionSearchHit, signal: AbortSignal) => Promise<void>;
+  showHit: (hit: SessionSearchHit, signal: AbortSignal, alreadyVisible: boolean) => Promise<void>;
   onCloseSearch: () => void;
   onSearch: () => void;
 };

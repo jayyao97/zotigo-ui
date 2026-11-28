@@ -1,3 +1,4 @@
+import { WebSearchSettings } from "./WebSearchSettings";
 import { hosts } from "../platform/storage";
 import { createDaemon } from "../platform/client";
 import { SettingsPage } from "../components/SettingsLayout";
@@ -5,7 +6,7 @@ import Plus from "lucide-react-native/icons/plus";
 import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { t } from "@zotigo/shared/i18n/index";
-import type { ModelProfile, ModelSettings, ModelSettingsChange } from "@zotigo/shared/modelSettings";
+import type { ModelProfile, ModelSettings, ModelSettingsChange, SettingsUpdate } from "@zotigo/shared/modelSettings";
 import { DaemonContext, useDaemon } from "../platform/context";
 import { useLocale } from "../platform/i18n";
 import { ApiError, type Host } from "../core/client";
@@ -85,9 +86,13 @@ function ModelSettingsContent({ hostList, selecting, hostError, onSelect }: { ho
       revision: settings.revision, action: action === "save" && !editing ? "create" : action, profile,
       ...(action !== "save" ? {} : clearKey ? { api_key: "" } : apiKey ? { api_key: apiKey } : {}),
     };
+    return persist(input, test);
+  }
+  async function persist(input: SettingsUpdate, test = false) {
+    if (lock.current) return;
     lock.current = true; setBusy(true); setError(""); setStatus("");
     try {
-      if (test) {
+      if (test && input.action !== "web_search") {
         const result = await client.testModelSettings(input);
         if (!alive.current) return;
         const reasons = { authentication: "models.authentication", quota: "models.quota", model: "models.modelError", timeout: "models.timeout", connection: "models.connection" } as const;
@@ -97,12 +102,21 @@ function ModelSettingsContent({ hostList, selecting, hostError, onSelect }: { ho
         const value = await client.updateModelSettings(input);
         if (!alive.current) return;
         setSettings(value);
-        if (action !== "default") { setDraft(undefined); setApiKey(""); setClearKey(false); setDeleting(undefined); }
+        if (input.action !== "default") { setDraft(undefined); setApiKey(""); setClearKey(false); setDeleting(undefined); }
         setStatus(t("models.saved"));
+        return value.web_search;
       }
     } catch (cause) {
       // Never echo a provider error that could contain the entered API key.
-      if (alive.current) setError(t(cause instanceof ApiError && cause.status === 409 ? "models.conflict" : "models.connection"));
+      if (!alive.current) return;
+      if (input.action === "web_search" && cause instanceof ApiError && cause.code === "search_api_key_required") {
+        const provider = input.web_search.provider;
+        if (provider === "deepseek" || provider === "tavily") {
+          setError(t("models.searchKeyRequired", { provider: t(`models.${provider}`), variable: `${provider.toUpperCase()}_API_KEY` }));
+          return;
+        }
+      }
+      setError(t(cause instanceof ApiError && cause.status === 409 ? "models.conflict" : "models.connection"));
     } finally { lock.current = false; if (alive.current) setBusy(false); }
   }
   const levels = draft?.provider === "openai" ? ["disabled", "none", "minimal", "low", "medium", "high", "xhigh", "max"]
@@ -136,6 +150,7 @@ function ModelSettingsContent({ hostList, selecting, hostError, onSelect }: { ho
         </ListGroup>
         {!settings.profiles.length && <Notice text={t("models.empty")} />}
       </Section>}
+      {!draft && settings.web_search && <WebSearchSettings key={settings.revision} settings={settings.web_search} busy={busy} save={web_search => persist({revision:settings.revision,action:"web_search",web_search})} />}
       {draft && <>
         <View style={form}>
           <TextField label={t("models.name")} value={draft.name} editable={!busy && !editing} maxLength={64} onChangeText={name => patch({ name })} help={editing ? undefined : t("models.nameHelp")} />

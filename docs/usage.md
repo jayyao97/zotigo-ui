@@ -62,6 +62,10 @@ authentication are separate.
 Older clients ignore the saved-host fields and leave `hosts.json` in place; they
 cannot use remote profiles.
 
+## Activity view
+
+When you resume an older conversation, the activity view groups it under the local date of its latest activity. Sending a follow-up during a running turn also counts. Unread conversations appear in the Unread group until read.
+
 ## Search
 
 Press ⌘K / Ctrl+K, or click the search icon in the sidebar. The palette searches
@@ -115,6 +119,8 @@ Session details are available from the details button at the top right.
 
 ## Codex sessions
 
+On Desktop, Web and mobile, Codex async questions let you select an option or write your own answer. Submit before the turn ends to send your answer to the same conversation. At turn end, unanswered cards close and answered questions remain in history. Conversation search can still take you to the original question text and options.
+
 When the daemon can find a `codex` executable, new sessions can use Codex instead
 of the Zotigo agent. Codex uses its own login and model catalog; the API profiles
 in **Settings → Models** do not affect it. **Settings → General → Sync sessions**
@@ -149,6 +155,8 @@ Open with ⌘, / Ctrl+, or from the host menu. Esc returns to the conversation.
 | Models | Model profiles on a chosen host, connection test, favourite models, Codex model refresh |
 | Usage | Token activity over time, filterable by model and source (Channels or not), with per-session rankings |
 | Versions and updates | Installed client and daemon versions, stable or development channel, check, prepare and apply updates |
+
+Under **Settings → Models → Web search**, choose Tavily or DeepSeek for the selected host and save its search API key. Leaving a key blank keeps its stored value. To remove the old provider’s key when switching, select its **Clear saved API key** option before saving. New native workers use the saved settings. When an agent registers a session completion watch, **Background notifications** shows the watched session and lets you cancel a pending watch.
 
 Updates are described in the daemon's
 [Application updates](https://github.com/jayyao97/zotigo/blob/master/docs/application-updates.md)

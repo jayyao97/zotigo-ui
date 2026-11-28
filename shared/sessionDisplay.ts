@@ -70,7 +70,8 @@ export function selectedSessionItemsNeedRefresh(
   );
 }
 
-export function pendingHumanRequestIDs(items: DisplayItem[]): PendingHumanRequestIDs {
+export function pendingHumanRequestIDs(items: DisplayItem[], state?: SessionState): PendingHumanRequestIDs {
+  const interactions = new Set<string>();
   let openTurnID = "";
   let start = 0;
   for (let index = 0; index < items.length; index += 1) {
@@ -83,7 +84,7 @@ export function pendingHumanRequestIDs(items: DisplayItem[]): PendingHumanReques
       if (turnID === openTurnID) openTurnID = "";
     }
   }
-  if (!openTurnID) return { approvals: new Set(), interactions: new Set() };
+  if (!openTurnID) return { approvals: new Set(), interactions };
   for (let index = items.length - 1; index >= start; index -= 1) {
     if (items[index].type === "turn_started" && items[index].turn?.id === openTurnID) {
       start = index;
@@ -92,7 +93,6 @@ export function pendingHumanRequestIDs(items: DisplayItem[]): PendingHumanReques
   }
 
   const approvals = new Set<string>();
-  const interactions = new Set<string>();
   for (const item of items.slice(start)) {
     const approvalID = item.approval?.id;
     if (approvalID) {
@@ -100,7 +100,7 @@ export function pendingHumanRequestIDs(items: DisplayItem[]): PendingHumanReques
       if (item.type === "approval_decision") approvals.delete(approvalID);
     }
     const interactionID = item.interaction?.id;
-    if (interactionID) {
+    if (interactionID && (!item.interaction?.reply_as_message || (item.interaction.turn_id === openTurnID && sessionAllowsActiveTurn(state)))) {
       if (item.type === "interaction_request") interactions.add(interactionID);
       if (item.type === "interaction_response") interactions.delete(interactionID);
     }
@@ -174,7 +174,7 @@ export function mergeDisplayItems(current: DisplayItem[], incoming: DisplayItem[
   return [...bySequence.values()].sort((left, right) => left.sequence - right.sequence);
 }
 
-export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
+export function visibleDisplayItems(items: DisplayItem[], pendingInteractions = pendingHumanRequestIDs(items).interactions, searchTarget?: number | string): DisplayItem[] {
   // Keep the first row's identity and position while replacing its status.
   // The durable log retains all attempts; replay and live rendering agree.
   const retryGroups = new Map<string, { first: DisplayItem; latest: DisplayItem }>();
@@ -201,6 +201,11 @@ export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
       .map((item) => item.approval?.id)
       .filter((id): id is string => Boolean(id)),
   );
+  const visibleAsyncQuestion = (item: DisplayItem) => item.type === "interaction_request"
+    ? pendingInteractions.has(item.interaction?.id ?? "")
+    : item.type === "interaction_response" && item.interaction?.status === "resolved";
+  const questionMessageIDs = new Set(items.flatMap(item =>
+    item.interaction?.reply_as_message && item.interaction.item_id ? [item.interaction.item_id] : []));
   const resolvedInteractionIds = new Set(
     items
       .filter((item) => item.type === "interaction_response")
@@ -215,6 +220,11 @@ export function visibleDisplayItems(items: DisplayItem[]): DisplayItem[] {
     if (item.type === "request_retry" && item.retry?.request_id && retryGroups.get(item.retry.request_id)?.first !== item) return false;
     if (item.type === "model_usage_updated") return false;
     if (item.subagent) return false;
+    if (item.interaction?.reply_as_message && !visibleAsyncQuestion(item)) return false;
+    if (item.type === "assistant_message" && (item.followup_question_id || questionMessageIDs.has(item.id))) {
+      // Find and message links address the searchable transcript, including options absent from an answered card.
+      return item.id === searchTarget || item.sequence === searchTarget;
+    }
     if (duplicateSyncedUserIDs.has(item.id)) return false;
     if (item.type === "turn_started") visibleErrors.clear();
     if (item.type === "error" && item.error?.trim()) visibleErrors.add(item.error.trim());
@@ -334,7 +344,13 @@ export function hasUnresolvedTurnItems(items: DisplayItem[]): boolean {
       .map((item) => item.turn?.id)
       .filter((turnID): turnID is string => Boolean(turnID)),
   );
-  return items.some((item) => Boolean(item.turn?.id) && !startedTurns.has(item.turn?.id ?? ""));
+  // Old Codex imports may have appended a question to the tail long after its turn.
+  // Recover a page with no turn boundary, but never chase an old card past a known turn.
+  const hasBoundary = startedTurns.size > 0 || items.some(isTerminalDisplayItem);
+  return items.some(item => {
+    if (hasBoundary && (item.followup_question_id || item.interaction?.reply_as_message)) return false;
+    return Boolean(item.turn?.id) && !startedTurns.has(item.turn?.id ?? "");
+  });
 }
 
 export function createOptimisticPromptId(): string {

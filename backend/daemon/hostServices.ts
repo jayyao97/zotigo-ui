@@ -1,5 +1,5 @@
 import { parseUpdateStatus, type UpdateAction, type UpdateChannel } from "../../shared/updates";
-import { parseModelSettings, type ModelSettingsChange, type ModelTestResult } from "../../shared/modelSettings";
+import { parseModelSettings, type SettingsUpdate, type ModelSettingsChange, type ModelTestResult } from "../../shared/modelSettings";
 import { attachmentReference, type MessageFileInput } from "../../shared/messageFiles";
 import type { AgentCatalogEntry, AgentCatalogResponse, ProfilesResponse, SkillsResponse } from "../../shared/zotigod";
 import { expectRecord, expectArray, expectStringArray, expectBoolean, expectString, expectOptionalString, expectOptionalBoolean, parseOptionalArray } from "./validation";
@@ -20,7 +20,7 @@ export async function updateDaemon(action: UpdateAction, channel?: UpdateChannel
 export async function getModelSettings() {
   return parseModelSettings(await requestJSON("/config/models"));
 }
-export async function updateModelSettings(change: ModelSettingsChange) {
+export async function updateModelSettings(change: SettingsUpdate) {
   return parseModelSettings(await requestJSON("/config/models", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(change)}));
 }
 export async function testModelSettings(change: ModelSettingsChange): Promise<ModelTestResult> {

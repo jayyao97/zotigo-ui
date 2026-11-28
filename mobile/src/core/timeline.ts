@@ -396,6 +396,6 @@ export class Timeline {
     }
   }
   pending() {
-    return pendingHumanRequestIDs(this.state.items);
+    return pendingHumanRequestIDs(this.state.items, this.state.session?.state);
   }
 }

@@ -164,7 +164,7 @@ export async function listQueuedInputs(id: string): Promise<import("../../shared
   });
 }
 
-export async function listCompletionTriggers(id: string, targetId?: string): Promise<{ id: string; title: string; on_fire: string; expires_at: string; state?: "pending" | "fired" | "cancelled" | "expired" }[] | null> {
+export async function listCompletionTriggers(id: string, targetId?: string): Promise<{ id: string; title: string; on_fire: string; watch_session_id?: string; expires_at: string; state?: "pending" | "fired" | "cancelled" | "expired" }[] | null> {
   let data: unknown;
   try { data = await requestJSON(`/sessions/${encodeURIComponent(id)}/completion-triggers?include_history=true${targetId ? `&target=${encodeURIComponent(targetId)}` : ""}`); }
   catch (error) {
@@ -176,7 +176,7 @@ export async function listCompletionTriggers(id: string, targetId?: string): Pro
   return response.items.map(value => {
     const row = expectRecord(value, "completion trigger");
     if (row.state !== undefined && !["pending", "fired", "cancelled", "expired"].includes(String(row.state))) throw new Error("Invalid completion trigger state");
-    return { ...(row.state === undefined ? {} : { state: row.state as "pending" | "fired" | "cancelled" | "expired" }), id: expectString(row.id, "trigger id"), title: expectString(row.title, "title"), on_fire: expectString(row.on_fire, "on_fire"), expires_at: expectString(row.expires_at, "expires_at") };
+    return { ...(row.watch_session_id === undefined ? {} : { watch_session_id: expectString(row.watch_session_id, "watched session") }), ...(row.state === undefined ? {} : { state: row.state as "pending" | "fired" | "cancelled" | "expired" }), id: expectString(row.id, "trigger id"), title: expectString(row.title, "title"), on_fire: expectString(row.on_fire, "on_fire"), expires_at: expectString(row.expires_at, "expires_at") };
   });
 }
 

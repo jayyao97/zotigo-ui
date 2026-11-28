@@ -864,7 +864,7 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
     projectId: desktopState.selectedProjectId,
     workspaceId: desktopState.selectedWorkspaceId,
   });
-  const [searchWindow, setSearchWindow] = useState<DisplayItem[] | null>(null);
+  const [searchWindow, setSearchWindow] = useState<{ items: DisplayItem[]; target: string | number } | null>(null);
   const searchWindowRequest = useRef(0);
   const conversationFindOpen = useRef(false);
   useEffect(() => { searchWindowRequest.current++; setSearchWindow(null); }, [composerDraftKey]);
@@ -2614,10 +2614,11 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
     const binding = selectedBinding;
     if (!binding) return;
     const request = ++searchWindowRequest.current;
-    const page = await client.getSessionItemWindow(binding.daemon_session_id, target);
+    const items = searchWindow?.items.some(item => item.sequence === target || item.id === target)
+      ? searchWindow.items : (await client.getSessionItemWindow(binding.daemon_session_id, target)).items;
     if (signal?.aborted || request !== searchWindowRequest.current || selectedSessionIdRef.current !== binding.daemon_session_id) return;
     cancelScheduledConversationAutoScroll(); setStickToBottom(false);
-    setSearchWindow(page.items);
+    setSearchWindow({ items, target });
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     return request === searchWindowRequest.current && !signal?.aborted && selectedSessionIdRef.current === binding.daemon_session_id;
   }
@@ -3533,7 +3534,9 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
               onSearch={() => { conversationFindOpen.current = true; cancelScheduledConversationAutoScroll(); setStickToBottom(false); }}
               items={timelineItems}
               search={query => client.searchSession(selectedBinding.daemon_session_id, query)}
-              showHit={async (hit, signal) => { await showSearchWindow(hit.sequence, signal); }}
+              showHit={async (hit, signal, alreadyVisible) => {
+                if (!alreadyVisible || searchWindow) await showSearchWindow(hit.sequence, signal);
+              }}
               onCloseSearch={() => { conversationFindOpen.current = false; closeSearchWindow(); }}
               translationProfile={translationProfile}
               translate={(text, language) => client.translateSelection(selectedBinding.daemon_session_id, text, language, translationProfile || undefined)}
@@ -3597,7 +3600,8 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
                 onOpenForkSource={timelineActions.onOpenForkSource}
                 binding={selectedBinding}
                 session={selectedSession}
-                items={searchWindow ?? timelineItems}
+                items={searchWindow?.items ?? timelineItems}
+                searchTarget={searchWindow?.target}
                 interactionHistory={actionableSessionItems}
                 itemsAuthoritative={sessionItemsLoadedForSessionId === selectedBinding?.daemon_session_id}
                 itemsLoading={sessionItemsLoading}
@@ -3692,7 +3696,7 @@ export default function App({ onConfigureModels, onOpenSettings, defaultSendMode
 
         {selectedConversation && (
           <div className="composer-shell">
-            <PendingInteractionNotice items={actionableSessionItems} onOpen={(id) => {
+            <PendingInteractionNotice items={actionableSessionItems} sessionState={selectedSession?.state} onOpen={(id) => {
               closeSearchWindow();
               stickToBottomRef.current = false;
               requestAnimationFrame(() => {

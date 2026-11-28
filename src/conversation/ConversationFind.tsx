@@ -22,7 +22,7 @@ type Props = {
   root: RefObject<HTMLDivElement | null>;
   items: DisplayItem[];
   search: (query: string) => Promise<SessionSearchResponse>;
-  showHit: (hit: SessionSearchHit, signal: AbortSignal) => Promise<void>;
+  showHit: (hit: SessionSearchHit, signal: AbortSignal, alreadyVisible: boolean) => Promise<void>;
   onOpen: () => void;
   onClose: () => void;
 };
@@ -101,12 +101,8 @@ export function ConversationFind({ root, items, search, showHit, onOpen, onClose
     };
     observer = new MutationObserver(highlight);
     if (root.current) observer.observe(root.current, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-expanded"] });
-    if (locate()) highlight();
-    else {
-      // React may commit the fetched window after the request promise resolves.
-      // Observe that commit instead of assuming one animation frame is enough.
-      void actions.current.showHit(hit, controller.signal).then(highlight).catch(cause => { observer?.disconnect(); if (!cancelled) setError(cause instanceof Error ? cause.message : t("conversationFind.couldNotLoadMessage")); });
-    }
+    // Even a rendered hit changes which question transcript belongs in this window.
+    void actions.current.showHit(hit, controller.signal, !!locate()).then(highlight).catch(cause => { observer?.disconnect(); if (!cancelled) setError(cause instanceof Error ? cause.message : t("conversationFind.couldNotLoadMessage")); });
     return () => { cancelled = true; controller.abort(); observer?.disconnect(); if (typeof CSS !== "undefined" && CSS.highlights) CSS.highlights.delete("conversation-find-active"); };
   }, [open, term, hit?.id, navigation, root]);
   const move = (delta: number) => { setNavigation(value => value + 1); setIndex(value => hits.length ? (value + delta + hits.length) % hits.length : 0); };
