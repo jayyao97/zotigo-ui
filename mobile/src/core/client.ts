@@ -1,3 +1,4 @@
+import { hostRequestHeaders, resolveHostHeaders, type HostHeader } from "@zotigo/shared/hostHeaders";
 import { parseModelSettings, parseModelSettingsChange, type ModelSettingsChange, type ModelTestResult } from "@zotigo/shared/modelSettings";
 import { mergeReadState } from "@zotigo/shared/sessionReadState";
 import {
@@ -25,6 +26,7 @@ export interface Host {
   baseUrl: string;
 }
 export interface Connection extends Host {
+  headers?: readonly HostHeader[];
   token: string;
 }
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -107,6 +109,7 @@ export class DaemonClient {
   ) {
     this.connection = Object.freeze({
       ...connection,
+      headers: Object.freeze(resolveHostHeaders(connection.headers ?? [])),
       baseUrl: normalizeAddress(connection.baseUrl),
     });
   }
@@ -155,9 +158,7 @@ export class DaemonClient {
     }
     const timer = timeout ? setTimeout(abort, timeout) : undefined;
     try {
-      const headers = new Headers(init.headers);
-      if (this.connection.token)
-        headers.set("Authorization", `Bearer ${this.connection.token}`);
+      const headers = hostRequestHeaders(this.connection, init.headers);
       const response = await this.fetcher(this.connection.baseUrl + path, {
         ...init,
         headers,
@@ -694,13 +695,10 @@ export class DaemonClient {
     return this.fetcher(
       this.connection.baseUrl + `/sessions/${enc(id)}/events?after=${after}`,
       {
-        headers: {
+        headers: hostRequestHeaders(this.connection, {
           Accept: "text/event-stream",
           "X-Zotigo-Runtime-Updates": "true",
-          ...(this.connection.token
-            ? { Authorization: `Bearer ${this.connection.token}` }
-            : {}),
-        },
+        }),
         redirect: "error",
         signal,
       },

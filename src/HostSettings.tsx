@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Pencil, Plus, Server, Trash2, X } from "lucide-react";
 import type { ClientApi } from "../shared/clientTypes";
 import type { HostProfile } from "../shared/hosts";
+import { resolveHostHeaders, type HostHeaderInput } from "../shared/hostHeaders";
 import { t } from "../shared/i18n/index";
 import { useLocale } from "./i18n";
 
@@ -20,6 +21,7 @@ export function HostSettings({ api, kind, profiles, selected, busy, status: init
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [token, setToken] = useState("");
+  const [headers, setHeaders] = useState<HostHeaderInput[]>([]);
   const [clearToken, setClearToken] = useState(false);
   const [working, setWorking] = useState(false);
   const [status, setStatus] = useState(initialStatus);
@@ -27,8 +29,8 @@ export function HostSettings({ api, kind, profiles, selected, busy, status: init
   useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => { setStatus(initialStatus); }, [initialStatus]);
   useEffect(() => { if (view.kind !== "list") heading.current?.focus(); }, [view.kind]);
-  function reset() { setView({ kind: "list" }); setName(""); setAddress(""); setToken(""); setClearToken(false); setStatus(""); }
-  function openForm(host: HostProfile | null) { setView({ kind: "form", host }); setName(host?.name ?? ""); setAddress(host?.baseUrl ?? ""); setToken(""); setClearToken(false); setStatus(""); }
+  function reset() { setHeaders([]); setView({ kind: "list" }); setName(""); setAddress(""); setToken(""); setClearToken(false); setStatus(""); }
+  function openForm(host: HostProfile | null) { setHeaders((host?.headerNames ?? []).map(name => ({ name }))); setView({ kind: "form", host }); setName(host?.name ?? ""); setAddress(host?.baseUrl ?? ""); setToken(""); setClearToken(false); setStatus(""); }
   function dismiss() { if (view.kind === "list") onClose(); else reset(); }
   async function run(action: () => Promise<void>) {
     setWorking(true); setStatus("");
@@ -67,9 +69,15 @@ export function HostSettings({ api, kind, profiles, selected, busy, status: init
       </footer>
     </>}
     {view.kind === "form" && <form onSubmit={(event) => { event.preventDefault(); void run(async () => {
-      const connectionChanged = editing && (new URL(address).origin !== editing.baseUrl || !!token || clearToken);
+      const origin = new URL(address).origin;
+      const savedNames = editing?.headerNames ?? [];
+      // Validate masked entries before asking the user to switch away. Only
+      // the backend has the actual saved values and resolves these omissions.
+      resolveHostHeaders(headers, origin === editing?.baseUrl ? savedNames.map(name => ({ name, value: "saved" })) : []);
+      const headersChanged = headers.length !== savedNames.length || headers.some(row => row.value !== undefined || !savedNames.includes(row.name.toLowerCase()));
+      const connectionChanged = editing && (origin !== editing.baseUrl || !!token || clearToken || headersChanged);
       if (connectionChanged && !await prepare(editing.id)) return;
-      await api.saveHost({ id: editing?.id, name, baseUrl: address, token: clearToken ? "" : editing && !token ? undefined : token });
+      await api.saveHost({ id: editing?.id, name, baseUrl: address, headers, token: clearToken ? "" : editing && !token ? undefined : token });
       if (connectionChanged) onDiscard(editing.id);
       onProfiles(await api.listHosts()); reset(); setStatus(t("hostShell.hostSavedTestTheConnectionOrSelectIt"));
     }); }}>
@@ -78,6 +86,15 @@ export function HostSettings({ api, kind, profiles, selected, busy, status: init
       <label>{t("hostShell.daemonAddress")}<input disabled={disabled} value={address} onChange={(event) => setAddress(event.target.value)} placeholder={t("host.urlExample")} required /></label>
       <label>{t("hostShell.daemonToken")}<input disabled={disabled || clearToken} type="password" value={token} onChange={(event) => setToken(event.target.value)} autoComplete="new-password" placeholder={editing?.hasToken ? t("hostShell.keepToken") : undefined} /></label>
       {editing?.hasToken && <label className="host-token-clear"><input disabled={disabled} type="checkbox" checked={clearToken} onChange={(event) => setClearToken(event.target.checked)} />{t("hostShell.clearToken")}</label>}
+      {headers.map((header, index) => <div className="host-header-row" key={index}>
+        <label>{t("hostShell.headerName")}<input value={header.name} disabled={disabled} required autoCapitalize="none" spellCheck={false}
+          onChange={event => setHeaders(headers.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /></label>
+        <label>{t("hostShell.headerValue")}<input value={header.value ?? ""} disabled={disabled} type="password" autoComplete="new-password"
+          placeholder={editing?.headerNames?.includes(header.name) ? t("hostShell.keepHeader") : undefined}
+          onChange={event => setHeaders(headers.map((item, i) => i === index ? { ...item, value: event.target.value || undefined } : item))} /></label>
+        <button type="button" disabled={disabled} aria-label={t("hostShell.removeHeader")} onClick={() => setHeaders(headers.filter((_, i) => i !== index))}><Trash2 size={15} /></button>
+      </div>)}
+      <div><button type="button" disabled={disabled || headers.length >= 32} onClick={() => setHeaders([...headers, { name: "", value: "" }])}><Plus size={15} />{t("hostShell.addHeader")}</button></div>
       <small>{t("hostShell.useHttpsOutsideATrustedNetwork")}</small>
       {status && <p role="status">{status}</p>}
       <footer>

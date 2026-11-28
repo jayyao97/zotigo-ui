@@ -3,8 +3,9 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { HostInput, HostProfile } from "../shared/hosts";
+import { hostRequestHeaders, resolveHostHeaders, type HostHeader } from "../shared/hostHeaders";
 
-export interface Connection { id: string; name: string; baseUrl: string; token: string; }
+export interface Connection { id: string; name: string; baseUrl: string; token: string; headers?: readonly HostHeader[]; }
 const context = new AsyncLocalStorage<Connection>();
 let file: string | null = null;
 let hosts: Connection[] = [];
@@ -30,18 +31,21 @@ export function resolveHost(id: string): Connection {
 export function withConnection<T>(connection: Connection, run: () => T): T { return context.run(connection, run); }
 export function currentHost(): Connection | undefined { return context.getStore(); }
 export function withHost<T>(id: string, run: () => T): T { return context.run(resolveHost(id), run); }
-export function listHosts(): HostProfile[] { return [local(), ...hosts].map(({ token, ...host }) => ({ ...host, hasToken: !!token })); }
+function profile({ id, name, baseUrl, token, headers }: Connection): HostProfile {
+  return { id, name, baseUrl, hasToken: !!token, headerNames: headers?.map(header => header.name) ?? [] };
+}
+export function listHosts(): HostProfile[] { return [local(), ...hosts].map(profile); }
 export function saveHost(input: HostInput): HostProfile {
   if (input?.id === "local") throw new Error("The default host is managed by the application.");
   const existing = input?.id ? hosts.find((host) => host.id === input.id) : undefined;
   if (input?.id && !existing) throw new Error("Host is no longer available.");
   if (!existing && hosts.length >= 50) throw new Error("Too many saved hosts.");
-  const next = validateInput({ ...input, token: input?.token === undefined ? existing?.token : input.token }, existing?.id ?? randomUUID());
+  const next = validateInput({ ...input, token: input?.token === undefined ? existing?.token : input.token }, existing?.id ?? randomUUID(), existing);
   // Other clients may still hold the old ID; never redirect their actions to new credentials.
-  if (existing && (next.baseUrl !== existing.baseUrl || next.token !== existing.token)) next.id = randomUUID();
+  if (existing && (next.baseUrl !== existing.baseUrl || next.token !== existing.token || JSON.stringify(next.headers) !== JSON.stringify(existing.headers))) next.id = randomUUID();
   const updated = existing ? hosts.map((host) => host.id === existing.id ? next : host) : [...hosts, next];
   persist(updated); hosts = updated;
-  const { token, ...host } = next; return { ...host, hasToken: !!token };
+  return profile(next);
 }
 export function deleteHost(id: string): void {
   if (id === "local") throw new Error("The default host cannot be removed.");
@@ -53,16 +57,18 @@ function persist(value: Connection[]): void {
   fs.writeFileSync(temporary, JSON.stringify(value), { mode: 0o600, flag: "wx" });
   try { fs.renameSync(temporary, file); } finally { fs.rmSync(temporary, { force: true }); }
 }
-function validateInput(input: HostInput, id: string): Connection {
+function validateInput(input: HostInput, id: string, existing?: Connection): Connection {
   if (!input || typeof input.name !== "string" || !input.name.trim() || input.name.length > 100 || typeof input.baseUrl !== "string") throw new Error("Enter a host name and address.");
   const url = new URL(input.baseUrl);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || !["", "/"].includes(url.pathname)) throw new Error("Use an HTTP(S) daemon origin without a path or credentials.");
   if (typeof id !== "string" || id === "local" || !/^[a-zA-Z0-9-]+$/.test(id)) throw new Error("Invalid host ID.");
   if (input.token !== undefined && (typeof input.token !== "string" || input.token.length > 8192 || /[\r\n]/.test(input.token))) throw new Error("Invalid daemon token.");
-  return { id, name: input.name.trim(), baseUrl: url.origin, token: input.token?.trim() ?? "" };
+  const savedHeaders = existing?.baseUrl === url.origin ? existing.headers : undefined;
+  const headers = input.headers === undefined ? savedHeaders ?? [] : resolveHostHeaders(input.headers, savedHeaders);
+  return { headers: Object.freeze(headers), id, name: input.name.trim(), baseUrl: url.origin, token: input.token?.trim() ?? "" };
 }
 export async function testHost(id: string): Promise<void> {
-  const host = resolveHost(id); const headers = host.token ? { Authorization: `Bearer ${host.token}` } : undefined;
+  const host = resolveHost(id); const headers = hostRequestHeaders(host);
   await Promise.all(["/health", "/projects", ...(id === "local" ? [] : ["/files/capabilities"])].map(async endpoint => {
     const response = await fetch(host.baseUrl + endpoint, { headers, redirect: "error", signal: AbortSignal.timeout(10000) });
     if (!response.ok) { await response.body?.cancel(); throw new Error(endpoint === "/files/capabilities" && response.status === 404 ? "Update this daemon to support remote workspace files." : response.status === 401 ? "Daemon rejected the token." : `Daemon returned ${response.status}.`); }

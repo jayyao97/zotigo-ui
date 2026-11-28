@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initializeHosts, saveHost, listHosts, deleteHost, withHost, currentHost, resolveHost } from "../backend/hosts";
-import { daemonHeaders } from "../backend/daemonHttp";
+import { daemonHeaders, fetchDaemon } from "../backend/daemonHttp";
 
 test("saved hosts keep secrets private and concurrent operations retain their original connection", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-hosts-"));
@@ -63,6 +63,8 @@ test("host capability checks overlap instead of taking three network round trips
   const paths: string[] = [];
   const server = createServer((request, response) => {
     assert.equal(request.headers.authorization, "Bearer fixture-token");
+    assert.equal(request.headers["cf-access-client-id"], "fixture-id");
+    assert.equal(request.headers["cf-access-client-secret"], "fixture-secret");
     paths.push(request.url!); waiting.push(response);
     if (waiting.length === 3) for (const reply of waiting) {
       reply.writeHead(200, { "Content-Type": "application/json" });
@@ -73,11 +75,57 @@ test("host capability checks overlap instead of taking three network round trips
   const address = server.address(); assert.ok(address && typeof address !== "string");
   try {
     initializeHosts(directory);
-    const host = saveHost({ name: "Fixture", baseUrl: `http://127.0.0.1:${address.port}`, token: "fixture-token" });
+    const host = saveHost({ name: "Fixture", baseUrl: `http://127.0.0.1:${address.port}`, token: "fixture-token",
+      headers: [{ name: "CF-Access-Client-Id", value: "fixture-id" }, { name: "CF-Access-Client-Secret", value: "fixture-secret" }] });
     await testHost(host.id);
     assert.deepEqual(paths.sort(), ["/files/capabilities", "/health", "/projects"]);
   } finally {
     server.closeAllConnections(); server.close();
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("gateway headers stay private, scoped and editable across restarts", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-gateway-"));
+  try {
+    initializeHosts(dir);
+    const input = { name: "Work", baseUrl: "https://work.test" };
+    const row = { name: "X-Gateway", value: "fixture-secret" };
+    const first = saveHost({ ...input, headers: [row] });
+    assert.deepEqual(first.headerNames, ["x-gateway"]);
+    initializeHosts(dir);
+    assert.ok(!JSON.stringify([first, listHosts()]).includes(row.value));
+    const edit = { ...input, id: first.id };
+    assert.equal(saveHost({ ...edit, headers: [{ name: row.name }] }).id, first.id);
+    assert.throws(() => saveHost({ ...edit, baseUrl: "https://other.test", headers: [{ name: row.name }] }));
+    for (const headers of [[row, { ...row, name: "x-gateway" }], [{ ...row, name: "Authorization" }], [{ ...row, value: "x\r\ny" }]])
+      assert.throws(() => saveHost({ ...edit, headers }));
+    withHost(first.id, () => {
+      assert.equal(daemonHeaders(input.baseUrl).get(row.name), row.value);
+      assert.throws(() => daemonHeaders("https://other.test"));
+    });
+    const rotated = saveHost({ ...edit, headers: [{ ...row, value: "updated" }] });
+    assert.notEqual(rotated.id, first.id);
+    const cleared = saveHost({ ...edit, id: rotated.id, headers: [] });
+    assert.equal(withHost(cleared.id, () => daemonHeaders(input.baseUrl).get(row.name)), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a daemon redirect cannot forward gateway credentials", async () => {
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "zotigo-redirect-"));
+  let followed = false;
+  const server = createServer((req, res) => {
+    if (req.url === "/target") { followed = true; res.end(); return; }
+    res.writeHead(302, { Location: "/target" }).end();
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  try {
+    const address = server.address(); assert.ok(address && typeof address !== "string");
+    initializeHosts(directory);
+    const host = saveHost({ name: "Redirect", baseUrl: `http://127.0.0.1:${address.port}`, headers: [{ name: "X-Gateway", value: "fixture-secret" }] });
+    await assert.rejects(withHost(host.id, () => fetchDaemon(host.baseUrl + "/start")));
+    assert.equal(followed, false);
+  } finally { server.closeAllConnections(); server.close(); fs.rmSync(directory, { recursive: true, force: true }); }
 });

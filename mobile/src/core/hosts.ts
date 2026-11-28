@@ -1,4 +1,8 @@
 import { normalizeAddress, type Host, type Connection } from "./client";
+import { resolveHostHeaders, type HostHeader } from "@zotigo/shared/hostHeaders";
+
+// Legacy records contain only a bearer token, which cannot contain a newline.
+const credentialPrefix = "zotigo-credentials-v2\n";
 export interface Storage {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
@@ -39,18 +43,23 @@ export class HostStore {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-  savedToken(id: string) {
-    return this.secrets.get("host." + id);
+  async credentials(id: string): Promise<{ token: string; headers: HostHeader[] } | null> {
+    const raw = await this.secrets.get("host." + id);
+    if (raw === null) return null;
+    if (!raw.startsWith(credentialPrefix)) return { token: raw, headers: [] };
+    const data = JSON.parse(raw.slice(credentialPrefix.length));
+    if (typeof data?.token !== "string") throw new Error("Invalid device credentials.");
+    return { token: data.token, headers: resolveHostHeaders(data.headers) };
   }
   async connection(host: Host): Promise<Connection> {
-    const token = await this.secrets.get("host." + host.id);
-    if (token === null)
+    const credentials = await this.credentials(host.id);
+    if (!credentials)
       throw new Error(
         "Device credentials are missing. Edit the device to save them again.",
       );
-    return { ...host, token };
+    return { ...host, ...credentials };
   }
-  save(host: Host, token: string) {
+  save(host: Host, token: string, headers: readonly HostHeader[] = []) {
     return this.serial(async () => {
       if (!/^[a-zA-Z0-9-]+$/.test(host.id))
         throw new Error("Invalid device ID.");
@@ -66,7 +75,8 @@ export class HostStore {
         throw new Error("Use a new device ID for a different address.");
       const key = "host." + next.id;
       const previous = await this.secrets.get(key);
-      await this.secrets.set(key, token.trim());
+      const credentials = { token: token.trim(), headers: resolveHostHeaders(headers) };
+      await this.secrets.set(key, credentials.headers.length ? credentialPrefix + JSON.stringify(credentials) : credentials.token);
       try {
         await this.storage.set(
           registryKey,

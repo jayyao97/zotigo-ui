@@ -1,4 +1,5 @@
 import { t } from "@zotigo/shared/i18n/index";
+import { resolveHostHeaders, type HostHeaderInput } from "@zotigo/shared/hostHeaders";
 import { useLocale } from "../platform/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Text, View } from "react-native";
@@ -63,6 +64,8 @@ export function HostsScreen({
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [token, setToken] = useState("");
+  const [headers, setHeaders] = useState<HostHeaderInput[]>([]);
+  const [savedNames, setSavedNames] = useState<string[]>([]);
   const [tested, setTested] = useState(false);
   const [{ connecting, failed }, switcher] = useDeviceSwitch();
   const pending = useRef<DaemonClient | null>(null);
@@ -96,13 +99,19 @@ export function HostsScreen({
     void run(async () => {
       setName(host?.name ?? "");
       setAddress(host?.baseUrl ?? "");
-      setToken(host ? ((await hosts.savedToken(host.id)) ?? "") : "");
+      const saved = host ? await hosts.credentials(host.id) : null;
+      setToken(saved?.token ?? "");
+      const names = saved?.headers.map(header => header.name) ?? [];
+      setSavedNames(names);
+      setHeaders(names.map(name => ({ name })));
       setTested(false);
       setEditing(host);
     });
   }
   function close() {
     setEditing(undefined);
+    setHeaders([]);
+    setSavedNames([]);
     setToken("");
     setTested(false);
     setError("");
@@ -111,6 +120,15 @@ export function HostsScreen({
   // Half-typed addresses are normal here, so rendering must not validate by throwing.
   const origin = addressOrigin(address);
   const movesDevice = !!editing && origin !== undefined && origin !== editing.baseUrl;
+  function updateHeaders(next: HostHeaderInput[]) {
+    setHeaders(next);
+    setTested(false);
+  }
+  async function formCredentials() {
+    const saved = editing && editing.baseUrl === normalizeAddress(address) ? await hosts.credentials(editing.id) : null;
+    const resolved = resolveHostHeaders(headers, saved?.headers);
+    return { headers: resolved, changed: token.trim() !== saved?.token || JSON.stringify(resolved) !== JSON.stringify(saved?.headers) };
+  }
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <Screen>
@@ -214,6 +232,19 @@ export function HostsScreen({
                 }}
                 secureTextEntry
               />
+              {headers.map((header, index) => (
+                <View key={index} style={{ gap: space.sm }}>
+                  <TextField label={t("hostShell.headerName")} value={header.name} editable={!busy}
+                    onChangeText={name => updateHeaders(headers.map((item, i) => i === index ? { ...item, name } : item))} />
+                  <TextField label={t("hostShell.headerValue")} value={header.value ?? ""} editable={!busy} secureTextEntry
+                    placeholder={!movesDevice && savedNames.includes(header.name) ? t("hostShell.keepHeader") : undefined}
+                    onChangeText={value => updateHeaders(headers.map((item, i) => i === index ? { ...item, value: value || undefined } : item))} />
+                  <Action label={t("hostShell.removeHeader")} secondary disabled={busy}
+                    onPress={() => updateHeaders(headers.filter((_, i) => i !== index))} />
+                </View>
+              ))}
+              <Action label={t("hostShell.addHeader")} secondary disabled={busy || headers.length >= 32}
+                onPress={() => updateHeaders([...headers, { name: "", value: "" }])} />
               <Notice text={error} error />
               <Notice text={tested ? t("models.success") : ""} />
               <View style={{ gap: space.sm, marginTop: space.sm }}>
@@ -232,31 +263,31 @@ export function HostsScreen({
                         baseUrl: address,
                       };
                       const isCurrent = sameDevice && editing.id === currentId;
-                      const tokenChanged =
-                        !sameDevice || token.trim() !== ((await hosts.savedToken(editing.id)) ?? "");
+                      const credentials = await formCredentials();
                       // Connect with the new details first, and save them only
                       // once they answer, when they replace the connection in
                       // use (a new token for this device) or when there is no
                       // connection yet (the first device): a wrong token is
                       // reported here and never stored.
-                      if ((isCurrent && tokenChanged) || (!currentId && !editing)) {
+                      if ((isCurrent && credentials.changed) || (!currentId && !editing)) {
                         const connection = {
                           id: host.id,
                           name: name.trim(),
                           baseUrl: normalizeAddress(address),
                           token: token.trim(),
+                          headers: credentials.headers,
                         };
                         close();
                         void switcher.select(
                           { id: connection.id, name: connection.name, baseUrl: connection.baseUrl },
                           onConnect,
-                          { connection, accept: () => hosts.save(host, token) },
+                          { connection, accept: () => hosts.save(host, token, credentials.headers) },
                         );
                         return;
                       }
                       // Otherwise (another device, or only a new name) save as
                       // is; a name shows from the saved list at once.
-                      await hosts.save(host, token);
+                      await hosts.save(host, token, credentials.headers);
                       close();
                     })
                   }
@@ -269,6 +300,7 @@ export function HostsScreen({
                     setTested(false);
                     void run(async () => {
                       const client = createDaemon({
+                        headers: (await formCredentials()).headers,
                         id: "test",
                         name,
                         baseUrl: normalizeAddress(address),
