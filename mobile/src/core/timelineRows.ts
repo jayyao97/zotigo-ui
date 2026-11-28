@@ -30,6 +30,7 @@ export function timelineRows(
   options: {
     /** Sequence of the running turn's `turn_started`, if a turn is running. */
     activeTurnSequence?: number;
+    pendingInteractions?: Set<string>;
     agent?: string;
     thinkingMode: ThinkingDisplayMode;
     disclosures: Record<string, boolean>;
@@ -37,7 +38,7 @@ export function timelineRows(
 ): TimelineRow[] {
   const latestReasoning = latestReasoningItemId(ordered);
   return groupTimelineItems(
-    visibleDisplayItems(ordered),
+    visibleDisplayItems(ordered, options.pendingInteractions),
     options.activeTurnSequence,
   ).flatMap<TimelineRow>((group) => {
     if (group.kind === "item")

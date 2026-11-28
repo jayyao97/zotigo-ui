@@ -1,5 +1,5 @@
 import { hostRequestHeaders, resolveHostHeaders, type HostHeader } from "@zotigo/shared/hostHeaders";
-import { parseModelSettings, parseModelSettingsChange, type ModelSettingsChange, type ModelTestResult } from "@zotigo/shared/modelSettings";
+import { parseModelSettings, parseSettingsUpdate, type SettingsUpdate, parseModelSettingsChange, type ModelSettingsChange, type ModelTestResult } from "@zotigo/shared/modelSettings";
 import { mergeReadState } from "@zotigo/shared/sessionReadState";
 import {
   parseMessageFiles,
@@ -368,7 +368,7 @@ export class DaemonClient {
   listCompletionTriggers = async (id: string): Promise<Awaited<ReturnType<ClientApi["listCompletionTriggers"]>>> => {
     try {
       const { items } = await this.request<{ items: NonNullable<Awaited<ReturnType<ClientApi["listCompletionTriggers"]>>> }>(`/sessions/${enc(id)}/completion-triggers?include_history=true`);
-      if (!Array.isArray(items) || items.some(item => !item || typeof item.id !== "string" || typeof item.title !== "string" || typeof item.on_fire !== "string" || typeof item.expires_at !== "string" || (item.state !== undefined && !["pending", "fired", "cancelled", "expired"].includes(item.state)))) throw new Error("Invalid completion triggers");
+      if (!Array.isArray(items) || items.some(item => !item || typeof item.id !== "string" || typeof item.title !== "string" || typeof item.on_fire !== "string" || (item.watch_session_id !== undefined && typeof item.watch_session_id !== "string") || typeof item.expires_at !== "string" || (item.state !== undefined && !["pending", "fired", "cancelled", "expired"].includes(item.state)))) throw new Error("Invalid completion triggers");
       return items;
     } catch (error) {
       if (error instanceof ApiError && [404, 405].includes(error.status)) return null;
@@ -513,8 +513,8 @@ export class DaemonClient {
       await this.request<D.ZotigoSession>(`/sessions/${enc(id)}`),
     );
   getModelSettings = async () => parseModelSettings(await this.request("/config/models"));
-  updateModelSettings = async (change: ModelSettingsChange) =>
-    parseModelSettings(await this.request("/config/models", "PUT", parseModelSettingsChange(change)));
+  updateModelSettings = async (change: SettingsUpdate) =>
+    parseModelSettings(await this.request("/config/models", "PUT", parseSettingsUpdate(change)));
   testModelSettings = async (change: ModelSettingsChange) => {
     const result = await this.request<ModelTestResult>("/config/models/test", "POST", parseModelSettingsChange(change));
     if (!result || typeof result.ok !== "boolean") throw new Error("Invalid model test response");

@@ -305,8 +305,8 @@ function ConversationContent() {
     return composer.submit(mode);
   }
   const pending = useMemo(
-    () => pendingHumanRequestIDs(state.items),
-    [state.items],
+    () => pendingHumanRequestIDs(state.items, state.session?.state),
+    [state.items, state.session?.state],
   );
   const requests = useMemo(
     () =>
@@ -341,6 +341,7 @@ function ConversationContent() {
   const data = useMemo<TimelineRow[]>(
     () =>
       timelineRows(ordered, {
+        pendingInteractions: pending.interactions,
         activeTurnSequence: turn
           ? state.items.find((i) => i.type === "turn_started" && i.turn?.id === turn)?.sequence
           : undefined,
@@ -348,7 +349,7 @@ function ConversationContent() {
         thinkingMode: thinking.mode,
         disclosures,
       }),
-    [locale, ordered, state.items, state.session?.agent, turn, disclosures, thinking.mode],
+    [locale, ordered, pending, state.items, state.session?.agent, turn, disclosures, thinking.mode],
   );
   rows.current = data;
   const listData = useMemo(
@@ -519,7 +520,7 @@ function ConversationContent() {
             })
           }
           disabled={
-            busy || !state.session?.live || state.status !== "connected"
+            busy || state.status !== "connected" || !state.session?.live
           }
         />
       ))}

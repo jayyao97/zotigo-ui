@@ -4,7 +4,7 @@ import { getUsageSessions } from "./usageService";
 import { parseUsageQuery, parseUsageSessionsQuery } from "../shared/usage";
 import { parseMessageFiles, type MessageFileInput } from "../shared/messageFiles";
 import { createFileEvents } from "./fileEvents";
-import { parseModelSettingsChange } from "../shared/modelSettings";
+import { parseModelSettingsChange, parseSettingsUpdate } from "../shared/modelSettings";
 import { getModelSettings, updateModelSettings, testModelSettings } from "./zotigod";
 import { updateDaemon } from "./zotigod";
 import { parseUpdateRequest, type UpdateAction, type UpdateChannel, type UpdateStatus } from "../shared/updates";
@@ -190,7 +190,7 @@ addWorkspaceSourceToCatalog,
     if (!platform.updateClient) throw new Error("Client updates are unavailable in this installation.");
     return platform.updateClient(request.action, request.channel);
   });
-  handle("daemon:update-model-settings", (change, hostId) => settingsHost(hostId, () => updateModelSettings(parseModelSettingsChange(change))));
+  handle("daemon:update-model-settings", (change, hostId) => settingsHost(hostId, () => updateModelSettings(parseSettingsUpdate(change))));
   handle("daemon:test-model-settings", (change, hostId) => settingsHost(hostId, () => testModelSettings(parseModelSettingsChange(change))));
   handle("desktop:upload-attachment", (sessionId, input) => {
     const [file] = parseMessageFiles([input]);

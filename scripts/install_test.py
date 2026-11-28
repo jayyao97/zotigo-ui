@@ -45,6 +45,18 @@ class BootstrapTest(unittest.TestCase):
         self.assertNotIn("Selected stable", result.stdout)
         self.assertEqual(self.result.read_text().splitlines()[2:4], ["--component", "desktop"])
 
+    def test_cleanup_receives_build_exit_status(self):
+        helpers = self.base / "daemon/scripts"
+        helpers.mkdir(parents=True)
+        (helpers / "install-common.sh").write_text(
+            'install_init() { :; }\ninstall_cleanup() { printf "%s" "$1" > "$RESULT"; }\n')
+        (helpers / "toolchains.sh").write_text('ensure_go() { exit "$BUILD_STATUS"; }\n')
+        for status in (0, 17):
+            self.env["BUILD_STATUS"] = str(status)
+            result = self.install("--source", str(self.source), "--daemon-source", str(helpers.parent))
+            self.assertEqual(result.returncode, status, result.stderr)
+            self.assertEqual(self.result.read_text(), str(status))
+
     def test_no_stable_tag_is_an_error(self):
         subprocess.run(["git", "-C", str(self.source), "tag", "-d", "v1.9.0", "v1.10.0"], check=True, capture_output=True)
         result = self.install()

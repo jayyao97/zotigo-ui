@@ -69,7 +69,7 @@ daemon_source=$(cd "$daemon_source" && pwd -P)
 . "$daemon_source/scripts/install-common.sh"
 install_init
 # install_init sets a per-component cleanup trap; retain the bootstrap checkout as well.
-trap 'install_cleanup; rm -rf "$bootstrap"' EXIT
+trap 'install_cleanup $?; rm -rf "$bootstrap"' EXIT
 toolchain_manifest="$daemon_source/scripts/toolchains.tsv"
 . "$daemon_source/scripts/toolchains.sh"
 ensure_go "$daemon_source"

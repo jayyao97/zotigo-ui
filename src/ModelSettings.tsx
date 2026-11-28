@@ -1,8 +1,9 @@
+import { SearchSettings } from "./SearchSettings";
 import { useEffect, useRef, useState } from "react";
 import { useClient } from "./ClientContext";
 import { useLocale } from "./i18n";
 import { t } from "../shared/i18n";
-import type { ModelProfile, ModelSettings as Settings, ModelSettingsChange } from "../shared/modelSettings";
+import type { ModelProfile, ModelSettings as Settings, ModelSettingsChange, SettingsUpdate } from "../shared/modelSettings";
 
 const blankProfile = (): ModelProfile => ({name:"",provider:"openai",model:"",base_url:"",thinking_level:"",context_window:0,max_output_tokens:null,mode:"",has_api_key:false});
 
@@ -39,11 +40,11 @@ export function ModelSettings({hostId, onEditingChange, onSaved}: {hostId?: stri
   function change(action:ModelSettingsChange["action"],profile:ModelProfile):ModelSettingsChange {
     return {revision:settings!.revision,action:action === "save" && !editing ? "create" : action,profile,...(action!=="save" ? {} : clearKey ? {api_key:""} : key ? {api_key:key} : {})};
   }
-  async function submit(input:ModelSettingsChange,test=false) {
+  async function submit(input:SettingsUpdate,test=false) {
     if(inFlight.current)return;
     inFlight.current=true;setBusy(true);setTesting(test);setError("");setStatus("");
     try {
-      if(test) {
+      if(test && input.action !== "web_search") {
         const result=await api.testModelSettings(input, hostId);
         if(!alive.current)return;
         const reasons={authentication:"models.authentication",quota:"models.quota",model:"models.modelError",timeout:"models.timeout",connection:"models.connection"} as const;
@@ -53,6 +54,7 @@ export function ModelSettings({hostId, onEditingChange, onSaved}: {hostId?: stri
         if(!alive.current)return;
         onSaved?.();
         setSettings(result);setDraft(undefined);setKey("");setClearKey(false);setDeleting(undefined);setStatus(t("models.saved"));
+        return result.web_search;
       }
     } catch(cause) {if(alive.current)setError(cause instanceof Error ? cause.message : t("models.connection"));}
     finally {inFlight.current=false;if(alive.current){setBusy(false);setTesting(false);}}
@@ -112,6 +114,7 @@ export function ModelSettings({hostId, onEditingChange, onSaved}: {hostId?: stri
           </div>
         </div>)}
       </div>}
+      {!draft && settings.web_search && <SearchSettings key={hostId + settings.revision} settings={settings.web_search} busy={busy} onSave={web_search => submit({revision:settings.revision,action:"web_search",web_search})} />}
       {deleting && <div role="alert" className="settings-card model-delete-confirm"><p>{t("models.deleteConfirm",{name:deleting.name})}</p><div className="model-settings-actions"><button disabled={busy} className="settings-secondary-button" onClick={()=>setDeleting(undefined)}>{t("models.cancel")}</button><button disabled={busy} className="settings-secondary-button" onClick={()=>void submit(change("delete",deleting))}>{t("models.remove")}</button></div></div>}
     </>}
   </div>;

@@ -197,6 +197,7 @@ export interface DisplayInteractionQuestion {
 export interface DisplayInteraction {
   id: string;
   kind: "user_input";
+  reply_as_message?: boolean;
   status: "pending" | "resolved" | "expired";
   turn_id: string;
   item_id?: string;
@@ -267,6 +268,7 @@ export interface DisplayItem {
   context_usage?: ZotigoSession["context_usage"];
   retry?: { request_id?: string; status?: "waiting" | "retrying" | "recovered" | "failed" | "canceled" | "context_recovery"; attempt: number; delay_ms: number };
   before_input_id?: string;
+  followup_question_id?: string;
   /** Client-only delivery state; never submitted to the daemon. */
   /** Client-only preview awaiting queue admission. */
   queuedPreview?: boolean;

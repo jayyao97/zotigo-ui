@@ -178,6 +178,51 @@ test("idle detail polling recovers profile changes without a body stream or new 
   } finally { await act(async () => root.unmount()); window.setInterval = originalInterval; restore(); }
 });
 
+test("Find hides the previous async question when the next match is already in the window", async () => {
+  const restore = installDom();
+  Object.defineProperty(globalThis, "NodeFilter", { configurable: true, value: window.NodeFilter });
+  window.Range.prototype.getBoundingClientRect = () => new window.DOMRect();
+  window.Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+  const now = new Date().toISOString();
+  const id = "find-window";
+  const { api } = hostClient(false, { ...emptyState, selectedConversationId: id,
+    conversations: [{ id, title: "Find window", project_id: null, workspace_id: null, created_at: now, updated_at: now }],
+    bindings: [{ conversation_id: id, daemon_session_id: id, created_at: now }],
+  });
+  const items: DisplayItem[] = [
+    { id: "regular", sequence: 1, type: "user_message", created_at: now, content: [{ type: "text", text: "Option from user" }] },
+    { id: "question", sequence: 2, type: "assistant_message", created_at: now, followup_question_id: "expired",
+      content: [{ type: "text", text: "Option from question" }] },
+  ];
+  const page = { items, next_cursor: "", prev_cursor: "", has_more: false };
+  api.getSession = async () => ({ id, state: "ended", live: false, working: false, created_at: now });
+  api.listSessionItems = async () => page;
+  api.searchSession = async () => ({ hits: items.map(({ id, sequence }) => ({ id, sequence })), truncated: false });
+  const windows: (number | string)[] = [];
+  api.getSessionItemWindow = async (_id, target) => { windows.push(target); return page; };
+  const root = await mountHostShell(api);
+  try {
+    assert.ok(!document.querySelector('[data-message-id="question"]'));
+    await act(async () => click(document.querySelector('[aria-label="Find in conversation"]')!));
+    const input = document.querySelector<HTMLInputElement>('.conversation-find input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(input, "Option");
+      input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "n", bubbles: true }));
+    });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+    assert.ok(document.querySelector('[data-message-id="question"]'));
+    assert.ok(document.querySelector('[data-message-id="regular"]'));
+    await act(async () => click(document.querySelector('[aria-label="Next match"]')!));
+    assert.match(document.querySelector('.conversation-find [role="status"]')!.textContent!, /2\/2/);
+    assert.ok(!document.querySelector('[data-message-id="question"]'), "the expired question should disappear on the regular match");
+    assert.deepEqual(windows, [2]);
+  } finally {
+    await act(async () => root.unmount());
+    Reflect.deleteProperty(globalThis, "NodeFilter");
+    restore();
+  }
+});
+
 function installDom() {
   const dom = new JSDOM("<!doctype html><html><body><div id=root></div></body></html>", {
     pretendToBeVisual: true,

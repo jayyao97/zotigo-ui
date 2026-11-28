@@ -49,3 +49,18 @@ test("historical questions distinguish pending, closed and unavailable state", (
   assert.equal(interactionState(request, [start, request, terminal], true), false);
   assert.equal(interactionState(request, [], true), undefined);
 });
+
+test("mobile web search settings keep omitted credentials and send explicit clears to the selected host", async () => {
+  const requests: RequestInit[] = [];
+  const client = new DaemonClient({ id: "r", name: "Remote", baseUrl: "https://remote.test", token: "token" }, async (url, init = {}) => {
+    assert.equal(url, "https://remote.test/config/models");
+    requests.push(init);
+    return Response.json({ code: "ok", data: { revision: "r", default_profile: "", profiles: [], web_search: { provider: "tavily", has_tavily_key: true, has_deepseek_key: false } } });
+  });
+  assert.equal((await client.getModelSettings()).web_search?.has_tavily_key, true);
+  const change = { revision: "r", action: "web_search" as const, web_search: { provider: "deepseek", tavily_key: "" } };
+  await client.updateModelSettings(change);
+  assert.deepEqual(JSON.parse(String(requests[1].body)), change);
+  await client.updateModelSettings({ ...change, web_search: { provider: "tavily", deepseek_key: " \t " } });
+  assert.deepEqual(JSON.parse(String(requests[2].body)).web_search, { provider: "tavily" });
+});
